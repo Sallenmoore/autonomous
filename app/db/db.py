@@ -14,26 +14,20 @@ class Table:
         [summary]
         """
         self.table = TinyDB(table)
-        
-    def create(self, object):
-        """
-        [summary]
-        """
-
-    def read(self, object):
-        """
-        [summary]
-        """
 
     def update(self, object):
         """
         [summary]
         """
+        Object = Query()
+        self.table.upsert(object, Object._id == object['_id'])
 
     def delete(self, object):
         """
         [summary]
         """
+        Object = Query()
+        self.table.remove(Object._id == object['_id'])
 
 
 class Database():

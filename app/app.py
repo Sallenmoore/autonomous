@@ -20,7 +20,6 @@ def create_app(test_config=None):
     from views import api, user, admin
     app.register_blueprint(api.bp, url_prefix="/api")
     app.register_blueprint(user.bp, url_prefix="/")
-    app.register_blueprint(admin.bp, url_prefix="/admin")
 
     ############## Initializations ###############
 
