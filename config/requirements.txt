@@ -1,0 +1,9 @@
+###### Requirements without Version Specifiers ######
+requests
+gunicorn
+pytest
+coverage
+tinydb
+
+###### Requirements with Version Specifiers ######
+Flask>=2.0
