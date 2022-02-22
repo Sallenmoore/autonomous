@@ -7,7 +7,7 @@ class Player(Model):
         """
         self.image_url = ""
         self.player_name = ""
-        self.character = Player.Character(player_name)
+        self.character = Player.Character(self.player_name)
         self.player_class = {}
         self.player_abilities = {}
 

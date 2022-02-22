@@ -1,4 +1,4 @@
-# Dockerized Flask based Python Webapp using nginx and postgres
+# Dockerized Flask based Python Webapp
 
 Python based Webapp
 
@@ -31,4 +31,4 @@ Python based Webapp
 
 ***TODO***
 
-* Integerate TESTS
+* Integrate TESTS

@@ -2,37 +2,59 @@ version: "3"
 
 services:
   app:
-    image: dndbuddy:latest
+    image: dmbuddy:latest
     build: 
       context: ./config
       dockerfile: app.Dockerfile
-    env_file: ./config/.env
-    container_name: dndbuddy
+    working_dir: /var/app
+    env_file: ./config/app.env
+    container_name: dmbuddy
     expose:
       - "5000"
     networks:
-      - server_net
+      - app_net
     volumes:
       - ./app:/var/app
-    working_dir: /var/app
-    command: ["gunicorn", "-c/var/tmp/conf.py", "app:create_app()"]
+    command: ["gunicorn", "app:create_app"]
+    # ports:
+    #   - "5000:5000"
+    # stdin_open: true # docker run -i
+    # tty: true # docker run -t
+    # command: ["ash"]
+  api:
+    image: dmbuddy_api:latest
+    build: 
+      context: ./config
+      dockerfile: api.Dockerfile
+    working_dir: /var/api
+    env_file: ./config/api.env
+    container_name: api
+    networks:
+      - app_net
+    expose:
+      - "3000"
+    volumes:
+      - ./api:/var/api/
+    command: ["gunicorn", "api:create_app"]
+    # stdin_open: true # docker run -i
+    # tty: true # docker run -t
+    # command: ["ash"]
   server:
-    image: flask_app_server:latest
+    image: dmbuddy_server:latest
     build: 
       context: ./config
       dockerfile: nginx.Dockerfile
     container_name: server
-    #command: [nginx-debug, '-g', 'daemon off;']
     #restart: on-failure
     networks:
-      - server_net
+      - app_net
     volumes:
-      - ./app/static:/srv/static
+      - ./app/app/static:/srv/static
     ports:
       - "80:80"
     depends_on:
       - app
 
 networks:
-  server_net:
+  app_net:
 
