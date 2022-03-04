@@ -1,7 +1,7 @@
 
 from db.model import Model
 
-from flask import abort, jsonify
+from flask import app, abort, jsonify
 
 from urllib.parse import urlencode
 import requests
@@ -28,7 +28,7 @@ class Compendium(Model):
         """
         url = f"{API_URL}/{search_terms['resource']}/?{urlencode(**search_terms)}"
         results = requests.get(url).json()
-        log.info(f'{results} logged in successfully')
+        app.log.info(f'{results} logged in successfully')
         return jsonify(results) if results else abort(404, description="no results")
     
     @classmethod

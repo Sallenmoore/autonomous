@@ -1,26 +1,6 @@
 version: "3"
 
 services:
-  app:
-    image: dmbuddy:latest
-    build: 
-      context: ./config
-      dockerfile: app.Dockerfile
-    working_dir: /var/app
-    env_file: ./config/app.env
-    container_name: dmbuddy
-    expose:
-      - "5000"
-    networks:
-      - app_net
-    volumes:
-      - ./app:/var/app
-    command: ["gunicorn", "app:create_app"]
-    # ports:
-    #   - "5000:5000"
-    # stdin_open: true # docker run -i
-    # tty: true # docker run -t
-    # command: ["ash"]
   api:
     image: dmbuddy_api:latest
     build: 
@@ -32,28 +12,52 @@ services:
     networks:
       - app_net
     expose:
-      - "3000"
+      - "8000"
     volumes:
       - ./api:/var/api/
-    command: ["gunicorn", "api:create_app"]
+    command: ["gunicorn", "app:app", "-c/var/gunicorn.conf.py"]
+    #DEBUG CONTAINER
+    # ports:
+    #  - "8000:8000"
+    # stdin_open: true # docker run -i
+    # tty: true # docker run -t
+    # command: ["ash"]
+  app:
+    image: dmbuddy:latest
+    environment:
+      - DEBUG=True
+    build: 
+      context: ./config
+      dockerfile: app.Dockerfile
+    working_dir: /var/app
+    env_file: ./config/app.env
+    container_name: app
+    expose:
+      - "3000"
+    networks:
+      - app_net
+    volumes:
+      - ./app:/var/app
+    command: ["gunicorn", "app:app", "-c/var/gunicorn.conf.py"]
+    # ports:
+    #  - "3000:3000"
     # stdin_open: true # docker run -i
     # tty: true # docker run -t
     # command: ["ash"]
   server:
-    image: dmbuddy_server:latest
-    build: 
-      context: ./config
-      dockerfile: nginx.Dockerfile
+    image: nginx
     container_name: server
-    #restart: on-failure
     networks:
       - app_net
     volumes:
-      - ./app/app/static:/srv/static
+      - ./app/static:/srv/static
+      - ./config/nginx.conf:/etc/nginx/nginx.conf
     ports:
       - "80:80"
     depends_on:
-      - app
+     - app
+    #DEBUG CONTAINER
+    #command: [nginx-debug, '-g', 'daemon off;']
 
 networks:
   app_net:
