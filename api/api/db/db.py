@@ -1,6 +1,3 @@
-from flask import g, current_app, jsonify
-import uuid
-
 #external imports
 from tinydb import TinyDB, Query
 

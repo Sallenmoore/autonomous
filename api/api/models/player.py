@@ -1,4 +1,4 @@
-from db.model import Model
+from api.db.model import Model
 
 class Player(Model):
     def model_attr(self) -> None:
@@ -7,7 +7,7 @@ class Player(Model):
         """
         self.image_url = ""
         self.player_name = ""
-        self.character = Player.Character(self.player_name)
+        self.character = Player.Character()
         self.player_class = {}
         self.player_abilities = {}
 
@@ -15,8 +15,6 @@ class Player(Model):
         return True
 
     class Character:
-        def __init__(self) -> None:
-            pass
 
         def verify(self) -> bool:
             return True
@@ -26,7 +24,7 @@ class Player(Model):
 #
 # Does not account for the level 4, 8, 12, and 16 stat increase or feat choice if making a higher level character
 # Does not include languages yet because I'm still investigating a method to add a random item to a list only if the addition is not already in the list, and if it was already in the list, pick a new item and try to add
-# Does not have a seperate category for currency because I'm not sure how to account for adding from multiple sources
+# Does not have a separate category for currency because I'm not sure how to account for adding from multiple sources
 # Does not account for Personality Traits, Ideals or Bonds because I don't want to write a random.choice for things that bulky, trying to find another way
 # Not all Skin/Hair/Eye colours may be correct, I just put some in quickly
 # It does not print class traits

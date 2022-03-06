@@ -1,5 +1,5 @@
 
-from db.model import Model
+from api.db.model import Model
 
 from flask import app, abort, jsonify
 
@@ -26,9 +26,8 @@ class Compendium(Model):
         """
         _summary_
         """
-        url = f"{API_URL}/{search_terms['resource']}/?{urlencode(**search_terms)}"
+        url = f"{API_URL}/{search_terms.pop('resource')}/?{urlencode(search_terms)}"
         results = requests.get(url).json()
-        app.log.info(f'{results} logged in successfully')
         return jsonify(results) if results else abort(404, description="no results")
     
     @classmethod
@@ -116,7 +115,7 @@ class Compendium(Model):
         return cls.__search(resource="weapons", **search_terms)
     
     @classmethod
-    def search(cls, search_term):
+    def search(cls, search_term=""):
         """
         _summary_
         """

@@ -1,5 +1,5 @@
 #local modules
-from db.db import Database
+from api.db.db import Database
 
 #external modules
 from flask import g, current_app, jsonify

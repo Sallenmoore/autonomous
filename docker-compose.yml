@@ -15,10 +15,10 @@ services:
       - "8000"
     volumes:
       - ./api:/var/api/
-    command: ["gunicorn", "app:app", "-c/var/gunicorn.conf.py"]
+    command: ["gunicorn", "app:create_app()", "-c/var/gunicorn.conf.py"]
+    ports:
+    - "8000:8000"
     #DEBUG CONTAINER
-    # ports:
-    #  - "8000:8000"
     # stdin_open: true # docker run -i
     # tty: true # docker run -t
     # command: ["ash"]
@@ -39,8 +39,8 @@ services:
     volumes:
       - ./app:/var/app
     command: ["gunicorn", "app:app", "-c/var/gunicorn.conf.py"]
-    # ports:
-    #  - "3000:3000"
+    ports:
+      - "3000:3000"
     # stdin_open: true # docker run -i
     # tty: true # docker run -t
     # command: ["ash"]

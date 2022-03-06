@@ -1,5 +1,5 @@
 
-from db.model import Model
+from api.db.model import Model
 
 from .campaign import Campaign
 from .campaign import event
