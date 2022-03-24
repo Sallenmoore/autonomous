@@ -34,16 +34,14 @@ services:
     container_name: app
     expose:
       - "3000"
+    ports:
+      - "3000:3000"
     networks:
       - app_net
     volumes:
       - ./app:/var/app
     command: ["gunicorn", "app:app", "-c/var/gunicorn.conf.py"]
-    ports:
-      - "3000:3000"
-    # stdin_open: true # docker run -i
-    # tty: true # docker run -t
-    # command: ["ash"]
+    #command: ["flask", "run", "--host=0.0.0.0 --port=3000"]
   server:
     image: nginx
     container_name: server
@@ -57,7 +55,7 @@ services:
     depends_on:
      - app
     #DEBUG CONTAINER
-    #command: [nginx-debug, '-g', 'daemon off;']
+    command: [nginx-debug, '-g', 'daemon off;']
 
 networks:
   app_net:

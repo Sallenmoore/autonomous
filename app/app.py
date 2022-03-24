@@ -1,17 +1,22 @@
-# Required Imports
-import os
-from flask import Flask, request
 
-app = Flask(__name__, instance_relative_config=True)
-app.secret_key = os.environ.get("FLASK_SECRET_KEY")
-# ensure the instance folder exists
-try:
-    os.makedirs(app.instance_path)
-except OSError:
-    pass
+from src import create_app
+#from sassutils.wsgi import SassMiddleware
 
-from models.monster import Monster
+#application factory
+app = create_app()
+# app.wsgi_app = SassMiddleware(
+#     app.wsgi_app,
+#     {
+#         "app": {
+#             "sass_path": "static/style/sass",
+#             "css_path": "static/style",
+#             "wsgi_path": "style",
+#         }
+#     },
+# )
 
-@app.route("/")
-def index():
-    return Monster.get_random_monster()
+if __name__ == "__main__":
+    app.run(
+        host=app.config['HOST'],
+        port=app.config['PORT'],
+    )

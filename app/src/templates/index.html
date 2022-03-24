@@ -1,0 +1,196 @@
+<!doctype html>
+
+<html lang="en">
+
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+
+        <title>DM Buddy</title>
+        <!-- Compiled and minified CSS -->
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
+        <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+        <link rel="stylesheet" href="{{url_for('static', filename='style/style.css')}}">
+        <!-- Compiled and minified JavaScript -->
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+    </head>
+
+    <body>
+        <div class="container">
+            <div class="navbar">
+              <nav>
+                  <div class="nav-wrapper" style="background-image: url({{url_for('static', filename='images/hero.jpeg')}});background-size: cover;">
+                    <a href="#" class="brand-logo right">DM Buddy</a>
+                  </div>
+              </nav>
+            </div>
+            <div class="row" id='reference'>
+                <div class="col s4">
+                    <div class="row" id="monsters">
+                        <div class="col s12">
+                            Monster Search:
+                            <div class="input-field inline">
+                                <input id="monster_search" type="text">
+                                <label for="monster_search">search terms</label>
+                            </div>
+                            <div class="col">
+                                results
+                            </div>
+                        </div>
+                        <div class="row" id="monsters">
+                            <div class="col">
+                                <div class="row">
+                                    <div class="col">
+                                        <p class="flow-text">{{random_monster.name}}</p>
+                                    </div>
+                                    {%if random_monster.img_main %}
+                                    <div class="col">
+                                        <img class="responsive-img circle" src="{{random_monster.img_main}}">
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                <p> AC: {{random_monster.armor_class}} </p>
+                                <ul class="collapsible">
+                                {% for a in random_monster.actions %}
+                                    <li>
+                                        <div class="collapsible-header">
+                                            <div class="row">
+                                                <div class="col">
+                                                    {{a.name}}
+                                                    {% if a.attack_bonus %} 
+                                                        [+{{a.attack_bonus}}] 
+                                                    {% endif %}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="collapsible-body">
+                                            <div class="row">
+                                                <div class="col">
+                                                    <form class="dice_roll" method='post'>
+                                                        <input type="hidden" value="{{a.damage_dice}}" name="damage_dice">
+                                                        <button class="btn-large waves-effect waves-light" type="submit" name="submit">
+                                                            <i class="large material-icons">casino</i> ROLL
+                                                        </button>
+                                                    </form>
+                                                </div>
+                                                <div class="col">
+                                                    {{a.description}}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </li>
+                                {%endfor%}
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row" id="characters">
+                        <div class="col">
+                            Search
+                        </div>
+                        <div class="col">
+                            Random
+                        </div>
+                        <div class="col">
+                            Quick Links
+                        </div>
+                    </div>
+                    <div class="row" id="spells">
+                        <div class="col">
+                            Search
+                        </div>
+                        <div class="col">
+                            Random
+                        </div>
+                        <div class="col">
+                            Quick Links
+                        </div>
+                    </div>
+                    <div class="row" id="equipment">
+                        <div class="col">
+                            Search
+                        </div>
+                        <div class="col">
+                            Random
+                        </div>
+                        <div class="col">
+                            Quick Links
+                        </div>
+                    </div>
+                    <div class="row" id="items">
+                        <div class="col">
+                            Search
+                        </div>
+                        <div class="col">
+                            Random
+                        </div>
+                        <div class="col">
+                            Quick Links
+                        </div>
+                    </div>
+                </div>
+                <div class="col s8" id="status">
+                    <div class="row">
+                        <div class="col" >
+                            <form id="dice_selection">
+                                <div class="input-field col s4">
+                                    <select name="num_dice">
+                                        {% for i in range(40) %}
+                                            <option value="{{loop.index}}"> {{loop.index}}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <label>Number of Die</label>
+                                </div>
+                                <div class="input-field col s4">
+                                    <select name="type_dice">
+                                        {% for i in dice_types %}
+                                            <option value="{{i}}" 
+                                                {% if i == 20 %}
+                                                    selected
+                                                {% endif %}
+                                            >{{i}}
+                                            </option>
+                                        {% endfor %}
+                                    </select>
+                                    <label>Sides</label>
+                                </div>
+                                <div class="input-field col s4">
+                                    <select name="bonus">
+                                        <option value="" disabled selected>+</option>
+                                        {% for i in range(20) %}
+                                            <option value="{{loop.index}}"> {{loop.index}}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <label>Bonus</label>
+                                </div>
+                                <button class="btn-large waves-effect waves-light" type="submit" name="submit">
+                                    ROLL <i class="large material-icons right">casino</i>
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col" id="dice_tray">
+                            
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col s4">
+                    footer reference #1
+                </div>
+                <div class="col s4">
+                    footer reference #2
+                </div>
+                <div class="col s4">
+                    footer reference #3
+                </div>
+            </div>
+        </div>
+
+        <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    </body>
+
+</html>
