@@ -16,10 +16,13 @@ def create_app(test_config=None):
     with app.app_context():
         # Include our Routes
 
-        from src.views import compendium, monster, dice
+        from src.views import compendium, monster, item, spell, character, dice
         
         app.register_blueprint(compendium.bp)
         app.register_blueprint(monster.bp)
+        app.register_blueprint(item.bp)
+        app.register_blueprint(spell.bp)
+        app.register_blueprint(character.bp)
         app.register_blueprint(dice.bp)
 
         @app.route('/', methods=('GET', 'POST'))

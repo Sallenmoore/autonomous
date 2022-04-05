@@ -1,7 +1,6 @@
 # Local Modules
-from src.models.compendium.monster import Monster
+from src.models.compendium.spell import Spell
 from src.views import base_search, base_random
-
 # External Modules
 from flask import (
     Blueprint, request, current_app
@@ -10,21 +9,23 @@ from flask import (
 # Python Modules
 import random
 
-bp = Blueprint('monster', __name__, url_prefix='/monster')
+
+bp = Blueprint('spell', __name__, url_prefix='/spell')
 
 @bp.route('/random', methods=('GET',))
-def random_monster():
+def random_spell():
     """
     _summary_
     """
-    return base_random(Monster)
+    return base_random(Spell)
+    
         
 
 @bp.route('/search', methods=('GET',))
-def search_monsters():
+def search_spells():
     """
     _summary_
     """
-    return base_search(Monster, **request.args)
+    return base_search(Spell, **request.args)
 
 

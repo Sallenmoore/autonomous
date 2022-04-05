@@ -4,6 +4,8 @@ import os
 from flask import Flask, render_template
 import sass
 from src.models.monster import Monster
+from src.models.item import Item
+from src.models.spell import Spell
 
 def create_app(test_config=None):
     app = Flask(__name__)
@@ -15,19 +17,23 @@ def create_app(test_config=None):
     except OSError:
         pass
 
-    @app.before_request
-    def before_request_tasks():
-        sass.compile(dirname=('static/style/sass', 'static/style'), output_style='nested')
+    if os.environ.get("ENV") is 'development':
+        @app.before_request
+        def before_request_tasks():
+            sass.compile(dirname=('static/style/sass', 'static/style'), output_style='nested')
 
     with app.app_context():
         # Include our Routes
         @app.route('/', methods=('GET', 'POST'))
         def index():
             random_monster = Monster.random()
-            app.logger.info(f"monster: {[vars(a) for a in random_monster.actions]}")
+            random_item = Item.random()
+            random_spell = Spell.random()
             return render_template("index.html", 
                                    random_monster = random_monster,
                                    dice_types = [4,6,8,10,12,20,100],
+                                   random_item = random_item,
+                                   random_spell = random_spell,
                                    )
 
     return app

@@ -5,6 +5,6 @@ from flask import (
 )
 import requests
 
-class Monster(Compendium):
+class Item(Compendium):
     search_results = None
-    resource = ["monsters"]
+    resource = ["magicitems", "weapons"]

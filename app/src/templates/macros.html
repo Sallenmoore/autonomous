@@ -1,0 +1,66 @@
+{% macro dnd_node(endpoint, random_obj) %}
+<div class="row" id="{{endpoint}}">
+  <div class="col s12">
+    {{ endpoint | title }} Search:
+    <div class="input-field inline">
+      <input id="{{endpoint}}_search" type="text" />
+      <label for="{{endpoint}}_search">search terms</label>
+    </div>
+    <div class="col">results</div>
+  </div>
+  <div class="col">
+    <div class="row">
+      <div class="col">
+        <p class="flow-text">{{random_obj.name}}</p>
+      </div>
+      {%if random_obj.img_main %}
+      <div class="col">
+        <img class="responsive-img circle" src="{{random_obj.img_main}}" />
+      </div>
+      {% endif %}
+    </div>
+    <div class="row">
+      <div class="col">
+        <p>AC: {{random_obj.armor_class}}</p>
+        <ul class="collapsible">
+          {% for a in random_obj.actions %}
+          <li>
+            <div class="collapsible-header">
+              <div class="row">
+                <div class="col">
+                  {{a.name}} 
+                  {% if a.attack_bonus %} 
+                    [+{{a.attack_bonus}}] 
+                  {%endif %}
+                </div>
+              </div>
+            </div>
+            <div class="collapsible-body">
+              <div class="row">
+                <div class="col">
+                  <form class="dice_roll" method="post">
+                    <input
+                      type="hidden"
+                      value="{{a.damage_dice}}"
+                      name="damage_dice"
+                    />
+                    <button
+                      class="btn-large waves-effect waves-light"
+                      type="submit"
+                      name="submit"
+                    >
+                      <i class="large material-icons">casino</i> ROLL
+                    </button>
+                  </form>
+                </div>
+                <div class="col">{{a.description}}</div>
+              </div>
+            </div>
+          </li>
+          {%endfor%}
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+{% endmacro %}

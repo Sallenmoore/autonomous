@@ -4,8 +4,8 @@ from src.models.action import Action
 import requests
 from flask import current_app 
 
-class Monster(Model):
-    API_URL = f"{Model.API_URL}monster"
+class Item(Model):
+    API_URL = f"{Model.API_URL}item"
     def __init__(self, **kwargs):
         #current_app.logger.info(kwargs)
         self.attrs = [

@@ -11,14 +11,19 @@ def test_client():
             yield testing_client  # this is where the testing happens!
 
 @pytest.fixture(scope='module')
-def test_search_terms():
+def test_search_endpoints():
 
-    return {}
+    return {
+        'monster':{}, 
+        'character':{}, 
+        'spell':{},
+        'item':{},
+        'compendium':{},
+        }
 
 @pytest.fixture(scope='module')
-def test_search_term():
-
-    return ""
+def test_random_endpoints():
+    return ['monster', 'character', 'spell','item','compendium']
 
 @pytest.fixture(scope='module')
 def die_str():
