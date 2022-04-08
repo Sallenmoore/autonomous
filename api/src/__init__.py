@@ -27,7 +27,15 @@ def create_app(test_config=None):
 
         @app.route('/', methods=('GET', 'POST'))
         def index():
-            return {'Docs': "TBD"}
+            return {'Docs': {
+                    "items": {
+                        },
+                    "spells": {
+                        },
+                    "monster": {
+                        },
+                }
+            }
 
         @app.route('/test', methods=('GET',))
         def test():

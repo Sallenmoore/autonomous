@@ -1,5 +1,5 @@
 from src.models.monster import Monster
-
+from src.utilities import DEBUG_PRINT
 class TestMonster:
 
     def test_random(self, test_search_endpoints):
@@ -10,13 +10,24 @@ class TestMonster:
             _type_: _description_
         """
         results = Monster.random()
-        assert results.get('error') is None
+        DEBUG_PRINT(test_results=results)
+        assert results.name
         
-    def test_count(self):
+    def search(self):
         """
         _summary_
 
         Returns:
             _type_: _description_
         """
-        assert Monster.count() > 0
+        result = Monster.search()
+        print(result)
+        assert result
+
+        result = Monster.search("fire")
+        print(result)
+        assert result
+
+        result = Monster.search("hjkdgflsadk")
+        print(result)
+        assert result

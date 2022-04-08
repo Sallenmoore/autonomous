@@ -17,7 +17,7 @@ def create_app(test_config=None):
     except OSError:
         pass
 
-    if os.environ.get("ENV") is 'development':
+    if os.environ.get("ENV") == 'development':
         @app.before_request
         def before_request_tasks():
             sass.compile(dirname=('static/style/sass', 'static/style'), output_style='nested')

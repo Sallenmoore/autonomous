@@ -1,5 +1,7 @@
+from urllib.parse import urlencode
 from src.models import Model
 from src.models.action import Action
+from src.utilities import DEBUG_PRINT
 
 import requests
 from flask import current_app 
@@ -35,4 +37,19 @@ class Monster(Model):
         """
         url = f"{cls.API_URL}/random"
         result = requests.get(url).json()
+        DEBUG_PRINT(result=result)
         return cls(**result)
+
+    @classmethod
+    def search(cls, **kwargs):
+        """
+        returns a random monster object pulled from the API
+
+        Returns:
+            _type_: _description_
+        """
+        url = f"{cls.API_URL}/search?{urlencode(kwargs)}"
+        DEBUG_PRINT(url=url)
+        result = requests.get(url).json()
+        DEBUG_PRINT(result=result)
+        return [cls(**r) for r in result]

@@ -1,5 +1,5 @@
 from flask import jsonify
-
+from src.utilities import DEBUG_PRINT
 class Model:
     API_URL="http://api:8000/"
     
@@ -7,6 +7,8 @@ class Model:
         return jsonify(vars(self))
 
     def deserialize(self, attrs=None, **data):
+        DEBUG_PRINT(data)
         for key in data:
-            if not attrs or key in attrs:
+            #DEBUG_PRINT(key=key, value=data[key])
+            if not self.attrs or key in self.attrs:
                 setattr(self, key, data[key])

@@ -5,8 +5,7 @@ def base_random(model):
     _summary_
     """
     num_results = model.count() + 1
-    results = model.search(limit=1, page=random.randrange(num_results)+1)
-    return {"result":results}
+    return model.search(limit=1, page=random.randrange(num_results)+1)
         
 
 def base_search(model, **kwargs):

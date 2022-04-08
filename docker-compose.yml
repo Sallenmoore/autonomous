@@ -17,7 +17,7 @@ services:
       - ./api:/var/api/
     command: ["gunicorn", "app:create_app()", "-c/var/gunicorn.conf.py"]
     ports:
-    - "8000:8000"
+     - "8000:8000"
     #DEBUG CONTAINER
     # stdin_open: true # docker run -i
     # tty: true # docker run -t
