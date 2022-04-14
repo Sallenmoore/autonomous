@@ -3,7 +3,6 @@ from src.models import Compendium
 from flask import (
     current_app
 )
-import requests
 
 class Monster(Compendium):
     search_results = None

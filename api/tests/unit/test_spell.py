@@ -1,4 +1,5 @@
 from src.models.compendium.spell import Spell
+from src.lib import debug_print
 
 class TestSpell:
 
@@ -10,7 +11,8 @@ class TestSpell:
             _type_: _description_
         """
         results = Spell.search(**test_search_endpoints['spell'])
-        assert results.get('error') is None
+        debug_print(results=results)
+        assert results.get('results') is not None
         
     def test_count(self):
         """

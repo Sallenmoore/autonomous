@@ -14,7 +14,8 @@ def roll(dice_str):
     """
     _summary_
     """
-    dice = Dice(dice_str)
+    request.args
+    dice = Dice(dice_str, advantage=int(request.args.get("advantage", 0)))
     return {'result':dice.roll(), 'number':dice.num()}
 
 

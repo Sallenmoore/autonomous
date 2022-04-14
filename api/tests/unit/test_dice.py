@@ -2,20 +2,22 @@ from src.models.dice import Dice
 
 import d20
 
-def test_roll(die_str):
+def test_roll(test_die):
     """
     _summary_
 
     Returns:
         _type_: _description_
     """
-    assert 0 < Dice(die_str[0]).roll()
+    for die in test_die:
+        assert 0 < Dice(die['dice_str']).roll()
     
-def test_num(die_str):
+def test_num(test_die):
     """
     _summary_
 
     Returns:
         _type_: _description_
     """
-    assert Dice(die_str[0]).num() == die_str[1]
+    for die in test_die:
+        assert die['num_dice'] ==  Dice(die['dice_str']).num()

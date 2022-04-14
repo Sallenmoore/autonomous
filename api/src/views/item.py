@@ -29,4 +29,10 @@ def search_items():
     """
     return base_search(Item, **request.args)
 
-
+@bp.route('/all', methods=('GET',))
+def all_items():
+    """
+    _summary_
+    """
+    request.args.clear()
+    return search_items()

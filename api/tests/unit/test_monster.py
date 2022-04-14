@@ -1,4 +1,5 @@
 from src.models.compendium.monster import Monster
+from src.lib import debug_print
 
 class TestMonster:
 
@@ -10,7 +11,8 @@ class TestMonster:
             _type_: _description_
         """
         results = Monster.search(**test_search_endpoints['monster'])
-        assert results.get('error') is None
+        debug_print(results=results)
+        assert results.get('results') is not None
         
     def test_count(self):
         """

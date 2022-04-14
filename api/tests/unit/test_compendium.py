@@ -1,4 +1,5 @@
 from src.models.compendium.item import Compendium
+from src.lib import debug_print
 
 class TestCompendium:
 
@@ -10,7 +11,9 @@ class TestCompendium:
             _type_: _description_
         """
         results = Compendium.search(**test_search_endpoints['compendium'])
-        assert results.get('error') is None
+        #debug_print(results=results)
+        assert results.get('results') is not None
+        
         
     def test_count(self):
         """

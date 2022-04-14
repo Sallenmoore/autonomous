@@ -1,9 +1,10 @@
+from src.lib import debug_print
 import urllib
 import json
 
 from flask import current_app
 
-def test_roll(test_client, die_str):
+def test_roll(test_client, test_die):
     """
     _summary_
 
@@ -15,13 +16,15 @@ def test_roll(test_client, die_str):
     Returns:
         _type_: _description_
     """
-    url = f'/dice/roll/{urllib.parse.quote(die_str[0])}'
-    current_app.logger.debug(f'REQUEST URL: {url}')
-    response = test_client.get(url)
-    data = response.data.decode('utf-8')
-    current_app.logger.debug(f'RESPONSE DATA: {data}')
-    result = json.loads(data)
-    results = result.get("results")
-    assert response.status_code == 200
-    assert result.get('number') is die_str[1]
-    assert result.get('result')
+    urls= [ ]
+    for ds in test_die:
+        url = f'/dice/roll/{urllib.parse.quote(ds["dice_str"])}'
+        debug_print(request_urls=url)
+        response = test_client.get(url)
+        data = response.data.decode('utf-8')
+        debug_print(response=data)
+        results = json.loads(data)
+        debug_print(json_results=results)
+        assert response.status_code == 200
+        assert results['number'] == ds['num_dice']
+        assert results['result']

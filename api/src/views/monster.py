@@ -12,6 +12,7 @@ import random
 
 bp = Blueprint('monster', __name__, url_prefix='/monster')
 
+
 @bp.route('/random', methods=('GET',))
 def random_monster():
     """
@@ -27,4 +28,10 @@ def search_monsters():
     """
     return base_search(Monster, **request.args)
 
-
+@bp.route('/all', methods=('GET',))
+def all_monsters():
+    """
+    _summary_
+    """
+    request.args.clear()
+    return search_monsters()

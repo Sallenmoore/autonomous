@@ -15,7 +15,6 @@ def test_search_endpoints():
 
     return {
         'monster':{}, 
-        'character':{}, 
         'spell':{},
         'item':{},
         'compendium':{},
@@ -23,9 +22,16 @@ def test_search_endpoints():
 
 @pytest.fixture(scope='module')
 def test_random_endpoints():
-    return ['monster', 'character', 'spell','item','compendium']
+    return ['monster', 'spell','item','compendium']
 
 @pytest.fixture(scope='module')
-def die_str():
+def test_die():
 
-    return ("3d10+4", 3)
+    return [
+        {"dice_str": "3d10+4", "num_dice":3}, 
+        {"dice_str": "1d20+5", "num_dice":1}, 
+        {"dice_str": "4d6kh3", "num_dice":3},
+        {"dice_str": "3d10+4", "num_dice":3, "advantage":1}, 
+        {"dice_str": "1d20+5", "num_dice":1, "advantage":-1}, 
+        {"dice_str": "4d6kh3", "num_dice":3, "advantage":0},
+        ]

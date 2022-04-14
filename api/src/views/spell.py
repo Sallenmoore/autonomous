@@ -12,6 +12,7 @@ import random
 
 bp = Blueprint('spell', __name__, url_prefix='/spell')
 
+
 @bp.route('/random', methods=('GET',))
 def random_spell():
     """
@@ -29,3 +30,10 @@ def search_spells():
     return base_search(Spell, **request.args)
 
 
+@bp.route('/all', methods=('GET',))
+def all_spells():
+    """
+    _summary_
+    """
+    request.args.clear()
+    return search_spells()

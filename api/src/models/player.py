@@ -1,23 +1,24 @@
-from src.db.model import Model
+from src.lib import Model
+from src.lib import debug_print
 
-class Player(Model):
-    def model_attr(self) -> None:
-        """
-        [set object attributes]
-        """
-        self.image_url = ""
-        self.player_name = ""
-        self.character = Player.Character()
-        self.player_class = {}
-        self.player_abilities = {}
+# class Player(Model):
+#     def model_attr(self) -> None:
+#         """
+#         [set object attributes]
+#         """
+#         self.image_url = ""
+#         self.player_name = ""
+#         self.character = Player.Character()
+#         self.player_class = {}
+#         self.player_abilities = {}
 
-    def verify(self) -> bool:
-        return True
+#     def verify(self) -> bool:
+#         return True
 
-    class Character:
+#     class Character:
 
-        def verify(self) -> bool:
-            return True
+#         def verify(self) -> bool:
+#             return True
 
 """
 # Known Gaps in the character creator:
