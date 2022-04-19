@@ -39,5 +39,7 @@ def test_random(test_client, test_random_endpoints):
         response = test_client.get(url)
         data = response.data.decode('utf-8')
         result = json.loads(data)
-        debug_print(results=json.loads(data)["results"])
+        #debug_print(results=json.loads(data))
         assert response.status_code == 200
+        assert result['count'] == 1
+        assert len(result['results']) == 1

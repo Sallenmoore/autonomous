@@ -1,64 +1,159 @@
-{% macro dnd_node(endpoint, random_obj) %}
+{% macro card_node(title, description, extra_info=None, bgcolor="blue-grey darken-1", txtcolor="white-text") -%}
+  <div class="row">
+    <div class="col s12">
+      <div class="card {{bgcolor}}">
+        <div class="card-content {{txtcolor}}">
+          <span class="card-title">{{title}}</span>
+          <p>
+            {{description}}
+          </p>
+        </div>
+        <div class="card-action">
+          {% for e in extra_info %}
+            <a href="#">{{e}}</a>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+{%- endmacro %}
+
+{% macro search(endpoint) -%}
+  {{ endpoint | title }} Search:
+  <div class="input-field inline">
+    <input id="{{endpoint}}_search" type="text" />
+    <label for="{{endpoint}}_search">search terms</label>
+  </div>
+  <div class="col" id="{{endpoint}}_search_results">
+  </div>
+{%- endmacro %}
+
+{% macro dice_roll(damage) -%}
+  <form class="dice_roll" method="post">
+    <input
+      type="hidden"
+      value="{{damage}}"
+      name="damage_dice"
+    />
+    <button
+      class="btn-large waves-effect waves-light"
+      type="submit"
+      name="submit"
+    >
+      <i class="large material-icons">casino</i> ROLL
+    </button>
+  </form>
+{%- endmacro %}
+
+{% macro monster_node(endpoint, monster) %}
 <div class="row" id="{{endpoint}}">
   <div class="col s12">
-    {{ endpoint | title }} Search:
-    <div class="input-field inline">
-      <input id="{{endpoint}}_search" type="text" />
-      <label for="{{endpoint}}_search">search terms</label>
+    <div class="card blue-grey darken-1">
+      <div class="card-content white-text">
+        {{ search(endpoint) }}
+        <hr>
+        <p class="card-title">{{monster.name}}</p>
+        AC: {{monster.armor_class}}
+        {%if monster.img_main %}
+        <div class="col">
+          <img class="responsive-img circle" src="{{monster.img_main}}" />
+        </div>
+        {% endif %}
+      </div>
+      <div class="row">
+        {% for a in monster.actions %}
+        <div class="col">
+          <h3>{{a.name}} 
+          {% if a.attack_bonus %} 
+            [+{{a.attack_bonus}}] 
+          {%endif %}</h3>
+          <p>
+            {{a.description}}
+          </p>
+          <div class="row">
+            <div class="col">
+              {{dice_roll(a.damage_dice)}}
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
     </div>
-    <div class="col">results</div>
   </div>
-  <div class="col">
-    <div class="row">
-      <div class="col">
-        <p class="flow-text">{{random_obj.name}}</p>
+</div>
+{% endmacro %}
+
+
+{% macro item_node(endpoint, item) %}
+<div class="row" id="{{endpoint}}">
+  <div class="col s12">
+    <div class="card blue-grey darken-1">
+      <div class="card-content white-text">
+        <div class="col s12">
+          {{ search(endpoint) }}
+          <hr>
+        </div>
+        <p class="card-title">{{item.name}}<p>
+        {%if item.img_main %}
+          <div class="col">
+            <img class="responsive-img circle" src="{{item.img_main}}" />
+          </div>
+        {% endif %}
+        {{item.type}} [{{item.category}}]
       </div>
-      {%if random_obj.img_main %}
-      <div class="col">
-        <img class="responsive-img circle" src="{{random_obj.img_main}}" />
+      <div class="card-action">
+          <a> weight: {{item.weight}}</a>
+          <a> cost: {{item.cost}}</a>
+          <a> rarity: {{item.rarity}}</a>
+          <a> damage_dice: {{item.damage_dice}}</a>
+          <a> damage_type: {{item.damage_type}}</a>
+          <a>
+            <ul>
+              {% for p in properties %}
+                <li> {{p}} </li>
+              {% endfor %}
+            </ul>
+          </a>
+        <ul>
       </div>
-      {% endif %}
     </div>
-    <div class="row">
-      <div class="col">
-        <p>AC: {{random_obj.armor_class}}</p>
-        <ul class="collapsible">
-          {% for a in random_obj.actions %}
-          <li>
-            <div class="collapsible-header">
-              <div class="row">
-                <div class="col">
-                  {{a.name}} 
-                  {% if a.attack_bonus %} 
-                    [+{{a.attack_bonus}}] 
-                  {%endif %}
-                </div>
-              </div>
+  </div>
+</div>
+{% endmacro %}
+
+{% macro spell_node(endpoint, spell) %}
+<div class="row" id="{{endpoint}}">
+  <div class="col s12">
+    <div class="card blue-grey darken-1">
+      <div class="card-content white-text">
+        <div class="row">
+          <div class="col s12 ">
+            {{ search(endpoint) }}
+          </div>
+        </div>
+        <div class="row">
+          <div class="col s12 ">
+            <p class="card-title"> 
+              {{spell.name}}
+            </p>
+            {% if spell.school %} 
+              {{spell.school}}
+            {% elif spell.type %} 
+              {{spell.type}}
+            {% endif %}
+            {%if spell.img_main %}
+            <div class="col">
+              <img class="responsive-img circle" src="{{spell.img_main}}" />
             </div>
-            <div class="collapsible-body">
-              <div class="row">
-                <div class="col">
-                  <form class="dice_roll" method="post">
-                    <input
-                      type="hidden"
-                      value="{{a.damage_dice}}"
-                      name="damage_dice"
-                    />
-                    <button
-                      class="btn-large waves-effect waves-light"
-                      type="submit"
-                      name="submit"
-                    >
-                      <i class="large material-icons">casino</i> ROLL
-                    </button>
-                  </form>
-                </div>
-                <div class="col">{{a.description}}</div>
-              </div>
-            </div>
-          </li>
-          {%endfor%}
-        </ul>
+            {% endif %}
+          </div>
+        </div>
+        <div class="card-action">
+          <a> casting time: {{spell.casting_time}}</a>
+          <a> rarity: {{spell.rarity}}</a>
+          <a> range: {{spell.range}}</a>
+          <a> duration: {{spell.duration}}</a>
+        </div>
       </div>
     </div>
   </div>

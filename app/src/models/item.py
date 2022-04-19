@@ -6,33 +6,18 @@ from flask import current_app
 
 class Item(Model):
     API_URL = f"{Model.API_URL}item"
-    def __init__(self, **kwargs):
+    def __init__(self,  **kwargs):
         #current_app.logger.info(kwargs)
-        self.attrs = [
-            'name', 
-            'size', 
-            'type', 
-            'armor_class', 
-            'armor_desc', 
-            'hit_points', 
-            'hit_dice', 
-            'challenge_rating', 
-            'img_main'
-        ]
+        self.attrs = {
+            'name':None,
+            'category': 'magic',
+            'rarity':None,
+            'cost': 0,
+            "damage_dice": None,
+            "damage_type": None,
+            "weight": "1 lb.",
+            "properties": None,
+            'type':'weapon', 
+            'img_main':None,
+        }
         self.deserialize(**kwargs)
-        #current_app.logger.info(json_data.get('actions'))
-        self.actions = [Action(**action) for action in kwargs.get('actions')] if kwargs.get('actions') else []
-        #current_app.logger.info(self.actions)
-    ######## CLass Methods #########
-
-    @classmethod
-    def random(cls):
-        """
-        returns a random monster object pulled from the API
-
-        Returns:
-            _type_: _description_
-        """
-        url = f"{cls.API_URL}/random"
-        result = requests.get(url).json()
-        return cls(**result)

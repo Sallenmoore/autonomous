@@ -4,7 +4,6 @@ import pytest
 from flask import Flask
 
 
-
 def create_app(test_config=None):
     app = Flask(__name__, instance_relative_config=True)
     app.secret_key = os.environ.get("FLASK_SECRET_KEY")
@@ -17,9 +16,9 @@ def create_app(test_config=None):
 
     with app.app_context():
         # Include our Routes
-        from src.models.compendium.item import Item
-        from src.models.compendium.spell import Spell
-        from src.models.compendium.monster import Monster
+        from src.models.item import Item
+        from src.models.spell import Spell
+        from src.models.monster import Monster
         from src.views import compendium, monster, item, spell, dice, base_search, base_random
         
         app.register_blueprint(compendium.bp)
@@ -60,7 +59,7 @@ def create_app(test_config=None):
 
         @app.route('/test', methods=('GET',))
         def test():
-            retcode = pytest.main(["-x", "tests"])
+            retcode = pytest.main(["-rxl --no-header -vv", "tests"])
             return {'results': f"{retcode}"}
         
         return app

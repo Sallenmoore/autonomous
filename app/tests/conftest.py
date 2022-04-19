@@ -10,16 +10,6 @@ def test_client():
         with app.app_context():
             yield testing_client  # this is where the testing happens!
 
-@pytest.fixture(scope='module')
-def test_search_endpoints():
-
-    return {
-        'monster':{}, 
-        'character':{}, 
-        'spell':{},
-        'item':{},
-        'compendium':{},
-        }
 
 @pytest.fixture(scope='module')
 def test_random_endpoints():

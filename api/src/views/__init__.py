@@ -1,12 +1,11 @@
 import random
+from src.lib import debug_print
 
 def base_random(model):
     """
     _summary_
     """
-    num_results = model.count() + 1
-    return model.search(limit=1, page=random.randrange(num_results)+1)
-        
+    return model.random()
 
 def base_search(model, **kwargs):
     """

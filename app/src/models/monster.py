@@ -1,55 +1,25 @@
-from urllib.parse import urlencode
+
 from src.models import Model
 from src.models.action import Action
-from src.utilities import DEBUG_PRINT
 
 import requests
 from flask import current_app 
 
 class Monster(Model):
     API_URL = f"{Model.API_URL}monster"
-    def __init__(self, **kwargs):
+    def __init__(self,  **kwargs):
         #current_app.logger.info(kwargs)
-        self.attrs = [
-            'name', 
-            'size', 
-            'type', 
-            'armor_class', 
-            'armor_desc', 
-            'hit_points', 
-            'hit_dice', 
-            'challenge_rating', 
-            'img_main'
-        ]
+        self.attrs = {
+            'name':None,  
+            'size':None,  
+            'type':None,  
+            'armor_class':None,  
+            'armor_desc':None,  
+            'hit_points':None,  
+            'hit_dice':None,  
+            'challenge_rating':None,  
+            'img_main':None,
+        }
         self.deserialize(**kwargs)
-        #current_app.logger.info(json_data.get('actions'))
         self.actions = [Action(**action) for action in kwargs.get('actions')] if kwargs.get('actions') else []
-        #current_app.logger.info(self.actions)
-    ######## CLass Methods #########
 
-    @classmethod
-    def random(cls):
-        """
-        returns a random monster object pulled from the API
-
-        Returns:
-            _type_: _description_
-        """
-        url = f"{cls.API_URL}/random"
-        result = requests.get(url).json()
-        DEBUG_PRINT(result=result)
-        return cls(**result)
-
-    @classmethod
-    def search(cls, **kwargs):
-        """
-        returns a random monster object pulled from the API
-
-        Returns:
-            _type_: _description_
-        """
-        url = f"{cls.API_URL}/search?{urlencode(kwargs)}"
-        DEBUG_PRINT(url=url)
-        result = requests.get(url).json()
-        DEBUG_PRINT(result=result)
-        return [cls(**r) for r in result]

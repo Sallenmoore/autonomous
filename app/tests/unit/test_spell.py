@@ -1,6 +1,7 @@
-from src.models.monster import Monster
+from src.models.spell import Spell
 from src.lib import debug_print
-class TestMonster:
+
+class TestSpell:
 
     def test_random(self):
         """
@@ -9,8 +10,8 @@ class TestMonster:
         Returns:
             _type_: _description_
         """
-        results = Monster.random()
-        #debug_print(test_results=results)
+        results = Spell.random()
+        debug_print(test_results=results)
         assert results.name
         
     def test_search(self):
@@ -20,16 +21,16 @@ class TestMonster:
         Returns:
             _type_: _description_
         """
-        results = Monster.search()
+        results = Spell.search()
         #debug_print(all=result)
         for r in results:
             assert r.name
 
-        results = Monster.search("fire")
+        results = Spell.search("fire")
         #debug_print(fire=result)
         for r in results:
             assert r.name
 
-        results = Monster.search("hjkdgflsadk")
-        #debug_print(hjkdgflsadk=result)
+        results = Spell.search("hjkdgflsadk")
+        #debug_print(hjkdgflsadk=results)
         assert not results

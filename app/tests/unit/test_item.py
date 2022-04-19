@@ -1,6 +1,6 @@
-from src.models.monster import Monster
+from src.models.item import Item
 from src.lib import debug_print
-class TestMonster:
+class TestItem:
 
     def test_random(self):
         """
@@ -9,7 +9,7 @@ class TestMonster:
         Returns:
             _type_: _description_
         """
-        results = Monster.random()
+        results = Item.random()
         #debug_print(test_results=results)
         assert results.name
         
@@ -20,16 +20,16 @@ class TestMonster:
         Returns:
             _type_: _description_
         """
-        results = Monster.search()
+        results = Item.search()
         #debug_print(all=result)
         for r in results:
             assert r.name
 
-        results = Monster.search("fire")
+        results = Item.search("fire")
         #debug_print(fire=result)
         for r in results:
             assert r.name
 
-        results = Monster.search("hjkdgflsadk")
+        results = Item.search("hjkdgflsadk")
         #debug_print(hjkdgflsadk=result)
         assert not results

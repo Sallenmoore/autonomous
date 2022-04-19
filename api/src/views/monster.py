@@ -1,5 +1,5 @@
 # Local Modules
-from src.models.compendium.monster import Monster
+from src.models.monster import Monster
 from src.views import base_search, base_random
 
 # External Modules

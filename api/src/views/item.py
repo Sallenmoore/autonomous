@@ -1,5 +1,5 @@
 # Local Modules
-from src.models.compendium.item import Item
+from src.models.item import Item
 from src.views import base_search, base_random
 # External Modules
 from flask import (

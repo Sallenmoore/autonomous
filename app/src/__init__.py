@@ -1,6 +1,6 @@
 # Required Imports
 import os
-
+import pytest
 from flask import Flask, render_template
 import sass
 from src.models.monster import Monster
@@ -35,5 +35,10 @@ def create_app(test_config=None):
                                    random_item = random_item,
                                    random_spell = random_spell,
                                    )
+            
+        @app.route('/test', methods=('GET',))
+        def test():
+            retcode = pytest.main(["-ral", "tests"])
+            return {'results': retcode}
 
     return app

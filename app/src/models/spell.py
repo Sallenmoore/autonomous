@@ -6,33 +6,19 @@ from flask import current_app
 
 class Spell(Model):
     API_URL = f"{Model.API_URL}spell"
+    
     def __init__(self, **kwargs):
         #current_app.logger.info(kwargs)
-        self.attrs = [
-            'name', 
-            'size', 
-            'type', 
-            'armor_class', 
-            'armor_desc', 
-            'hit_points', 
-            'hit_dice', 
-            'challenge_rating', 
-            'img_main'
-        ]
+        self.attrs = {
+            'name':None, 
+            'range':None, 
+            'duration':None, 
+            'casting_time':None, 
+            'school':None, 
+            'rarity':None, 
+            'type':'spell', 
+            'img_main':None,
+        }
+
         self.deserialize(**kwargs)
-        #current_app.logger.info(json_data.get('actions'))
-        self.actions = [Action(**action) for action in kwargs.get('actions')] if kwargs.get('actions') else []
-        #current_app.logger.info(self.actions)
-    ######## CLass Methods #########
 
-    @classmethod
-    def random(cls):
-        """
-        returns a random monster object pulled from the API
-
-        Returns:
-            _type_: _description_
-        """
-        url = f"{cls.API_URL}/random"
-        result = requests.get(url).json()
-        return cls(**result)
