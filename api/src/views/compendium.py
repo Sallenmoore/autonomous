@@ -21,3 +21,10 @@ def search():
     _summary_
     """
     return base_search(Compendium, **request.args)
+
+@bp.route('/all', methods=('GET',))
+def all():
+    """
+    _summary_
+    """
+    return base_search(Compendium)

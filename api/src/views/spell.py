@@ -35,5 +35,4 @@ def all_spells():
     """
     _summary_
     """
-    request.args.clear()
-    return search_spells()
+    return base_search(Spell)

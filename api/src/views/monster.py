@@ -33,5 +33,4 @@ def all_monsters():
     """
     _summary_
     """
-    request.args.clear()
-    return search_monsters()
+    return base_search(Monster)

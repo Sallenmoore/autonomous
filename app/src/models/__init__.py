@@ -36,7 +36,7 @@ class Model:
         else:
             url = f"{cls.API_URL}/search?{urlencode(kwargs)}"
         result = requests.get(url).json()
-        #debug_print(url=url, result=result['results'])
+        
         return [cls(**r) for r in result['results']]
 
     @classmethod
@@ -52,5 +52,9 @@ class Model:
         result = requests.get(url)
         #debug_print(result=result)
         result = result.json()
-        debug_print(result=result)
-        return cls(**result['results'])
+        #debug_print(result=result)
+        try:
+            return cls(**result['results'].pop())
+        except Exception as e:
+            debug_print(e)
+            return None

@@ -77,7 +77,7 @@ class DnDAPI:
         """
         term = search_terms.pop('search', "")
         url = f"{cls.API_URL}{resource}/?search={term}"
-        debug_print(url=url)
+        #debug_print(url=url)
         final_url = f"{url}&{urlencode(search_terms)}" if search_terms else url
         debug_print(final_url=final_url)
         return final_url
@@ -108,7 +108,7 @@ class DnDAPI:
         if (not resources) or "search" in resources:
             term = search_terms.pop('search', '')
             url = cls._build_general_search_url(search_term=term, **search_terms)
-            debug_print(url=url)
+            #debug_print(url=url)
             return cls._request([url])
         
         urls = []
