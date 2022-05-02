@@ -1,4 +1,4 @@
-from src.models.item import Item
+from src.models.compendium.item import Item
 from src.lib import debug_print
 
 class TestItem:

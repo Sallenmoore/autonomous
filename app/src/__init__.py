@@ -1,11 +1,11 @@
+from src.lib.utilities import debug_print
 # Required Imports
 import os
 import pytest
-from flask import Flask, render_template
+from flask import Flask, render_template, request, redirect, url_for
 import sass
-from src.models.monster import Monster
-from src.models.item import Item
-from src.models.spell import Spell
+import requests
+import json
 
 def create_app(test_config=None):
     app = Flask(__name__)
@@ -23,18 +23,25 @@ def create_app(test_config=None):
             sass.compile(dirname=('static/style/sass', 'static/style'), output_style='nested')
 
     with app.app_context():
+        
         # Include our Routes
         @app.route('/', methods=('GET', 'POST'))
         def index():
-            random_monster = Monster.random()
-            random_item = Item.random()
-            random_spell = Spell.random()
-            return render_template("index.html", 
-                                   random_monster = random_monster,
-                                   dice_types = [4,6,8,10,12,20,100],
-                                   random_item = random_item,
-                                   random_spell = random_spell,
-                                   )
+            return render_template("index.html")
+
+        @app.route('/admin', methods=('GET', 'POST'))
+        def admin():
+            context = {'classes': requests.get("http://api:8000/compendium/classes_list").json().get('results')}
+
+            debug_print(**context)
+            return render_template("admin.html", **context)
+
+        @app.route('/add_character', methods=('GET', 'POST'))
+        def add_character():
+            headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
+            requests.post("http://api:8000/character/create", data=json.dumps(request.form), headers=headers)
+            return redirect(url_for('admin'))
+
             
         @app.route('/test', methods=('GET',))
         def test():

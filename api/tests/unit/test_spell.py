@@ -1,4 +1,4 @@
-from src.models.spell import Spell
+from src.models.compendium.spell import Spell
 from src.lib import debug_print
 
 class TestSpell:

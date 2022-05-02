@@ -159,3 +159,14 @@
   </div>
 </div>
 {% endmacro %}
+
+{% macro character_list(characters) %}
+<ul class="collection">
+  {%for character in characters %}
+    <li class="collection-item avatar">
+      <img src="images/yuna.jpg" alt="" class="circle">
+      <span class="title">{{character.name}}</span>
+    </li>
+  {% endfor %}
+</ul>
+{% endmacro %}

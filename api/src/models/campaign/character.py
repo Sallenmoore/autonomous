@@ -1,15 +1,18 @@
-from src.models import Compendium
+from src.lib.db.model import Model
 
-from flask import (
-    current_app
-)
-import requests
 
-class Character(Compendium):
-
-    @classmethod
-    def search(cls, **search_terms):
+class Character(Model):
+    def model_attr(self) -> None:
         """
-        _summary_
+        [set object attributes]
         """
-        return {}
+        self.image_url = str
+        self.name = str
+        self.player_class = str
+        self.history = str
+        self.hp = int
+        self.status = str
+        self.inventory = list
+
+    def verify(self) -> bool:
+        return True

@@ -1,4 +1,4 @@
-from src.models.monster import Monster
+from src.models.campaign.monster import Monster
 from src.lib import debug_print
 
 class TestMonster:

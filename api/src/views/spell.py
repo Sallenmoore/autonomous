@@ -1,5 +1,5 @@
 # Local Modules
-from src.models.spell import Spell
+from src.models.compendium.spell import Spell
 from src.views import base_search, base_random
 # External Modules
 from flask import (
