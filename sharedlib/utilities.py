@@ -1,7 +1,8 @@
 import sys
 import pprint
 
-def debug_print(*args, **kwargs):
+
+def log(*args, **kwargs):
     frame = sys._getframe(1)
     logger = kwargs.pop('logger', pprint.PrettyPrinter(indent=4).pprint)
     trace = f"<{frame.f_code.co_filename}:{frame.f_lineno}>"
