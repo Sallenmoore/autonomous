@@ -1,8 +1,10 @@
 # Required Imports
 import os
 import pytest
+import logging
 from flask import Flask
 
+logging.basicConfig(level=logging.DEBUG, format="==%(levelname)s== [%(filename)s - %(funcName)s:%(lineno)d] --\n %(message)s")
 
 def create_app(test_config=None):
     app = Flask(__name__, instance_relative_config=True)
@@ -19,8 +21,12 @@ def create_app(test_config=None):
         from src.models.compendium.item import Item
         from src.models.compendium.spell import Spell
         from src.models.campaign.monster import Monster
-        from src.views import compendium, monster, item, spell, dice, base_search, base_random
+        from src.views import (compendium, monster, item, 
+                spell, dice, base_search, base_random,
+                character,
+            )
         
+        app.register_blueprint(character.bp)
         app.register_blueprint(compendium.bp)
         app.register_blueprint(monster.bp)
         app.register_blueprint(item.bp)

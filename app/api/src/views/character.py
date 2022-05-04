@@ -1,5 +1,4 @@
 # Local Modules
-from src.shared.utilities import debug_print
 from src.models.campaign.character import Character
 from src.views import base_search, base_random
 
@@ -22,10 +21,9 @@ def create():
     """
     _summary_
     """
-    debug_print("create api")
+
     new_character = Character(**request.json)
     
-    debug_print(**vars(new_character))
     if new_character.save():
         return new_character.serialize()
 

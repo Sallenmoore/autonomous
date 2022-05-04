@@ -6,6 +6,9 @@ from flask import g, current_app
 #python modules
 import json
 import uuid
+import logging
+
+log = logging.getLogger()
 
 db = Database()
 
@@ -51,9 +54,8 @@ class Model():
             else:
                 try:
                     json_data[key] = json.dumps(value)
-                    
                 except Exception as e:
-                    print(f"ERROR: {e} {key} nonserializable")
+                    log.exception(f"ERROR: {e} {key} nonserializable")
         
         return json_data
 
