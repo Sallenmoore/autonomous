@@ -1,10 +1,10 @@
 import random
 
-def package_response(error=None, data=None, count=None):
+def package_response(error=None, data=None, count=0):
     return {
         "error":error,
         "results": data,
-        "count": count or len(data)
+        "count": count
     }
 
 

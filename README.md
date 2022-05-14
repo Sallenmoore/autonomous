@@ -7,11 +7,11 @@ DnD Helper Application
 ### Docker
 
 * build and start the container
-    * docker-compose up --build -d
+    * `docker-compose up --build -d`
 * run a command in the container
-    * docker-compose exec -option `<service name>` `<command>`
+    * `docker-compose exec -option <service name> <command>`
 * stop and remove running containers
-    * docker-compose down --remove-orphans
+    * `docker-compose down --remove-orphans`
 
 ### Server
 
@@ -34,7 +34,7 @@ DnD Helper Application
 ## Tests
 
 * To run tests:
-    *`docker-compose exec <service name> pytest -rl -x`
+    * `docker-compose exec <service name> pytest -rl -x`
 * To run only Character tests on the `api` service:
     * `docker-compose exec api pytest -rl -x -k Character`
 * To check test coverage:

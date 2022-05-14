@@ -2,6 +2,9 @@
 from src.models.campaign.character import Character
 from src.views import base_search, package_response
 
+import logging
+log = logging.getLogger()
+
 # External Modules
 from flask import (
     Blueprint, request
@@ -15,7 +18,7 @@ def all():
     _summary_
     """
     result = base_search(Character)
-    return package_response(data=result)
+    return package_response(data=result, count = len(result))
 
 @bp.route('/create', methods=('POST',))
 def create():
@@ -31,10 +34,20 @@ def create():
     character = Character.find(name=request.json.get('pk'))
     return character or {'result':"unknown error"}
 
-@bp.route('/<character>', methods=('GET',))
-def search():
+@bp.route('/delete', methods=('POST',))
+def delete():
     """
     _summary_
     """
-    return base_search(Character, **request.args)
+    if result := Character.get(**request.json):
+        return package_response(data=result.delete(), count = 1)
+    return package_response(error="not deleted", count = 0)
+    
+
+@bp.route('/<pk>/<character>', methods=('GET',))
+def search(pk, character):
+    """
+    _summary_
+    """
+    return Character.get(**request.json)
         

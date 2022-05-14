@@ -15,7 +15,7 @@ class Model():
     
     def __init__(self, **kwargs):
         
-        self.pk = kwargs.get("doc_id", kwargs.get("pk"))
+        self.pk = None
         self.table_name = type(self).__name__
         self.table = db.get_table(self.table_name)
 
@@ -23,7 +23,7 @@ class Model():
         
         self.model_attr()
         for k, v in kwargs.items():
-            if hasattr(self, k) and getattr(self, k):
+            if hasattr(self, k):
                 #model attributes are set to their type
                 if k not in self.base_attrs and getattr(self, k) != type(v):
                     log.warning(f"type mismatch for {k}: expected {getattr(self, k)}, got: {type(v)}")
@@ -67,7 +67,7 @@ class Model():
                         #log.debug(f"{key} : {value}")
                         json.dumps(value)
                     except Exception as e:
-                        log.info(f"{e} -- {key} nonserializable")
+                        """log.info(f"{e} -- {key} nonserializable")"""
                     else:
                         json_data[key] = value
         return json_data 
@@ -87,7 +87,7 @@ class Model():
         return self.pk == other.pk
 
     def delete(self):
-        self.table.remove(self.pk)
+        self.table.delete(self.pk)
 
     ################## class methods ####################
     @classmethod
@@ -108,5 +108,17 @@ class Model():
         """
         json_objects = cls().table.search(**kwargs)
         return [cls(**o) for o in json_objects]
+
+    @classmethod
+    def get(cls, **kwargs):
+        """
+        get - 
+        params: keyword arguments to the model 
+        return: Always returned a list
+        """
+        doc_id = kwargs.get('pk', kwargs.get('doc_id'))
+        json_object = cls().table.get(doc_id)
+        #log.debug(f'{kwargs}, {json_object}')
+        return cls(**json_object) if json_object else None
 
 

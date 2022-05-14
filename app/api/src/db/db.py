@@ -20,15 +20,18 @@ class Table:
         [summary]
         """
         #log.debug(f"{object}")
-        if object.get('pk'):
-            return self.table.update(object, doc_ids=[object.get('pk')])
-        return self.table.insert(object)
+        if not object.get('pk'):
+            object['pk'] = self.table.insert(object)
+        return self.table.update(object, doc_ids=[object['pk']])
 
     def delete(self, id):
         """
         [summary]
         """ 
-        self.table.remove(Query().doc_id == id)
+        #log.debug(id)
+        result = self.table.remove(doc_ids=[id,])
+        log.debug(result)
+        return result
 
     def search(self, **kwargs):
         """
@@ -36,6 +39,12 @@ class Table:
         """
         q = Query().fragment(kwargs)
         return self.table.search(q)
+
+    def get(self, id):
+        """
+        [summary]
+        """
+        return self.table.get(doc_id=id)
 
     def all(self):
         return self.table.all()

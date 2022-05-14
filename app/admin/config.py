@@ -4,7 +4,7 @@ import os
 
 TESTING = os.environ.get("TESTING", False)
 DEBUG = os.environ.get("DEBUG", False)
-EXPLAIN_TEMPLATE_LOADING= os.environ.get("DEBUG", False)
+#EXPLAIN_TEMPLATE_LOADING= os.environ.get("DEBUG", False)
 
 FLASK_ENV = os.environ.get("ENV", 'production')
 SECRET_KEY = os.environ.get("SECRET_KEY", None)

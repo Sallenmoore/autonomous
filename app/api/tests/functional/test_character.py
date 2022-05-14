@@ -19,9 +19,8 @@ def test_all(test_client):
     data = response.data.decode('utf-8')
     data = json.loads(data)
     assert response.status_code == 200
-    assert data['results']
-    assert data['count']
-    assert not data['error']
+    if data['count'] and not data['error']:
+        assert data['results']
 
 def test_search(test_client, test_search_endpoints):
     """

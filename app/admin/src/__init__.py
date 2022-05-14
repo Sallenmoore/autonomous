@@ -49,15 +49,17 @@ def create_app(test_config=None):
         
         def character_api(endpoint, data):
             headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
-            requests.post(f"http://api:8000/character/{endpoint}", data=data, headers=headers)
-            return redirect(url_for('admin'))
+            app.logger.debug(data)
+            response = requests.post(f"http://api:8000/character/{endpoint}", data=data, headers=headers)
+            return redirect(url_for('index'))
 
         @app.route('/add_character', methods=('GET', 'POST'))
         def add_character():
             return character_api('add', json.dumps(request.form))
 
-        @app.route('/delete_character', methods=('GET', 'POST'))
+        @app.route('/delete_character', methods=('POST',))
         def delete_character():
+            app.logger.debug(request.form)
             return character_api('delete', json.dumps(request.form))
 
         @app.route('/update_character', methods=('GET', 'POST'))
@@ -71,7 +73,7 @@ def create_app(test_config=None):
         def campaign_api(endpoint, data):
             headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
             requests.post(f"http://api:8000/campaign/{endpoint}", data=data, headers=headers)
-            return redirect(url_for('admin'))
+            return redirect(url_for('index'))
 
         @app.route('/add_campaign', methods=('GET', 'POST'))
         def add_campaign():
@@ -95,6 +97,6 @@ def create_app(test_config=None):
             args = json.dumps(request.args)
             
             response = requests.post(f"http://api:8000/campaign/{args['endpoint']}", data=args['search'], headers=headers)
-            return redirect(url_for('admin'))
+            return redirect(url_for('index'))
 
     return app
