@@ -26,6 +26,10 @@ def create_app(test_config=None):
             sass.compile(dirname=('static/style/sass', 'static/style'), output_style='nested')
 
     with app.app_context():
+
+        ################################################################
+        ####                       Base Routes                       ###
+        ################################################################
         
         # Include our Routes
         @app.route('/', methods=('GET', 'POST'))
@@ -34,16 +38,63 @@ def create_app(test_config=None):
             context['characters']= requests.get("http://api:8000/character/all").json().get('results')
             return render_template("index.html", **context)
 
-        @app.route('/add_character', methods=('GET', 'POST'))
-        def add_character():
-            headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
-            requests.post("http://api:8000/character/create", data=json.dumps(request.form), headers=headers)
-            return redirect(url_for('admin'))
-
-            
         @app.route('/test', methods=('GET',))
         def test():
             retcode = pytest.main(["-ral", "tests"])
             return {'results': retcode}
+
+        ################################################################
+        ####                      Character API                      ###
+        ################################################################
+        
+        def character_api(endpoint, data):
+            headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
+            requests.post(f"http://api:8000/character/{endpoint}", data=data, headers=headers)
+            return redirect(url_for('admin'))
+
+        @app.route('/add_character', methods=('GET', 'POST'))
+        def add_character():
+            return character_api('add', json.dumps(request.form))
+
+        @app.route('/delete_character', methods=('GET', 'POST'))
+        def delete_character():
+            return character_api('delete', json.dumps(request.form))
+
+        @app.route('/update_character', methods=('GET', 'POST'))
+        def update_character():
+            return character_api('update', json.dumps(request.form))
+
+        ################################################################
+        ####                      Campaign API                      ###
+        ################################################################
+        
+        def campaign_api(endpoint, data):
+            headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
+            requests.post(f"http://api:8000/campaign/{endpoint}", data=data, headers=headers)
+            return redirect(url_for('admin'))
+
+        @app.route('/add_campaign', methods=('GET', 'POST'))
+        def add_campaign():
+            return character_api('add', json.dumps(request.form))
+
+        @app.route('/delete_campaign', methods=('GET', 'POST'))
+        def delete_campaign():
+            return character_api('delete', json.dumps(request.form))
+
+        @app.route('/update_campaign', methods=('GET', 'POST'))
+        def update_campaign():
+            return character_api('update', json.dumps(request.form))
+
+        ################################################################
+        ###                       Compendium API                     ###
+        ################################################################
+        
+        @app.route('/compendium', methods=('GET',))
+        def compendium():
+            headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
+            args = json.dumps(request.args)
+            
+            response = requests.post(f"http://api:8000/campaign/{args['endpoint']}", data=args['search'], headers=headers)
+            return redirect(url_for('admin'))
 
     return app
