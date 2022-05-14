@@ -5,9 +5,8 @@ from flask import g, current_app
 
 #python modules
 import json
-import uuid
-import logging
 
+import logging
 log = logging.getLogger()
 
 db = Database()
@@ -15,18 +14,29 @@ db = Database()
 class Model():
     
     def __init__(self, **kwargs):
-        self._id = kwargs.get("pk")
+        
+        self.pk = kwargs.get("doc_id", kwargs.get("pk"))
         self.table_name = type(self).__name__
         self.table = db.get_table(self.table_name)
+
+        self.base_attrs = vars(self)
         
         self.model_attr()
         for k, v in kwargs.items():
-            if hasattr(self, k):
+            if hasattr(self, k) and getattr(self, k):
                 #model attributes are set to their type
-                v = getattr(self, k)(v)
+                if k not in self.base_attrs and getattr(self, k) != type(v):
+                    log.warning(f"type mismatch for {k}: expected {getattr(self, k)}, got: {type(v)}")
                 setattr(self, k, v)
             else:
-                print("Not Found")
+                log.info(f"{k} Not Found")
+
+    def __str__(self):
+        text = "{\n"
+        for k,v in vars(self).items():
+            text += f"\t{k} => {v}\n"
+        text += "}"
+        return text
 
     def model_attr(self):
         """
@@ -47,17 +57,20 @@ class Model():
 
     def serialize(self):
         raw_data = vars(self)
-        json_data= {"pk" : self._id}
+        json_data= {}
         for key, value in raw_data.items():
-            if hasattr(value, 'serialize'):
-                json_data[key] = value.serialize()
-            else:
-                try:
-                    json_data[key] = json.dumps(value)
-                except Exception as e:
-                    log.exception(f"ERROR: {e} {key} nonserializable")
-        
-        return json_data
+            if value != None:
+                if hasattr(value, 'serialize'):
+                    json_data[key] = value.serialize()
+                else:
+                    try:
+                        #log.debug(f"{key} : {value}")
+                        json.dumps(value)
+                    except Exception as e:
+                        log.info(f"{e} -- {key} nonserializable")
+                    else:
+                        json_data[key] = value
+        return json_data 
 
     #template_method
     def save(self):
@@ -65,14 +78,16 @@ class Model():
         save() :save object to db
         """
         if self.verify():
-            self._id = self.table.update(self.serialize())
+            obj_serialize = self.serialize()
+            #log.debug(f'{obj_serialize}')
+            self.pk = self.table.update(obj_serialize)
         
 
     def __EQ__(self, other):
-        return self._id == other._id
+        return self.pk == other.pk
 
     def delete(self):
-        self.table.remove(self._id)
+        self.table.remove(self.pk)
 
     ################## class methods ####################
     @classmethod
@@ -82,7 +97,7 @@ class Model():
     @classmethod
     def all(cls):
         objects = cls().table.all()
-        return [cls(pk=pk, **attrs) for pk, attrs in objects.items()]
+        return [cls(**objs) for objs in objects]
     
     @classmethod
     def find(cls, **kwargs):
@@ -92,6 +107,6 @@ class Model():
         return: Always returned a list
         """
         json_objects = cls().table.search(**kwargs)
-        return [cls(o) for o in json_objects]
+        return [cls(**o) for o in json_objects]
 
 

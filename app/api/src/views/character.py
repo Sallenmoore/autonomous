@@ -1,6 +1,6 @@
 # Local Modules
 from src.models.campaign.character import Character
-from src.views import base_search, base_random
+from src.views import base_search, package_response
 
 # External Modules
 from flask import (
@@ -14,7 +14,8 @@ def all():
     """
     _summary_
     """
-    return base_search(Character)
+    result = base_search(Character)
+    return package_response(data=result)
 
 @bp.route('/create', methods=('POST',))
 def create():
@@ -27,7 +28,7 @@ def create():
     if new_character.save():
         return new_character.serialize()
 
-    character = Character.find(name=request.json.get('name'))
+    character = Character.find(name=request.json.get('pk'))
     return character or {'result':"unknown error"}
 
 @bp.route('/<character>', methods=('GET',))

@@ -1,5 +1,7 @@
 from src.models.campaign.character import Character
 
+import logging
+log = logging.getLogger()
 
 class TestCharacter:
 
@@ -50,3 +52,18 @@ class TestCharacter:
 
         results = Character.find(name="test")
         assert len(results)
+
+
+    def test_all(self):
+        """
+        _summary_
+
+        Returns:
+            _type_: _description_
+        """
+
+        results = Character.all()
+        log.info(results)
+        for char in results:
+            assert(char.name)
+            log.info(char)

@@ -53,7 +53,6 @@ class TestAPI:
 
         #test requesting all resources
         url = DnDAPI._build_resource_search_url('monsters', search="fire")
-        debug_print(url=url)
         assert url == "https://api.open5e.com/monsters/?search=fire"
 
         #test requesting search of specific resource records

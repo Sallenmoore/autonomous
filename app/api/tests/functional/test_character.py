@@ -3,7 +3,7 @@ import json
 
 
 
-def test_all(test_client, test_search_endpoints):
+def test_all(test_client):
     """
     _summary_
 
@@ -15,13 +15,13 @@ def test_all(test_client, test_search_endpoints):
     Returns:
         _type_: _description_
     """
-    for endpoints, terms in test_search_endpoints.items():
-        response = test_client.get(f'/{endpoints}/all')
-        data = response.data.decode('utf-8')
-        data = json.loads(data)
-        assert response.status_code == 200
-        assert data['results']
-        assert data['count']
+    response = test_client.get('/character/all')
+    data = response.data.decode('utf-8')
+    data = json.loads(data)
+    assert response.status_code == 200
+    assert data['results']
+    assert data['count']
+    assert not data['error']
 
 def test_search(test_client, test_search_endpoints):
     """

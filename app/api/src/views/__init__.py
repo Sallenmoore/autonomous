@@ -1,5 +1,12 @@
 import random
 
+def package_response(error=None, data=None, count=None):
+    return {
+        "error":error,
+        "results": data,
+        "count": count or len(data)
+    }
+
 
 def base_random(model):
     """

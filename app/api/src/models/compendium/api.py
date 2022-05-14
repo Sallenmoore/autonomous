@@ -77,10 +77,7 @@ class DnDAPI:
         """
         term = search_terms.pop('search', "")
         url = f"{cls.API_URL}{resource}/?search={term}"
-        
-        final_url = f"{url}&{urlencode(search_terms)}" if search_terms else url
-        debug_print(final_url=final_url)
-        return final_url
+        return f"{url}&{urlencode(search_terms)}" if search_terms else url
 
     @classmethod
     def _build_keyword_search_url(cls, resource, **search_terms):

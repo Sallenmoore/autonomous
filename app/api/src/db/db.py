@@ -3,9 +3,9 @@ from tinydb import TinyDB, Query
 from tinydb.table import Document
 import pathlib
 import os
+import logging
 
-#python modules
-import os
+log = logging.getLogger()
 
 class Table:
     
@@ -19,7 +19,10 @@ class Table:
         """
         [summary]
         """
-        return self.table.upsert(Document(object, doc_id=object.get('_id')))
+        #log.debug(f"{object}")
+        if object.get('pk'):
+            return self.table.update(object, doc_ids=[object.get('pk')])
+        return self.table.insert(object)
 
     def delete(self, id):
         """
@@ -34,6 +37,9 @@ class Table:
         q = Query().fragment(kwargs)
         return self.table.search(q)
 
+    def all(self):
+        return self.table.all()
+    
     def __str__(self):
         return self.table.name
 

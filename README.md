@@ -1,34 +1,45 @@
-# Dockerized Flask based Python Webapp
+# DM Buddy
 
-Python based Webapp
+DnD Helper Application
 
 ## Stack Documentation
 
 ### Docker
 
-* docker run -it --name app . /bin/bash
-* docker-compose pull
-* docker-compose up --build -d
-* docker-compose down --remove-orphans
+* build and start the container
+    * docker-compose up --build -d
+* run a command in the container
+    * docker-compose exec -option <service name> <command>
+* stop and remove running containers
+    * docker-compose down --remove-orphans
 
-### Flask
+### Backend Stack
 
-* TBD
+* Python
+* Flask
 
-### TinyDB
+### Frontend Stack
 
-* TBD
+* Materialize
+* JQuery
 
-### Nginx
+### Database
 
+* TinyDB
 
 ## Tests
 
-* coverage run -m pytest arg1 arg2 arg3
+*To run tests:
+    *`docker-compose exec <service name> pytest -rl -x`
+* To run only Character tests on the `api` service:
+    * `docker-compose exec api pytest -rl -x -k Character`
+* To check test coverage:
+    * coverage run -m pytest arg1 arg2 arg3
+
 ## Notes
 
 ---
 
 ***TODO***
 
-* Integrate TESTS
+* Move DB to cloud: Firebase?

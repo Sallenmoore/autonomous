@@ -1,7 +1,7 @@
 # Local Modules
 from src.models.compendium import Compendium
 from src.models.compendium.charclass import CharClass
-from src.views import base_search, base_random
+from src.views import base_search, base_random, package_response
 from flask import (
     Blueprint, request, current_app
 )

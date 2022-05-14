@@ -6,12 +6,12 @@ from flask import Flask, render_template, request, redirect, url_for
 import sass
 import requests
 import json
+import logging
 
+logging.basicConfig(level=logging.DEBUG, format="==%(levelname)s== [%(filename)s - %(funcName)s:%(lineno)d] --\n %(message)s")
 
 def create_app(test_config=None):
     app = Flask(__name__)
-    FORMAT = '%(asctime)s %(clientip)-15s %(user)-8s %(message)s'
-    app.logger.setLevel("DEBUG")
     app.config.from_pyfile('../config.py')
     app.secret_key = os.environ.get("SECRET_KEY")
     # ensure the instance folder exists

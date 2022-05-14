@@ -22,8 +22,7 @@ def create_app(test_config=None):
         from src.models.compendium.spell import Spell
         from src.models.campaign.monster import Monster
         from src.views import (compendium, monster, item, 
-                spell, dice, base_search, base_random,
-                character,
+                spell, dice, character,
             )
         
         app.register_blueprint(character.bp)

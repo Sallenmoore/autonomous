@@ -16,3 +16,9 @@ class Character(Model):
 
     def verify(self) -> bool:
         return True
+
+    @classmethod
+    def search(cls, **kwargs):
+        objs = cls.find(**kwargs)
+        return [o.serialize() for o in objs]
+
