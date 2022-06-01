@@ -4,26 +4,31 @@ import pytest
 import logging
 from flask import Flask
 
-logging.basicConfig(level=logging.DEBUG, format="==%(levelname)s== [%(filename)s - %(funcName)s:%(lineno)d] --\n %(message)s")
+logging.basicConfig(level=logging.INFO, format="==%(levelname)s== [%(filename)s - %(funcName)s:%(lineno)d] --\n %(message)s")
+log = logging.getLogger()
 
 def create_app(test_config=None):
     app = Flask(__name__, instance_relative_config=True)
-    app.secret_key = os.environ.get("FLASK_SECRET_KEY")
-    app.config.from_object('config.Config')
-    # ensure the instance folder exists
+    
+    #set to 'config.Config' to use ENV_VARS
+    #set to 'config.DevConfig' to use development settings
+    #set to 'config.ProdConfig' to use production settings
+    app.config.from_object('config.Config') 
+
+    # ensure the instance folder exists ???is this necessary? -- look up what the instance folder does
     try:
         os.makedirs(app.instance_path)
     except OSError:
         pass
 
     with app.app_context():
-        # Include our Routes
+        # Include our Models
         from src.models.compendium.item import Item
         from src.models.compendium.spell import Spell
         from src.models.campaign.monster import Monster
-        from src.views import (compendium, monster, item, 
-                spell, dice, character,
-            )
+        
+        # Include our Routes
+        from src.views import (compendium, monster, item, spell, dice, character,)
         
         app.register_blueprint(character.bp)
         app.register_blueprint(compendium.bp)
@@ -32,36 +37,12 @@ def create_app(test_config=None):
         app.register_blueprint(spell.bp)
         app.register_blueprint(dice.bp)
 
+        #TODO figure out how to generate documentation
         @app.route('/', methods=('GET', 'POST'))
         def index():
-            return {'Docs': {
-                    "items": {
-                            "random":{ "sample": base_random(Item)},
-                            "search":{ "sample search: text=metal": base_search(Item, text="metal").get('results').pop()},
-                            "all":{ 
-                                "description":"Only the first result is shown",
-                                "sample": base_search(Item).get('results').pop()
-                                },
-                        },
-                    "spells": {
-                            "random":{ "sample": base_random(Spell)},
-                            "search":{ "sample search: text=ice": base_search(Spell, text="ice").get('results').pop()},
-                            "all":{ 
-                                "description":"Only the first result is shown",
-                                "sample": base_search(Spell).get('results').pop()
-                                },
-                        },
-                    "monster": {
-                            "random":{ "sample": base_random(Monster)},
-                            "search":{ "sample search: text=fire": base_search(Monster, text="fire").get('results').pop()},
-                            "all":{ 
-                                "description":"Only the first result is shown",
-                                "sample": base_search(Monster).get('results').pop()
-                                },
-                        },
-                }
-            }
+            return {'Docs': "???"}
 
+        #run the tests
         @app.route('/test', methods=('GET',))
         def test():
             retcode = pytest.main(["-rxl --no-header -vv", "tests"])

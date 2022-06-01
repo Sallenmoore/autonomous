@@ -1,6 +1,6 @@
 import random
 
-def package_response(error=None, data=None, count=0):
+def package_response(error="", data=None, count=0):
     return {
         "error":error,
         "results": data,

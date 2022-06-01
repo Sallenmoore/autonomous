@@ -8,27 +8,11 @@
             <h1>Players</h1>
             <div class="row">
                 <div class="col s12">
+                    {{num_characters}}
                     <ul class="collapsible">
                     {% for character in characters %}
                         <li>
-                            <div class="collapsible-header"><i class="material-icons">perm_identity</i>{{character.name}}</div>
-                            <div class="collapsible-body">
-                                <div class="row character-info-footer">
-                                    <div class="col s3">
-                                        <form   method="post" 
-                                                action="{{url_for('delete_character')}}"
-                                                onsubmit="return confirm('Are you sure you want to delete the character?');"
-                                        >
-                                            <input type="hidden" value="{{character['pk']}}" name="pk">
-                                            <button type="submit">
-                                                <span class="material-icons">
-                                                    person_remove
-                                                </span>
-                                            </button>
-                                        </form>
-                                    </div>
-                                <div>
-                            </div>
+                            {{ macros.character_node(character, classes) }}
                         </li>
                     {% endfor %}
                     </ul>
@@ -43,7 +27,7 @@
             </div>
             <div class="row" style="display:none" id="create_character">
                 <div class="col s12">
-                    <form method="post" action="{{url_for('add_character')}}">
+                    <form method="post" action="{{url_for('create_character')}}">
                         <div class="row">
                             <div class="col s6">
                                 <select>
@@ -56,7 +40,7 @@
                         </div>
                         <div class="row">
                             <div class="input-field col s9">
-                                <input placeholder="Full Name" name="ame" id="full_name" type="text">
+                                <input placeholder="Full Name" name="name" id="full_name" type="text">
                                 <label for="full_name">Full Name</label>
                             </div>
                         </div>
@@ -85,8 +69,8 @@
                     </div>
                 </form>
             </div>
-            <h2>Status</h2>
             <div class="row">
+                <h2>Status</h2>
                 <form class="col s12">
                     <div class="row">
                         <div class="input-field col s12">
@@ -96,7 +80,6 @@
                     </div>
                 </form>
             </div>
-            
             <div class="row">
                 <form class="col s12">
                     {#

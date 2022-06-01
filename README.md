@@ -44,7 +44,19 @@ DnD Helper Application
 
 ---
 
-***TODO***
+### BUGS
+
+* saving objects to DB
+    * not saving all attributes
+
+### TODOs
+
+1. interfaces
+    * admin
+    * player
+    * table
+
+### IMPROVEMENTS
 
 * Move DB to cloud
     * Firebase?

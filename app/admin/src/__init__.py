@@ -8,7 +8,7 @@ import requests
 import json
 import logging
 
-logging.basicConfig(level=logging.DEBUG, format="==%(levelname)s== [%(filename)s - %(funcName)s:%(lineno)d] --\n %(message)s")
+logging.basicConfig(level=logging.INFO, format="==%(levelname)s== [%(filename)s - %(funcName)s:%(lineno)d] --\n %(message)s")
 
 def create_app(test_config=None):
     app = Flask(__name__)
@@ -36,6 +36,8 @@ def create_app(test_config=None):
         def index():
             context = {'classes': requests.get("http://api:8000/compendium/classes_list").json().get('results')}
             context['characters']= requests.get("http://api:8000/character/all").json().get('results')
+            context['num_characters']= len(context['characters'])
+            app.logger.debug(f"{context['characters']}")
             return render_template("index.html", **context)
 
         @app.route('/test', methods=('GET',))
@@ -49,13 +51,14 @@ def create_app(test_config=None):
         
         def character_api(endpoint, data):
             headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
-            app.logger.debug(data)
+            app.logger.debug(f"{data} ===> {endpoint}")
             response = requests.post(f"http://api:8000/character/{endpoint}", data=data, headers=headers)
+            app.logger.debug(f"{response}")
             return redirect(url_for('index'))
 
-        @app.route('/add_character', methods=('GET', 'POST'))
-        def add_character():
-            return character_api('add', json.dumps(request.form))
+        @app.route('/create_character', methods=('GET', 'POST'))
+        def create_character():
+            return character_api('create', json.dumps(request.form))
 
         @app.route('/delete_character', methods=('POST',))
         def delete_character():
@@ -96,7 +99,7 @@ def create_app(test_config=None):
             headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
             args = json.dumps(request.args)
             
-            response = requests.post(f"http://api:8000/campaign/{args['endpoint']}", data=args['search'], headers=headers)
+            response = requests.post(f"http://api:8000/campaign/{args['endpoint']}", data=args['search'],headers=headers)
             return redirect(url_for('index'))
 
     return app
