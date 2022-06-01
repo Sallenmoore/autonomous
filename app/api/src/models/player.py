@@ -1,4 +1,4 @@
-from src.shared import Model
+from src.sharedlib.db import Model
 
 
 # class Player(Model):

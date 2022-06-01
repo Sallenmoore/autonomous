@@ -1,5 +1,5 @@
 from src.models import Compendium
-from src.db.model import Model
+from src.sharedlib.db import Model
 
 class Spell(Model, Compendium):
     resource = ["spells", "magicitems"]

@@ -1,5 +1,5 @@
 #local modules
-from src.db.db import Database
+from .db import Database
 #external modules
 from flask import g, current_app
 
