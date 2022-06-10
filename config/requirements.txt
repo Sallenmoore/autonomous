@@ -1,11 +1,16 @@
-###### Requirements without Version Specifiers ######
+###### Common Requirements w/o Version Specifiers ######
 requests
 gunicorn
 pytest
 coverage
 tinydb
-d20
+pdoc3
 libsass
 
-###### Requirements with Version Specifiers ######
+###### Common Requirements w/ Version Specifiers ######
 Flask>=2.0
+
+###### App Specific Requirements w/ Version Specifiers ######
+d20
+
+###### App Specific Requirements w/o Version Specifiers ######
