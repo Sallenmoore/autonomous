@@ -9,11 +9,11 @@ log = logging.getLogger()
 
 class Table:
     
-    def __init__(self, table):
+    def __init__(self, table, storage=None):
         """
         [summary]
         """
-        self.table = TinyDB(table)
+        self.table = TinyDB(table, storage) if storage else TinyDB(table)
 
     def update(self, object):
         """

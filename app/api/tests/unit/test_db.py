@@ -1,9 +1,15 @@
-import urllib
-import json
+from src.models.campaign.character import Character
+from src.sharedlib.db import Model, db
 
+import logging
+log = logging.getLogger()
 
+@pytest.fixture
+def session(): # 1
+    self.table = Table("Test.json", storage=MemoryStorage)
+    yield db_session
 
-def test_all(test_client):
+def test_create():
     """
     _summary_
 
@@ -22,7 +28,7 @@ def test_all(test_client):
     if data['count'] and not data['error']:
         assert data['results']
 
-def test_search(test_client, test_search_endpoints):
+def test_delete():
     """
     _summary_
 
@@ -42,7 +48,7 @@ def test_search(test_client, test_search_endpoints):
         
         assert response.status_code == 200
 
-def test_random(test_client, test_random_endpoints):
+def test_read():
     """
     _summary_
 
@@ -63,3 +69,25 @@ def test_random(test_client, test_random_endpoints):
         assert response.status_code == 200
         assert result['count'] == 1
         assert len(result['results']) == 1
+
+    def test_update():
+        """
+        _summary_
+
+        Args:
+            test_client (_type_): _description_
+            test_search_terms (_type_): _description_
+            endpoint (str, optional): _description_. Defaults to "search".
+
+        Returns:
+            _type_: _description_
+        """
+        for endpoint in test_random_endpoints:
+            url = f'/{endpoint}/random'
+            response = test_client.get(url)
+            data = response.data.decode('utf-8')
+            result = json.loads(data)
+            
+            assert response.status_code == 200
+            assert result['count'] == 1
+            assert len(result['results']) == 1

@@ -49,8 +49,6 @@ services:
       - "80:80"
     depends_on:
       - admin
-    #DEBUG CONTAINER
-    #command: [nginx-debug, '-g', 'daemon off;']
 
 networks:
   app_net:

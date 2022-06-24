@@ -5,33 +5,34 @@ from flask import g, current_app
 
 #python modules
 import json
-import copy
+
 import logging
-import inspect
 log = logging.getLogger()
 
 db = Database()
 
-class Model():
+class BaseModel():
     
     def __init__(self, **kwargs):
-        """
-        _summary_
+        self.pk = None
 
-        _extended_summary_
-        """
-
-        #data that will not be serialized
-        self.table_name = type(self).__name__
-        self.table = db.get_table(self.table_name)
-        
-        self.__base_attrs = list(vars(self).keys())
-
-        #data that will be serialized
-        self.pk = int
+        self.base_attrs = vars(self)
         self.model_attr()
-        self.update(**kwargs)
+        self.update()
 
+    def update(self, **kwargs):
+        log.debug(f"kwargs: {kwargs}")
+        for k, v in kwargs.items():
+            if hasattr(self, k):
+                #log.info(f"k, v: {k}, {v}")
+                #model attributes are set to their type
+                if k not in self.__base_attrs and getattr(self, k) != type(v):
+                    log.warning(f"type mismatch for {k}: expected {getattr(self, k)}, got: {type(v)}")
+                setattr(self, k, v)
+            else:
+                log.info(f"{k} Not Found")
+        return self.verify()
+    
     def __str__(self):
         text = "{\n"
         for k,v in vars(self).items():
@@ -51,24 +52,23 @@ class Model():
         return isinstance(self.pk, int)
 
     def serialize(self):
+        """
+        
+        """
         raw_data = vars(self)
-        #log.debug(f"raw data : {raw_data}")
         json_data= {}
         for key, value in raw_data.items():
-            if key != "base_attrs" and key not in self.__base_attrs:
-                #log.info(f"serializing : {key}, {value}")
-                if hasattr(value, 'serialize'):
-                    json_data[key] = value.serialize()
-                elif callable(value):
-                    json_data[key] = value()
+            if value and hasattr(value, 'serialize') and callable(value.serialize):
+                json_data[key] = value.serialize()
+            else:
+                try:
+                    #log.debug(f"{key} : {value}")
+                    json.dumps(value)
+                except Exception as e:
+                    log.info(f"{e} -- {key} nonserializable")
                 else:
-                    try:
-                        #log.info(f"{key} : {value}")
-                        json_data[key]= json.dumps(value)
-                    except Exception as e:
-                        json_data[key] = f"{value} not serializable"
-        #log.debug(f"json_data : {json_data}")
-        return json_data 
+                    json_data[key] = value
+        return json_data
 
     #template_method
     def save(self):
@@ -79,28 +79,26 @@ class Model():
             obj_serialize = self.serialize()
             #log.debug(f'{obj_serialize}')
             self.pk = self.table.update(obj_serialize)
-        
+
+    @classmethod
+    def deserialize(cls, **kwargs):
+        return cls(**kwargs)
 
     def __EQ__(self, other):
         return self.pk == other.pk
 
+class Model(BaseModel):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.table_name = type(self).__name__
+        self.table = db.get_table(self.table_name)
+
     def delete(self):
         self.table.delete(self.pk)
 
-    def update(self, **kwargs):
-        log.debug(f"kwargs: {kwargs}")
-        for k, v in kwargs.items():
-            if hasattr(self, k):
-                #log.info(f"k, v: {k}, {v}")
-                #model attributes are set to their type
-                if k not in self.__base_attrs and getattr(self, k) != type(v):
-                    log.warning(f"type mismatch for {k}: expected {getattr(self, k)}, got: {type(v)}")
-                setattr(self, k, v)
-            else:
-                log.info(f"{k} Not Found")
-        return self.verify()
-                
     ################## class methods ####################
+                
     @classmethod
     def all(cls):
         objects = cls().table.all()
