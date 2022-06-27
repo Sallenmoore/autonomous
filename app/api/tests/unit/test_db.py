@@ -5,11 +5,17 @@ import logging
 log = logging.getLogger()
 
 @pytest.fixture
-def session(): # 1
-    self.table = Table("Test.json", storage=MemoryStorage)
-    yield db_session
+def session(): 
+    table = Table("Test.json", storage=MemoryStorage)
+    yield table
 
-def test_create():
+@pytest.fixture
+def data_session():
+    table = Table("Test.json", storage=MemoryStorage)
+    # TODO: add data to table
+    yield table
+
+def test_create(session):
     """
     _summary_
 
