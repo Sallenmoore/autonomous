@@ -1,21 +1,21 @@
 from src.models.campaign.character import Character
-from src.sharedlib.db import Model, db
-
+from src.sharedlib.db import Table, Database
+import pytest
+from tinydb.storages import MemoryStorage
 import logging
 log = logging.getLogger()
 
 @pytest.fixture
 def session(): 
-    table = Table("Test.json", storage=MemoryStorage)
-    yield table
+    db = Database(storage=MemoryStorage)
+    yield db
 
 @pytest.fixture
-def data_session():
-    table = Table("Test.json", storage=MemoryStorage)
-    # TODO: add data to table
-    yield table
-
-def test_create(session):
+def test_obj(): 
+    obj = {'name': 'Test', 'hp': 10, 'status': 'alive'}
+    yield obj
+    
+def test_database(session):
     """
     _summary_
 
@@ -27,14 +27,12 @@ def test_create(session):
     Returns:
         _type_: _description_
     """
-    response = test_client.get('/character/all')
-    data = response.data.decode('utf-8')
-    data = json.loads(data)
-    assert response.status_code == 200
-    if data['count'] and not data['error']:
-        assert data['results']
+    table = session.get_table("Test")
+    assert table.name == "Test"
+    assert table.all() == []
+    
 
-def test_delete():
+def test_table(session, test_obj):
     """
     _summary_
 
@@ -46,54 +44,36 @@ def test_delete():
     Returns:
         _type_: _description_
     """
-    for endpoints, terms in test_search_endpoints.items():
-        url = urllib.parse.urlencode(terms) if terms else ''
-        url = f'/{endpoints}/search{url}'
-        response = test_client.get(url)
-        data = response.data.decode('utf-8')
-        
-        assert response.status_code == 200
+    table = session.get_table("Test")
+    assert str(table) == "Test"
+    
+    result = table.update(test_obj)
+    log.debug(result)
+    
+    result = table.search(name=test_obj['name'], hp=test_obj['hp'])
+    result = result.pop() #check first item in list
+    assert result['name'] == test_obj['name']
+    assert result['hp'] == test_obj['hp']
+    assert result['status'] == test_obj['status']
+    assert result['pk'] == test_obj['pk']
 
-def test_read():
-    """
-    _summary_
+    result['hp'] = 20
+    table.update(result) 
+    result = table.get(result['pk'])
+    assert result['name'] == test_obj['name']
+    assert result['hp'] == result['hp']
 
-    Args:
-        test_client (_type_): _description_
-        test_search_terms (_type_): _description_
-        endpoint (str, optional): _description_. Defaults to "search".
+    result['name'] = "Test2"
+    del result['pk']
+    log.debug(f"{type(result)}{result}")
+    table.update(result)
 
-    Returns:
-        _type_: _description_
-    """
-    for endpoint in test_random_endpoints:
-        url = f'/{endpoint}/random'
-        response = test_client.get(url)
-        data = response.data.decode('utf-8')
-        result = json.loads(data)
-        
-        assert response.status_code == 200
-        assert result['count'] == 1
-        assert len(result['results']) == 1
+    results = table.all()
+    assert len(results) == 2
+    assert results[0]['name'] == "Test2" or results[1]['name'] == "Test2"
 
-    def test_update():
-        """
-        _summary_
+    for result in results:
+        table.delete(result['pk'])
 
-        Args:
-            test_client (_type_): _description_
-            test_search_terms (_type_): _description_
-            endpoint (str, optional): _description_. Defaults to "search".
-
-        Returns:
-            _type_: _description_
-        """
-        for endpoint in test_random_endpoints:
-            url = f'/{endpoint}/random'
-            response = test_client.get(url)
-            data = response.data.decode('utf-8')
-            result = json.loads(data)
-            
-            assert response.status_code == 200
-            assert result['count'] == 1
-            assert len(result['results']) == 1
+    results = table.all()
+    assert len(results) == 0

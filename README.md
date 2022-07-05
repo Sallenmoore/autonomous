@@ -2,9 +2,7 @@
 
 DnD Helper Application
 
-
-
-### Container Apps
+## Container Apps
 
 Buddy has 4 inital container components:
 
@@ -30,21 +28,21 @@ Buddy has 4 inital container components:
 #### Quick Commands
 
 * build and start the container
-    * `docker-compose up --build -d`
+  * `docker-compose up --build -d`
 * container status
-    * `docker-compose ps -a`
+  * `docker-compose ps -a`
 * run a command in the container
-    * `docker-compose exec -option <service name> <command>`
+  * `docker-compose exec -option <service name> <command>`
 * stop and remove running containers
-    * `docker-compose down --remove-orphans`
+  * `docker-compose down --remove-orphans`
 * stop all running containers
-    * `docker kill $(docker ps -q)`
+  * `docker kill $(docker ps -q)`
 * remove all stopped containers
-    * `docker rm $(docker ps -a -q)`
+  * `docker rm $(docker ps -a -q)`
 * read logs
-    * `docker logs --since=15m -t <container>`
-    * `docker logs -f --since=15m -t <container> &`
-        * follows as a background process
+  * `docker logs --since=15m -t <container>`
+  * `docker logs -f --since=15m -t <container> &`
+    * follows as a background process
 
 ### Server
 
@@ -77,16 +75,16 @@ Buddy has 4 inital container components:
 ### Run Tests
 
 * To run tests:
-    * `docker-compose exec <service name> pytest -rl -x`
+  * `docker-compose exec <service name> pytest -rl -x`
 * To run only Character tests on the `api` service:
-    * `docker-compose exec api pytest -rl -x -k Character`
+  * `docker-compose exec api pytest -rl -x -k Character`
 * To check test coverage:
-    * `coverage run -m pytest ...`
+  * `coverage run -m pytest ...`
 
 ### BUGS
 
 * saving objects to DB
-    * not saving all attributes
+  * not saving all attributes
 
 ### TODOs
 
@@ -98,7 +96,7 @@ Buddy has 4 inital container components:
 ### IMPROVEMENTS
 
 * Move DB to cloud
-    * Firebase?
+  * Firebase?
 
 ---
 

@@ -4,7 +4,7 @@ import pytest
 import logging
 from flask import Flask
 
-logging.basicConfig(level=logging.INFO, format="==%(levelname)s== [%(filename)s - %(funcName)s:%(lineno)d] --\n %(message)s")
+logging.basicConfig(level=logging.DEBUG, format="==%(levelname)s== [%(filename)s - %(funcName)s:%(lineno)d] --\n %(message)s")
 log = logging.getLogger()
 
 def create_app(test_config=None):

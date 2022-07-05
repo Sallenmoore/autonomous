@@ -16,12 +16,12 @@ class BaseModel():
     def __init__(self, **kwargs):
         self.pk = None
 
-        self.base_attrs = vars(self)
+        self.__base_attrs = vars(self)
         self.model_attr()
-        self.update()
+        self.update(**kwargs)
 
     def update(self, **kwargs):
-        log.debug(f"kwargs: {kwargs}")
+        #log.debug(f"kwargs: {kwargs}")
         for k, v in kwargs.items():
             if hasattr(self, k):
                 #log.info(f"k, v: {k}, {v}")
@@ -77,8 +77,11 @@ class BaseModel():
         """
         if self.verify():
             obj_serialize = self.serialize()
-            #log.debug(f'{obj_serialize}')
+            log.debug(f'{obj_serialize}')
             self.pk = self.table.update(obj_serialize)
+            log.debug(f'{obj_serialize}')
+            return self.pk
+        return None
 
     @classmethod
     def deserialize(cls, **kwargs):
@@ -121,7 +124,7 @@ class Model(BaseModel):
         params: pk
         return: Always returns single objectr
         """
-        pk = int(pk or doc_id)
+        pk = pk or doc_id
         json_object = cls().table.get(pk)
         #log.debug(f'{kwargs}, {json_object}')
         return cls(**json_object) if json_object else None
