@@ -25,24 +25,6 @@ Buddy has 4 inital container components:
 * [Docker](https://docs.docker.com/)
 * [Docker Compose](https://github.com/compose-spec/compose-spec/blob/master/spec.md)
 
-#### Quick Commands
-
-* build and start the container
-  * `docker-compose up --build -d`
-* container status
-  * `docker-compose ps -a`
-* run a command in the container
-  * `docker-compose exec -option <service name> <command>`
-* stop and remove running containers
-  * `docker-compose down --remove-orphans`
-* stop all running containers
-  * `docker kill $(docker ps -q)`
-* remove all stopped containers
-  * `docker rm $(docker ps -a -q)`
-* read logs
-  * `docker logs --since=15m -t <container>`
-  * `docker logs -f --since=15m -t <container> &`
-    * follows as a background process
 
 ### Server
 
@@ -72,6 +54,22 @@ Buddy has 4 inital container components:
 
 ## Developer Notes
 
+### Start/Status/Stop Commands
+
+* build and start the container
+  * `docker-compose up --build -d`
+* container status
+  * `docker-compose ps -a`
+* run a command in the container
+  * `docker-compose exec -option <service name> <command>`
+* stop and remove running containers
+  * `docker-compose down --remove-orphans`
+* stop all running containers
+  * `docker kill $(docker ps -q)`
+* remove all stopped containers
+  * `docker rm $(docker ps -a -q)`
+
+
 ### Run Tests
 
 * To run tests:
@@ -80,6 +78,10 @@ Buddy has 4 inital container components:
   * `docker-compose exec api pytest -rl -x -k Character`
 * To check test coverage:
   * `coverage run -m pytest ...`
+* read logs
+  * `docker logs --since=15m -t <container>`
+  * `docker logs -f --since=15m -t <container> &`
+    * follows as a background process
 
 ### BUGS
 

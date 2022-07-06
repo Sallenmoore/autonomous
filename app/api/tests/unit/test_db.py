@@ -1,13 +1,11 @@
-from src.models.campaign.character import Character
 from src.sharedlib.db import Table, Database
 import pytest
-from tinydb.storages import MemoryStorage
 import logging
 log = logging.getLogger()
 
 @pytest.fixture
 def session(): 
-    db = Database(storage=MemoryStorage)
+    db = Database()
     yield db
 
 @pytest.fixture
@@ -48,7 +46,7 @@ def test_table(session, test_obj):
     assert str(table) == "Test"
     
     result = table.update(test_obj)
-    log.debug(result)
+    log.debug("result")
     
     result = table.search(name=test_obj['name'], hp=test_obj['hp'])
     result = result.pop() #check first item in list

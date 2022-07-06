@@ -10,11 +10,11 @@ log = logging.getLogger()
 
 class Table:
     
-    def __init__(self, name, path=None, storage=None):
+    def __init__(self, name, path=None):
         """
         [summary]
         """
-        db = TinyDB(f"{path}/db.json")
+        db = TinyDB(f"{path}/{name}.json")
         self._table = db.table(name=name)
 
     @property
@@ -39,7 +39,7 @@ class Table:
         """ 
         #log.debug(id)
         result = self._table.remove(doc_ids=[id,])
-        log.debug(result)
+        #log.debug(result)
         return result
 
     def search(self, **kwargs):
@@ -65,21 +65,21 @@ class Table:
 
 class Database:
 
-    def __init__(self, storage=None):
+    def __init__(self):
         """
         [create an interface for your database]
         """
         self.db_path = f'{pathlib.Path().resolve()}/{os.environ.get("DB_NAME", "tables")}'
         os.path.isdir(self.db_path) or os.makedirs(self.db_path)
         self.tables = {}
-        self.storage = storage
-            
-    def get_table(self, table="configuration"):
+
+    def get_table(self, table="default"):
         """
             opens the table from the file, which clears any changed data
         """
+        #log.debug(f'====== DEBUG ======  {self.db_path}/{table}')
         if not self.tables.get(table):
-            self.tables[table] = Table(table, path=self.db_path, storage=self.storage)
+            self.tables[table] = Table(table, path=self.db_path)
         return self.tables[table]
 
 

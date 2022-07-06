@@ -34,10 +34,19 @@ def create_app(test_config=None):
         # Include our Routes
         @app.route('/', methods=('GET', 'POST'))
         def index():
-            context = {'classes': requests.get("http://api:8000/compendium/classes_list").json().get('results')}
-            context['characters']= requests.get("http://api:8000/character/all").json().get('results')
-            context['num_characters']= len(context['characters'])
-            app.logger.debug(f"{context['characters']}")
+            classes = requests.get("http://api:8000/compendium/classes_list")
+            app.logger.debug(f"{classes}")
+            results = classes.json()
+            app.logger.debug(f"{results}")
+            results = results.get('results')
+            app.logger.debug(f"{results}")
+            context = {'classes': results }
+
+            context['characters']= requests.get("http://api:8000/character/all")
+            results = characters.json()
+            results = results.get('results')
+            # context['num_characters']= len(context['characters'])
+            # app.logger.debug(f"{context['characters']}")
             return render_template("index.html", **context)
 
         @app.route('/test', methods=('GET',))

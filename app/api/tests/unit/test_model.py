@@ -1,7 +1,5 @@
 from src.models.campaign.character import Character
-from src.sharedlib.db import db
 import pytest
-from tinydb.storages import MemoryStorage
 import logging
 log = logging.getLogger()
 
@@ -38,8 +36,10 @@ def test_create_character_model(test_obj):
     assert test_obj.status == "None"
     assert test_obj.inventory == ["Test Item #1", "Test Item #2"]
     assert test_obj.pk == None
-    
+    log.debug("Here")
     pk = test_obj.save()
+    test_obj.pk = None
+    test_obj.save()
     result = Character.get(pk)
     assert isinstance(result, Character)
     assert result.name == test_obj.name
@@ -50,7 +50,7 @@ def test_create_character_model(test_obj):
     assert result.status == test_obj.status
     assert result.inventory == test_obj.inventory
 
-def test_read(test_obj):
+def test_read_character_model(test_obj):
     """
     _summary_
 
@@ -70,7 +70,7 @@ def test_read(test_obj):
     assert all(f.name == "Test Character" for f in found)
     assert got.name == test_obj.name
 
-def test_update(test_obj):
+def test_update_character_model(test_obj):
     """
     _summary_
 

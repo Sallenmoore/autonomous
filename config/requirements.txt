@@ -2,7 +2,6 @@
 requests
 gunicorn
 pytest
-pytest-mock
 coverage
 tinydb
 pdoc3

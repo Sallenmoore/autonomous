@@ -15,7 +15,6 @@ class BaseModel():
     
     def __init__(self, **kwargs):
         self.pk = None
-
         self.__base_attrs = vars(self)
         self.model_attr()
         self.update(**kwargs)
@@ -30,7 +29,7 @@ class BaseModel():
                     log.warning(f"type mismatch for {k}: expected {getattr(self, k)}, got: {type(v)}")
                 setattr(self, k, v)
             else:
-                log.info(f"{k} Not Found")
+                log.debug(f"{k} Not Found")
         return self.verify()
     
     def __str__(self):
@@ -77,9 +76,9 @@ class BaseModel():
         """
         if self.verify():
             obj_serialize = self.serialize()
-            log.debug(f'{obj_serialize}')
+            #log.debug(f'{obj_serialize}')
             self.pk = self.table.update(obj_serialize)
-            log.debug(f'{obj_serialize}')
+            #log.debug(f'{obj_serialize}')
             return self.pk
         return None
 

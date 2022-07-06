@@ -20,12 +20,12 @@ services:
     ports:
      - "8000:8000" #this port is open for testing purposes only
   admin:
-    image: dmbuddy:latest
+    image: dmbuddy_admin:latest
     build: 
       context: ./config
-      dockerfile: app.Dockerfile
+      dockerfile: admin.Dockerfile
     working_dir: /var/app
-    env_file: ./config/app.env
+    env_file: ./config/admin.env
     container_name: admin
     ports:
       - "3000:3000" #this port is open for testing purposes only

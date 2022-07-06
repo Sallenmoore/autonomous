@@ -1,6 +1,6 @@
 import os
 # Non logging stuff
-bind = f"0.0.0.0:{os.environ.get('PORT', 80)}"
+bind = f"{os.environ.get('HOST', '0.0.0.0')}:{os.environ.get('PORT', 80)}"
 workers = 3
 # Access log - records incoming HTTP requests
 accesslog = "-"
