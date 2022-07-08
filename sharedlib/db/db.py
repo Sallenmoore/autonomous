@@ -54,6 +54,7 @@ class Table:
         """
         [summary]
         """
+        log.debug(f"get {id}")
         return self._table.get(doc_id=id)
 
     def all(self):

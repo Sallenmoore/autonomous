@@ -25,7 +25,6 @@ Buddy has 4 inital container components:
 * [Docker](https://docs.docker.com/)
 * [Docker Compose](https://github.com/compose-spec/compose-spec/blob/master/spec.md)
 
-
 ### Server
 
 * [nginx](https://docs.nginx.com/nginx/)
@@ -69,19 +68,20 @@ Buddy has 4 inital container components:
 * remove all stopped containers
   * `docker rm $(docker ps -a -q)`
 
-
 ### Run Tests
 
 * To run tests:
-  * `docker-compose exec <service name> pytest -rl -x`
-* To run only Character tests on the `api` service:
-  * `docker-compose exec api pytest -rl -x -k Character`
+  * `docker-compose exec <service name> pytest --log-level=DEBUG -rl -x`
+* To run only < name > tests on the `api` service:
+  * `docker-compose exec api pytest --log-level=DEBUG -rl -v -x -k <name>`
 * To check test coverage:
   * `coverage run -m pytest ...`
-* read logs
-  * `docker logs --since=15m -t <container>`
-  * `docker logs -f --since=15m -t <container> &`
-    * follows as a background process
+
+### Read Logs
+
+* `docker logs --since=15m -t <container>`
+* `docker logs -f --since=15m -t <container> &`
+  * follows as a background process
 
 ### BUGS
 

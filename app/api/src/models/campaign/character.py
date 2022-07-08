@@ -17,17 +17,6 @@ class Character(Model):
         self.status = str
         self.inventory = list
 
-    def verify(self) -> bool:
-        """
-        _summary_
-
-        _extended_summary_
-
-        Returns:
-            bool: _description_
-        """
-        return True
-
     @classmethod
     def search(cls, **kwargs):
         """
@@ -40,7 +29,7 @@ class Character(Model):
         """
         
         objs = cls.find(**kwargs) if kwargs else cls.all()
-        for o in objs:
-            log.debug(str(o))
+        # for o in objs:
+        #     log.debug(str(o))
         return [o.serialize() for o in objs]
 

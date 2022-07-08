@@ -5,7 +5,7 @@ from flask import g, current_app
 
 #python modules
 import json
-
+import copy
 import logging
 log = logging.getLogger()
 
@@ -13,25 +13,12 @@ db = Database()
 
 class BaseModel():
     
-    def __init__(self, **kwargs):
-        self.pk = None
-        self.__base_attrs = vars(self)
+    def __init__(self):
+        self.__base_attrs = []
+        self.__base_attrs = list(vars(self).keys())
+        self.pk = int
         self.model_attr()
-        self.update(**kwargs)
 
-    def update(self, **kwargs):
-        #log.debug(f"kwargs: {kwargs}")
-        for k, v in kwargs.items():
-            if hasattr(self, k):
-                #log.info(f"k, v: {k}, {v}")
-                #model attributes are set to their type
-                if k not in self.__base_attrs and getattr(self, k) != type(v):
-                    log.warning(f"type mismatch for {k}: expected {getattr(self, k)}, got: {type(v)}")
-                setattr(self, k, v)
-            else:
-                log.debug(f"{k} Not Found")
-        return self.verify()
-    
     def __str__(self):
         text = "{\n"
         for k,v in vars(self).items():
@@ -39,7 +26,32 @@ class BaseModel():
         text += "}"
         return text
 
-    def model_attr(self):
+    @property
+    def _attributes(self):
+        #log.debug(f'attributes: {vars(self)}')
+        result = {}
+        for k,v in vars(self).items():
+            #log.debug(f'k: {k} base attr: {self.__base_attrs}')
+            if k not in self.__base_attrs:
+                result[k] = v
+        #log.debug(f'base: {self.__base_attrs}')
+        #log.debug(f'attributes: {result}')
+        return result
+
+    def update(self, **kwargs):
+
+        self.validate(**kwargs)
+        
+        #log.debug(f"kwargs: {kwargs}")
+        for k, v in kwargs.items():
+            if hasattr(self, k):
+                #log.info(f"k, v: {k}, {v}")
+                #model attributes are set to their type
+                setattr(self, k, v)
+            else:
+                log.debug(f"{k} Not Found")
+
+    def model_attr(self, **kwargs):
         """
         #must overwrite
         Raises:
@@ -47,39 +59,49 @@ class BaseModel():
         """
         raise NotImplementedError("set model attrs")
     
-    def verify(self):
-        return isinstance(self.pk, int)
+    def validate(self, **kwargs):
+        if not kwargs:
+            kwargs = self._attributes
+        #log.debug(f'{kwargs}')
+        for k,v in kwargs.items():
+            if getattr(self, k) != v and getattr(self, k) != type(v):
+                raise TypeError(f"type mismatch for {k}: expected {getattr(self, k)}, got: {type(v)}")
+        return True
 
     def serialize(self):
         """
         
         """
-        raw_data = vars(self)
+        #log.debug(f'attributes: {vars(self)}')
+        #log.debug(f'attributes: {self._attributes}')
+        filtered_attrs = {k:v for k,v in self._attributes.items() if v is not None}
         json_data= {}
-        for key, value in raw_data.items():
-            if value and hasattr(value, 'serialize') and callable(value.serialize):
+        for key, value in filtered_attrs.items():
+            if hasattr(value, 'serialize') and callable(value.serialize):
                 json_data[key] = value.serialize()
             else:
                 try:
                     #log.debug(f"{key} : {value}")
                     json.dumps(value)
-                except Exception as e:
+                except TypeError as e:
                     log.info(f"{e} -- {key} nonserializable")
                 else:
                     json_data[key] = value
         return json_data
 
-    #template_method
     def save(self):
         """
         save() :save object to db
         """
-        if self.verify():
+        #log.debug(f'saving...')
+        if self.validate():
             obj_serialize = self.serialize()
             #log.debug(f'{obj_serialize}')
             self.pk = self.table.update(obj_serialize)
             #log.debug(f'{obj_serialize}')
             return self.pk
+        else:
+            log.debug(f'VERIFICATION FAILED: not saved')
         return None
 
     @classmethod
@@ -92,9 +114,16 @@ class BaseModel():
 class Model(BaseModel):
 
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+
+        #These should not be stored in the db
         self.table_name = type(self).__name__
         self.table = db.get_table(self.table_name)
+
+        super().__init__()
+
+        #these should be stored in the db
+        self.update(**kwargs)
+        
 
     def delete(self):
         self.table.delete(self.pk)
@@ -127,4 +156,3 @@ class Model(BaseModel):
         json_object = cls().table.get(pk)
         #log.debug(f'{kwargs}, {json_object}')
         return cls(**json_object) if json_object else None
-

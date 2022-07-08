@@ -1,1 +1,1 @@
-{"Character": {}}
+{"Character": {"1": {"image_url": "test.png", "name": "Test Character", "player_class": "Test", "history": "Test", "hp": 100, "status": "None", "inventory": ["Test Item #1", "Test Item #2"], "pk": 1}}}

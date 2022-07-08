@@ -1,8 +1,30 @@
 import urllib
 import json
+import pytest
+from flask import current_app 
+from src import create_app
 
-from flask import current_app
+@pytest.fixture
+def test_client():
+    app = create_app()
+    # Create a test client using the Flask application configured for testing
+    with app.test_client() as testing_client:
+        # Establish an application context
+        with app.app_context():
+            yield testing_client  # this is where the testing happens!
+            
+@pytest.fixture
+def test_die():
 
+    return [
+        {"dice_str": "3d10+4", "num_dice":3}, 
+        {"dice_str": "1d20+5", "num_dice":1}, 
+        {"dice_str": "4d6kh3", "num_dice":3},
+        {"dice_str": "3d10+4", "num_dice":3, "advantage":1}, 
+        {"dice_str": "1d20+5", "num_dice":1, "advantage":-1}, 
+        {"dice_str": "4d6kh3", "num_dice":3, "advantage":0},
+        ]
+    
 def test_roll(test_client, test_die):
     """
     _summary_

@@ -12,6 +12,21 @@ from flask import (
 
 bp = Blueprint('character', __name__, url_prefix='/character')
 
+@bp.route('/create', methods=('POST',))
+def create():
+    """
+    _summary_
+    """
+    #log.debug(request.json)
+    if request.json.get('pk'):
+        return package_response(error=="use the /update api for existing characters", count = 0, api_path="/character/update")
+    else:
+        new_character = Character(**request.json)
+    
+    if not new_character.save():
+        return package_response(data=new_character.serialize(), error="unknown error", count = 0, api_path="/character/create")
+    return package_response(data=new_character.serialize(), count = 1, api_path="/character/create")
+
 @bp.route('/all', methods=('GET',))
 def all():
     """
@@ -23,21 +38,18 @@ def all():
     }
     """
     results = Character.search()
-    return package_response(data=results, count = len(results))
+    return package_response(data=results, count = len(results), api_path="/character/all")
 
-@bp.route('/create', methods=('POST',))
-def create():
+@bp.route('/search', methods=('GET',))
+def search():
     """
     _summary_
     """
-
-    new_character = Character(**request.json)
-    log.debug(f"request data: {request.json}")
-    if new_character.save():
-        return package_response(data=new_character.serialize(), count = 1)
-
-    character = Character.get(name=request.json.get('pk'))
-    return package_response(data=character or {'result':"unknown error"}, count = 1)
+    log.debug(f"request {vars(request.args)}")
+    if not request.args:
+        return all()
+    results = Character.search(**request.args)
+    return package_response(data=results, count = len(results), api_path="/character/search")
 
 @bp.route('/update', methods=('POST',))
 def update():
@@ -45,7 +57,7 @@ def update():
     _summary_
     """
     log.info(f"request data: {request.json}")
-    character = Character.get(request.json.get('pk', request.json.get('doc_id', None)))
+    character = Character.get(request.json.get('pk'))
     #log.info(f"character:{vars(character)}")
     if character.update(**request.json):
         character.save()
@@ -57,15 +69,16 @@ def delete():
     """
     _summary_
     """
-    if result := Character.get(**request.json):
+    pk = request.json.get('pk')
+    if result := Character.get(pk):
+        log.debug(result)
         return package_response(data=result.delete(), count = 1)
     return package_response(error="not deleted", count = 0)
     
 
-@bp.route('/<pk>/<character>', methods=('GET',))
-def search(pk, character):
+@bp.route('/<pk>', methods=('GET',))
+def get(pk):
     """
     _summary_
     """
-    return Character.get(**request.json)
-        
+    return Character.get(pk)
