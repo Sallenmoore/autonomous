@@ -34,8 +34,8 @@ class TestAPIModel:
         Returns:
             _type_: _description_
         """
-        APIModel.save(self.testchar)
-        results = APIModel.all()
+        Character.save(self.testchar)
+        results = Character.all()
         count = [r for r in results if self.verify_results(r)]
         assert len(count) >= 1
 
