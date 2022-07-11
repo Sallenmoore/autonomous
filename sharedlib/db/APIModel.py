@@ -10,8 +10,23 @@ log = logging.getLogger()
 
 class APIModel(BaseModel):
     # TODO: This should be set programmatically
-    API_URL="http://api:8000/"
-    
+    API_URL="#"
+
+    def __init__(self, pk=None, **kwargs):
+        if pk:
+            endpoint = f"{pk}"
+            result = self.__get(endpoint)
+            super().__init__(**result)
+        else:
+            super().__init__(**kwargs)
+
+    def delete(self, api_path="delete"):
+        return self.__post(api_path, self.serialize())
+
+    def save(self, api_path="create"):
+        if self.pk is not int:
+            api_path = "update"
+        return self.__post(api_path, self.serialize())
 
     ######## Class Methods #########
     
@@ -51,16 +66,6 @@ class APIModel(BaseModel):
         return response.json()
 
     @classmethod
-    def delete(cls, data,api_path="delete"):
-        return cls.__post(api_path, data)
-
-    @classmethod
-    def save(cls, data,api_path="create"):
-        if data.get("pk"):
-            api_path = "update"
-        return cls.__post(api_path, data)
-
-    @classmethod
     def search(cls, search_term=None, **kwargs):
         """
         returns objects filtered by search terms
@@ -77,6 +82,7 @@ class APIModel(BaseModel):
 
         log.debug(endpoint)
         result = cls.__get(endpoint)
+        log.debug(result)
         return [cls().update(r) for r in result['results']] if result['results'] else []
 
     @classmethod

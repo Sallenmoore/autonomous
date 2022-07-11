@@ -71,6 +71,7 @@ class Database:
         [create an interface for your database]
         """
         self.db_path = f'{pathlib.Path().resolve()}/{os.environ.get("DB_NAME", "tables")}'
+        log.debug(f'======= DEBUG ======= {self.db_path}')
         os.path.isdir(self.db_path) or os.makedirs(self.db_path)
         self.tables = {}
 

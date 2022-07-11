@@ -7,14 +7,14 @@ DnD Helper Application
 Buddy has 4 inital container components:
 
 * **server**
-  * static files and assets are served from here. This is also the main entry point for the application.
+    * static files and assets are served from here. This is also the main entry point for the application.
 * **api**
-  * The backend API and database
-  * currently implented with Flask and TinyDB
+    * The backend API and database
+    * currently implented with Flask and TinyDB
 * **admin**
-  * An admin web interface
+    * An admin web interface
 * **view**
-  * The front end interface
+    * The front end interface
   
 ---
 
@@ -56,37 +56,37 @@ Buddy has 4 inital container components:
 ### Start/Status/Stop Commands
 
 * build and start the container
-  * `docker-compose up --build -d`
+    * `docker-compose up --build -d`
 * container status
-  * `docker-compose ps -a`
+    * `docker-compose ps -a`
 * run a command in the container
-  * `docker-compose exec -option <service name> <command>`
+    * `docker-compose exec -option <service name> <command>`
 * stop and remove running containers
-  * `docker-compose down --remove-orphans`
+    * `docker-compose down --remove-orphans`
 * stop all running containers
-  * `docker kill $(docker ps -q)`
+    * `docker kill $(docker ps -q)`
 * remove all stopped containers
-  * `docker rm $(docker ps -a -q)`
+    * `docker rm $(docker ps -a -q)`
 
 ### Run Tests
 
 * To run tests:
-  * `docker-compose exec <service name> pytest --log-level=DEBUG -rl -x`
+    * `docker-compose exec <service name> pytest --log-level=DEBUG -rl -x`
 * To run only < name > tests on the `api` service:
-  * `docker-compose exec api pytest --log-level=DEBUG -rl -v -x -k <name>`
+    * `docker-compose exec api pytest --log-level=DEBUG -rl -v -x -k <name>`
 * To check test coverage:
-  * `coverage run -m pytest ...`
+    * `coverage run -m pytest ...`
 
 ### Read Logs
 
 * `docker logs --since=15m -t <container>`
 * `docker logs -f --since=15m -t <container> &`
-  * follows as a background process
+    * follows as a background process
 
 ### BUGS
 
 * saving objects to DB
-  * not saving all attributes
+    * not saving all attributes
 
 ### TODOs
 
@@ -98,7 +98,7 @@ Buddy has 4 inital container components:
 ### IMPROVEMENTS
 
 * Move DB to cloud
-  * Firebase?
+    * Firebase?
 
 ---
 

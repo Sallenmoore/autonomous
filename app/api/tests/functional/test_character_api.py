@@ -2,6 +2,7 @@ import urllib
 import json
 import pytest
 from src import create_app
+
 import logging
 log = logging.getLogger()
 
@@ -16,16 +17,7 @@ def test_client():
             
 @pytest.fixture
 def test_char():
-    record = {
-        "name":"Test Character", 
-        "image_url":"test.png",
-        "player_class":"Test",
-        "history":"Test",
-        "hp":100,
-        "status":"None",
-        "inventory":["Test Item #1", "Test Item #2"]
-    }
-    yield record
+    yield {"name": "Test Character", "image_url": "test.png", "player_class": "Test", "history": "Test", "hp": 100, "status": "None", "inventory": ["Test Item #1", "Test Item #2"]}
 
 def test_create(test_client, test_char):
     """
@@ -81,7 +73,7 @@ def test_delete(test_client, test_char):
     response = test_client.get('/character/all').json
     for c in response['results']:
         if c['name'] == test_char['name']:
-            response = test_client.post(f'/character/delete', json={"pk":c["pk"]})
+            response = test_client.post('/character/delete', json={"pk":c["pk"]})
             assert response.status_code == 200
     response = test_client.get('/character/all')
     data = response.json

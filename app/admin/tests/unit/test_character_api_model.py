@@ -1,6 +1,8 @@
-from src.sharedlib.db.APIModel import APIModel
+from src.models.character import Character
+import logging
+log = logging.getLogger()
 
-class TestAPIModel: 
+class TestCharacterAPIModel: 
     testchar = {
         "name":"Test Character", 
         "image_url":"test.png",
@@ -34,10 +36,11 @@ class TestAPIModel:
         Returns:
             _type_: _description_
         """
-        APIModel.save(self.testchar)
-        results = APIModel.all()
-        count = [r for r in results if self.verify_results(r)]
-        assert len(count) >= 1
+        ch = Character(**self.testchar)
+        ch.save()
+        results = Character.all()
+        log.debug(results)
+        assert any(r for r in results if self.verify_results(r))
 
     def test_delete(self):
         """
@@ -46,16 +49,16 @@ class TestAPIModel:
         Returns:
             _type_: _description_
         """
-        APIModel.save(self.testchar)
+        ch = Character(**self.testchar)
+        ch.save()
         results = Character.all()
         results = [r for r in results if self.verify_results(r)]
-        assert len(count) >= 1
+        assert results
         for r in results:
             if self.verify_results(r):
                 Character.delete(r)
         results = Character.all()
-        results = [r for r in results if self.verify_results(r)]
-        assert len(results) == 0
+        assert not [r for r in results if self.verify_results(r)]
 
     def test_update(self):
         """
@@ -64,9 +67,10 @@ class TestAPIModel:
         Returns:
             _type_: _description_
         """
-        APIModel.save(self.testchar)
+        ch = Character(**self.testchar)
+        ch.save()
         results = [r for r in Character.all() if self.verify_results(r)]
-        assert len(results) >= 1
+        assert results
         for r in results:
             if self.verify_results(r):
                 r.hp = 50
@@ -87,9 +91,10 @@ class TestAPIModel:
         Returns:
             _type_: _description_
         """
-        APIModel.save(self.testchar)
+        ch = Character(**self.testchar)
+        ch.save()
         results = [r for r in Character.search(name="Test Character") if self.verify_results(r)]
-        assert len(results) >= 1
+        assert results
 
         for r in results:
             assert r.delete()
