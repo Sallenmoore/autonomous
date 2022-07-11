@@ -13,11 +13,12 @@ db = Database()
 
 class BaseModel():
     
-    def __init__(self):
+    def __init__(self, **kwargs):
         self.__base_attrs = []
         self.__base_attrs = list(vars(self).keys())
         self.pk = int
         self.model_attr()
+        self.update(**kwargs)
 
     def __str__(self):
         text = "{\n"
@@ -60,12 +61,6 @@ class BaseModel():
         raise NotImplementedError("set model attrs")
     
     def validate(self, **kwargs):
-        if not kwargs:
-            kwargs = self._attributes
-        #log.debug(f'{kwargs}')
-        for k,v in kwargs.items():
-            if getattr(self, k) != v and getattr(self, k) != type(v):
-                raise TypeError(f"type mismatch for {k}: expected {getattr(self, k)}, got: {type(v)}")
         return True
 
     def serialize(self):
@@ -89,21 +84,6 @@ class BaseModel():
                     json_data[key] = value
         return json_data
 
-    def save(self):
-        """
-        save() :save object to db
-        """
-        #log.debug(f'saving...')
-        if self.validate():
-            obj_serialize = self.serialize()
-            #log.debug(f'{obj_serialize}')
-            self.pk = self.table.update(obj_serialize)
-            #log.debug(f'{obj_serialize}')
-            return self.pk
-        else:
-            log.debug(f'VERIFICATION FAILED: not saved')
-        return None
-
     @classmethod
     def deserialize(cls, **kwargs):
         return cls(**kwargs)
@@ -118,12 +98,31 @@ class Model(BaseModel):
         #These should not be stored in the db
         self.table_name = type(self).__name__
         self.table = db.get_table(self.table_name)
+        super().__init__(**kwargs)
 
-        super().__init__()
+    def validate(self, **kwargs):
+        if not kwargs:
+            kwargs = self._attributes
+        #log.debug(f'{kwargs}')
+        for k,v in kwargs.items():
+            if getattr(self, k) != v and getattr(self, k) != type(v):
+                raise TypeError(f"type mismatch for {k}: expected {getattr(self, k)}, got: {type(v)}")
+        return True
 
-        #these should be stored in the db
-        self.update(**kwargs)
-        
+    def save(self):
+        """
+        save() :save object to db
+        """
+        #log.debug(f'saving...')
+        if self.validate():
+            obj_serialize = self.serialize()
+            #log.debug(f'{obj_serialize}')
+            self.pk = self.table.update(obj_serialize)
+            #log.debug(f'{obj_serialize}')
+            return self.pk
+        else:
+            log.debug('VERIFICATION FAILED: not saved')
+        return None
 
     def delete(self):
         self.table.delete(self.pk)

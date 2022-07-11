@@ -81,4 +81,6 @@ def get(pk):
     """
     _summary_
     """
-    return Character.get(pk)
+    result = Character.get(pk)
+    return package_response(data=result.serialize() if result else None, count = 1)
+

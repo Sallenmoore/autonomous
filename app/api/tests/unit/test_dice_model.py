@@ -1,6 +1,18 @@
 from src.models.dice import Dice
-
+import pytest
 import d20
+
+@pytest.fixture
+def test_die():
+
+    return [
+        {"dice_str": "3d10+4", "num_dice":3}, 
+        {"dice_str": "1d20+5", "num_dice":1}, 
+        {"dice_str": "4d6kh3", "num_dice":3},
+        {"dice_str": "3d10+4", "num_dice":3, "advantage":1}, 
+        {"dice_str": "1d20+5", "num_dice":1, "advantage":-1}, 
+        {"dice_str": "4d6kh3", "num_dice":3, "advantage":0},
+        ]
 
 def test_roll(test_die):
     """

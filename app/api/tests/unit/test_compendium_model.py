@@ -3,7 +3,7 @@ from src.models.compendium import Compendium
 
 class TestCompendium:
 
-    def test_search(self, test_search_endpoints):
+    def test_search(self):
         """
         _summary_
 
