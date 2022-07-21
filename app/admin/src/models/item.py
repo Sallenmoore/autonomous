@@ -1,11 +1,11 @@
-from src.models import Model
+from src.sharedlib.db.APIModel import APIModel
 from src.models.action import Action
 
 import requests
 from flask import current_app 
 
-class Item(Model):
-    API_URL = f"{Model.API_URL}item"
+class Item(APIModel):
+    API_URL="http://api:8000/item"
     def __init__(self,  **kwargs):
         #current_app.logger.info(kwargs)
         self.attrs = {

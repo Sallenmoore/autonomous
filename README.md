@@ -64,18 +64,18 @@ Buddy has 4 inital container components:
 * stop and remove running containers
     * `docker-compose down --remove-orphans`
 * stop all running containers
-    * `docker kill $(docker ps -q)`
+    * `sudo docker kill $(sudo docker ps -q)`
 * remove all stopped containers
-    * `docker rm $(docker ps -a -q)`
+    * `sudo docker rm $(sudo docker ps -a -q)`
 
 ### Run Tests
 
 * To run tests:
-    * `docker-compose exec <service name> pytest --log-level=DEBUG -rl -x`
+    * `sudo docker-compose exec <service name> pytest --log-level=DEBUG -rl -x`
 * To run only < name > tests on the `api` service:
-    * `docker-compose exec api pytest --log-level=DEBUG -rl -v -x -k <name>`
+    * `sudo docker-compose exec <service name>  pytest --log-level=DEBUG -rl -x -k <name>`
 * To check test coverage:
-    * `coverage run -m pytest ...`
+    * `sudo docker-compose exec <service name>  coverage run -m pytest ...`
 
 ### Read Logs
 

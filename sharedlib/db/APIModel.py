@@ -5,6 +5,7 @@ from flask import redirect, url_for
 from .model import BaseModel
 import requests
 import logging
+import pprint
 import json
 log = logging.getLogger()
 
@@ -12,11 +13,17 @@ class APIModel(BaseModel):
     # TODO: This should be set programmatically
     API_URL="#"
 
-    def __init__(self, pk=None, **kwargs):
-        if pk:
-            endpoint = f"{pk}"
+    def __init__(self, **kwargs):
+        log.debug(f"pk: {kwargs.get('pk')}")
+        log.debug(f"kwargs: {kwargs}")
+        if kwargs.get('pk') and len(kwargs) == 1:
+            endpoint = kwargs.get('pk')
             result = self.__get(endpoint)
-            super().__init__(**result)
+            if result.get("error"):
+                log.error(response['error'])
+                raise Exception(response['error'])
+            else:
+                result = result.get("results")
         else:
             super().__init__(**kwargs)
 
@@ -24,9 +31,23 @@ class APIModel(BaseModel):
         return self.__post(api_path, self.serialize())
 
     def save(self, api_path="create"):
-        if self.pk is not int:
+
+        log.info(f"pk: {self.pk}")
+        
+        if type(self.pk) == int:
+            
+            log.info(f"update pk: {self.pk}")
+
             api_path = "update"
-        return self.__post(api_path, self.serialize())
+
+        result = self.__post(api_path, self.serialize())
+
+        log.debug(result)
+
+        self.pk = result['results'].get('pk')
+
+    def __repr__(self):
+        return pprint.pformat(vars(self))
 
     ######## Class Methods #########
     
@@ -44,10 +65,15 @@ class APIModel(BaseModel):
             _type_: _description_
         """
         headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
-        log.info(f"sending data: {data}")
-        response = requests.post(f"{cls.API_URL}/{endpoint}", data=data, headers=headers)
-        log.info(f"received response: {response}")
-        return response.json
+        
+        log.debug(f"sending data: {data} to: {cls.API_URL}/{endpoint}")
+        
+        response = requests.post(f"{cls.API_URL}/{endpoint}", json=data, headers=headers)
+
+        log.debug(f"received response: {response.text}")
+
+        return response.json()
+
 
     @classmethod
     def __get(cls, endpoint, redirect_path="index"):
@@ -62,8 +88,12 @@ class APIModel(BaseModel):
             _type_: _description_
         """
         response = requests.get(f"{cls.API_URL}/{endpoint}")
-        log.info(f"recieved response: {response}")
+        #log.info(f"recieved response: {response}")
         return response.json()
+
+    @classmethod
+    def get(cls, pk):
+        return cls.__get(pk)
 
     @classmethod
     def search(cls, search_term=None, **kwargs):
@@ -74,19 +104,32 @@ class APIModel(BaseModel):
         Returns:
             _type_: _description_
         """
+        log.debug("searching...")
         endpoint = "all"
         if search_term:
             endpoint = f"search?search_term={quote(search_term)}"
         elif kwargs:
             endpoint = f"search?{urlencode(kwargs)}"
-
         log.debug(endpoint)
         result = cls.__get(endpoint)
+
+        if result.get("error"):
+            log.error(response['error'])
+            raise Exception(response['error'])
+        else:
+            result = result.get("results")
         log.debug(result)
-        return [cls().update(r) for r in result['results']] if result['results'] else []
+        objects = []
+        for r in result:
+            log.debug(r)
+            o = cls(**r)
+            log.debug(o)
+            objects.append(o)
+        return objects
 
     @classmethod
     def all(cls):
+        log.debug("all...")
         return cls.search()
 
     @classmethod

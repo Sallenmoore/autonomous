@@ -23,24 +23,11 @@ class TestCharacterAPIModel:
         Returns:
             _type_: _description_
         """
-        return all(r.image_url == "test.png",
+        return all([r.image_url == "test.png",
                 r.name == "Test Character",
                 r.player_class == "Test",
                 r.history == "Test",
-            )
-
-    def test_save(self):
-        """
-        _summary_
-
-        Returns:
-            _type_: _description_
-        """
-        ch = Character(**self.testchar)
-        ch.save()
-        results = Character.all()
-        log.debug(results)
-        assert any(r for r in results if self.verify_results(r))
+            ])
 
     def test_delete(self):
         """
@@ -60,6 +47,24 @@ class TestCharacterAPIModel:
         results = Character.all()
         assert not [r for r in results if self.verify_results(r)]
 
+    def test_save(self):
+        """
+        _summary_
+
+        Returns:
+            _type_: _description_
+        """
+        ch = Character(**self.testchar)
+        result = ch.save()
+
+        assert type(ch.pk) is int
+        
+        log.debug(result)
+        results = Character.all()
+        log.info(results)
+        assert any(r for r in results if self.verify_results(r))
+        self.test_delete()
+
     def test_update(self):
         """
         _summary_
@@ -69,20 +74,25 @@ class TestCharacterAPIModel:
         """
         ch = Character(**self.testchar)
         ch.save()
+        assert type(ch.pk) == int
+
+        #update all test objects with new hp
         results = [r for r in Character.all() if self.verify_results(r)]
-        assert results
         for r in results:
-            if self.verify_results(r):
-                r.hp = 50
-                r.status = "Dead"
-                r.inventory.append("Test Item #3")
-                r.save()
+            log.info(r.pk)
+            r.hp = 50
+            r.status = "Dead"
+            r.inventory.append("Test Item #3")
+            r.save()
+
+        #verify update    
         results = [r for r in Character.all() if self.verify_results(r)]
         for r in results:
             if self.verify_results(r):
                 assert r.hp == 50
                 assert r.status == "Dead"
                 assert r.inventory == ["Test Item #1", "Test Item #2", "Test Item #3"]
+        self.test_delete()
         
     def test_search(self):
         """
@@ -96,5 +106,5 @@ class TestCharacterAPIModel:
         results = [r for r in Character.search(name="Test Character") if self.verify_results(r)]
         assert results
 
-        for r in results:
-            assert r.delete()
+        self.test_delete()
+

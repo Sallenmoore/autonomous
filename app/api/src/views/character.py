@@ -17,14 +17,15 @@ def create():
     """
     _summary_
     """
-    #log.debug(request.json)
+    log.info(f"request data: {request.json}")
+    
     if request.json.get('pk'):
         return package_response(error=="use the /update api for existing characters", count = 0, api_path="/character/update")
     else:
         new_character = Character(**request.json)
     
     if not new_character.save():
-        return package_response(data=new_character.serialize(), error="unknown error", count = 0, api_path="/character/create")
+        return package_response(data=new_character.serialize(), error="unknown error", count = 1, api_path="/character/create")
     return package_response(data=new_character.serialize(), count = 1, api_path="/character/create")
 
 @bp.route('/all', methods=('GET',))
@@ -56,13 +57,20 @@ def update():
     """
     _summary_
     """
-    log.info(f"request data: {request.json}")
+    #log.info(f"request data: {request.json}")
+    
     character = Character.get(request.json.get('pk'))
-    #log.info(f"character:{vars(character)}")
-    if character.update(**request.json):
-        character.save()
-        return package_response(data=character.serialize(), count = 1)
-    return package_response(data={'result':"unknown character"}, count = 0)
+
+    #log.debug(f"character: {character}")
+    
+    if not character:
+        return package_response(data={'result':"unknown character"}, count = 0)
+    
+    character.update(**request.json)
+    log.debug(f"character: {character}")
+    character.save()
+    return package_response(data=character.serialize(), count = 1)
+    
 
 @bp.route('/delete', methods=('POST',))
 def delete():

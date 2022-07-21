@@ -5,15 +5,17 @@ class Config:
     DEBUG = os.environ.get("FLASK_DEBUG", False)
     FLASK_ENV = os.environ.get("FLASK_ENV", 'development')
     SECRET_KEY = os.environ.get("SECRET_KEY", "none")
-    LOG_LEVEL = os.environ.get("LOG_LEVEL", "DEBUG")
+    LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
 
 class ProdConfig(Config):
     FLASK_ENV = 'production'
     DEBUG = False
     TESTING = False
+    LOG_LEVEL = "ERROR"
 
 
 class DevConfig(Config):
     FLASK_ENV = 'development'
     DEBUG = True
     TESTING = True
+    LOG_LEVEL = "INFO"

@@ -13,19 +13,15 @@ def create_app(test_config=None):
     #set to 'config.Config' to use ENV_VARS
     #set to 'config.DevConfig' to use development settings
     #set to 'config.ProdConfig' to use production settings
-    app.config.from_object('config.Config') 
+    app.config.from_object('config.DevConfig') 
 
-    # ensure the instance folder exists ???is this necessary? -- look up what the instance folder does
+    #TODO: ensure the instance folder exists ???is this necessary?
     try:
         os.makedirs(app.instance_path)
     except OSError:
         pass
 
     with app.app_context():
-        # Include our Models
-        from src.models.compendium.item import Item
-        from src.models.compendium.spell import Spell
-        from src.models.campaign.monster import Monster
         
         # Include our Routes
         from src.views import (compendium, monster, item, spell, dice, character,)

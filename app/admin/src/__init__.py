@@ -48,14 +48,24 @@ def create_app(test_config=None):
         ####                      Character API                      ###
         ################################################################
 
+        @app.route('/create_character', methods=('POST',))
+        def create_character():
+            result = Character.save(request.form)
+            return redirect(url_for("index"))
+
+        @app.route('/character/<pk>', methods=('GET', 'POST'))
+        def get_character(pk):
+            result = Character.get(request.form)
+            return redirect(url_for("index"))
+
+        @app.route('/update_character', methods=('GET', 'POST'))
+        def update_character():
+            result = Character.save(request.form)
+            return redirect(url_for("index"))
+
         @app.route('/delete_character', methods=('POST',))
         def delete_character():
             result = Character.delete(request.form)
-            return redirect(url_for("index"))
-
-        @app.route('/save_character', methods=('GET', 'POST'))
-        def update_character():
-            result = Character.save(request.form)
             return redirect(url_for("index"))
 
         ################################################################
@@ -83,12 +93,18 @@ def create_app(test_config=None):
         ###                       Compendium API                     ###
         ################################################################
         
-        # @app.route('/compendium', methods=('GET',))
-        # def compendium():
-        #     headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
-        #     args = json.dumps(request.args)
-            
-        #     response = requests.post(f"http://api:8000/campaign/{args['endpoint']}", data=args['search'],headers=headers)
-        #     return redirect(url_for('index'))
+        @app.route('/compendium', methods=('GET',))
+        def compendium():
+            headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
+            args = json.dumps(request.args)
+
+            url -= f"http://api:8000/compendium/"
+            response = requests.get(url, headers=headers)
+            return response.json()
+
+            response = requests.post(f"http://api:8000/compendium/{args['endpoint']}", data={'search':args['search']},headers=headers)
+            return redirect(url_for('index'))
+
+    ###### returns the application instance to the caller ######
 
     return app

@@ -1,8 +1,9 @@
-from src.models import Model
+from src.sharedlib.db.APIModel import APIModel
 
 from flask import current_app 
 
-class Action(Model):
+class Action(APIModel):
+    API_URL="http://api:8000/character"
     def __init__(self, name=None, desc=None, attack=None, dice=None, damage_bonus=None, **kwargs):
         self.name=name
         self.description=desc

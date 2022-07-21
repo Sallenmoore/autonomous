@@ -13,4 +13,7 @@ class Character(APIModel):
         self.status = str
         self.inventory = list
 
+
+
+
     

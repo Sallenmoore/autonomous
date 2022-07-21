@@ -16,7 +16,7 @@ class BaseModel():
     def __init__(self, **kwargs):
         self.__base_attrs = []
         self.__base_attrs = list(vars(self).keys())
-        self.pk = int
+        self.pk = kwargs.get('pk', int)
         self.model_attr()
         self.update(**kwargs)
 
@@ -27,40 +27,30 @@ class BaseModel():
         text += "}"
         return text
 
-    @property
-    def _attributes(self):
-        #log.debug(f'attributes: {vars(self)}')
-        result = {}
-        for k,v in vars(self).items():
-            #log.debug(f'k: {k} base attr: {self.__base_attrs}')
-            if k not in self.__base_attrs:
-                result[k] = v
-        #log.debug(f'base: {self.__base_attrs}')
-        #log.debug(f'attributes: {result}')
-        return result
-
     def update(self, **kwargs):
-
+        
+        #log.debug(f"kwargs: {kwargs}")
+        
         self.validate(**kwargs)
         
         #log.debug(f"kwargs: {kwargs}")
         for k, v in kwargs.items():
             if hasattr(self, k):
-                #log.info(f"k, v: {k}, {v}")
+                #log.debug(f"k, v: {k}, {v}")
                 #model attributes are set to their type
                 setattr(self, k, v)
             else:
-                log.debug(f"{k} Not Found")
-
-    def model_attr(self, **kwargs):
-        """
-        #must overwrite
-        Raises:
-            NotImplementedError: [description]
-        """
-        raise NotImplementedError("set model attrs")
+                log.info(f"{k} Not Found")
+        #log.debug(f"{self}")
     
     def validate(self, **kwargs):
+        if not kwargs:
+            kwargs = self._attributes
+        #log.debug(f'{kwargs}')
+        for k,v in kwargs.items():
+            if type(getattr(self, k)) != type(v) and getattr(self, k) != type(v):
+                log.info(f'{k}:{v}')
+                raise TypeError(f"type mismatch for {k}: expected {getattr(self, k)}, got: {type(v)}")
         return True
 
     def serialize(self):
@@ -79,10 +69,36 @@ class BaseModel():
                     #log.debug(f"{key} : {value}")
                     json.dumps(value)
                 except TypeError as e:
-                    log.info(f"{e} -- {key} nonserializable")
+                    log.debug(f"{e} -- {key} nonserializable")
                 else:
                     json_data[key] = value
         return json_data
+
+    ############################## Properties       #####################################
+    @property
+    def _attributes(self):
+        #log.debug(f'attributes: {vars(self)}')
+        result = {}
+        for k,v in vars(self).items():
+            #log.debug(f'k: {k} base attr: {self.__base_attrs}')
+            if k not in self.__base_attrs:
+                result[k] = v
+        #log.debug(f'base: {self.__base_attrs}')
+        #log.debug(f'attributes: {result}')
+        return result
+
+
+    ############################## Abstract Methods #####################################
+    def model_attr(self, **kwargs):
+        """
+        #must overwrite
+        Raises:
+            NotImplementedError: [description]
+        """
+        raise NotImplementedError("set model attrs")
+
+    ############################## Class Methods ########################################
+    
 
     @classmethod
     def deserialize(cls, **kwargs):
@@ -99,15 +115,6 @@ class Model(BaseModel):
         self.table_name = type(self).__name__
         self.table = db.get_table(self.table_name)
         super().__init__(**kwargs)
-
-    def validate(self, **kwargs):
-        if not kwargs:
-            kwargs = self._attributes
-        #log.debug(f'{kwargs}')
-        for k,v in kwargs.items():
-            if getattr(self, k) != v and getattr(self, k) != type(v):
-                raise TypeError(f"type mismatch for {k}: expected {getattr(self, k)}, got: {type(v)}")
-        return True
 
     def save(self):
         """
