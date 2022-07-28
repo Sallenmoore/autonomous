@@ -3,19 +3,33 @@ import logging
 log = logging.getLogger()
 
 class Character(Model):
-    def model_attr(self) -> None:
+    """
+    _summary_
+
+    _extended_summary_
+
+    Args:
+        Model (_type_): _description_
+    """
+
+    def model_attr(self):
         """
         _summary_
 
         _extended_summary_
+
+        Returns:
+            _type_: _description_
         """
-        self.image_url = str
-        self.name = str
-        self.player_class = str
-        self.history = str
-        self.hp = int
-        self.status = str
-        self.inventory = list
+        return {
+            "image_url":str,
+            "name":str,
+            "player_class":str,
+            "history":str,
+            "hp":int,
+            "status":str,
+            "inventory":list,
+        }
 
     @classmethod
     def search(cls, **kwargs):

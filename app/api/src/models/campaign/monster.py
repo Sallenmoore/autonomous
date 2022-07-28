@@ -4,20 +4,16 @@ from src.sharedlib.db import Model
 class Monster(Model, Compendium):
     resource = ["monsters"]
 
-#     def model_attr(self) -> None:
-#         """
-#         [set object attributes]
-#         """
-#         self.image_url = type
-#         self.player_name = type
-#         self.character = type
-#         self.player_class = type
-#         self.player_abilities = type
-
-#     def verify(self) -> bool:
-#         return True
-
-#     class Character:
-
-#         def verify(self) -> bool:
-#             return True
+    def model_attr(self):
+        #current_app.logger.info(kwargs)
+        return {
+            'name':str,  
+            'size':str,  
+            'type':str,  
+            'armor_class':str,  
+            'armor_desc':int,  
+            'hit_points':int,  
+            'hit_dice':str,  
+            'challenge_rating':str,  
+            'img_main':str,
+        }

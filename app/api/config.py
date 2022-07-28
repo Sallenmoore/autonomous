@@ -4,7 +4,7 @@ class Config:
     TESTING = os.environ.get("TESTING", False)
     DEBUG = os.environ.get("FLASK_DEBUG", False)
     FLASK_ENV = os.environ.get("FLASK_ENV", 'development')
-    SECRET_KEY = os.environ.get("SECRET_KEY", "none")
+    SECRET_KEY = os.environ.get("SECRET_KEY", "secretkey")
     LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
 
 class ProdConfig(Config):

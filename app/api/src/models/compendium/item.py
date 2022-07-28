@@ -4,20 +4,16 @@ from src.sharedlib.db import Model
 class Item(Model, Compendium):
     resource = ["magicitems", "weapons"]
 
-#     def model_attr(self) -> None:
-#         """
-#         [set object attributes]
-#         """
-#         self.image_url = type
-#         self.player_name = type
-#         self.character = type
-#         self.player_class = type
-#         self.player_abilities = type
-
-#     def verify(self) -> bool:
-#         return True
-
-#     class Character:
-
-#         def verify(self) -> bool:
-#             return True
+    def model_attr(self):
+        return {
+            'name':str,
+            'category': str,
+            'rarity':str,
+            'cost': int,
+            "damage_dice": str,
+            "damage_type": str,
+            "weight": "1 lb.",
+            "properties": str,
+            'type':str, 
+            'img_main':str,
+        }

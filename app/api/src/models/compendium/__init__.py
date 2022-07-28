@@ -4,11 +4,14 @@ from src.models.compendium.api import DnDAPI
 from flask import (
     current_app, abort
 )
-
-from urllib.parse import urlencode
-import requests
-
 import random
+import requests
+from urllib.parse import urlencode
+
+import logging
+log = logging.getLogger()
+
+
 
 class Compendium:
     """
@@ -57,8 +60,23 @@ class Compendium:
         num_pages = DnDAPI.api_request([random_resource], limit=1).get('count', 0)
         
         result = DnDAPI.api_request([random_resource], limit=1, page=random.randrange(num_pages)+1)
-        result['count'] = 1
-        result['next'] = ""
         return result
+
+    @classmethod
+    def classes_list(cls):
+        """
+        _summary_
+
+        Returns:
+            _type_: _description_
+        """
+        result = DnDAPI.api_request(['classes'])
+        classes = []
+        for r in result:
+            classes.append(r['name'])
+            log.debug(f"{r['name']}") 
+
+        log.debug(classes)
         
+        return classes
         

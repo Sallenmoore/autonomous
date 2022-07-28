@@ -1,6 +1,6 @@
 # Local Modules
 from src.models.compendium.item import Item
-from src.views import base_search, base_random
+from src.views import package_response
 # External Modules
 from flask import (
     Blueprint, request, current_app
@@ -14,24 +14,11 @@ NUM_ITEMS=1096
 
 bp = Blueprint('items', __name__, url_prefix='/item')
 
-@bp.route('/random', methods=('GET',))
-def random_item():
-    """
-    _summary_
-    """
-    return base_random(Item)
-        
 
 @bp.route('/search', methods=('GET',))
-def search_items():
+def search():
     """
     _summary_
     """
-    return base_search(Item, **request.args)
+    return packaged_response()
 
-@bp.route('/all', methods=('GET',))
-def all_items():
-    """
-    _summary_
-    """
-    return base_search(Item)

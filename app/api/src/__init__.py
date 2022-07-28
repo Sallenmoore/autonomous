@@ -2,9 +2,10 @@
 import os
 import pytest
 import logging
+import pdoc
 from flask import Flask
 
-logging.basicConfig(level=logging.DEBUG, format="==%(levelname)s== [%(filename)s - %(funcName)s:%(lineno)d] --\n %(message)s")
+logging.basicConfig(level=logging.INFO, format="==%(levelname)s== [%(filename)s - %(funcName)s:%(lineno)d] --\n %(message)s")
 log = logging.getLogger()
 
 def create_app(test_config=None):
@@ -36,7 +37,22 @@ def create_app(test_config=None):
         #TODO figure out how to generate documentation
         @app.route('/', methods=('GET', 'POST'))
         def index():
-            return {'Docs': "???"}
+            modules = ['src.views',]
+            context = pdoc.Context()
+            modules = [pdoc.Module(mod, context=context) for mod in modules]
+            pdoc.link_inheritance(context)
+
+            #local convenience function to get the documentation for a module
+            def recursive_htmls(mod):
+                yield mod.name, mod.html()
+                for submod in mod.submodules():
+                    yield from recursive_htmls(submod)
+            docs = ""
+            for mod in modules:
+                for module_name, html in recursive_htmls(mod):
+                    docs += html
+                    
+            return docs
 
         #run the tests
         @app.route('/test', methods=('GET',))

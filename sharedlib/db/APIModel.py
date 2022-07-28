@@ -10,49 +10,95 @@ import json
 log = logging.getLogger()
 
 class APIModel(BaseModel):
+    """
+    _summary_
+
+    _extended_summary_
+
+    Args:
+        BaseModel (_type_): _description_
+
+    Raises:
+        Exception: _description_
+        Exception: _description_
+
+    Returns:
+        _type_: _description_
+    """
     # TODO: This should be set programmatically
     API_URL="#"
 
     def __init__(self, **kwargs):
+        """
+        _summary_
+
+        _extended_summary_
+
+        Raises:
+            Exception: _description_
+        """
         log.debug(f"pk: {kwargs.get('pk')}")
         log.debug(f"kwargs: {kwargs}")
-        if kwargs.get('pk') and len(kwargs) == 1:
-            endpoint = kwargs.get('pk')
-            result = self.__get(endpoint)
+
+        #if the kwargs have a pk, that means this should be an existing record
+        if kwargs.get('pk'):
+            #set the endpoint to the pk
+            #get the current data values
+            result = self._get(kwargs['pk'])
+            #if there is an error, print it out and throw an exception
             if result.get("error"):
-                log.error(response['error'])
                 raise Exception(response['error'])
+            #otherwise, update the object with the current data
             else:
-                result = result.get("results")
+                #update existing attribute dict, then update object
+                result['results'].update(kwargs)
+                super().__init__(**result['results'])
         else:
+            #create a new object
             super().__init__(**kwargs)
 
     def delete(self, api_path="delete"):
-        return self.__post(api_path, self.serialize())
+        """
+        _summary_
+
+        _extended_summary_
+
+        Args:
+            api_path (str, optional): _description_. Defaults to "delete".
+
+        Returns:
+            _type_: _description_
+        """
+        return self._post(api_path, self.serialize())
 
     def save(self, api_path="create"):
+        """
+        If the record has a pk, then switches to update. Otherwise,
+        creates a new record and sets the pk.
 
-        log.info(f"pk: {self.pk}")
+        Args:
+            api_path (str, optional): the endpoint save path if not 'create'. Defaults to "create".
+        """
+        log.debug(self)
         
-        if type(self.pk) == int:
-            
-            log.info(f"update pk: {self.pk}")
-
+        self.validate()
+        
+        log.debug(self)
+        
+        if hasattr(self, 'pk'):
+            log.debug(f"update object: {self.pk}")
             api_path = "update"
 
-        result = self.__post(api_path, self.serialize())
+        result = self._post(api_path, self.serialize())
 
         log.debug(result)
 
-        self.pk = result['results'].get('pk')
-
-    def __repr__(self):
-        return pprint.pformat(vars(self))
+        self.pk = result.get('pk')
 
     ######## Class Methods #########
     
     @classmethod
-    def __post(cls, endpoint, data, redirect_path="index"):
+    def _post(cls, endpoint, data):
         """
         _summary_
 
@@ -76,24 +122,37 @@ class APIModel(BaseModel):
 
 
     @classmethod
-    def __get(cls, endpoint, redirect_path="index"):
+    def _get(cls, endpoint):
         """
         _summary_
 
         Args:
-            endpoint (_type_): _description_
-            redirect_path (str, optional): _description_. Defaults to "index".
+            endpoint (str): the additional endpoint to append to the API_URL
 
         Returns:
-            _type_: _description_
+            dict: the json response from the API converted to a dictionary
         """
         response = requests.get(f"{cls.API_URL}/{endpoint}")
-        #log.info(f"recieved response: {response}")
+        
+        log.debug(f"recieved response: {response}")
+
         return response.json()
 
     @classmethod
-    def get(cls, pk):
-        return cls.__get(pk)
+    def get(cls, endpoint):
+        """
+        get a single record from the api endpoint based on the pk
+
+        Args:
+            pk (int): primary key of the requested record
+
+        Returns:
+            dict: a dictionary of the requested record
+        """
+        # NOTE: this is the public method so I can add 
+        # transformations later if needed
+        
+        return cls._get(endpoint)
 
     @classmethod
     def search(cls, search_term=None, **kwargs):
@@ -111,7 +170,7 @@ class APIModel(BaseModel):
         elif kwargs:
             endpoint = f"search?{urlencode(kwargs)}"
         log.debug(endpoint)
-        result = cls.__get(endpoint)
+        result = cls._get(endpoint)
 
         if result.get("error"):
             log.error(response['error'])
@@ -121,14 +180,26 @@ class APIModel(BaseModel):
         log.debug(result)
         objects = []
         for r in result:
-            log.debug(r)
+            
+            log.info(r)
+
             o = cls(**r)
+
             log.debug(o)
+
             objects.append(o)
         return objects
 
     @classmethod
     def all(cls):
+        """
+        _summary_
+
+        _extended_summary_
+
+        Returns:
+            _type_: _description_
+        """
         log.debug("all...")
         return cls.search()
 

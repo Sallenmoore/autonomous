@@ -14,43 +14,65 @@ db = Database()
 class BaseModel():
     
     def __init__(self, **kwargs):
+        """
+        _summary_
+
+        _extended_summary_
+        """
         self.__base_attrs = []
         self.__base_attrs = list(vars(self).keys())
-        self.pk = kwargs.get('pk', int)
-        self.model_attr()
+
         self.update(**kwargs)
 
     def __str__(self):
+        return self.__repr__()
+
+    def __repr__(self):
         text = "{\n"
         for k,v in vars(self).items():
-            text += f"\t{k} => {v}\n"
+            text += f"\t{k} => {v} ({type(v)})\n"
         text += "}"
         return text
 
     def update(self, **kwargs):
+        """
+        _summary_
+
+        _extended_summary_
+        """
+        log.debug(f"kwargs: {kwargs}")
         
-        #log.debug(f"kwargs: {kwargs}")
-        
-        self.validate(**kwargs)
-        
-        #log.debug(f"kwargs: {kwargs}")
-        for k, v in kwargs.items():
-            if hasattr(self, k):
-                #log.debug(f"k, v: {k}, {v}")
-                #model attributes are set to their type
+        if self.validate(**kwargs):
+            for k,v in kwargs.items():
                 setattr(self, k, v)
-            else:
-                log.info(f"{k} Not Found")
-        #log.debug(f"{self}")
+
+        log.debug(f"{self}")
     
     def validate(self, **kwargs):
+        """
+        only validate values being updated
+
+        Raises:
+            ValueError: if the value being updated doesn't match type
+
+        Returns:
+            bool: whether or not the updates to the object validate
+        """
         if not kwargs:
             kwargs = self._attributes
-        #log.debug(f'{kwargs}')
+
+        log.debug(f'{kwargs}')
+
+        attrs = self.model_attr()
+
         for k,v in kwargs.items():
-            if type(getattr(self, k)) != type(v) and getattr(self, k) != type(v):
-                log.info(f'{k}:{v}')
-                raise TypeError(f"type mismatch for {k}: expected {getattr(self, k)}, got: {type(v)}")
+            if k not in attrs:
+                raise Exception(f"Invalid Attribute: {k}")
+            elif type(v) != attrs[k]:
+                # should be able to cast it, ex. str -> int: 
+                # attr = type(attr)
+                kwargs[k] =  attrs[k](kwargs[k])
+
         return True
 
     def serialize(self):

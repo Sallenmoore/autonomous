@@ -5,13 +5,15 @@ class Character(APIModel):
     API_URL="http://api:8000/character"
 
     def model_attr(self):
-        self.image_url = str
-        self.name = str
-        self.player_class = str
-        self.history = str
-        self.hp = int
-        self.status = str
-        self.inventory = list
+        return {
+            "image_url":str,
+            "name":str,
+            "player_class":str,
+            "history":str,
+            "hp":int,
+            "status":str,
+            "inventory":list,
+        }
 
 
 

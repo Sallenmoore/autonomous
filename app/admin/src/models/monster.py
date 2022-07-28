@@ -7,19 +7,17 @@ from flask import current_app
 
 class Monster(APIModel):
     API_URL="http://api:8000/monster"
-    def __init__(self,  **kwargs):
+    def model_attr(self):
         #current_app.logger.info(kwargs)
-        self.attrs = {
-            'name':None,  
-            'size':None,  
-            'type':None,  
-            'armor_class':None,  
-            'armor_desc':None,  
-            'hit_points':None,  
-            'hit_dice':None,  
-            'challenge_rating':None,  
-            'img_main':None,
+        return {
+            'name':str,  
+            'size':str,  
+            'type':str,  
+            'armor_class':str,  
+            'armor_desc':int,  
+            'hit_points':int,  
+            'hit_dice':str,  
+            'challenge_rating':str,  
+            'img_main':str,
         }
-        self.deserialize(**kwargs)
-        self.actions = [Action(**action) for action in kwargs.get('actions')] if kwargs.get('actions') else []
 

@@ -2,6 +2,8 @@
 
 import requests
 from urllib.parse import urlencode
+import logging
+log = logging.getLogger()
 
 class DnDAPI:
     """
@@ -12,27 +14,6 @@ class DnDAPI:
     """
     API_URL = "https://api.open5e.com/"
 
-    @classmethod
-    def _response(cls, results):
-        """
-        _summary_
-
-        Args:
-            results (_type_): _description_
-
-        Returns:
-            _type_: _description_
-        """
-        packaged_result = {"results":[], "count":0, "next":[], 'api_urls':[]}
-        
-        for url, r in results.items():
-            
-            packaged_result["results"] += r.get('results', [])
-            if r.get('next'):
-                packaged_result['next'] += [r['next']]
-            packaged_result["count"] += r['count'] if r.get('count') else len(r.get("results", []))
-            packaged_result['api_urls'] += [url]
-        return packaged_result
     
     @classmethod
     def _request(cls, urls):
@@ -42,15 +23,22 @@ class DnDAPI:
         Returns:
             _type_: _description_
         """
-        results = {}
+        results = []
         for url in urls:
-            results[url] = requests.get(url)
+            response = requests.get(url)
             try:
-                results[url] = results[url].json()
+                response = response.json()
+                results += response['results']
             except requests.JSONDecodeError as e:
-                results[url] = {'error':f"[{url}] not found"}
-        
-        return cls._response(results)
+                results +=  [f"ERROR: [{url}] not found"]
+            else:
+                log.debug(f"results: {results}")
+                while response.get('next'):
+                    log.debug(f"retrieving next page of results: {response.get('next')}")
+                    response = requests.get(response.get('next')).json()
+                    results.append(response.get('results', []))
+                    log.debug(f"results: {results}")
+        return results
     
     @classmethod
     def _build_general_search_url(cls, search_term="", **kwargs):
@@ -75,6 +63,7 @@ class DnDAPI:
         Returns:
             _type_: _description_
         """
+        #resource search:/<resource>/search/?text=<value>
         term = search_terms.pop('search', "")
         url = f"{cls.API_URL}{resource}/?search={term}"
         return f"{url}&{urlencode(search_terms)}" if search_terms else url

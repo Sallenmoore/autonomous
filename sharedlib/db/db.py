@@ -27,9 +27,13 @@ class Table:
         """
         if not object.get('pk'):
             doc_id = len(self._table)
-            #log.debug(f'doc_id: {doc_id}')
+
+            log.debug(f'doc_id: {doc_id}')
+            
             object['pk'] = self._table.insert(table.Document(object, doc_id=doc_id+1))
-            #log.debug(f'after_insert: {object}')
+
+            log.debug(f'after_insert: {object}')
+            
         self._table.update(object, doc_ids=[object['pk']])
         return object.get('pk') 
 
@@ -37,9 +41,12 @@ class Table:
         """
         [summary]
         """ 
-        #log.debug(id)
+        log.debug(id)
+
         result = self._table.remove(doc_ids=[id,])
-        #log.debug(result)
+
+        log.debug(result)
+
         return result
 
     def search(self, **kwargs):
@@ -55,6 +62,7 @@ class Table:
         [summary]
         """
         log.debug(f"get {id}")
+        
         return self._table.get(doc_id=id)
 
     def all(self):
@@ -71,7 +79,9 @@ class Database:
         [create an interface for your database]
         """
         self.db_path = f'{pathlib.Path().resolve()}/{os.environ.get("DB_NAME", "tables")}'
-        log.debug(f'=== DEBUG ===  DB path: {self.db_path}')
+        
+        log.debug(f'DB path: {self.db_path}')
+        
         os.path.isdir(self.db_path) or os.makedirs(self.db_path)
         self.tables = {}
 

@@ -13,8 +13,12 @@ logging.basicConfig(level=logging.INFO, format="==%(levelname)s== [%(filename)s 
 
 def create_app(test_config=None):
     app = Flask(__name__)
-    app.config.from_pyfile('../config.py')
-    app.secret_key = os.environ.get("SECRET_KEY")
+
+    #set to 'config.Config' to use ENV_VARS
+    #set to 'config.DevConfig' to use development settings
+    #set to 'config.ProdConfig' to use production settings
+    app.config.from_object('config.DevConfig') 
+    
     # ensure the instance folder exists
     try:
         os.makedirs(app.instance_path)
@@ -35,8 +39,12 @@ def create_app(test_config=None):
         # Include our Routes
         @app.route('/', methods=('GET', 'POST'))
         def index():
-            #campaign = Campaign(session.get('campaign_id'))
-            context = {'classes': Compendium.AVAILABLE_CLASSES, 'characters': Character.all()}
+            context = {'classes': Compendium.get_classes(), 'characters': Character.all()}
+
+            # Update context wtih session data
+            if session.get('compendium_search'):
+                context['compendium_search_results'] = session['compendium_search']
+            
             return render_template("index.html", **context)
 
         @app.route('/test', methods=('GET',))
@@ -50,22 +58,31 @@ def create_app(test_config=None):
 
         @app.route('/create_character', methods=('POST',))
         def create_character():
-            result = Character.save(request.form)
+            char = Character(**request.form)
+            #app.logger.debug(f"Creating character: {char}")
+            session['character_create'] = char.save()
             return redirect(url_for("index"))
 
         @app.route('/character/<pk>', methods=('GET', 'POST'))
         def get_character(pk):
-            result = Character.get(request.form)
+            session['character_get']  = Character.get(**request.form)
             return redirect(url_for("index"))
 
         @app.route('/update_character', methods=('GET', 'POST'))
         def update_character():
-            result = Character.save(request.form)
+            
+            #app.logger.debug(request.form)
+
+            character = Character(**request.form)
+
+            app.logger.info(character)
+
+            character.save()
             return redirect(url_for("index"))
 
         @app.route('/delete_character', methods=('POST',))
         def delete_character():
-            result = Character.delete(request.form)
+            session['character_delete'] = Character(**request.form).delete()
             return redirect(url_for("index"))
 
         ################################################################
@@ -90,7 +107,7 @@ def create_app(test_config=None):
         #     return character_api('update', json.dumps(request.form))
 
         ################################################################
-        ###                       Compendium API                     ###
+        ###                       Compendium Search                     ###
         ################################################################
         
         @app.route('/compendium', methods=('GET',))
@@ -102,7 +119,7 @@ def create_app(test_config=None):
             response = requests.get(url, headers=headers)
             return response.json()
 
-            response = requests.post(f"http://api:8000/compendium/{args['endpoint']}", data={'search':args['search']},headers=headers)
+            session['compendium_search'] = requests.post(f"http://api:8000/compendium/search", data={'endpoint': args['endpoint'], 'search':args['search']},headers=headers)
             return redirect(url_for('index'))
 
     ###### returns the application instance to the caller ######
