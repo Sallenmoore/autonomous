@@ -23,11 +23,7 @@ class TestCharacterAPIModel:
         Returns:
             _type_: _description_
         """
-        return all([r.image_url == "test.png",
-                r.name == "Test Character",
-                r.player_class == "Test",
-                r.history == "Test",
-            ])
+        return all([r.name == "Test Character", r.player_class == "Test"])
 
     def test_delete(self):
         """
@@ -56,10 +52,9 @@ class TestCharacterAPIModel:
         """
         ch = Character(**self.testchar)
         result = ch.save()
-
+        log.info(result)
         assert type(ch.pk) is int
         
-        log.debug(result)
         results = Character.all()
         log.info(results)
         assert any(r for r in results if self.verify_results(r))

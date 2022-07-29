@@ -90,10 +90,11 @@ class APIModel(BaseModel):
             api_path = "update"
 
         result = self._post(api_path, self.serialize())
-
-        log.debug(result)
-
-        self.pk = result.get('pk')
+        if not result.get("error"):
+            self.pk = result['results']['pk']
+        else:
+            raise Exception(result['error'])
+        return self.pk
 
     ######## Class Methods #########
     
@@ -181,7 +182,7 @@ class APIModel(BaseModel):
         objects = []
         for r in result:
             
-            log.info(r)
+            log.debug(r)
 
             o = cls(**r)
 

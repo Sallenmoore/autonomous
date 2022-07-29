@@ -1,0 +1,148 @@
+{##############################################################################}
+{##                         character display snippet                        ##}
+{##############################################################################}
+{% macro display(character, classes) -%}
+<div class="collapsible-header">
+  <i class="material-icons">
+      perm_identity
+  </i>
+  {{character.name}}
+</div>
+<div class="collapsible-body">
+  <div class="row">
+      <div class="col s12">
+        <form class="update_character" method="post" 
+              action="{{url_for('update_character')}}"
+        >
+          <input type="hidden" value="{{character['pk']}}" name="pk">
+          <div class="row">
+            <div class="input-field col s12">
+              <input name="name" type="text" value="{{character['name']}}">
+              <label for="disabled">Name</label>
+            </div>
+          </div>
+          <div class="row">
+            <div class="col s12">
+              <select name="player_class">
+                  {% for class in classes %}
+                      <option value="{{class}}" 
+                        {% if class==character['player_class']%}
+                        selected
+                        {% endif %}
+                      >
+                        {{class}}
+                      </option>
+                  {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="row">
+            <div class="input-field col s6">
+              <input name="hp" type="number" value="{{character['hp']}}">
+              <label for="hp">HP</label>
+            </div>
+            <div class="input-field col s6">
+              <input name="status" type="text" value="{{character['status']}}">
+              <label for="status">Status</label>
+            </div>
+          </div>
+          <div class="row">
+            <div class="input-field col s12">
+              <textarea id="history" name="history" class="materialize-textarea" value="{{character['history']}}">
+              </textarea>
+              <label for="history">History</label>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+    <div class="row">
+      <div class="col s3">
+          <form   method="post" 
+                  action="{{url_for('delete_character')}}"
+                  onsubmit="return confirm('Are you sure you want to delete the character?');"
+          >
+              <input type="hidden" value="{{character['pk']}}" name="pk">
+              <button type="submit">
+                  <span class="material-icons">
+                      person_remove
+                  </span>
+              </button>
+          </form>
+      </div>
+    </div>
+  <div>
+</div>
+{%- endmacro %}
+
+
+{##############################################################################}
+{##                          character list snippet                          ##}
+{##############################################################################}
+{% macro list(characters) %}
+<ul class="collection">
+  {%for character in characters %}
+    <li class="collection-item avatar">
+      <img src="images/yuna.jpg" alt="" class="circle">
+      <span class="title">{{character.name}}</span>
+    </li>
+  {% endfor %}
+</ul>
+{% endmacro %}
+
+{##############################################################################}
+{##                          character create snippet                          ##}
+{##############################################################################}
+{% macro create(classes) %}
+<div class="row">
+  <div class="col s12">
+      <a class="btn-floating btn-small waves-effect waves-light" onclick="$('#create_character').toggle()">
+          <i class="material-icons">add</i>
+      </a>
+  </div>
+</div>
+<div class="row" style="display:none" id="create_character">
+  <div class="col s12">
+      <form method="post" action="{{url_for('create_character')}}">
+          <div class="row">
+              <div class="col s6">
+                  <select name="player_class">
+                      <option value="" disabled selected>Choose a Class</option>
+                      {% for class in classes %}
+                          <option value="{{class}}">{{class}}</option>
+                      {% endfor %}
+                  </select>
+              </div>
+          </div>
+          <div class="row">
+              <div class="input-field col s9">
+                  <input placeholder="Full Name" name="name" id="full_name" type="text">
+                  <label for="full_name">Full Name</label>
+              </div>
+          </div>
+          <div class="row">
+              <div class="input-field col s12">
+                  <button class="btn waves-effect waves-light" type="submit">
+                      Create
+                      <i class="material-icons right">add</i>
+                  </button>
+              </div>
+          </div>
+      </form>
+  </div>
+</div>
+{% endmacro %}
+
+{##############################################################################}
+{##                       character initiative snippet                       ##}
+{##############################################################################}
+{% macro initiative(characters) %}
+<a class="btn-floating btn-large waves-effect waves-light red" id="next_initiative"><i class="material-icons">next_plan</i></a>
+<ul class="collection" id="character_initiative">
+  {%for character in characters %}
+    <li class="collection-item">
+      <span class="title">{{character.name}}</span>
+    </li>
+  {% endfor %}
+</ul>
+{% endmacro %}

@@ -49,7 +49,6 @@ def test_all(test_client):
     assert not data['error']
     assert data['results']
 
-
 def test_random(test_client):
     """
     _summary_

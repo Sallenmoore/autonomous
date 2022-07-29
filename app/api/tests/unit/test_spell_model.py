@@ -12,15 +12,15 @@ class TestSpell:
         """
         results = Spell.search()
         
-        assert results.get('results')
+        assert results
 
         results = Spell.search(name="Acid Arrow")
         
-        assert results.get('results')
+        assert results
 
         results = Spell.search("djydkdkuculkc")
         
-        assert not results['results']
+        assert not results
         
     def test_count(self):
         """
@@ -40,6 +40,5 @@ class TestSpell:
         """
         result = Spell.random()
         
-        assert result.get('results')[0]['name']
-        assert result.get('count') == 1
-        assert not result.get('next')
+        assert result[0]['name']
+        assert len(result) == 1

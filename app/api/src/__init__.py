@@ -37,7 +37,7 @@ def create_app(test_config=None):
         #TODO figure out how to generate documentation
         @app.route('/', methods=('GET', 'POST'))
         def index():
-            modules = ['src.views',]
+            modules = ['src.views','src.models']
             context = pdoc.Context()
             modules = [pdoc.Module(mod, context=context) for mod in modules]
             pdoc.link_inheritance(context)

@@ -1,5 +1,7 @@
 from src.models.compendium import Compendium
 
+import logging
+log = logging.getLogger()
 
 class TestCompendium:
 
@@ -11,16 +13,15 @@ class TestCompendium:
             _type_: _description_
         """
         results = Compendium.search()
-        
-        assert results.get('results')
+        log.info(results)
+        assert len(results) > 0
 
         results = Compendium.search("fire")
-        
-        assert results.get('results')
+        assert len(results) > 0
         
         results = Compendium.search("djydkdkuculkc")
         
-        assert not results['results']
+        assert len(results) == 0
         
         
     def test_count(self):
@@ -41,6 +42,5 @@ class TestCompendium:
         """
         result =  Compendium.random()
         
-        assert result.get('results')[0]['name']
-        assert result.get('count') == 1
-        assert not result.get('next')
+        assert result[0]['name']
+        assert len(result) == 1

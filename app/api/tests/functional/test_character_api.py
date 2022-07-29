@@ -29,10 +29,10 @@ def verify_results(r):
     Returns:
         _type_: _description_
     """
-    return all([r['image_url'] == "test.png",
-            r['name'] == "Test Character",
-            r['player_class'] == "Test",
-            r['history'] == "Test",
+    return all([r.get('image_url') == "test.png",
+            r.get('name') == "Test Character",
+            r.get('player_class') == "Test",
+            r.get('history') == "Test",
         ])
 
 def filtered_results(results):

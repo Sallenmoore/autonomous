@@ -35,9 +35,8 @@ def test_create_character_model(test_obj):
     assert test_obj.hp == 100
     assert test_obj.status == "None"
     assert test_obj.inventory == ["Test Item #1", "Test Item #2"]
-    assert test_obj.pk == int
-    log.debug("Here")
     pk = test_obj.save()
+    assert test_obj.pk == pk
     test_obj.pk = None
     test_obj.save()
     result = Character.get(pk)

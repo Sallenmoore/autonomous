@@ -36,7 +36,7 @@ class Compendium:
         #get each resource results
         search_terms['search'] = search_term
         
-        return DnDAPI.api_request(cls.resource, **search_terms)
+        return DnDAPI.api_request(cls.resource, **search_terms, full_api_results=True).get('results')
     
     @classmethod
     def count(cls, **search_terms):
@@ -60,7 +60,7 @@ class Compendium:
         num_pages = DnDAPI.api_request([random_resource], limit=1).get('count', 0)
         
         result = DnDAPI.api_request([random_resource], limit=1, page=random.randrange(num_pages)+1)
-        return result
+        return result['results']
 
     @classmethod
     def classes_list(cls):
@@ -70,9 +70,9 @@ class Compendium:
         Returns:
             _type_: _description_
         """
-        result = DnDAPI.api_request(['classes'])
+        result = DnDAPI.api_request(['classes'], full_api_results=True)
         classes = []
-        for r in result:
+        for r in result['results']:
             classes.append(r['name'])
             log.debug(f"{r['name']}") 
 

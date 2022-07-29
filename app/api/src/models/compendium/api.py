@@ -16,28 +16,31 @@ class DnDAPI:
 
     
     @classmethod
-    def _request(cls, urls):
+    def _request(cls, urls, full_api_results=False):
         """
         request from each object API resource
 
         Returns:
             _type_: _description_
         """
-        results = []
+        results = {"results":[], "count":0}
         for url in urls:
+            log.info(f"requesting {url}")
             response = requests.get(url)
             try:
                 response = response.json()
-                results += response['results']
+                results['results'] += response['results']
+                results['count'] += response['count']
             except requests.JSONDecodeError as e:
                 results +=  [f"ERROR: [{url}] not found"]
             else:
                 log.debug(f"results: {results}")
-                while response.get('next'):
-                    log.debug(f"retrieving next page of results: {response.get('next')}")
-                    response = requests.get(response.get('next')).json()
-                    results.append(response.get('results', []))
-                    log.debug(f"results: {results}")
+                if full_api_results:
+                    while response.get('next'):
+                        log.debug(f"retrieving next page of results: {response.get('next')}")
+                        response = requests.get(response.get('next')).json()
+                        results['results'] += response.get('results', [])
+                        log.debug(f"results: {results}")
         return results
     
     @classmethod
@@ -84,9 +87,15 @@ class DnDAPI:
         return f"{cls.API_URL}{resource}/?{urlencode(search_terms)}"
 
     @classmethod
-    def api_request(cls, resources=None, **search_terms):
+    def api_request(cls, resources=None, full_api_results=False, **search_terms):
         """
-        request from each object API resource
+        _summary_
+
+        _extended_summary_
+
+        Args:
+            resources (_type_, optional): _description_. Defaults to None.
+            full_api_results (bool, optional): _description_. Defaults to False.
 
         Returns:
             _type_: _description_
@@ -103,4 +112,4 @@ class DnDAPI:
                 urls.append(cls._build_resource_search_url(r, **search_terms))
             else:
                 urls.append(cls._build_keyword_search_url(r, **search_terms))
-        return cls._request(urls)
+        return cls._request(urls, full_api_results = full_api_results)

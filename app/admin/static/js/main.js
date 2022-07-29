@@ -8,9 +8,19 @@ $(document).ready(function(){
             $(this).submit();
         });
     });
+
+    var initiative_list = document.getElementById('character_initiative');
+    var sortable = Sortable.create(initiative_list);
 });
 
-
+$('#next_initiative').click(function(){
+    var prev = $("#character_initiative li:first-child");
+    $.unique(prev).each(function(i) {
+      $(this).slideUp(function() {
+        $(this).appendTo(this.parentNode).slideDown();
+      });
+    });
+});
 
 $('#reference_search').keyup(function(event) {
     let search_term = $('#search_term').val();

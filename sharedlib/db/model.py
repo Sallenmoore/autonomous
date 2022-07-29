@@ -13,6 +13,18 @@ db = Database()
 
 class BaseModel():
     
+    """
+    basic model functionality used as a base class for specific model types
+
+    Notes: 
+     - model_attr: must return a dictionary of attributes and their types
+        - pk: defaults to int, set type if you want to use another data type
+     - validate: model must validate attributes against model_attr() abstract method
+       - if the attribute is not in model_attr(), it is invalid
+       - if the attribute is in model_attr(), but the value is not of the correct type and it cannot be casted to the correct type, it is invalid
+       - if the attribute is in model_attr(), but the value is None, it is valid. This is useful for optional attributes and duplicating records by setting the pk to None
+    """
+    
     def __init__(self, **kwargs):
         """
         _summary_
@@ -34,6 +46,31 @@ class BaseModel():
         text += "}"
         return text
 
+    def __setattr__(self, name, value):
+        attrs = self._model_attrs()
+        if value is not None and name in attrs:
+            log.debug(f"{name} type {type(value)}, should be {type(value)}")
+            # cast it, ex. str -> int: 
+            # attr = type(attr)
+            value = attrs[name](value)
+            log.debug(f"{name} type cast to {type(value)}")
+            
+        self.__dict__[name] = value
+    
+############################## Private Methods #####################################
+    def _model_attrs(self):
+        """
+        private proxy method to allow hooks fro pulling attribute types
+        adds 'pk' to model_attr()
+
+        Returns:
+            _type_: _description_
+        """
+        attrs = self.model_attr()
+        attrs['pk'] = attrs.get('pk', int)
+        return attrs
+
+############################## Public Methods #####################################
     def update(self, **kwargs):
         """
         _summary_
@@ -41,6 +78,8 @@ class BaseModel():
         _extended_summary_
         """
         log.debug(f"kwargs: {kwargs}")
+
+        attrs = self._model_attrs()
         
         if self.validate(**kwargs):
             for k,v in kwargs.items():
@@ -63,16 +102,12 @@ class BaseModel():
 
         log.debug(f'{kwargs}')
 
-        attrs = self.model_attr()
-
+        attrs = self._model_attrs()
+        
         for k,v in kwargs.items():
             if k not in attrs:
                 raise Exception(f"Invalid Attribute: {k}")
-            elif type(v) != attrs[k]:
-                # should be able to cast it, ex. str -> int: 
-                # attr = type(attr)
-                kwargs[k] =  attrs[k](kwargs[k])
-
+        log.debug(f'{kwargs}')
         return True
 
     def serialize(self):
@@ -96,7 +131,7 @@ class BaseModel():
                     json_data[key] = value
         return json_data
 
-    ############################## Properties       #####################################
+    ############################## Private Properties       #####################################
     @property
     def _attributes(self):
         #log.debug(f'attributes: {vars(self)}')
@@ -109,11 +144,16 @@ class BaseModel():
         #log.debug(f'attributes: {result}')
         return result
 
-
+    ############################## Operators       #####################################
+    def __EQ__(self, other):
+        return self.pk == other.pk
+    
     ############################## Abstract Methods #####################################
     def model_attr(self, **kwargs):
         """
-        #must overwrite
+        must overwrite
+        pk defaults to int, set an explicit type 
+        if you are going to use another value as the pk
         Raises:
             NotImplementedError: [description]
         """
@@ -125,9 +165,6 @@ class BaseModel():
     @classmethod
     def deserialize(cls, **kwargs):
         return cls(**kwargs)
-
-    def __EQ__(self, other):
-        return self.pk == other.pk
 
 class Model(BaseModel):
 
@@ -142,16 +179,19 @@ class Model(BaseModel):
         """
         save() :save object to db
         """
-        #log.debug(f'saving...')
+        log.info(self._attributes)
         if self.validate():
             obj_serialize = self.serialize()
-            #log.debug(f'{obj_serialize}')
+
+            log.debug(f'{obj_serialize}')
+
             self.pk = self.table.update(obj_serialize)
-            #log.debug(f'{obj_serialize}')
+
+            log.info(f'{self}')
+
             return self.pk
         else:
-            log.debug('VERIFICATION FAILED: not saved')
-        return None
+            raise Exception('VERIFICATION FAILED: not saved')
 
     def delete(self):
         self.table.delete(self.pk)

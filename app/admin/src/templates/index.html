@@ -1,8 +1,15 @@
-{% import 'macros.html' as macros %}
+{% import 'macros/general.html' as general_macros %}
+{% import 'macros/character.html' as character_macros %}
+{% import 'macros/item.html' as item_macros %}
+{% import 'macros/monster.html' as monster_macros %}
+{% import 'macros/spell.html' as spell_macros %}
+{% import 'macros/dice.html' as dice_macros %}
+
 {% extends "base.html" %}
 
 {% block content %}
 <div class="container">
+    {{ general_macros.search() }}
     <div class="row">
         <div class="col s6">
             <h1>Players</h1>
@@ -12,110 +19,21 @@
                     <ul class="collapsible">
                     {% for character in characters %}
                         <li>
-                            {{ macros.character_node(character, classes) }}
+                            {{ character_macros.display(character, classes) }}
                         </li>
                     {% endfor %}
                     </ul>
                 </div>
             </div>
-            <div class="row">
-                <div class="col s12">
-                    <a class="btn-floating btn-small waves-effect waves-light" onclick="$('#create_character').toggle()">
-                        <i class="material-icons">add</i>
-                    </a>
-                </div>
-            </div>
-            <div class="row" style="display:none" id="create_character">
-                <div class="col s12">
-                    <form method="post" action="{{url_for('create_character')}}">
-                        <div class="row">
-                            <div class="col s6">
-                                <select name="player_class">
-                                    <option value="" disabled selected>Choose a Class</option>
-                                    {% for class in classes %}
-                                        <option value="{{class}}">{{class}}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                        </div>
-                        <div class="row">
-                            <div class="input-field col s9">
-                                <input placeholder="Full Name" name="name" id="full_name" type="text">
-                                <label for="full_name">Full Name</label>
-                            </div>
-                        </div>
-                        <div class="row">
-                            <div class="input-field col s12">
-                                <button class="btn waves-effect waves-light" type="submit">
-                                    Create
-                                    <i class="material-icons right">add</i>
-                                </button>
-                            </div>
-                        </div>
-                    </form>
-                </div>
-            </div>
+            {{ character_macros.create(classes) }}
         </div>
         <div class="col s6">
-            <h1>Campaign</h1>
-            <h2>Campaign Outline</h2>
             <div class="row">
-                <form class="col s12">
-                    <div class="row">
-                        <div class="input-field col s12">
-                            <textarea id="note" class="materialize-textarea"></textarea>
-                            <label for="textarea1">Notes</label>
-                        </div>
-                    </div>
-                </form>
-            </div>
-            <div class="row">
-                <h2>Status</h2>
-                <form class="col s12">
-                    <div class="row">
-                        <div class="input-field col s12">
-                            <textarea id="note" class="materialize-textarea"></textarea>
-                            <label for="textarea1">Notes</label>
-                        </div>
-                    </div>
-                </form>
-            </div>
-            <div class="row">
-                <form class="col s12">
-                    {#
-                    {% for note in dm['notes'] %}
-                        <div class="row">
-                            <div class="input-field col s12">
-                                <input disabled value="{{note}}" name="" type="text">
-                            </div>
-                        </div>
-                    {% endfor %}
-                    #}
-                </form>
-            </div>
-
-        </div>
-    </div>
-    <div class="row">
-        <div class="col s12">
-            <h1>Reference</h1>
-            <form method="get" action="{{url_for('compendium')}}">
-                <div class="input-field col s6">
-                    <select name="endpoint">
-                      <option value="search" selected > General Search</option>
-                      <option value="character">Character</option>
-                      <option value="monster">Monster</option>
-                      <option value="item">Item</option>
-                      <option value="spell">Spell</option>
-                      <option value="classes_list">Classes</option>
-                    </select>
-                    <label>Topic</label>
+                <div class="col s12">
+                    <h1> Initiative </h1>
+                    {{ character_macros.initiative(characters) }}
                 </div>
-                <div class="input-field col s6">
-                    <input placeholder="search terms" name="search" type="text">
-                    <label for="first_name">Search</label>
-                </div>
-            </form>
+            </div>
         </div>
     </div>
 </div>
