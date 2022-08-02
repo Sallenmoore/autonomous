@@ -1,11 +1,11 @@
 ###### Common Requirements w/o Version Specifiers ######
+libsass
 requests
 gunicorn
 pytest
 coverage
 tinydb
-pdoc3
-libsass
+flask-restplus
 
 ###### Common Requirements w/ Version Specifiers ######
 Flask>=2.0

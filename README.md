@@ -4,7 +4,7 @@ DnD Helper Application
 
 ## Container Apps
 
-Buddy has 4 inital container components:
+DM Buddy has 4 inital container components:
 
 * **server**
     * static files and assets are served from here. This is also the main entry point for the application.
@@ -49,6 +49,10 @@ Buddy has 4 inital container components:
 * [pytest](https://docs.pytest.org/en/7.1.x/reference/reference.html)
 * [coverage](https://coverage.readthedocs.io/en/6.4.1/cmd.html)
 
+### Documentation
+* [pdoc](https://pdoc.dev/docs/pdoc/doc.html)
+* [highlight.js](https://highlightjs.org/)
+
 ---
 
 ## Developer Notes
@@ -85,8 +89,7 @@ Buddy has 4 inital container components:
 
 ### BUGS
 
-* saving objects to DB
-    * not saving all attributes
+* TBD
 
 ### TODOs
 
