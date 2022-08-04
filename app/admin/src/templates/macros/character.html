@@ -1,91 +1,129 @@
 {##############################################################################}
+{##                         character form                        ##}
+{##############################################################################}
+{% macro form(character, classes) %}
+<input type="hidden" value="{{character['pk']}}" name="pk">
+<div class="row">
+  <div class="input-field col s6">
+    <input id="{{character.pk}}_name" name="name" type="text" value="{{character['name']}}">
+    <label for="{{character.pk}}_name">Name</label>
+  </div>
+  <div class="input-field col s6">
+    <div class="switch">
+      <label>
+        <input type="checkbox" name="active" id="{{character.pk}}_activate" {%if character['active']%} checked {%endif%} >
+        <span>Active</span>
+      </label>
+    </div>
+  </div>
+</div>
+<div class="row">
+  <div class="col s6">
+    <label for="{{character.pk}}_player_class">Class</label>
+    <select id="{{character.pk}}_player_class" name="player_class" name=player_class">
+      {% for class in classes %}
+        <option value="{{class}}" {% if class==character['player_class']%}selected{% endif %}>
+          {{class}}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+</div>
+<div class="row">
+  <div class="input-field col s6">
+    <input id="{{character.pk}}_hp" name="hp" type="number" value="{%if character['hp'] %}{{character['hp']}}{%else%}0{%endif%}">
+    <label for="{{character.pk}}_hp">HP</label>
+  </div>
+  <div class="input-field col s6">
+    <input id="{{character.pk}}_status" name="status" type="text" value="{{character['status']}}">
+    <label for="{{character.pk}}_status">Status</label>
+  </div>
+</div>
+<div class="row">
+  <div class="input-field col s12">
+    <textarea id="{{character.pk}}_history" name="history" class="materialize-textarea" value="{{character['history']}}">
+    </textarea>
+    <label for="{{character.pk}}_history">History</label>
+  </div>
+</div>
+<div class="row">
+  {% for item in character.inventory %}
+    <div class="chip">
+      {{item}}
+      <i class="close material-icons">close</i>
+    </div>
+  {% endfor %}
+</div>
+{% endmacro %}
+
+{##############################################################################}
 {##                         character display snippet                        ##}
 {##############################################################################}
-{% macro display(character, classes) -%}
-{##     character list    ##}
-<div class="collapsible-header">
-  <i class="material-icons">
-      perm_identity
-  </i>
-  {{character.name}}
-  <label for="add_to_initiative">
-    <input type="checkbox" class="filled-in" checked="checked" id="add_to_initiative"/>
-    <span>Add to Intiative</span>
-  </label>
-</div>
+{% macro display(characters, classes) -%}
 
-<div class="collapsible-body">
-  <div class="row">
-      <div class="col s12">
-        <form class="update_character" method="post"  action="{{url_for('update_character')}}">
-          <input type="hidden" value="{{character['pk']}}" name="pk">
-          <div class="row">
-            <div class="input-field col s12">
-              <input name="name" type="text" value="{{character['name']}}">
-              <label for="disabled">Name</label>
-            </div>
+<ul class="collection" id="character_display">
+  {% for character in characters %}
+    {% if character.active %}
+      {##    character list    ##}
+      <li class="collection-item">
+        <div class="row" style="width:100%">
+          <div class="col s10 modal-trigger" href="#{{character.pk}}_details">
+            <i class="material-icons">face</i> {{character.name}}
           </div>
-          <div class="row">
-            <div class="col s12">
-              <select name="player_class">
-                  {% for class in classes %}
-                      <option value="{{class}}" 
-                        {% if class==character['player_class']%}
-                        selected
-                        {% endif %}
-                      >
-                        {{class}}
-                      </option>
-                  {% endfor %}
-              </select>
-            </div>
-          </div>
-          <div class="row">
-            <div class="input-field col s6">
-              <input name="hp" type="number" value="{{character['hp']}}">
-              <label for="hp">HP</label>
-            </div>
-            <div class="input-field col s6">
-              <input name="status" type="text" value="{{character['status']}}">
-              <label for="status">Status</label>
-            </div>
-          </div>
-          <div class="row">
-            <div class="input-field col s12">
-              <textarea id="history" name="history" class="materialize-textarea" value="{{character['history']}}">
-              </textarea>
-              <label for="history">History</label>
-            </div>
-          </div>
-          <div class="input-field col s6">
-            <label>
-              <input type="checkbox" class="filled-in" checked="checked" />
-              <span>Active</span>
+          <div class="col s2">
+            <input type="hidden" name="char_name" value="{{character.name}}">
+            <label for="{{character.pk}}_initiative">
+              <input id="{{character.pk}}_initiative" type="checkbox" class="add_to_initiative" checked="checked"/>
+              <span>Intiative</span>
             </label>
           </div>
-        </form>
-      </div>
-    </div>
-    <div class="row">
-      <div class="col s3">
-          <form   method="post" 
-                  action="{{url_for('delete_character')}}"
-                  onsubmit="return confirm('Are you sure you want to delete the character?');"
-          >
-              <input type="hidden" value="{{character['pk']}}" name="pk">
-              <button class="red darken-4 white-text" type="submit">
-                  <span class="material-icons">
-                      person_remove
-                  </span>
-                  <div class="valign-wrapper">
-                    DELETE
+        </div>
+
+        {##    character details    ##}
+        <div id="{{character.pk}}_details" class="modal">
+          <div class="modal-content">
+            <div class="row">
+              <div class="col s11">
+                <form method="POST" action="{{url_for('activate_character')}}">
+                  <input type="hidden" name="pk" value="{{character.pk}}">
+                  <div class="switch">
+                    <label>
+                      <input type="checkbox" name="activate" id="{{character.pk}}_activate" class="filled-in activate_character" checked onchange="this.form.submit()">
+                      <span>Active</span>
+                    </label>
                   </div>
-              </button>
-          </form>
-      </div>
-    </div>
-  <div>
-</div>
+                </form>
+                <form class="update_character" method="post"  action="{{url_for('update_character')}}">
+                  {{ form(character, classes) }}
+                </form>
+              </div>
+              <div class="col s1">
+                <a href="#" class="modal-close">
+                  <i class="material-icons">close</i>
+                </a>
+            </div>
+            <div class="row">
+              <div class="col s10"></div>
+              <div class="col s2">
+                <form   method="post" 
+                        action="{{url_for('delete_character')}}"
+                        onsubmit="return confirm('Are you sure you want to delete the character?');"
+                >
+                  <input type="hidden" value="{{character['pk']}}" name="pk">
+                  <button class="red darken-3 white-text" type="submit">
+                    <span class="material-icons">
+                      person_remove
+                    </span>
+                  </button>
+                </form>
+              </div>
+            <div>
+          </div>
+        </div>
+      </li>
+    {% endif %}
+  {% endfor %}
+</ul>
 {%- endmacro %}
 
 {##############################################################################}
@@ -144,10 +182,43 @@
 <ul class="collection" id="character_initiative">
   {%for character in characters %}
     {%if character.active %}
-      <li class="collection-item">
-        <span class="title">{{character.name}}</span>
-      </li>
+      <li class="collection-item">{{character.name}}</li>
     {% endif %}
   {% endfor %}
 </ul>
+{% endmacro %}
+
+{##############################################################################}
+{##                 inactive character list snippet                          ##}
+{##############################################################################}
+{% macro inactive_characters(characters) %}
+<h3>Inactive Characters</h3>
+<div class="row" id="inactive_character_display">
+  {% for ch in characters %}
+    {% if not ch.active %}
+      <div class="col">
+        <div class="card white darken-1">
+          <div class="card-content teal-text">
+            <h6>{{ch.name}}</h6>
+            <ul>
+              <li>class: {{ch.player_class}}</li>
+              <li>status: {% if ch.status %}<div class="chip">{{ ch.status }}</div>{% endif %}</li>
+            </ul>
+          </div>
+          <div class="card-action">
+            <form method="POST" action="{{url_for('activate_character')}}">
+              <input type="hidden" name="pk" value="{{ ch.pk }}">
+              <div class="switch">
+                <label>
+                  <input type="checkbox" name="activate" id="{{ch.pk}}_activate" class="activate_character" onchange="this.form.submit()">
+                  <span class="lever"></span>
+                </label>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    {% endif %}
+  {% endfor %}
+</div>
 {% endmacro %}

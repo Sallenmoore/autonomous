@@ -96,6 +96,10 @@ DM Buddy has 4 inital container components:
 
 * Documentation
  - sidemenu submenu items not linking properly
+* Admin
+ - table folder being created in admin service
+* API
+ - static folder being placed in the wrong place
 
 ### TODOs
 

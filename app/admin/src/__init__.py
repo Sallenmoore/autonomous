@@ -9,8 +9,10 @@ import requests
 import json
 import logging
 from collections import defaultdict
+import urllib.parse
 
 logging.basicConfig(level=logging.INFO, format="==%(levelname)s== [%(filename)s - %(funcName)s:%(lineno)d] --\n %(message)s")
+log = logging.getLogger()
 
 def create_app(test_config=None):
     app = Flask(__name__)
@@ -62,10 +64,10 @@ def create_app(test_config=None):
         ####                      Character API                      ###
         ################################################################
 
-        @app.route('/create_character', methods=('POST',))
+        @app.route('/character/create', methods=('POST',))
         def create_character():
             char = Character(**request.form)
-            #app.logger.debug(f"Creating character: {char}")
+            #logger.debug(f"Creating character: {char}")
             session['character_create'] = char.save()
             return redirect(url_for("index"))
 
@@ -74,21 +76,32 @@ def create_app(test_config=None):
             session['character_get']  = Character.get(**request.form)
             return redirect(url_for("index"))
 
-        @app.route('/update_character', methods=('GET', 'POST'))
+        @app.route('/character/update', methods=('GET', 'POST'))
         def update_character():
             
-            #app.logger.debug(request.form)
+            log.info(request.form)
 
             character = Character(**request.form)
 
-            app.logger.info(character)
+            log.info(character)
 
             character.save()
             return redirect(url_for("index"))
 
-        @app.route('/delete_character', methods=('POST',))
+        @app.route('/character/delete', methods=('POST',))
         def delete_character():
             session['character_delete'] = Character(**request.form).delete()
+            return redirect(url_for("index"))
+
+        @app.route('/character/activate', methods=('POST',))
+        def activate_character():
+            char_data = {
+                "pk":request.form.get("pk"),
+                "active" : True if request.form.get('activate') else False,
+            }
+            
+            log.info(f'{request.form}')
+            Character(**char_data).save()
             return redirect(url_for("index"))
 
         ################################################################
@@ -119,14 +132,18 @@ def create_app(test_config=None):
         @app.route('/compendium', methods=('GET',))
         def compendium():
             headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
-            args = json.dumps(request.args)
-
-            url -= f"http://api:8000/compendium/"
-            response = requests.get(url, headers=headers)
+            data = {
+                'search':request.args.get('search_term')
+            }
+            #search = urllib.parse.unquote(search)
+            if request.args['endpoint'] == "search": 
+                url = f"http://api:8000/compendium/search"
+            else:
+                url = f"http://api:8000/compendium/search"
+            log.debug(f"{data}")
+            response = requests.get(url, json=data, headers=headers)
+            log.debug(f"{response}")
             return response.json()
-
-            session['compendium_search'] = requests.post(f"http://api:8000/compendium/search", data={'endpoint': args['endpoint'], 'search':args['search']},headers=headers)
-            return redirect(url_for('index'))
 
     ###### returns the application instance to the caller ######
 

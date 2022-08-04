@@ -66,6 +66,9 @@ def create_app(test_config=None):
                 'src.models.compendium.spell',
                 'src.models.dice',
                 'src.models.player',
+                'src.sharedlib.db.db',
+                'src.sharedlib.db.model',
+                'src.sharedlib.db.APIModel',
             ]
 
             module_objects={'api':[], 'dev':[]}
@@ -73,7 +76,11 @@ def create_app(test_config=None):
                 mod_obj = pdoc.doc.Module.from_name(mod)
                 mod_obj.menu_id = mod_obj.fullname.replace('src.', '').replace('.', '_')
 
-                if mod_obj.fullname.startswith('src.models.'):
+                if mod_obj.fullname.startswith('src.views.'):
+                    for endpoint in mod_obj.functions:
+                        endpoint.api_endpoint_url = f"{mod_obj.name}/{endpoint.name}/"
+                    module_objects['api'].append(mod_obj)
+                else:
                     mod_obj.docstring = pdoc.render.to_html(mod_obj.docstring)
                     for obj in mod_obj.classes:
                         obj.classmethods = list(filter(lambda x: not x.name.startswith('__'), obj.classmethods))
@@ -81,10 +88,6 @@ def create_app(test_config=None):
                         obj.class_variables = list(filter(lambda x: not x.name.startswith('__'), obj.class_variables))
                         obj.instance_variables = list(filter(lambda x: not x.name.startswith('__'), obj.instance_variables))
                     module_objects['dev'].append(mod_obj)
-                elif mod_obj.fullname.startswith('src.views.'):
-                    for endpoint in mod_obj.functions:
-                        endpoint.api_endpoint_url = f"{mod_obj.name}/{endpoint.name}/"
-                    module_objects['api'].append(mod_obj)
 
             context = {
                 'home': pdoc.doc.Module.from_name('src').docstring,

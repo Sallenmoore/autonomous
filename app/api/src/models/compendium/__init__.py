@@ -34,9 +34,13 @@ class Compendium:
             _type_: _description_
         """
         #get each resource results
-        search_terms['search'] = search_term
+        log.debug(search_terms)
+        if search_term:
+            search_terms['search'] = search_term
         
-        return DnDAPI.api_request(cls.resource, **search_terms, full_api_results=True).get('results')
+        response = DnDAPI.api_request(cls.resource, **search_terms, full_api_results=True).get('results')
+        log.debug(response)
+        return response
     
     @classmethod
     def count(cls, **search_terms):

@@ -4,14 +4,12 @@ $(document).ready(function(){
     M.AutoInit();
 
     $('.update_character').each(function(){
-        console.log("trace")
         $(this).change( function(){
             $(this).submit();
         });
     });
 
-    var initiative_list = document.getElementById('character_initiative');
-    var sortable = Sortable.create(initiative_list);
+    var sortable = Sortable.create($('#character_initiative')[0]);
 
 });
 
@@ -24,15 +22,29 @@ $('#next_initiative').click(function(){
     });
 });
 
-$('#reference_search').keyup(function(event) {
-    let search_term = $('#search_term').val();
-    console.log(search_term);
+$('#search_term').keyup(function(event) {
+    let search_term = $(this).val();
     if(search_term.length >= 3) {
-        let values =  $(this).serializeArray();
-        console.log(values);
-        fetch(`api:8000/compendium/search?search_term=${search_term}`)
-            .then(response => {
-                console.log(response.json());
+        endpoint = $("#endpoint").val();
+        //search_term = $.param(search_term);
+        //console.log(search_term);
+        fetch(`/compendium?endpoint=${endpoint}&search_term=${search_term}`)
+            .then(response => response.json())
+            .then((obj) => {
+                $('#auto_search_results').empty()
+                obj.results.forEach(function(item) {
+                    let detail = ""
+                    for (let key in item) {
+                        detail += `<li>${key}: ${item[key]}</li>`
+                    }
+                    $('#auto_search_results').append(`
+                        <div class="col s4">
+                            <h6>${item.name}</h6>
+                            <p>${item.text}</p>
+                        </div>
+                    `);
+                });
+                $('#search_results').show();
             }).catch(error => {
                 console.log(error);
             });
@@ -40,18 +52,18 @@ $('#reference_search').keyup(function(event) {
     }
 );
 
-$('.activate_character').click(function(event) {
-    let pk = $(this).attr('id').split("_")[0];
-    checkbox = $(this)
-    setTimeout(function(){
-        checkbox.parent().replaceWith(`<div class="progress"><div class="indeterminate"></div></div>`);
-    }, 200);
-    // ???: might need to add a header here
-    fetch(`http://api:8000/character/activate/`, {method: 'POST', body: JSON.stringify({pk: pk})})
-        .then(response => {
-            console.log(response.json());
-        }).catch(error => {
-            console.log(error);
+$('.add_to_initiative').click(function(event) {
+    console.log($(this)[0].checked)
+    
+    let char_name = $(this).parent().siblings('input[name="char_name"]').val()
+    console.log(char_name)
+    if($(this)[0].checked){
+        $('#character_initiative').append(`<li class="collection-item">${char_name}</li>`);
+    }else{
+        $('#character_initiative').children('li').each(function(){
+            if($(this).text() == char_name){
+                $(this).remove();
+            }
         });
     }
-);
+});

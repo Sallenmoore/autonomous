@@ -16,4 +16,5 @@ class Item(Model, Compendium):
             "properties": str,
             'type':str, 
             'img_main':str,
+            'quantity':int,
         }

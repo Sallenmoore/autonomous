@@ -48,12 +48,18 @@ class BaseModel():
 
     def __setattr__(self, name, value):
         attrs = self._model_attrs()
+        log.debug(f"previous type: {type(value)}")
         if value is not None and name in attrs:
             log.debug(f"{name} type {type(value)}, should be {type(value)}")
             # cast it, ex. str -> int: 
             # attr = type(attr)
-            value = attrs[name](value)
-            log.debug(f"{name} type cast to {type(value)}")
+            log.debug(f"type casting {name} to {attrs[name]}: {value}")
+            try:
+                value = attrs[name](value)
+            except TypeError as e:
+                #set value to the default value for the type
+                value = attrs[name]()
+            
             
         self.__dict__[name] = value
     

@@ -15,55 +15,21 @@
         </div>
     </div>
     <div class="row">
-        <div class="col s6">
+        <div class="col s8">
             <h2>Characters</h2>
             <div class="row">
                 <div class="col s12">
-                    <ul class="collapsible" id="character_display">
-                    {% for ch in characters %}
-                        {% if ch.active %}
-                            <li>
-                                {{ character_macros.display(ch, classes) }}
-                            </li>
-                        {% endif %}
-                    {% endfor %}
-                    </ul>
+                    {{ character_macros.display(characters, classes) }}
                 </div>
             </div>
             <div class="row">
                 <div class="col s12">
-                    <h3>Inactive Characters</h3>
-                    <div class="row" id="inactive_character_display">
-                    {% for ch in characters %}
-                        {% if not ch.active %}
-                            <div class="col s12 m6">
-                                <div class="card white darken-1">
-                                    <div class="card-content teal-text">
-                                        {{ch.name}}
-                                        {% if ch.status %}
-                                            <div class="chip">
-                                                {{ ch.status }}
-                                            </div>
-                                        {% endif %}
-                                        </div>
-                                    <div class="card-action">
-                                        <div class="switch">
-                                            <label>
-                                                <input type="checkbox" id="{{ch.pk}}_activate" class="activate_character">
-                                                <span class="lever"></span>
-                                            </label>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        {% endif %}
-                    {% endfor %}
-                    </div>
+                    {{ character_macros.inactive_characters(characters) }}
                 </div>
             </div>
             {{ character_macros.create(classes) }}
         </div>
-        <div class="col s6">
+        <div class="col s4">
             <div class="row">
                 <div class="col s12">
                     <h2> Initiative </h2>

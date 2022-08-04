@@ -4,6 +4,8 @@ from src.views import package_response
 from flask import (
     Blueprint, request, current_app
 )
+import logging
+log = logging.getLogger()
 
 bp = Blueprint('compendium', __name__, url_prefix='/compendium')
 
@@ -54,7 +56,8 @@ def search():
                 api_path:/compendium/search
             }
     """
-    results = Compendium.search(**request.args)
+    log.debug(f"{request.json}")
+    results = Compendium.search(**request.json)
     return package_response(data=results)
 
 @bp.route('/all', methods=('GET',))
