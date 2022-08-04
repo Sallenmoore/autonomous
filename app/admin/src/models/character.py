@@ -13,6 +13,7 @@ class Character(APIModel):
             "hp":int,
             "status":str,
             "inventory":list,
+            "active":bool,
         }
 
 

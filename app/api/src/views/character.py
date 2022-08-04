@@ -17,8 +17,12 @@ bp = Blueprint('character', __name__, url_prefix='/character')
 @bp.route('/create', methods=('POST',))
 def create():
     """
-    Create a new character based on requeast data with a primary key.
-    The request data should be a json object with the following keys:
+    Create a new character based on request data with a primary key
+
+    # METHOD
+    post
+
+    # REQUIRED REQUEST DATA
     {
         image_url:<str> (optional)
         self.name:<str> (required)
@@ -28,8 +32,21 @@ def create():
         self.status:<str> (optional)
         self.inventory:<list> (optional)
     }
-    Returns:
-        dict: new character data with assocu=iated primary key
+
+    # RETURN
+        Success: {
+                    error:"unknown character",  
+                    results: character attributes in serialized form, 
+                    count: 1, 
+                    api_path:/character/create
+               }
+               
+        Error: {
+                    error:"use the /update api for existing characters"|| "Character could not be saved. Unknown error.",  
+                    results:None, 
+                    count: 0, 
+                    api_path:/character/activate
+               }
     """
     log.debug(f"request data: {request.json}")
     
@@ -39,7 +56,7 @@ def create():
         new_character = Character(**request.json)
     
     if not new_character.save():
-        return package_response(error="Charactetr coulds not be saved. Unknown error.")
+        return package_response(error="Character could not be saved. Unknown error.")
     return package_response(data=new_character.serialize())
 
 #################### READ ENDPOINTS ########################
@@ -49,7 +66,12 @@ def all():
      All character models in serialized form
 
     Returns:
-        dict:{error:<str>,  results:<obj> or None, count: <int> , api_path:<str>}
+        {
+            error:<str>,  
+            results:<obj> or None, 
+            count: <int> , 
+            api_path:<str>
+        }
     """
     
     results = Character.search()
@@ -83,7 +105,16 @@ def search():
 @bp.route('/update', methods=('POST',))
 def update():
     """
-    _summary_
+    Update one or more attributes for the character with the given primary key
+    * METHOD: post
+    * REQUIRED REQUEST DATA: 
+        {
+            pk:<int>,
+            <...additonal attributes>: <updated value>
+        }
+
+    Returns:
+        updated character attributes in serialized form
     """
     #log.info(f"request data: {request.json}")
     
@@ -95,6 +126,70 @@ def update():
         return package_response(error="unknown character")
     
     character.update(**request.json)
+    log.debug(f"character: {character}")
+    character.save()
+    return package_response(data=character.serialize())
+
+@bp.route('/activate', methods=('POST',))
+def activate():
+    """
+    Activate the character with the given primary key
+
+    # METHOD
+    post
+
+    # REQUIRED REQUEST DATA
+    Format: json
+    {
+        pk: int 
+    }
+
+    # Return
+        Success: {
+                    error:"unknown character",  
+                    results: updated character attributes in serialized form, 
+                    count: 1, 
+                    api_path:/character/activate
+               }
+               
+        Error: {
+                    error:"unknown character",  
+                    results:None, 
+                    count: 0, 
+                    api_path:/character/activate
+               }
+    """
+    #log.info(f"request data: {request.json}")
+    
+    character = Character.get(request.json.get('pk'))
+
+    #log.debug(f"character: {character}")
+    
+    if not character:
+        return package_response(error="unknown character")
+    
+    character.active=True
+    log.debug(f"character: {character}")
+    character.save()
+    return package_response(data=character.serialize())
+
+@bp.route('/deactivate', methods=('POST',))
+def deactivate():
+    """
+    Deactivate the character with the given primary key
+    * METHOD: post
+    * REQUIRED REQUEST DATA: {pk:<int>}
+    """
+    #log.info(f"request data: {request.json}")
+    
+    character = Character.get(request.json.get('pk'))
+
+    #log.debug(f"character: {character}")
+    
+    if not character:
+        return package_response(error="unknown character")
+    
+    character.active=False
     log.debug(f"character: {character}")
     character.save()
     return package_response(data=character.serialize())

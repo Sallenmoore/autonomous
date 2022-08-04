@@ -28,10 +28,6 @@
             .module_doc{
                 display: none;
             }
-
-            content{
-                padding-left: 300px;
-            }
             pre{
                 overflow: auto;
                 width: 100%;
@@ -47,30 +43,112 @@
 
     <body>
         <div class="container">
+            {# Titlebar #}
+            <nav> 
+                <div class="nav-wrapper">
+                    <a href="#" class="brand-logo center">DnD DM Helper API Documentation</a>
+                </div>
+            </nav>  
             {# NAVIGATION MENU #}
-            <ul id="slide-out" class="sidenav sidenav-fixed">
+            <ul id="slide-out" class="sidenav">
                 <li>
                     <h5 class=" red accent-4 grey-text text-lighten-5">Public API</h5>
                 </li>
                 {%for doc in docs['api']%}
-                    <li class="hoverable red lighten-4">
-                        <a class="waves-effect" href="#" id="{{doc.menu_id}}">{{doc.name}}</a>
-                        <div class="divider red accent-4"></div>
-                    </li>
+                <li class="no-padding">
+                    <ul class="collapsible collapsible-accordion">
+                        <li class="hoverable red lighten-4">
+                            <a class="collapsible-header waves-effect" id="{{doc.menu_id}}">{{doc.name}}<i class="material-icons">arrow_drop_down</i></a>
+                            <div class="collapsible-body">
+                                {% if doc.functions is defined and doc.functions|length %}
+                                <h6 class=" red accent-4 grey-text text-lighten-6">Endpoints</h6>
+                                <ul>
+                                    {%for var in doc.functions%}
+                                        <li><a href="#{{doc.menu_id}}_{{var.name}}_functions">{{var.name}}</a></li>
+                                    {% endfor %}
+                                </ul>
+                                {% endif %}
+                            </div>
+                        </li>
+                    </ul>
+                    <div class="divider red accent-4"></div>
+                </li>
                 {% endfor %}
                 <li>
                     <h5 class=" red accent-4 grey-text text-lighten-5">Dev API</h5>
                 </li>
                 {%for doc in docs['dev']%}
-                    <li class="hoverable red lighten-4">
-                        <a class="waves-effect" href="#" id="{{doc.menu_id}}">{{doc.name}}</a>
-                        <div class="divider purple accent-3"></div>
+                     <li class="no-padding">
+                        <ul class="collapsible collapsible-accordion">
+                            <li class="hoverable red lighten-4">
+                                <a class="collapsible-header waves-effect" id="{{doc.menu_id}}">{{doc.name}}<i class="material-icons">arrow_drop_down</i></a>
+                                <div class="collapsible-body">
+                                    {% if doc.variables is defined and doc.variables|length %}
+                                    <h6 class=" red accent-4 grey-text text-lighten-6">Variables</h6>
+                                    <ul>
+                                        
+                                            {%for var in doc.variables%}
+                                                <li><a href="#{{doc.menu_id}}_{{var.name}}_variable">{{var.name}}</a></li>
+                                            {% endfor %}
+                                    </ul>
+                                    {% endif %}
+                                    {% if doc.functions is defined and doc.functions|length %}
+                                    <h6 class=" red accent-4 grey-text text-lighten-6">
+                                        {%if 'views.' in doc.fullname%}
+                                            Endpoints
+                                        {% else %}
+                                            Functions
+                                        {% endif %}
+                                    </h6>
+                                    <ul>
+                                        
+                                            {%for var in doc.functions%}
+                                                <li><a href="#{{doc.menu_id}}_{{var.name}}_functions">{{var.name}}</a></li>
+                                            {% endfor %}
+                                    </ul>
+                                    {% endif %}
+                                    {% if doc.classes is defined and doc.classes|length %}
+                                    <h6 class=" red accent-4 grey-text text-lighten-6">Classes</h6>
+                                    <ul>
+                                        
+                                            {%for var in doc.classes%}
+                                                <li><a href="#{{doc.menu_id}}_{{var.name}}_class">{{var.name}}</a></li>
+                                            {% endfor %}
+                                    </ul>
+                                    {% endif %}
+                                </div>
+                            </li>
+                        </ul>
+                        <div class="divider red accent-4"></div>
                     </li>
-                {% endfor %}
-            </ul>
+                    {% endfor %}
+                </ul>
+            <br>
+            <a href="#" data-target="slide-out" class="sidenav-trigger"><i class="grey-text small material-icons">menu</i> </a>
 
             {# Documentation content #}
             <div class="content">
+                {# Home Page #}
+                 <div class="row" id="home_info">
+                    <div class="col s12">
+                          
+                        <div class="row">
+                            <div class="col s12">
+                                <p>All responses from the API take the following format:</p>
+                                <pre>
+                                    <code class="language-python">
+            {
+                error: "error message" | None ,  
+                results: [result] | None, 
+                count: int, 
+                api_path: "api/path/used"
+            }
+                                    </code>
+                                </pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
                 {# API Documentation #}
                 {%for doc in docs['api']%}
@@ -79,7 +157,6 @@
                             <nav> 
                                 <div class="nav-wrapper">
                                     <a href="#" class="brand-logo center">{{doc.name|title}}</a>
-                                    </ul>
                                 </div>
                             </nav>
                             <div class="row">
@@ -94,8 +171,8 @@
 
                                 <div class="col s12">
                                     {% for function in doc.functions %}
+                                        <div id="#{{doc.menu_id}}_{{function.name}}_functions" class="divider"></div>
                                         {{ macros.display_item(function) }}
-                                        <div class="divider"></div>
                                     {% endfor %}
                                 </div>
 
@@ -109,16 +186,17 @@
                 {%for doc in docs['dev']%}
                     <div class="row module_doc" id="{{doc.menu_id}}_doc">
                         <div class="col s12">
-                            <nav> 
-                                <div class="nav-wrapper">
-                                    <a href="#" class="brand-logo center">{{doc.fullname}}</a>
-                                    <ul id="nav-mobile" class="left">
-                                    <li><a href="#{{doc.menu_id}}_classes">Classes</a></li>
-                                    <li><a href="#{{doc.menu_id}}_functions">Functions</a></li>
-                                    <li><a href="#{{doc.menu_id}}_variables">Variables</a></li>
+                            <div class="row">
+                                <div class="col s12">
+                                    <h2>{{doc.fullname}}</h2>
+                                    <ul>
+                                        <li><a href="#{{doc.menu_id}}_variables">Variables</a></li>
+                                        <li><a href="#{{doc.menu_id}}_functions">Functions</a></li>
+                                        <li><a href="#{{doc.menu_id}}_classes">Classes</a></li>
+                                        
                                     </ul>
                                 </div>
-                            </nav>
+                            </div>
                             <div class="row">
                                 <div class="col s12">
                                     <p>{{doc.docstring|safe}}</p>
@@ -132,38 +210,23 @@
                                         <hr>
                                     {%endif%}
                                 </div>
-                                
                             </div>
-
                             {############################################################################################}
-                            {##                                         variables                                      ##}
+                            {##                            variables and functions                                     ##}
                             {############################################################################################}
-                            {% if doc.variables is defined and doc.variables|length %}
-                            <div class="row" id="#{{doc.menu_id}}_variables">
-                                <h5 class="center-align">Variables</h5>
-                                <div class="col s12">
-                                    {% for variable in doc.variables %}
-                                        {{ macros.display_item(variable) }}
-                                        <div class="divider"></div>
-                                    {% endfor %}
-                                </div>
-                            </div>
-                            {% endif %}
-
-                            {############################################################################################}
-                            {##                                         functions                                      ##}
-                            {############################################################################################}
-                            {% if doc.functions is defined and doc.functions|length %}
-                            <div class="row" id="#{{doc.menu_id}}_functions">
-                                <h5 class="center-align">Functions</h5>
-                                <div class="col s12">
-                                    {% for function in doc.functions %}
-                                        {{ macros.display_item(function) }}
-                                        <div class="divider"></div>
-                                    {% endfor %}
-                                </div>
-                            </div>
-                            {% endif %}
+                            {% for doc_obj in ['variables', 'functions'] %}
+                                {% if doc[doc_obj] is defined and doc[doc_obj]|length %}
+                                    <div class="row" id="#{{doc.menu_id}}_{{doc_obj}}">
+                                        <h5 class="center-align">{{doc_obj}}</h5>
+                                        <div class="col s12">
+                                            {% for var in doc[doc_obj] %}
+                                                <div id="#{{doc.menu_id}}_{{var.name}}_{{doc_obj}}" class="divider"></div>
+                                                {{ macros.display_item(var) }}
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+                                {% endif %}
+                            {% endfor %}
 
                             {############################################################################################}
                             {##                                         Classes                                        ##}
@@ -173,6 +236,7 @@
                                 <h5>Class(es)</h5>
                                 <div class="col s12">
                                     {% for class in doc.classes %}
+                                        <div id="#{{doc.menu_id}}_{{class.name}}_classes" class="divider"></div>
                                         <h3>{{class.name}}</h1>
                                         {% if doc.docstring is defined and doc.docstring|length %}
                                         <div class="card-panel white lighten-4">
@@ -251,7 +315,7 @@
                 $('.collapsible').collapsible();
                 $('.sidenav').sidenav();
 
-                $('.sidenav > li > a').click(function(){
+                $('.sidenav > li > ul > li > a').click(function(){
 
                     $('.sidenav > li > a').removeClass('active');
                     $(this).addClass('active');

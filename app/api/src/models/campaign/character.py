@@ -29,6 +29,7 @@ class Character(Model):
             "hp":int,
             "status":str,
             "inventory":list,
+            "active":bool,
         }
 
     @classmethod
@@ -47,3 +48,62 @@ class Character(Model):
         #     log.debug(str(o))
         return [o.serialize() for o in objs]
 
+## TODO - additional attributes
+# {
+# "status": "success",
+# "data": {
+#     "id": "",
+#     "name": "",
+#     "description": "",
+#     "url": "",
+#     "image": "",
+#     "type": "",
+#     "subtype": "",
+#     "source": "",
+#     "page": "",
+#     "cost": "",
+#     "weight": "",
+#     "special": "",
+#     "ability": "",
+#     "armor": "",
+#     "hp": "",
+#     "ac": "",
+#     "str": "",
+#     "dex": "",
+#     "con": "",
+#     "int": "",
+#     "wis": "",
+#     "cha": "",
+#     "speed": "",
+#     "str_save": "",
+#     "dex_save": "",
+#     "con_save": "",
+#     "int_save": "",
+#     "wis_save": "",
+#     "cha_save": "",
+#     "skills": [
+#         {
+#             "name": "",
+#             "ability": "",
+#             "modifier": "",
+#             "proficient": ""
+#         }
+#     ],
+#     "senses": "",
+#     "passive_perception": "",
+#     "languages": "",
+#     "challenge_rating": "",
+#     "traits": [
+#         {
+#             "name": "",
+#             "description": ""
+#         }
+#     ],
+#     "actions": [
+#         {
+#             "name": "",
+#             "description": ""
+#         }
+#     ],
+#     "reactions": []
+# }

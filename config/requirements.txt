@@ -5,7 +5,7 @@ gunicorn
 pytest
 coverage
 tinydb
-flask-restplus
+pdoc
 
 ###### Common Requirements w/ Version Specifiers ######
 Flask>=2.0

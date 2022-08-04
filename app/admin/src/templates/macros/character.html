@@ -2,18 +2,22 @@
 {##                         character display snippet                        ##}
 {##############################################################################}
 {% macro display(character, classes) -%}
+{##     character list    ##}
 <div class="collapsible-header">
   <i class="material-icons">
       perm_identity
   </i>
   {{character.name}}
+  <label for="add_to_initiative">
+    <input type="checkbox" class="filled-in" checked="checked" id="add_to_initiative"/>
+    <span>Add to Intiative</span>
+  </label>
 </div>
+
 <div class="collapsible-body">
   <div class="row">
       <div class="col s12">
-        <form class="update_character" method="post" 
-              action="{{url_for('update_character')}}"
-        >
+        <form class="update_character" method="post"  action="{{url_for('update_character')}}">
           <input type="hidden" value="{{character['pk']}}" name="pk">
           <div class="row">
             <div class="input-field col s12">
@@ -53,6 +57,12 @@
               <label for="history">History</label>
             </div>
           </div>
+          <div class="input-field col s6">
+            <label>
+              <input type="checkbox" class="filled-in" checked="checked" />
+              <span>Active</span>
+            </label>
+          </div>
         </form>
       </div>
     </div>
@@ -63,10 +73,13 @@
                   onsubmit="return confirm('Are you sure you want to delete the character?');"
           >
               <input type="hidden" value="{{character['pk']}}" name="pk">
-              <button type="submit">
+              <button class="red darken-4 white-text" type="submit">
                   <span class="material-icons">
                       person_remove
                   </span>
+                  <div class="valign-wrapper">
+                    DELETE
+                  </div>
               </button>
           </form>
       </div>
@@ -75,29 +88,17 @@
 </div>
 {%- endmacro %}
 
-
 {##############################################################################}
-{##                          character list snippet                          ##}
-{##############################################################################}
-{% macro list(characters) %}
-<ul class="collection">
-  {%for character in characters %}
-    <li class="collection-item avatar">
-      <img src="images/yuna.jpg" alt="" class="circle">
-      <span class="title">{{character.name}}</span>
-    </li>
-  {% endfor %}
-</ul>
-{% endmacro %}
-
-{##############################################################################}
-{##                          character create snippet                          ##}
+{##                          character create snippet                        ##}
 {##############################################################################}
 {% macro create(classes) %}
 <div class="row">
   <div class="col s12">
-      <a class="btn-floating btn-small waves-effect waves-light" onclick="$('#create_character').toggle()">
-          <i class="material-icons">add</i>
+      <a class="waves-effect waves-light btn" onclick="$('#create_character').toggle()">
+          <i class="material-icons left">add</i>
+          <div class="valign-wrapper">
+            New Character
+          </div>
       </a>
   </div>
 </div>
@@ -137,12 +138,16 @@
 {##                       character initiative snippet                       ##}
 {##############################################################################}
 {% macro initiative(characters) %}
-<a class="btn-floating btn-large waves-effect waves-light red" id="next_initiative"><i class="material-icons">next_plan</i></a>
+<a class="btn-floating btn-large waves-effect waves-light green" id="next_initiative">
+  <i class="material-icons">next_plan</i>
+</a>
 <ul class="collection" id="character_initiative">
   {%for character in characters %}
-    <li class="collection-item">
-      <span class="title">{{character.name}}</span>
-    </li>
+    {%if character.active %}
+      <li class="collection-item">
+        <span class="title">{{character.name}}</span>
+      </li>
+    {% endif %}
   {% endfor %}
 </ul>
 {% endmacro %}

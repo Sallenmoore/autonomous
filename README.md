@@ -7,14 +7,19 @@ DnD Helper Application
 DM Buddy has 4 inital container components:
 
 * **server**
-    * static files and assets are served from here. This is also the main entry point for the application.
+  * nginx proxy server listening on port 80
+  * static files and assets are served from here. This is also the main entry point for the application.
 * **api**
+    * access documentation on port:8000
     * The backend API and database
     * currently implented with Flask and TinyDB
 * **admin**
+    * debugging port: 3000 (bypasses nginx server, go directly to gunicorn)
     * An admin web interface
-* **view**
-    * The front end interface
+* **table**
+    * *Coming Soon*
+* **user**
+    * *Coming Soon*
   
 ---
 
@@ -89,20 +94,24 @@ DM Buddy has 4 inital container components:
 
 ### BUGS
 
-* TBD
+* Documentation
+ - sidemenu submenu items not linking properly
 
 ### TODOs
 
 1. interfaces
-    * admin
-    * player
-    * table
+  * admin
+  * player
+  * table
+2. Models
+  * APIModel - pull attributes from API
+
+
 
 ### IMPROVEMENTS
 
-* Move DB to cloud
-    * Firebase?
-
+* Make it work?
+* Use [Hypertag](http://hypertag.io/) instead of jinja?
 ---
 
 ### Misc Notes

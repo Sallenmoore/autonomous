@@ -8,6 +8,7 @@ import sass
 import requests
 import json
 import logging
+from collections import defaultdict
 
 logging.basicConfig(level=logging.INFO, format="==%(levelname)s== [%(filename)s - %(funcName)s:%(lineno)d] --\n %(message)s")
 
@@ -39,12 +40,17 @@ def create_app(test_config=None):
         # Include our Routes
         @app.route('/', methods=('GET', 'POST'))
         def index():
-            context = {'classes': Compendium.get_classes(), 'characters': Character.all()}
+            characters = Character.all()
 
             # Update context wtih session data
             if session.get('compendium_search'):
                 context['compendium_search_results'] = session['compendium_search']
+
             
+            context = {
+                'classes': Compendium.get_classes(), 
+                'characters': characters
+            }
             return render_template("index.html", **context)
 
         @app.route('/test', methods=('GET',))

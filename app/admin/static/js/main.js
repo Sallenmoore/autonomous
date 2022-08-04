@@ -1,6 +1,7 @@
 $(document).ready(function(){
-    $('.collapsible').collapsible();
-    $('select').formSelect();
+    //$('.collapsible').collapsible();
+    //$('select').formSelect();
+    M.AutoInit();
 
     $('.update_character').each(function(){
         console.log("trace")
@@ -11,6 +12,7 @@ $(document).ready(function(){
 
     var initiative_list = document.getElementById('character_initiative');
     var sortable = Sortable.create(initiative_list);
+
 });
 
 $('#next_initiative').click(function(){
@@ -35,5 +37,21 @@ $('#reference_search').keyup(function(event) {
                 console.log(error);
             });
         }
+    }
+);
+
+$('.activate_character').click(function(event) {
+    let pk = $(this).attr('id').split("_")[0];
+    checkbox = $(this)
+    setTimeout(function(){
+        checkbox.parent().replaceWith(`<div class="progress"><div class="indeterminate"></div></div>`);
+    }, 200);
+    // ???: might need to add a header here
+    fetch(`http://api:8000/character/activate/`, {method: 'POST', body: JSON.stringify({pk: pk})})
+        .then(response => {
+            console.log(response.json());
+        }).catch(error => {
+            console.log(error);
+        });
     }
 );
