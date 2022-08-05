@@ -54,9 +54,9 @@ def create_app(test_config=None):
         # app.register_blueprint(view.bp)
         # app.register...
 
-        # You MUST register filters to use them in templates
-        from src.filters import filters
-        app.jinja_env.filters['filter name'] = filters.markdown_to_html
+        # You MUST register custom filters to use them in templates
+        from filters import text
+        app.jinja_env.filters['filter name'] = text.markdown_to_html
 
     ###### returns the application instance to the caller ######
 
