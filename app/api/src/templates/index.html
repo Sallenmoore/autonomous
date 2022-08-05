@@ -1,0 +1,334 @@
+{% import 'macros.html' as macros %}
+
+<!doctype html>
+<html lang="en">
+
+    <head>
+        {% block head %}
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>DM Buddy API</title>
+        <!-- Compiled and minified CSS -->
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
+        <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+        <!-- Compiled and minified JavaScript -->
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+        <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/11.6.0/styles/agate.min.css">
+        <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/11.6.0/highlight.min.js"></script>
+        
+        <!-- Custom Styles-->
+        <style>
+            @import url('https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,500;1,500&display=swap');
+
+            body{
+                font-family: 'Open Sans', sans-serif;
+            }
+
+            .module_doc{
+                display: none;
+            }
+            pre{
+                overflow: auto;
+                width: 100%;
+                font-size: 1.2rem;
+                font-family: 'Open Sans', sans-serif;
+            }
+            h3, h4, h5{
+                padding:1rem;
+            }
+        </style>
+        {% endblock %}
+    </head>
+
+    <body>
+        <div class="container">
+            {# Titlebar #}
+            <nav> 
+                <div class="nav-wrapper">
+                    <a href="#" class="brand-logo center">DnD DM Helper API Documentation</a>
+                </div>
+            </nav>  
+            {# NAVIGATION MENU #}
+            <ul id="slide-out" class="sidenav">
+                <li>
+                    <h5 class=" red accent-4 grey-text text-lighten-5">Public API</h5>
+                </li>
+                {%for doc in docs['api']%}
+                <li class="no-padding">
+                    <ul class="collapsible collapsible-accordion">
+                        <li class="hoverable red lighten-4">
+                            <a class="collapsible-header waves-effect" id="{{doc.menu_id}}">{{doc.name}}<i class="material-icons">arrow_drop_down</i></a>
+                            <div class="collapsible-body">
+                                {% if doc.functions is defined and doc.functions|length %}
+                                <h6 class=" red accent-4 grey-text text-lighten-6">Endpoints</h6>
+                                <ul>
+                                    {%for var in doc.functions%}
+                                        <li><a href="#{{doc.menu_id}}_{{var.name}}_functions">{{var.name}}</a></li>
+                                    {% endfor %}
+                                </ul>
+                                {% endif %}
+                            </div>
+                        </li>
+                    </ul>
+                    <div class="divider red accent-4"></div>
+                </li>
+                {% endfor %}
+                <li>
+                    <h5 class=" red accent-4 grey-text text-lighten-5">Dev API</h5>
+                </li>
+                {%for doc in docs['dev']%}
+                     <li class="no-padding">
+                        <ul class="collapsible collapsible-accordion">
+                            <li class="hoverable red lighten-4">
+                                <a class="collapsible-header waves-effect" id="{{doc.menu_id}}">{{doc.name}}<i class="material-icons">arrow_drop_down</i></a>
+                                <div class="collapsible-body">
+                                    {% if doc.variables is defined and doc.variables|length %}
+                                    <h6 class=" red accent-4 grey-text text-lighten-6">Variables</h6>
+                                    <ul>
+                                        
+                                            {%for var in doc.variables%}
+                                                <li><a href="#{{doc.menu_id}}_{{var.name}}_variable">{{var.name}}</a></li>
+                                            {% endfor %}
+                                    </ul>
+                                    {% endif %}
+                                    {% if doc.functions is defined and doc.functions|length %}
+                                    <h6 class=" red accent-4 grey-text text-lighten-6">
+                                        {%if 'views.' in doc.fullname%}
+                                            Endpoints
+                                        {% else %}
+                                            Functions
+                                        {% endif %}
+                                    </h6>
+                                    <ul>
+                                        
+                                            {%for var in doc.functions%}
+                                                <li><a href="#{{doc.menu_id}}_{{var.name}}_functions">{{var.name}}</a></li>
+                                            {% endfor %}
+                                    </ul>
+                                    {% endif %}
+                                    {% if doc.classes is defined and doc.classes|length %}
+                                    <h6 class=" red accent-4 grey-text text-lighten-6">Classes</h6>
+                                    <ul>
+                                        
+                                            {%for var in doc.classes%}
+                                                <li><a href="#{{doc.menu_id}}_{{var.name}}_class">{{var.name}}</a></li>
+                                            {% endfor %}
+                                    </ul>
+                                    {% endif %}
+                                </div>
+                            </li>
+                        </ul>
+                        <div class="divider red accent-4"></div>
+                    </li>
+                    {% endfor %}
+                </ul>
+            <br>
+            <a href="#" data-target="slide-out" class="sidenav-trigger"><i class="grey-text small material-icons">menu</i> </a>
+
+            {# Documentation content #}
+            <div class="content">
+                {# Home Page #}
+                 <div class="row" id="home_info">
+                    <div class="col s12">
+                          
+                        <div class="row">
+                            <div class="col s12">
+                                <p>All responses from the API take the following format:</p>
+                                <pre>
+                                    <code class="language-python">
+            {
+                error: "error message" | None ,  
+                results: [result] | None, 
+                count: int, 
+                api_path: "api/path/used"
+            }
+                                    </code>
+                                </pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {# API Documentation #}
+                {%for doc in docs['api']%}
+                    <div class="row module_doc" id="{{doc.menu_id}}_doc">
+                        <div class="col s12">
+                            <nav> 
+                                <div class="nav-wrapper">
+                                    <a href="#" class="brand-logo center">{{doc.name|title}}</a>
+                                </div>
+                            </nav>
+                            <div class="row">
+                                <div class="col s12">
+                                    <p>{{doc.docstring}}</p>
+                                </div>
+                            </div>
+                            {% if doc.functions is defined and doc.functions|length %}
+                            <div class="row" id="#{{doc.menu_id}}_functions">
+                                <h5 class="center-align">Available Endpoints</h5>
+                                <div class="divider"></div>
+
+                                <div class="col s12">
+                                    {% for function in doc.functions %}
+                                        <div id="#{{doc.menu_id}}_{{function.name}}_functions" class="divider"></div>
+                                        {{ macros.display_item(function) }}
+                                    {% endfor %}
+                                </div>
+
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                {% endfor %}
+                
+                {# Developer Documentation #}
+                {%for doc in docs['dev']%}
+                    <div class="row module_doc" id="{{doc.menu_id}}_doc">
+                        <div class="col s12">
+                            <div class="row">
+                                <div class="col s12">
+                                    <h2>{{doc.fullname}}</h2>
+                                    <ul>
+                                        <li><a href="#{{doc.menu_id}}_variables">Variables</a></li>
+                                        <li><a href="#{{doc.menu_id}}_functions">Functions</a></li>
+                                        <li><a href="#{{doc.menu_id}}_classes">Classes</a></li>
+                                        
+                                    </ul>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col s12">
+                                    <p>{{doc.docstring|safe}}</p>
+                                    {% if doc.submodules is defined and doc.submodules|length %}
+                                        <h6>Submodule(s)</h6>
+                                        <ul class="collection">
+                                            {% for sub in doc.submodules %}
+                                                <li class="collection-item" >{{sub.name}}</li>
+                                            {% endfor %}
+                                        </ul>
+                                        <hr>
+                                    {%endif%}
+                                </div>
+                            </div>
+                            {############################################################################################}
+                            {##                            variables and functions                                     ##}
+                            {############################################################################################}
+                            {% for doc_obj in ['variables', 'functions'] %}
+                                {% if doc[doc_obj] is defined and doc[doc_obj]|length %}
+                                    <div class="row" id="#{{doc.menu_id}}_{{doc_obj}}">
+                                        <h5 class="center-align">{{doc_obj}}</h5>
+                                        <div class="col s12">
+                                            {% for var in doc[doc_obj] %}
+                                                <div id="#{{doc.menu_id}}_{{var.name}}_{{doc_obj}}" class="divider"></div>
+                                                {{ macros.display_item(var) }}
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+                                {% endif %}
+                            {% endfor %}
+
+                            {############################################################################################}
+                            {##                                         Classes                                        ##}
+                            {############################################################################################}
+                            {% if doc.classes is defined and doc.classes|length %}
+                            <div class="row" id="#{{doc.menu_id}}_classes">
+                                <h5>Class(es)</h5>
+                                <div class="col s12">
+                                    {% for class in doc.classes %}
+                                        <div id="#{{doc.menu_id}}_{{class.name}}_classes" class="divider"></div>
+                                        <h3>{{class.name}}</h1>
+                                        {% if doc.docstring is defined and doc.docstring|length %}
+                                        <div class="card-panel white lighten-4">
+                                            <pre>
+{{doc.docstring|safe}}
+                                            </pre>
+                                        </div>
+                                        {%endif%}
+                                        <hr>
+                                        {% if class.bases is defined and class.bases|length %}
+                                        <h6>Base Class(es)</h6>
+                                        <ul class="collection">
+                                            {% for base in class.bases %}
+                                                <li class="collection-item" >
+                                                    {{base[1]}}, module: {{base[2]}}
+                                                </li>
+                                            {% endfor %}
+                                        </ul>
+                                        {%endif%}
+
+                                        <h4>Attributes</h4>
+                                        {% if class.class_variables is defined and class.class_variables|length %}
+                                        <h5>Class Variables</h5>
+                                        <ul class="collection">
+                                            {% for member in class.class_variables %}
+                                            <li class="collection-item" >{{ macros.display_item(member) }}</li>
+                                            {% endfor %}
+                                        </ul>
+                                        {%endif%}
+                                        {% if class.instance_variables is defined and class.instance_variables|length %}
+                                        <h5>Instance Variables</h5>
+                                        <ul class="collection">
+                                            {% for member in class.instance_variables %}
+                                            <li class="collection-item" >{{ macros.display_item(member) }}</li>
+                                            {% endfor %}
+                                        </ul>
+                                        {%endif%}
+                                        
+                                        <h1>Methods</h1>
+                                        {% if class.methods is defined and class.methods|length %}
+                                        <h5>Instance Methods</h5>
+                                        <ul class="collection">
+                                            {% for member in class.methods %}
+                                                <li class="collection-item" >{{ macros.display_item(member) }}</li>
+                                            {% endfor %}
+                                        </ul>
+                                        {%endif%}
+                                        {% if class.class_methods is defined and class.class_methods|length %}
+                                        <h5>Class Methods</h5>
+                                        <ul class="collection">
+                                            {% for member in class.classmethods %}
+                                                <li class="collection-item" >{{ macros.display_item(member) }}</li>
+                                            {% endfor %}
+                                        </ul>
+                                        {%endif%}
+                                        {% if class.static_methods is defined and class.static_methods|length %}
+                                        <h5>Static Methods</h5>
+                                        <ul class="collection">
+                                            {% for member in class.staticmethods %}
+                                                <li class="collection-item" >{{ macros.display_item(member) }}</li>
+                                            {% endfor %}
+                                        </ul>
+                                        {% endif %}
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <script>
+              $(document).ready(function(){
+                $('.collapsible').collapsible();
+                $('.sidenav').sidenav();
+
+                $('.sidenav > li > ul > li > a').click(function(){
+
+                    $('.sidenav > li > a').removeClass('active');
+                    $(this).addClass('active');
+
+                    $('.module_doc').hide();
+                    let id = $(this).attr('id')+"_doc";
+
+                    $('#'+id).show();
+                });
+
+                hljs.highlightAll();
+              });
+        </script>
+    </body>
+
+</html>

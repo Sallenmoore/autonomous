@@ -1,0 +1,42 @@
+{% import 'macros/general.html' as general_macros %}
+{% import 'macros/character.html' as character_macros %}
+{% import 'macros/item.html' as item_macros %}
+{% import 'macros/monster.html' as monster_macros %}
+{% import 'macros/spell.html' as spell_macros %}
+{% import 'macros/dice.html' as dice_macros %}
+
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <div class="row">
+        <div class="col s12">
+            {{ general_macros.search() }}
+        </div>
+    </div>
+    <div class="row">
+        <div class="col s8">
+            <h2>Characters</h2>
+            <div class="row">
+                <div class="col s12">
+                    {{ character_macros.display(characters, classes) }}
+                </div>
+            </div>
+            <div class="row">
+                <div class="col s12">
+                    {{ character_macros.inactive_characters(characters) }}
+                </div>
+            </div>
+            {{ character_macros.create(classes) }}
+        </div>
+        <div class="col s4">
+            <div class="row">
+                <div class="col s12">
+                    <h2> Initiative </h2>
+                    {{ character_macros.initiative(characters) }}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

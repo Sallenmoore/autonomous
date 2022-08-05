@@ -1,0 +1,53 @@
+{##############################################################################}
+{##                          doc item snippets                               ##}
+{##############################################################################}
+
+{% macro display_item(item) -%}
+<div class="row">
+    <div class="col s12">
+        <h4 class="red lighten-4 z-depth-2">
+            {% if item.api_endpoint_url is defined %}
+                {{item.api_endpoint_url}}
+            {% else%}
+                {{item.name}}
+            {%endif%}
+        </h4>
+    </div>
+</div>
+<div class="row">
+    <div class="col s6">
+        <ul class="collapsible">
+            <li>
+                <div class="collapsible-header indigo lighten-5">
+                    <i class="large material-icons">arrow_drop_down</i>
+                    Documentation
+                </div>
+                <div class="collapsible-body">
+                    <div class="card-panel white lighten-4">
+                        <pre>
+    {{item.docstring|safe}}
+                        </pre>
+                    </div>
+                </div>
+            </li>
+        </ul>
+    </div>
+    <div class="col s6">
+        <ul class="collapsible">
+            <li>
+                <div class="collapsible-header indigo lighten-5">
+                    <i class="large material-icons">arrow_drop_down</i>
+                    Source
+                </div>
+                <div class="collapsible-body">
+                    <pre>
+                        <code>
+{{item.source}}
+                        </code>
+                    </pre>
+                </div>
+            </li>
+        </ul>
+    </div>
+</div>
+{% endmacro %}

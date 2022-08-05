@@ -1,0 +1,54 @@
+version: "3"
+
+services:
+  api:
+    image: dmbuddy_api:latest
+    build: 
+      context: ./config
+      dockerfile: api.Dockerfile
+    working_dir: /var/app
+    env_file: ./config/api.env
+    container_name: api
+    networks:
+      - app_net
+    expose:
+      - "8000"
+    volumes:
+      - ./app/api:/var/app/
+      - ./sharedlib:/var/app/src/sharedlib
+    command: ["gunicorn", "app:create_app()", "-c/var/gunicorn.conf.py"]
+    ports:
+     - "8000:8000" #this port is open for testing purposes only
+  admin:
+    image: dmbuddy_admin:latest
+    build: 
+      context: ./config
+      dockerfile: admin.Dockerfile
+    working_dir: /var/app
+    env_file: ./config/admin.env
+    container_name: admin
+    ports:
+      - "3000:3000" #this port is open for testing purposes only
+    networks:
+      - app_net
+    volumes:
+      - ./app/admin:/var/app
+      - ./sharedlib:/var/app/src/sharedlib
+    command: ["gunicorn", "app:create_app()", "-c/var/gunicorn.conf.py"]
+  server:
+    image: nginx
+    container_name: server
+    networks:
+      - app_net
+    volumes:
+      - ./app/admin/static:/srv/static
+      - ./app/api/static/docs:/srv/static/docs
+      - ./config/nginx.conf:/etc/nginx/nginx.conf
+    ports:
+      - "80:80"
+    depends_on:
+      - admin
+
+networks:
+  app_net:
+
