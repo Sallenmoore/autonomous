@@ -1,4 +1,8 @@
 from src.sharedlib.db import Model
+from src.models.wikiAPI import WikiAPI
+import requests
+import os
+
 import logging
 log = logging.getLogger()
 
@@ -10,7 +14,9 @@ class Character(Model):
 
     Args:
         Model (_type_): _description_
+
     """
+        
 
     def model_attr(self):
         """
@@ -32,6 +38,20 @@ class Character(Model):
             "active":bool,
         }
 
+    def wiki_pull(self):
+        wk = WikiAPI()
+        res = wk.wikipull(title=self.name, assets_path=['assets', 'dnd'])
+        if res:
+            self.image_url = res.get('asset_url', '')
+            content = res.get('content')
+            if content:
+                start = content.find("## Character History") + len("## Character History")
+                end = content.find("---", start)
+                if not start != -1:
+                    end = len(content)-1 if end == -1 else end
+                    self.history = content[start:end]
+            self.save()
+   
     @classmethod
     def search(cls, **kwargs):
         """
@@ -44,9 +64,11 @@ class Character(Model):
         """
         
         objs = cls.find(**kwargs) if kwargs else cls.all()
-        # for o in objs:
-        #     log.debug(str(o))
-        return [o.serialize() for o in objs]
+        o_list = []
+        for o in objs:
+            o.wiki_pull()
+            o_list.append(o.serialize())
+        return o_list
 
 ## TODO - additional attributes
 # {

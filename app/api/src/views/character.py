@@ -83,6 +83,7 @@ def get(pk):
     _summary_
     """
     result = Character.get(pk)
+    result.wiki_pull()
     return package_response(data=result.serialize() if result else None)
 
 @bp.route('/search', methods=('GET',))
@@ -98,6 +99,7 @@ def search():
     if not request.args:
         return all()
     results = Character.search(**request.args)
+    #[res.wiki_pull() for res in results] - takes too long
     return package_response(data=results)
 
 #################### UPDATE ENDPOINTS ########################
@@ -142,4 +144,3 @@ def delete():
         log.debug(result)
         return package_response(data=result.delete())
     return package_response(error="not deleted")
-

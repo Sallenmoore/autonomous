@@ -2,7 +2,7 @@ import urllib
 import json
 import pytest
 from src import create_app
-from src.models.campaign import Character
+from src.models.campaign.character import Character
 import logging
 log = logging.getLogger()
 

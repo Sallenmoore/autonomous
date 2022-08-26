@@ -1,7 +1,11 @@
-from src.models.compendium.spell import Spell
-
+from src.models.compendium import Spell
 
 class TestSpell:
+
+    def test_all(self):
+        results = Spell.search("Acid", refresh=True)
+        results = Spell.all()
+        assert filter(lambda x: x.name == "Acid Arrow", results)
 
     def test_search(self):
         """
@@ -10,35 +14,5 @@ class TestSpell:
         Returns:
             _type_: _description_
         """
-        results = Spell.search()
-        
+        results = Spell.search("Fire", refresh=True)
         assert results
-
-        results = Spell.search(name="Acid Arrow")
-        
-        assert results
-
-        results = Spell.search("djydkdkuculkc")
-        
-        assert not results
-        
-    def test_count(self):
-        """
-        _summary_
-
-        Returns:
-            _type_: _description_
-        """
-        assert Spell.count() > 0
-
-    def test_random(self):
-        """
-        _summary_
-
-        Returns:
-            _type_: _description_
-        """
-        result = Spell.random()
-        
-        assert result[0]['name']
-        assert len(result) == 1

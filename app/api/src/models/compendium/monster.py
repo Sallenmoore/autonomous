@@ -1,23 +1,23 @@
-from src.models import Compendium
 from src.sharedlib.db import Model
+from src.models.compendium.dndapi import DnDAPI
 
-class Spell(Model, Compendium):
-    resource = ["spells", "magicitems"]
+import logging
+log = logging.getLogger()
+
+class Monster(Model):
+    resource = ["monsters"]
 
     def model_attr(self):
         #current_app.logger.info(kwargs)
         return {
-            'name':str, 
-            'range':int,
-            "desc": str,
-            "higher_level": str,
-            "range": str,
-            "ritual": str,
-            "duration": str,
-            "concentration": str, 
-            'casting_time':str, 
-            'school':str, 
-            'type':str, 
+            'name':str,  
+            'size':str,  
+            'type':str,  
+            'armor_class':str,  
+            'armor_desc':int,  
+            'hit_points':int,  
+            'hit_dice':str,  
+            'challenge_rating':str,  
             'img_main':str,
         }
 
@@ -39,7 +39,7 @@ class Spell(Model, Compendium):
             return [r.name for r in result]
         
         result = DnDAPI.search(cls.resource, search_term)
-        spells = []
+        monsters = []
         log.debug(result)
         for r in result:
             m = cls.find(name=r['name'])
@@ -48,8 +48,8 @@ class Spell(Model, Compendium):
                 m = m.pop()
                 m.update(**r)
             else: 
-                m = Spell(**r)
+                m = Monster(**r)
             log.debug(f"m: {m}")
             m.save()
-            spells.append(m)
-        return spells
+            monsters.append(m)
+        return monsters

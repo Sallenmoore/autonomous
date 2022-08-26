@@ -5,15 +5,13 @@ from urllib.parse import urlencode
 import logging
 log = logging.getLogger()
 
-class DnDAPI:
+class API:
     """
     _summary_
 
     Returns:
         _type_: _description_
     """
-    API_URL = "https://api.open5e.com/"
-
     
     @classmethod
     def _request(cls, urls, full_api_results=False):
@@ -23,40 +21,42 @@ class DnDAPI:
         Returns:
             _type_: _description_
         """
-        results = {"results":[], "count":0}
+        results = {"results":{}, "num_responses":0}
         for url in urls:
             log.info(f"requesting {url}")
             response = requests.get(url)
             try:
                 response = response.json()
-                results['results'] += response['results']
-                results['count'] += response['count']
+                results['results'][url] = response
+                results['num_responses'] += 1
             except requests.JSONDecodeError as e:
-                results +=  [f"ERROR: [{url}] not found"]
+                results['results'][url] =  [f"ERROR: [{url}]"]
             else:
                 log.debug(f"results: {results}")
                 if full_api_results:
                     while response.get('next'):
                         log.debug(f"retrieving next page of results: {response.get('next')}")
                         response = requests.get(response.get('next')).json()
-                        results['results'] += response.get('results', [])
+                        results['results'][url].update(results)
                         log.debug(f"results: {results}")
+            
         return results
     
     @classmethod
-    def _build_general_search_url(cls, search_term="", **kwargs):
+    def build_general_search_url(cls, api_url, search_term):
         """
         _summary_
 
         Returns:
             _type_: _description_
         """
+        if api_url.endswith('/'):
+            api_url = api_url[:-1]
         #general search:/search/?text=<value>
-        url = f"{cls.API_URL}search/?text={search_term}"
-        return f"{url}&{urlencode(kwargs)}" if kwargs else url
+        return f"{api_url}/search/?text={search_term}"
 
     @classmethod
-    def _build_resource_search_url(cls, resource, **search_terms):
+    def build_resource_search_url(cls, api_url, resource, search_term):
         """
         _summary_
 
@@ -66,13 +66,12 @@ class DnDAPI:
         Returns:
             _type_: _description_
         """
-        #resource search:/<resource>/search/?text=<value>
-        term = search_terms.pop('search', "")
-        url = f"{cls.API_URL}{resource}/?search={term}"
-        return f"{url}&{urlencode(search_terms)}" if search_terms else url
+        if api_url.endswith('/'):
+            api_url = api_url[:-1]
+        return f"{api_url}/{resource}/?search={search_term}"
 
     @classmethod
-    def _build_keyword_search_url(cls, resource, **search_terms):
+    def build_resource_all_url(cls, api_url, resource):
         """
         _summary_
 
@@ -82,12 +81,13 @@ class DnDAPI:
         Returns:
             _type_: _description_
         """
+        if api_url.endswith('/'):
+            api_url = api_url[:-1]
         
-        search_terms.pop('search', None)
-        return f"{cls.API_URL}{resource}/?{urlencode(search_terms)}"
+        return f"{api_url}/{resource}"
 
     @classmethod
-    def api_request(cls, resources=None, full_api_results=False, **search_terms):
+    def get(cls, api_url, resource, search_term):
         """
         _summary_
 
@@ -100,16 +100,46 @@ class DnDAPI:
         Returns:
             _type_: _description_
         """
-        if (not resources) or "search" in resources:
-            term = search_terms.pop('search', '')
-            url = cls._build_general_search_url(search_term=term, **search_terms)
-            
-            return cls._request([url])
-        
+        url = cls.build_resource_search_url(api_url, r, search_term)
+        return cls._request([url], full_api_results = True)
+
+    @classmethod
+    def search(cls, api_url, resources, search_term, full_api_results=False):
+        """
+        _summary_
+
+        _extended_summary_
+
+        Args:
+            resources (_type_, optional): _description_. Defaults to None.
+            full_api_results (bool, optional): _description_. Defaults to False.
+
+        Returns:
+            _type_: _description_
+        """
+        # check if it is a search request
         urls = []
-        for r in resources:
-            if search_terms.get('search'):
-                urls.append(cls._build_resource_search_url(r, **search_terms))
-            else:
-                urls.append(cls._build_keyword_search_url(r, **search_terms))
-        return cls._request(urls, full_api_results = full_api_results)
+        if (not resources) or "search" in resources:
+            urls.append(cls.build_general_search_url(api_url, search_term))
+        else:
+            for r in resources:
+                urls.append(cls.build_resource_search_url(api_url, r, search_term))
+        result = cls._request(urls, full_api_results = full_api_results)
+        return result
+
+    @classmethod
+    def all(cls, api_url, resource):
+        """
+        _summary_
+
+        _extended_summary_
+
+        Args:
+            refresh (bool, optional): _description_. Defaults to False.
+
+        Returns:
+            _type_: _description_
+        """
+        url = cls.build_resource_all_url(api_url, resource)
+        return cls._request([url], full_api_results=True)
+        

@@ -1,4 +1,1 @@
-
-
-class Campaign:
-    pass
+from .character import Character

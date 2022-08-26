@@ -3,6 +3,17 @@ from src.models.compendium.item import Item
 
 class TestItem:
 
+    def test_all(self):
+        results = Item.search("Boots", refresh=True)
+        results = Item.all()
+        assert filter(lambda x: x.name == "Scale mail", results)
+        results = Item.search("Club", refresh=True)
+        results = Item.all()
+        assert filter(lambda x: x.name == "Club", results)
+        results = Item.search("Scale", refresh=True)
+        results = Item.all()
+        assert filter(lambda x: x.name == "Scale mail", results)
+
     def test_search(self):
         """
         _summary_
@@ -10,35 +21,5 @@ class TestItem:
         Returns:
             _type_: _description_
         """
-        results = Item.search()
-        
+        results = Item.search("Fire", refresh=True)
         assert results
-
-        results = Item.search(name="Adamantine Armor")
-        
-        assert results
-
-        results = Item.search("djydkdkuculkc")
-        
-        assert not results
-        
-    def test_count(self):
-        """
-        _summary_
-
-        Returns:
-            _type_: _description_
-        """
-        assert Item.count() > 0
-
-    def test_random(self):
-        """
-        _summary_
-
-        Returns:
-            _type_: _description_
-        """
-        result =  Item.random()
-        
-        assert result[0]['name']
-        assert len(result) == 1

@@ -66,7 +66,24 @@ class TestCharacter:
         """
 
         results = Character.all()
-        log.info(results)
+        log.debug(results)
         for char in results:
             assert(char.name)
-            log.info(char)
+            log.debug(char)
+
+    def test_wikipull(self):
+        """
+        _summary_
+
+        Returns:
+            _type_: _description_
+        """
+
+        results = Character.all()
+        log.debug(results)
+        for char in results:
+            char.wiki_pull()
+            log.info(char.name)
+            if char.name in ["Retta", "Nicodemus"]:
+                assert char.image_url
+                assert char.history

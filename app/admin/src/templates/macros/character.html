@@ -19,24 +19,33 @@
 </div>
 <div class="row">
   <div class="col s6">
-    <label for="{{character.pk}}_player_class">Class</label>
-    <select id="{{character.pk}}_player_class" name="player_class" name=player_class">
-      {% for class in classes %}
-        <option value="{{class}}" {% if class==character['player_class']%}selected{% endif %}>
-          {{class}}
-        </option>
-      {% endfor %}
-    </select>
+    <div class="row">
+      <div class="col s12">
+        <label for="{{character.pk}}_player_class">Class</label>
+        <select id="{{character.pk}}_player_class" name="player_class" name=player_class">
+          {% for class in classes %}
+            <option value="{{class}}" {% if class==character['player_class']%}selected{% endif %}>
+              {{class}}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="row">
+      <div class="input-field col s12">
+        <input id="{{character.pk}}_hp" name="hp" type="number" value="{%if character['hp'] %}{{character['hp']}}{%else%}0{%endif%}">
+        <label for="{{character.pk}}_hp">HP</label>
+      </div>
+    </div>
+    <div class="row">
+      <div class="input-field col s12">
+        <input id="{{character.pk}}_status" name="status" type="text" value="{{character['status']}}">
+        <label for="{{character.pk}}_status">Status</label>
+      </div>
+    </div>
   </div>
-</div>
-<div class="row">
-  <div class="input-field col s6">
-    <input id="{{character.pk}}_hp" name="hp" type="number" value="{%if character['hp'] %}{{character['hp']}}{%else%}0{%endif%}">
-    <label for="{{character.pk}}_hp">HP</label>
-  </div>
-  <div class="input-field col s6">
-    <input id="{{character.pk}}_status" name="status" type="text" value="{{character['status']}}">
-    <label for="{{character.pk}}_status">Status</label>
+  <div class="col s6">
+    <img class="circle responsive-img" src="{{character.image_url}}">
   </div>
 </div>
 <div class="row">

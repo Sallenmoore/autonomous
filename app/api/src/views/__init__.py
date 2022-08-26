@@ -17,7 +17,7 @@ def package_response(error="", data=None, api_path=""):
         _type_: _description_
     """
     if api_path == "":
-        api_path = f"{inspect.stack()[1].code_context} -- {inspect.stack()[1].function}"
+        api_path = f"{inspect.stack()[1].function}"
 
     count = 0
     if data:

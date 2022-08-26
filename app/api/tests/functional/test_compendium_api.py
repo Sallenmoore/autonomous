@@ -82,3 +82,20 @@ def test_search(test_client):
         result = test_client.get(url).json
         log.info(f'result: {result}')
         assert result['results']
+
+def test_monster(test_client):
+    """
+    _summary_
+
+    Args:
+        test_client (_type_): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    search_terms = {'search': 'fire', 'search':'ice', "search":"none", "search":""}
+    for k,v in search_terms.items():
+        url = f'/compendium/monster?{urllib.parse.urlencode({k:v})}'
+        result = test_client.get(url).json
+        log.info(f'result: {result}')
+        assert result['results']

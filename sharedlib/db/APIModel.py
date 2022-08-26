@@ -113,11 +113,11 @@ class APIModel(BaseModel):
         """
         headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
         
-        log.debug(f"sending data: {data} to: {cls.API_URL}/{endpoint}")
+        log.info(f"sending data: {data} to: {cls.API_URL}/{endpoint}")
         
         response = requests.post(f"{cls.API_URL}/{endpoint}", json=data, headers=headers)
 
-        log.debug(f"received response: {response.text}")
+        log.info(f"received response: {response.text}")
 
         return response.json()
 

@@ -136,11 +136,8 @@ def create_app(test_config=None):
                 'search':request.args.get('search_term')
             }
             #search = urllib.parse.unquote(search)
-            if request.args['endpoint'] == "search": 
-                url = f"http://api:8000/compendium/search"
-            else:
-                url = f"http://api:8000/compendium/search"
-            log.debug(f"{data}")
+            url = f"http://api:8000/compendium/{request.args['endpoint']}"
+            log.info(f"{data}")
             response = requests.get(url, json=data, headers=headers)
             log.debug(f"{response}")
             return response.json()

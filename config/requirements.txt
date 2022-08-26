@@ -12,5 +12,6 @@ Flask>=2.0
 
 ###### App Specific Requirements w/ Version Specifiers ######
 d20
+mistletoe
 
 ###### App Specific Requirements w/o Version Specifiers ######

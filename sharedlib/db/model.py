@@ -31,9 +31,8 @@ class BaseModel():
 
         _extended_summary_
         """
-        self.__base_attrs = []
         self.__base_attrs = list(vars(self).keys())
-
+        #log.info(f"base_attrs for {self}: {self.__base_attrs}")
         self.update(**kwargs)
 
     def __str__(self):
@@ -84,16 +83,17 @@ class BaseModel():
         _extended_summary_
         """
         log.debug(f"kwargs: {kwargs}")
-
+        if not kwargs:
+            kwargs = self.attributes
         attrs = self._model_attrs()
         
-        if self.validate(**kwargs):
-            for k,v in kwargs.items():
+        for k,v in kwargs.items():
+            if self.validate(k, v):
                 setattr(self, k, v)
 
         log.debug(f"{self}")
     
-    def validate(self, **kwargs):
+    def validate(self, key, value):
         """
         only validate values being updated
 
@@ -103,26 +103,21 @@ class BaseModel():
         Returns:
             bool: whether or not the updates to the object validate
         """
-        if not kwargs:
-            kwargs = self._attributes
-
-        log.debug(f'{kwargs}')
 
         attrs = self._model_attrs()
-        
-        for k,v in kwargs.items():
-            if k not in attrs:
-                raise Exception(f"Invalid Attribute: {k}")
-        log.debug(f'{kwargs}')
-        return True
-
+        if key in attrs and attrs[key] == type(value):
+            log.debug(f'valid key: {key} for value:{value}')
+            return True
+        log.debug(f'invalid key: {key} for value:{value}')
+        return False
+    
     def serialize(self):
         """
         
         """
         #log.debug(f'attributes: {vars(self)}')
         #log.debug(f'attributes: {self._attributes}')
-        filtered_attrs = {k:v for k,v in self._attributes.items() if v is not None}
+        filtered_attrs = {k:v for k,v in self.attributes.items() if v is not None}
         json_data= {}
         for key, value in filtered_attrs.items():
             if hasattr(value, 'serialize') and callable(value.serialize):
@@ -137,18 +132,12 @@ class BaseModel():
                     json_data[key] = value
         return json_data
 
-    ############################## Private Properties       #####################################
+    ##############################  Properties       #####################################
     @property
-    def _attributes(self):
-        #log.debug(f'attributes: {vars(self)}')
-        result = {}
-        for k,v in vars(self).items():
-            #log.debug(f'k: {k} base attr: {self.__base_attrs}')
-            if k not in self.__base_attrs:
-                result[k] = v
-        #log.debug(f'base: {self.__base_attrs}')
-        #log.debug(f'attributes: {result}')
-        return result
+    def attributes(self):
+        log.debug(f'attributes: {vars(self)}')
+        log.debug(f'base: {self.__base_attrs}')
+        return {k:v for k,v in vars(self).items() if k not in self.__base_attrs}
 
     ############################## Operators       #####################################
     def __EQ__(self, other):
@@ -177,36 +166,37 @@ class Model(BaseModel):
     def __init__(self, **kwargs):
 
         #These should not be stored in the db
-        self.table_name = type(self).__name__
-        self.table = db.get_table(self.table_name)
+        self._table_name = type(self).__name__
+        self._table = db.get_table(self._table_name)
         super().__init__(**kwargs)
 
     def save(self):
         """
         save() :save object to db
         """
-        log.info(self._attributes)
-        if self.validate():
-            obj_serialize = self.serialize()
+        log.debug(self.attributes)
 
-            log.debug(f'{obj_serialize}')
+        obj_serialize = {}
+        for k,v in self.serialize().items():
+            if self.validate(k,v):
+                obj_serialize[k] = v
+            else:
+                log.info(f'{k}{v} attribute ignored')
 
-            self.pk = self.table.update(obj_serialize)
+        self.pk = self._table.update(obj_serialize)
 
-            log.info(f'{self}')
+        log.debug(f'{self}')
 
-            return self.pk
-        else:
-            raise Exception('VERIFICATION FAILED: not saved')
+        return self.pk
 
     def delete(self):
-        self.table.delete(self.pk)
+        self._table.delete(self.pk)
 
     ################## class methods ####################
                 
     @classmethod
     def all(cls):
-        objects = cls().table.all()
+        objects = cls()._table.all()
         return [cls(**objs) for objs in objects]
     
     @classmethod
@@ -216,7 +206,7 @@ class Model(BaseModel):
         params: keyword arguments to the model 
         return: Always returned a list
         """
-        json_objects = cls().table.search(**kwargs)
+        json_objects = cls()._table.search(**kwargs)
         return [cls(**o) for o in json_objects]
 
     @classmethod
@@ -227,6 +217,6 @@ class Model(BaseModel):
         return: Always returns single objectr
         """
         pk = pk or doc_id
-        json_object = cls().table.get(pk)
+        json_object = cls()._table.get(pk)
         #log.debug(f'{kwargs}, {json_object}')
         return cls(**json_object) if json_object else None

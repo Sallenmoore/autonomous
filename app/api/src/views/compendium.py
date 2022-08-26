@@ -1,5 +1,5 @@
 # Local Modules
-from src.models.compendium import Compendium
+from src.models.compendium import Monster, PlayerClass
 from src.views import package_response
 from flask import (
     Blueprint, request, current_app
@@ -9,23 +9,7 @@ log = logging.getLogger()
 
 bp = Blueprint('compendium', __name__, url_prefix='/compendium')
 
-@bp.route('/random', methods=('GET',))
-def random():
-    """
-    returns a random item, monster, or spell 
-    TODO: add filters to results for item generation
-    
-    Returns:
-        dict: {
-                error:<str>, 
-                results:random item, 
-                count: 1 , 
-                api_path:/compendium/random
-            }
-    """
-    results = Compendium.random()
-    return package_response(data=results)
-        
+REFRESH=True
 
 @bp.route('/classes_list', methods=('GET',))
 def classes_list():
@@ -40,11 +24,79 @@ def classes_list():
                 api_path:/combendium/classes_list
             }
     """
-    results = Compendium.classes_list()
+    results = PlayerClass.list(refresh=REFRESH)
     return package_response(data=results)
 
 @bp.route('/search', methods=('GET',))
 def search():
+    """
+    keyword search to search the compendium based on key/value pairs
+
+    Returns:
+        dict: {
+                error:<str>, 
+                results: list of matches, 
+                count: <int>, 
+                api_path:/compendium/search
+            }
+    """
+    log.debug(f"{request.json}")
+    results = D.search(**request.json)
+    return package_response(data=results)
+
+@bp.route('/item', methods=('GET',))
+def item():
+    """
+    keyword search to search the compendium based on key/value pairs
+
+    Returns:
+        dict: {
+                error:<str>, 
+                results: list of matches, 
+                count: <int>, 
+                api_path:/compendium/search
+            }
+    """
+    log.debug(f"{request.json}")
+    results = Compendium.search(**request.json)
+    return package_response(data=results)
+
+@bp.route('/monster', methods=('GET',))
+def monster():
+    """
+    keyword search to search the compendium based on key/value pairs
+
+    Returns:
+        dict: {
+                error:<str>, 
+                results: list of matches, 
+                count: <int>, 
+                api_path:/compendium/search
+            }
+    """
+    log.debug(f"{request.json}")
+    results = Monster.search(refresh=REFRESH, **request.json)
+    return package_response(data=results)
+
+@bp.route('/spell', methods=('GET',))
+def spell():
+    """
+    keyword search to search the compendium based on key/value pairs
+
+    Returns:
+        dict: {
+                error:<str>, 
+                results: list of matches, 
+                count: <int>, 
+                api_path:/compendium/search
+            }
+    """
+    log.debug(f"{request.json}")
+    results = Compendium.search(**request.json)
+    return package_response(data=results)
+
+@bp.route('/character', methods=('GET',))
+def character():
     """
     keyword search to search the compendium based on key/value pairs
 
@@ -75,3 +127,7 @@ def all():
     """
     results = Compendium.search()
     return package_response(data=results)
+
+@bp.route('/refresh', methods=('GET',))
+def refresh():
+    return {"refreshed":True}

@@ -31,13 +31,10 @@ def create_app(test_config=None):
     with app.app_context():
         
         # Register our Routes
-        from src.views import (compendium, monster, item, spell, dice, character,)
+        from src.views import (compendium, dice, character,)
         
         app.register_blueprint(character.bp)
         app.register_blueprint(compendium.bp)
-        app.register_blueprint(monster.bp)
-        app.register_blueprint(item.bp)
-        app.register_blueprint(spell.bp)
         app.register_blueprint(dice.bp)
 
         # Register the filters
@@ -50,20 +47,12 @@ def create_app(test_config=None):
             modules=[
                 'src.views.character',
                 'src.views.compendium', 
-                'src.views.monster', 
-                'src.views.item',
-                'src.views.spell',
                 'src.views.dice', 
                 'src.models.campaign.character',
                 'src.models.campaign.dm',
                 'src.models.campaign.event',
                 'src.models.campaign.map',
-                'src.models.campaign.monster',
-                'src.models.campaign.npc',
                 'src.models.compendium',
-                'src.models.compendium.item',
-                'src.models.compendium.api',
-                'src.models.compendium.spell',
                 'src.models.dice',
                 'src.models.player',
                 'src.sharedlib.db.db',

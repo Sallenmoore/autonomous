@@ -80,16 +80,16 @@ DM Buddy has 4 inital container components:
 ### Run Tests
 
 * To run tests:
-    * `sudo docker-compose exec <service name> pytest --log-level=DEBUG -rl -x`
+    * `sudo docker-compose exec <service name> pytest --log-level=INFO -rx -l -x`
 * To run only < name > tests on the `api` service:
-    * `sudo docker-compose exec <service name>  pytest --log-level=DEBUG -rl -x -k <name>`
+    * `sudo docker-compose exec <service name>  pytest --log-level=INFO -rA -l -x -k "<test_target>"`
 * To check test coverage:
     * `sudo docker-compose exec <service name>  coverage run -m pytest ...`
 
 ### Read Logs
 
-* `docker logs --since=15m -t <container>`
-* `docker logs -f --since=15m -t <container> &`
+* `sudo docker logs --since=15m -t <container>`
+* `sudo docker logs -f --since=15m -t <container> &`
     * follows as a background process
 
 ### BUGS
