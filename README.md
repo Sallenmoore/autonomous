@@ -104,18 +104,22 @@ DM Buddy has 4 inital container components:
 ### TODOs
 
 1. interfaces
-  * admin
+  * admin - [currently working on]
   * player
   * table
 2. Models
   * APIModel - pull attributes from API
+3. Integrations
+  *  Agars fantasy map generator json
 
 
 
 ### IMPROVEMENTS
 
 * Make it work?
+* Reorganize Architecture
 * Use [Hypertag](http://hypertag.io/) instead of jinja?
+
 ---
 
 ### Misc Notes
