@@ -1,2 +1,2 @@
-from .compendium import Compendium
+from .compendium.compendium import Compendium
 

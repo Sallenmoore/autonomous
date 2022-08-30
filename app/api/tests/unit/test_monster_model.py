@@ -1,5 +1,8 @@
 from src.models.compendium import Monster
 
+import logging
+log = logging.getLogger()
+
 class TestMonster:
 
     def test_all(self):

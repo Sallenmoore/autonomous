@@ -1,4 +1,8 @@
-from src.models.compendium import Spell
+from src.models.compendium.spell import Spell
+
+
+import logging
+log = logging.getLogger()
 
 class TestSpell:
 

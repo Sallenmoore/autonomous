@@ -1,10 +1,12 @@
 from src.models.compendium import PlayerClass
 
+import logging
+log = logging.getLogger()
 
 class TestPlayerClass:
 
     def test_all(self):
-        results = Monster.all()
+        results = PlayerClass.all()
         assert filter(lambda x: x.name == "Barbarian", results)
 
     def test_list(self):

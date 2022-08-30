@@ -181,7 +181,7 @@ class Model(BaseModel):
             if self.validate(k,v):
                 obj_serialize[k] = v
             else:
-                log.info(f'{k}{v} attribute ignored')
+                log.debug(f'{k}{v} attribute ignored')
 
         self.pk = self._table.update(obj_serialize)
 

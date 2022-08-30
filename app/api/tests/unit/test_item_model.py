@@ -1,5 +1,7 @@
 from src.models.compendium.item import Item
 
+import logging
+log = logging.getLogger()
 
 class TestItem:
 

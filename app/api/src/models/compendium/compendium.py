@@ -1,5 +1,8 @@
 
 from src.models.compendium.dndapi import DnDAPI
+from src.models.compendium.spell import Spell
+from src.models.compendium.monster import Monster
+from src.models.compendium.item import Item
 
 from flask import (
     current_app, abort
@@ -37,10 +40,6 @@ class Compendium:
         Returns:
             _type_: _description_
         """
-        result = cls.all()
-        if not refresh and result:
-            return [r.name for r in result]
-        
         result = DnDAPI.search(cls.resource, search_term)
         results = []
         log.debug(result)
@@ -66,4 +65,4 @@ class Compendium:
             else:
                 m = r
             results.append(m)
-        return spells
+        return results

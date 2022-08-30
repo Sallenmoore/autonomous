@@ -1,7 +1,10 @@
-from src.models import Compendium
 from src.sharedlib.db import Model
+from src.models.compendium.dndapi import DnDAPI
 
-class Spell(Model, Compendium):
+import logging
+log = logging.getLogger()
+
+class Spell(Model):
     resource = ["spells", "magicitems"]
 
     def model_attr(self):

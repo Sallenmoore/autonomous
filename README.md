@@ -119,6 +119,8 @@ DM Buddy has 4 inital container components:
 * Make it work?
 * Reorganize Architecture
 * Use [Hypertag](http://hypertag.io/) instead of jinja?
+* add tests to shared lib
+* Move doc module to shared lib
 
 ---
 

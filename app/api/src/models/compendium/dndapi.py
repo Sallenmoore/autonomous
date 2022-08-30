@@ -3,6 +3,7 @@
 from src.models.compendium.api import API
 import requests
 from urllib.parse import urlencode
+
 import logging
 log = logging.getLogger()
 

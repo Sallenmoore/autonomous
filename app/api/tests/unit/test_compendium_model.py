@@ -12,5 +12,5 @@ class TestCompendium:
         Returns:
             _type_: _description_
         """
-        results = Compenium.search("Fire", refresh=True)
+        results = Compendium.search("Fire", refresh=True)
         assert results
