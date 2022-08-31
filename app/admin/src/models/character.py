@@ -2,7 +2,7 @@ from src.sharedlib.db.APIModel import APIModel
 
 
 class Character(APIModel):
-    API_URL="http://api:8000/character"
+    API_URL="http://api:44666/character"
 
     def model_attr(self):
         return {

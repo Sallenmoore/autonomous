@@ -1,6 +1,6 @@
-FROM python:3.9-alpine
+FROM python:3.9
 
-RUN apk update && apk add --virtual build-dependencies build-base gcc wget git
+RUN apt-get update && apt-get install -y build-essential gcc wget git pandoc
 
 # install dependencies
 RUN pip install --upgrade pip

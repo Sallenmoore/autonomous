@@ -12,13 +12,13 @@ services:
     networks:
       - app_net
     expose:
-      - "8000"
+      - "44666"
     volumes:
       - ./app/api:/var/app/
       - ./sharedlib:/var/app/src/sharedlib
     command: ["gunicorn", "app:create_app()", "-c/var/gunicorn.conf.py"]
     ports:
-     - "8000:8000" #this port is open for testing purposes only
+     - "44666:44666" #this port is open for testing purposes only
   admin:
     image: dmbuddy_admin:latest
     build: 
@@ -27,8 +27,8 @@ services:
     working_dir: /var/app
     env_file: ./config/admin.env
     container_name: admin
-    ports:
-      - "3000:3000" #this port is open for testing purposes only
+    # ports:
+    #   - "3000:3000" #this port is open for testing purposes only
     networks:
       - app_net
     volumes:

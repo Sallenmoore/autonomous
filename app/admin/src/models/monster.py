@@ -6,7 +6,7 @@ import requests
 from flask import current_app 
 
 class Monster(APIModel):
-    API_URL="http://api:8000/monster"
+    API_URL="http://api:44666/compendium/monster/"
     def model_attr(self):
         #current_app.logger.info(kwargs)
         return {

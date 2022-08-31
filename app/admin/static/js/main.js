@@ -24,22 +24,33 @@ $('#next_initiative').click(function(){
 
 $('#search_term').keyup(function(event) {
     let search_term = $(this).val();
+    let endpoint = $("#endpoint").val();
     if(search_term.length >= 3) {
-        let endpoint = $("#endpoint").val();
-        //search_term = $.param(search_term);
-        //console.log(search_term);
-        fetch(`/compendium?endpoint=${endpoint}&search_term=${search_term}`)
-            .then(response => response.json())
-            .then((obj) => {
+        console.log(search_term);
+        const dataToSend = JSON.stringify({"search_term": search_term, "endpoint":endpoint});
+        fetch(`/compendium`, {
+            credentials: "same-origin",
+            mode: "same-origin",
+            method: "post",
+            headers: { "Content-Type": "application/json" },
+            body: dataToSend
+        }).then(response => {
+            if (response.status === 200) {
+                return response.json()
+            } else {
+                console.log("Status: " + response.status)
+                return Promise.reject("server")
+            }
+        }).then((obj) => {
                 $('#auto_search_results').empty()
                 obj.results.forEach(function(item){
-                    let icon = "broken_image"
-                    if (item.route.includes("spell")){
-                        icon = "contactless"
-                    }else if (item.route.includes("monster")){
-                        icon = "android"
-                    }else if (item.route.includes("magic")){
-                        icon = "auto_fix_normal"
+                    let icon = "broken_image";
+                    if ("route" in item && item.route.includes("spell")){
+                        icon = "contactless";
+                    }else if ("route" in item && item.route.includes("monster")){
+                        icon = "android";
+                    }else if ("route" in item && item.route.includes("magic")){
+                        icon = "auto_fix_normal";
                     }
                     let detail = ""
                     for (let key in item) {
@@ -60,7 +71,7 @@ $('#search_term').keyup(function(event) {
                         </div>
                     </li>
                     `;
-                    $('#auto_search_results').append(result)
+                    $('#auto_search_results').append(result);
                 });
                 $('#search_results').show();
             }).catch(error => {

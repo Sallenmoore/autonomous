@@ -1,12 +1,11 @@
 import requests
-from mistletoe import Document, HTMLRenderer
 import os
 import urllib.parse
 import logging
 log = logging.getLogger()
 
 class WikiAPI:
-    WIKI_APIKEY = os.getenv("$WIKIKEY", "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJhcGkiOjIsImdycCI6MSwiaWF0IjoxNjYwODQ3NjI3LCJleHAiOjE3NTU1MjA0MjcsImF1ZCI6InVybjp3aWtpLmpzIiwiaXNzIjoidXJuOndpa2kuanMifQ.Pn0kXoX45rjA4xdOsHMNcEXkoaQv8ZOyjwuwK-zNr1DfMC6im6Dh4dacjSw_kCM7rmshiGDvzORbYnO-StJek75clfhmIxpV7VDpL8ZnU6N8trHqoeQfPriEEs5C-CkwtkjR-UKsvnQhnj5ENCqs6U66LLhiuSbbD7tVbEizDS7hMdcOIs-IZDVrXeqo7dogb00hSeabFUdP5GVsh71qXyOz51NoanmJDpHuy0mUznalrybgPJ06c_c2IFiyUvcAeGC1FHIVmpCLga1xclNxQFVuVvBIBjmqiFaQq5zy24AMzdrCl--pfkZ3fdQ94OH-JE6vXlrw68U-fBn51cEiDQ")
+    WIKI_APIKEY = os.getenv("WIKI_APIKEY")
 
     def __init__(self, url = 'http://samoore.duckdns.org:44444/graphql', base_url=None):
         self.api = url
@@ -15,7 +14,7 @@ class WikiAPI:
     def make_query(self, query):
         ## get list of associated pages
         log.debug(query)
-            # TODO need ot move this key into environment variable
+            # TODO need t move this key into environment variable
         headers= {
             "Authorization": f"Bearer {self.WIKI_APIKEY}", 
             "content-type": "application/json",

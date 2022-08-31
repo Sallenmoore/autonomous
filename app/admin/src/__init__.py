@@ -50,7 +50,7 @@ def create_app(test_config=None):
 
             
             context = {
-                'classes': Compendium.get_classes(), 
+                'classes': [cl['name'] for cl in Compendium.get_classes()], 
                 'characters': characters
             }
             return render_template("index.html", **context)
@@ -110,7 +110,7 @@ def create_app(test_config=None):
         
         # def campaign_api(endpoint, data):
         #     headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
-        #     requests.post(f"http://api:8000/campaign/{endpoint}", data=data, headers=headers)
+        #     requests.post(f"http://api:44666/campaign/{endpoint}", data=data, headers=headers)
         #     return redirect(url_for('index'))
 
         # @app.route('/add_campaign', methods=('GET', 'POST'))
@@ -129,18 +129,11 @@ def create_app(test_config=None):
         ###                       Compendium Search                     ###
         ################################################################
         
-        @app.route('/compendium', methods=('GET',))
+        @app.route('/compendium', methods=('POST',))
         def compendium():
-            headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
-            data = {
-                'search':request.args.get('search_term')
-            }
-            #search = urllib.parse.unquote(search)
-            url = f"http://api:8000/compendium/{request.args['endpoint']}"
-            log.info(f"{data}")
-            response = requests.get(url, json=data, headers=headers)
-            log.debug(f"{response}")
-            return response.json()
+            #log.info(f"search: {request.json.get('search_term')}, endpoint:{request.json.get('endpoint')}")
+            results = Compendium.search(search=request.json.get('search_term'), endpoint=request.json.get('endpoint'))
+            return results
 
     ###### returns the application instance to the caller ######
 

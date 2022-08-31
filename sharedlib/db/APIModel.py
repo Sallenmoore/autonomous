@@ -133,6 +133,7 @@ class APIModel(BaseModel):
         Returns:
             dict: the json response from the API converted to a dictionary
         """
+        log.info(f"{cls.API_URL}/{endpoint}")
         response = requests.get(f"{cls.API_URL}/{endpoint}")
         
         log.debug(f"recieved response: {response}")

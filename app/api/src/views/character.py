@@ -74,7 +74,7 @@ def all():
         }
     """
     
-    results = Character.search()
+    results = [c.serialize() for c in Character.search()]
     return package_response(data=results)
 
 @bp.route('/<pk>', methods=('GET',))
@@ -83,7 +83,6 @@ def get(pk):
     _summary_
     """
     result = Character.get(pk)
-    result.wiki_pull()
     return package_response(data=result.serialize() if result else None)
 
 @bp.route('/search', methods=('GET',))
@@ -98,8 +97,8 @@ def search():
     log.debug(f"request {vars(request.args)}")
     if not request.args:
         return all()
-    results = Character.search(**request.args)
-    #[res.wiki_pull() for res in results] - takes too long
+    response = Character.search(**request.args)
+    results = [r.serialize() for r in response]
     return package_response(data=results)
 
 #################### UPDATE ENDPOINTS ########################

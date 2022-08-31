@@ -5,7 +5,7 @@ from urllib.parse import urlencode
 import logging
 log = logging.getLogger()
 
-class API:
+class BaseAPI:
     """
     _summary_
 
@@ -65,7 +65,7 @@ class API:
 
         Returns:
             _type_: _description_
-        """
+        """ 
         if api_url.endswith('/'):
             api_url = api_url[:-1]
         return f"{api_url}/{resource}/?search={search_term}"
@@ -122,13 +122,14 @@ class API:
         if (not resources) or "search" in resources:
             urls.append(cls.build_general_search_url(api_url, search_term))
         else:
+            resources = resources if isinstance(resources, (list, tuple)) else [resources]
             for r in resources:
                 urls.append(cls.build_resource_search_url(api_url, r, search_term))
         result = cls._request(urls, full_api_results = full_api_results)
         return result
 
     @classmethod
-    def all(cls, api_url, resource):
+    def all(cls, api_url, resources):
         """
         _summary_
 
@@ -140,6 +141,10 @@ class API:
         Returns:
             _type_: _description_
         """
-        url = cls.build_resource_all_url(api_url, resource)
-        return cls._request([url], full_api_results=True)
+        urls = []
+        resources = resources if isinstance(resources, (list, tuple)) else [resources]
+        for r in resources:
+            urls.append(cls.build_resource_all_url(api_url, r))
+        
+        return cls._request(urls, full_api_results=True)
         

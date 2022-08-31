@@ -1,5 +1,4 @@
 from src.sharedlib.db import Model
-from src.models.compendium.dndapi import DnDAPI
 
 import logging
 log = logging.getLogger()
@@ -10,42 +9,26 @@ class PlayerClass(Model):
     def model_attr(self):
         #current_app.logger.info(kwargs)
         return {
-            'name':str,
-            'desc':str  
+            "name": str,
+            "slug": str,
+            "desc": str,
+            "hit_dice": str,
+            "hp_at_1st_level": str,
+            "hp_at_higher_levels": str,
+            "prof_armor": str,
+            "prof_weapons": str,
+            "prof_tools": str,
+            "prof_saving_throws": str,
+            "prof_skills": str,
+            "equipment": str,
+            "table": str,
+            "spellcasting_ability": str
         }
 
     @classmethod
     def list(cls, refresh=False):
-        """
-        _summary_
-
-        _extended_summary_
-
-        Args:
-            refresh (bool, optional): _description_. Defaults to False.
-
-        Returns:
-            _type_: _description_
-        """
-        classes = []
-        result = cls.all()
-        
-        if not refresh and result:
-            return [r.name for r in result]
-        
-        result = DnDAPI.all('classes')
-        classes = []
-        log.debug(result)
-        for r in result:
-            pc = PlayerClass.find(name=r['name'])
-            log.debug(f"find: {pc}")
-            if pc:
-                pc = pc.pop()
-                pc.update(**r)
-            else: 
-                pc = PlayerClass(**r)
-            log.debug(f"pc: {pc}")
-            pc.save()
-            classes.append(pc.name)
-        return classes
+        from src.models.compendium.compendium import Compendium
+        class_list = Compendium.class_list(refresh=refresh)
+        log.info(class_list)
+        return [cl.name for cl in class_list]
         

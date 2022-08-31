@@ -5,7 +5,7 @@ import requests
 from flask import current_app 
 
 class Spell(APIModel):
-    API_URL="http://api:8000/spell"
+    API_URL="http://api:44666/compendium/spell"
     
     def model_attr(self):
         #current_app.logger.info(kwargs)

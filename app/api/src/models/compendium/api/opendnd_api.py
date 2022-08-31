@@ -1,13 +1,11 @@
-
-
-from src.models.compendium.api import API
+from src.models.compendium.api.base_api import BaseAPI
 import requests
 from urllib.parse import urlencode
 
 import logging
 log = logging.getLogger()
 
-class DnDAPI:
+class OpenDnDAPI:
     """
     _summary_
 
@@ -36,12 +34,13 @@ class DnDAPI:
         Returns:
             _type_: _description_
         """
-        response =  API.all(cls.API_URL, resource)
+        response =  BaseAPI.all(cls.API_URL, resource)
+        log.info(f"response: {response}")
         return cls._unpack(response)
 
 
     @classmethod
-    def search(cls, resource, search_term):
+    def search(cls, resource, search_term=None):
         """
         _summary_
 
@@ -53,6 +52,6 @@ class DnDAPI:
         Returns:
             _type_: _description_
         """
-        response =  API.search(cls.API_URL, resource, search_term)
+        response =  BaseAPI.search(cls.API_URL, resource, search_term) if search_term else BaseAPI.all(cls.API_URL, resource)
         return cls._unpack(response)
         

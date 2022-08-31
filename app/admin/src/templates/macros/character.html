@@ -45,7 +45,9 @@
     </div>
   </div>
   <div class="col s6">
-    <img class="circle responsive-img" src="{{character.image_url}}">
+    {% if character.image_url %}
+      <img class="circle responsive-img" src="{{character.image_url}}">
+    {% endif %}
   </div>
 </div>
 <div class="row">

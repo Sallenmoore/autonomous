@@ -5,7 +5,7 @@ import requests
 from flask import current_app 
 
 class Item(APIModel):
-    API_URL="http://api:8000/item"
+    API_URL="http://api:44666/compendium/item"
     def model_attr(self):
         return {
             'name':str,

@@ -1,5 +1,6 @@
 from src.sharedlib.db import Model
-from src.models.wikiAPI import WikiAPI
+from src.models.compendium.api.wiki_api import WikiAPI
+from src.models.compendium.compendium import Compendium
 import requests
 import os
 
@@ -35,22 +36,24 @@ class Character(Model):
             "hp":int,
             "status":str,
             "inventory":list,
+            "dndbeyond_id":int,
             "active":bool,
         }
 
-    def wiki_pull(self):
-        wk = WikiAPI()
-        res = wk.wikipull(title=self.name, assets_path=['assets', 'dnd'])
-        if res:
-            self.image_url = res.get('asset_url', '')
-            content = res.get('content')
-            if content:
-                start = content.find("## Character History") + len("## Character History")
-                end = content.find("---", start)
-                if not start != -1:
-                    end = len(content)-1 if end == -1 else end
-                    self.history = content[start:end]
-            self.save()
+    def api_update(self):
+        dndbeyond = Compendium.character_update(self)
+        # wk = WikiAPI()
+        # res = wk.wikipull(title=self.name, assets_path=['assets', 'dnd'])
+        # if res:
+        #     self.image_url = res.get('asset_url', '')
+        #     content = res.get('content')
+        #     if content:
+        #         start = content.find("## Character History") + len("## Character History")
+        #         end = content.find("---", start)
+        #         if not start != -1:
+        #             end = len(content)-1 if end == -1 else end
+        #             self.history = content[start:end]
+        #     self.save()
    
     @classmethod
     def search(cls, **kwargs):
@@ -64,68 +67,7 @@ class Character(Model):
         """
         
         objs = cls.find(**kwargs) if kwargs else cls.all()
-        o_list = []
         for o in objs:
-            o.wiki_pull()
-            o_list.append(o.serialize())
-        return o_list
-
-## TODO - additional attributes
-# {
-# "status": "success",
-# "data": {
-#     "id": "",
-#     "name": "",
-#     "description": "",
-#     "url": "",
-#     "image": "",
-#     "type": "",
-#     "subtype": "",
-#     "source": "",
-#     "page": "",
-#     "cost": "",
-#     "weight": "",
-#     "special": "",
-#     "ability": "",
-#     "armor": "",
-#     "hp": "",
-#     "ac": "",
-#     "str": "",
-#     "dex": "",
-#     "con": "",
-#     "int": "",
-#     "wis": "",
-#     "cha": "",
-#     "speed": "",
-#     "str_save": "",
-#     "dex_save": "",
-#     "con_save": "",
-#     "int_save": "",
-#     "wis_save": "",
-#     "cha_save": "",
-#     "skills": [
-#         {
-#             "name": "",
-#             "ability": "",
-#             "modifier": "",
-#             "proficient": ""
-#         }
-#     ],
-#     "senses": "",
-#     "passive_perception": "",
-#     "languages": "",
-#     "challenge_rating": "",
-#     "traits": [
-#         {
-#             "name": "",
-#             "description": ""
-#         }
-#     ],
-#     "actions": [
-#         {
-#             "name": "",
-#             "description": ""
-#         }
-#     ],
-#     "reactions": []
-# }
+            o.api_update()
+        return objs
+    

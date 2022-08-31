@@ -1,8 +1,11 @@
 
-from src.models.compendium.dndapi import DnDAPI
+from src.models.compendium.api.opendnd_api import OpenDnDAPI
+from src.models.compendium.api.dndbeyond_api import DnDBeyondAPI
+from src.models.compendium.api.wiki_api import WikiAPI
 from src.models.compendium.spell import Spell
 from src.models.compendium.monster import Monster
 from src.models.compendium.item import Item
+from src.models.compendium.player_class import PlayerClass
 
 from flask import (
     current_app, abort
@@ -26,9 +29,22 @@ class Compendium:
     """
 
     resource = ["search"]
-    
+
     @classmethod
-    def search(cls, search_term, refresh=False):
+    def _find_and_update(cls, model, r):
+        m = model.find(name=r['name'])
+        log.debug(f"find: {m}")
+        if m:
+            m = m.pop()
+            m.update(**r)
+        else: 
+            m = model(**r)
+        log.debug(f"m: {m}")
+        m.save()
+        return m
+
+    @classmethod
+    def search(cls, search_term=None, model=None, refresh=False):
         """
         _summary_
 
@@ -40,7 +56,15 @@ class Compendium:
         Returns:
             _type_: _description_
         """
-        result = DnDAPI.search(cls.resource, search_term)
+        if model:
+            result = model.all()
+            if not refresh and result:
+                return result
+        else:
+            model = Compendium
+
+        result = OpenDnDAPI.search(model.resource, search_term) if search_term else OpenDnDAPI.all(model.resource)
+
         results = []
         log.debug(result)
         for r in result:
@@ -52,17 +76,89 @@ class Compendium:
                     'armor/':Item, 
             }
             if r.get('route') in routes:
-                route_cls = routes[r['route']]
-                m = route_cls.find(name=r['name'])
-                log.debug(f"find: {m}")
-                if m:
-                    m = m.pop()
-                    m.update(**r)
-                else: 
-                    m = route_cls(**r)
-                log.debug(f"m: {m}")
-                m.save()
-            else:
-                m = r
+                m = cls._find_and_update(routes[r['route']], r)
+            elif model != Compendium:
+                m = cls._find_and_update(model, r)
             results.append(m)
         return results
+
+    @classmethod
+    def item_search(cls, search_term, refresh=False):
+        """
+        _summary_
+
+        _extended_summary_
+
+        Args:
+            refresh (bool, optional): _description_. Defaults to False.
+
+        Returns:
+            _type_: _description_
+        """
+        return Compendium.search(search_term=search_term, model=Item, refresh=refresh)
+
+
+    @classmethod
+    def monster_search(cls, search_term, refresh=False):
+        """
+        _summary_
+
+        _extended_summary_
+
+        Args:
+            refresh (bool, optional): _description_. Defaults to False.
+
+        Returns:
+            _type_: _description_
+        """
+        return Compendium.search(search_term=search_term, model=Monster, refresh=refresh)
+
+    @classmethod
+    def spell_search(cls, search_term, refresh=False):
+        """
+        _summary_
+
+        _extended_summary_
+
+        Args:
+            refresh (bool, optional): _description_. Defaults to False.
+
+        Returns:
+            _type_: _description_
+        """
+        return Compendium.search(search_term=search_term, model=Spell, refresh=refresh)
+
+    @classmethod
+    def class_list(cls, refresh=False):
+        """
+        _summary_
+
+        _extended_summary_
+
+        Args:
+            refresh (bool, optional): _description_. Defaults to False.
+
+        Returns:
+            _type_: _description_
+        """
+        return Compendium.search(model=PlayerClass, refresh=refresh)
+
+    @classmethod
+    def character_update(cls, character):
+        """
+        _summary_
+
+        _extended_summary_
+
+        Args:
+            id (_type_): _description_
+
+        Returns:
+            _type_: _description_
+        """
+        if hasattr(character, 'dndbeyond_id'): 
+            beyond_api = DnDBeyondAPI()
+            result =  beyond_api.get_character_updates(character.dndbeyond_id)
+            log.info(result)
+            return result
+        return None

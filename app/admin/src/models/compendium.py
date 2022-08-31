@@ -16,7 +16,7 @@ class Compendium(APIModel):
         _type_: _description_
     """
     
-    API_URL="http://api:8000/compendium"
+    API_URL="http://api:44666/compendium"
     
     @classmethod
     def get_classes(cls):
@@ -33,6 +33,19 @@ class Compendium(APIModel):
         log.debug(f"results: {results}")
 
         return results['results']
+
+    @classmethod
+    def search(cls, search=None, endpoint="search"):
+        headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
+        data = {
+            'search_term':search
+        }
+        url = f"{cls.API_URL}/{endpoint}"
+        log.debug(url )
+        response = requests.post(url, json=data, headers=headers)
+        results = response.json()
+        log.debug(results['results'])
+        return results
     
 
 
