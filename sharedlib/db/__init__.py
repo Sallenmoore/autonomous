@@ -1,2 +1,2 @@
-from .model import Model
-from .db import Database, Table
+from .table import Table
+from .db import Database

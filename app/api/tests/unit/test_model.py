@@ -1,4 +1,4 @@
-from src.models.campaign.character import Character
+from models.campaign.character import Character
 import pytest
 import logging
 log = logging.getLogger()

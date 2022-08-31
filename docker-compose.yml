@@ -15,7 +15,7 @@ services:
       - "44666"
     volumes:
       - ./app/api:/var/app/
-      - ./sharedlib:/var/app/src/sharedlib
+      - ./sharedlib:/var/app/sharedlib
     command: ["gunicorn", "app:create_app()", "-c/var/gunicorn.conf.py"]
     ports:
      - "44666:44666" #this port is open for testing purposes only
@@ -33,7 +33,7 @@ services:
       - app_net
     volumes:
       - ./app/admin:/var/app
-      - ./sharedlib:/var/app/src/sharedlib
+      - ./sharedlib:/var/app/sharedlib
     command: ["gunicorn", "app:create_app()", "-c/var/gunicorn.conf.py"]
   server:
     image: nginx

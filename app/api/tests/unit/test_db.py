@@ -1,4 +1,4 @@
-from src.sharedlib.db import Table, Database
+from sharedlib.db import Table, Database
 import pytest
 import logging
 log = logging.getLogger()

@@ -1,4 +1,4 @@
-from src.models.dice import Dice
+from models.dice import Dice
 import pytest
 import d20
 

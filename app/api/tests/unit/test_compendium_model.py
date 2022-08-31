@@ -1,4 +1,4 @@
-from src.models.compendium import Compendium, Item, Spell, PlayerClass, Monster
+from models.compendium import Compendium, Item, Spell, PlayerClass, Monster
 
 import logging
 log = logging.getLogger()

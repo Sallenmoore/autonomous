@@ -1,0 +1,21 @@
+from sharedlib.model.APIModel import APIModel
+from models.action import Action
+
+import requests
+from flask import current_app 
+
+class Item(APIModel):
+    API_URL="http://api:44666/compendium/item"
+    def model_attr(self):
+        return {
+            'name':str,
+            'category': str,
+            'rarity':str,
+            'cost': int,
+            "damage_dice": str,
+            "damage_type": str,
+            "weight": "1 lb.",
+            "properties": str,
+            'type':str, 
+            'img_main':str,
+        }

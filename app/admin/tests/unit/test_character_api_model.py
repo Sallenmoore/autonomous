@@ -1,4 +1,4 @@
-from src.models.character import Character
+from models.character import Character
 import logging
 log = logging.getLogger()
 
