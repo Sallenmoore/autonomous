@@ -70,6 +70,14 @@ class TestCharacterAPIModel:
         ch = Character(**self.testchar)
         ch.save()
         assert type(ch.pk) == int
+        pk = ch.pk
+        ch = Character.get(pk)
+        assert pk == ch.pk
+        ch.status = "Dead"
+        ch.save()
+        ch = Character.get(ch.pk)
+        assert pk == ch.pk
+        assert ch.status == "Dead"
 
         #update all test objects with new hp
         results = [r for r in Character.all() if self.verify_results(r)]

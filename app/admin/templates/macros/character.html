@@ -48,6 +48,10 @@
     {% if character.image_url %}
       <img class="circle responsive-img" src="{{character.image_url}}">
     {% endif %}
+    <div class="input-field">
+        <input id="{{character.pk}}_image_url" name="image_url" type="url" value="{%if character['image_url'] %}{{character['image_url']}}{%endif%}">
+        <label for="{{character.pk}}_image_url">Image URL</label>
+    </div>
   </div>
 </div>
 <div class="row">
@@ -96,7 +100,6 @@
             <div class="row">
               <div class="col s11">
                 <form method="POST" action="{{url_for('activate_character')}}">
-                  <input type="hidden" name="pk" value="{{character.pk}}">
                   <div class="switch">
                     <label>
                       <input type="checkbox" name="activate" id="{{character.pk}}_activate" class="filled-in activate_character" checked onchange="this.form.submit()">

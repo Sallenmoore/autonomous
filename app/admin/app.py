@@ -79,10 +79,11 @@ def create_app(test_config=None):
         @app.route('/character/update', methods=('GET', 'POST'))
         def update_character():
             
-            log.info(request.form)
+            log.debug(request.form)
 
             character = Character(**request.form)
 
+            log.info("===============   NO PK  =================")
             log.info(character)
 
             character.save()

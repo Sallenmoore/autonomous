@@ -33,6 +33,11 @@ class BaseModel():
         _extended_summary_
         """
         self.__base_attrs = list(vars(self).keys())
+
+        #TODO: Fix for these being save din the DB. They Shouldn't be though.
+        if kwargs.get("_BaseModel__base_attrs"):
+            kwargs["_BaseModel__base_attrs"].pop() 
+            
         #log.info(f"base_attrs for {self}: {self.__base_attrs}")
         self.update(**kwargs)
 
@@ -74,6 +79,7 @@ class BaseModel():
         """
         attrs = self.model_attr()
         attrs['pk'] = attrs.get('pk', int)
+
         return attrs
 
 ############################## Public Methods #####################################
@@ -83,16 +89,19 @@ class BaseModel():
 
         _extended_summary_
         """
-        log.debug(f"kwargs: {kwargs}")
+        
         if not kwargs:
             kwargs = self.attributes
         attrs = self._model_attrs()
+        
+        log.debug(f"{kwargs.get('name')}  pk: {kwargs.get('pk')}")
         
         for k,v in kwargs.items():
             if self.validate(k, v):
                 setattr(self, k, v)
 
-        log.debug(f"{self}")
+        log.debug("===============   NO PK  =================")
+        log.debug(self)
     
     def validate(self, key, value):
         """

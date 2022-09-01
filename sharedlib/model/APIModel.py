@@ -49,8 +49,12 @@ class APIModel(BaseModel):
             #otherwise, update the object with the current data
             else:
                 #update existing attribute dict, then update object
+                log.debug(f"kwargs: {result['results']}")
                 result['results'].update(kwargs)
+                log.debug(f"kwargs: {result['results']}")
                 super().__init__(**result['results'])
+                log.info("===============   PK  =================")
+                log.info(self)
         else:
             #create a new object
             super().__init__(**kwargs)
@@ -77,11 +81,12 @@ class APIModel(BaseModel):
         Args:
             api_path (str, optional): the endpoint save path if not 'create'. Defaults to "create".
         """
+        log.debug("================================")
         log.debug(self)
-        
-        self.validate()
-        
-        log.debug(self)
+
+        for k,v in self.serialize().items():
+            if not k.startswith('_') and not self.validate(k,v):
+                raise Exception(f"Invalid {self.__class__.__name__} Attribute {k}: {v}")
         
         if hasattr(self, 'pk'):
             log.debug(f"update object: {self.pk}")
@@ -111,11 +116,11 @@ class APIModel(BaseModel):
         """
         headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
         
-        log.info(f"sending data: {data} to: {cls.API_URL}/{endpoint}")
+        log.debug(f"sending data: {data} to: {cls.API_URL}/{endpoint}")
         
         response = requests.post(f"{cls.API_URL}/{endpoint}", json=data, headers=headers)
 
-        log.info(f"received response: {response.text}")
+        log.debug(f"received response: {response.text}")
 
         return response.json()
 
@@ -131,7 +136,7 @@ class APIModel(BaseModel):
         Returns:
             dict: the json response from the API converted to a dictionary
         """
-        log.info(f"{cls.API_URL}/{endpoint}")
+        log.debug(f"{cls.API_URL}/{endpoint}")
         response = requests.get(f"{cls.API_URL}/{endpoint}")
         
         log.debug(f"recieved response: {response}")
@@ -152,7 +157,11 @@ class APIModel(BaseModel):
         # NOTE: this is the public method so I can add 
         # transformations later if needed
         
-        return cls._get(endpoint)
+        results =  cls._get(endpoint)
+        log.info(results)
+        obj = cls(**results)
+        log.info(obj)
+        return obj
 
     @classmethod
     def search(cls, search_term=None, **kwargs):
