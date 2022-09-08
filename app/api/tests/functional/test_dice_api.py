@@ -1,8 +1,7 @@
 import urllib
 import json
 import pytest
-from flask import current_app 
-from src import create_app
+from app.app import create_app
 
 @pytest.fixture
 def test_client():

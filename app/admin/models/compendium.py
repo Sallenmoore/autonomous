@@ -18,21 +18,6 @@ class Compendium(APIModel):
     
     API_URL="http://api:44666/compendium"
     
-    @classmethod
-    def get_classes(cls):
-        """
-        _summary_
-
-        _extended_summary_
-
-        Returns:
-            _type_: _description_
-        """
-        results = cls.get(f"classes_list")
-
-        log.debug(f"results: {results}")
-
-        return results['results']
 
     @classmethod
     def search(cls, search=None, endpoint="search"):

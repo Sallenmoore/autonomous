@@ -17,10 +17,10 @@ db = Database()
 class Model(BaseModel):
 
     def __init__(self, **kwargs):
-
         #These should not be stored in the db
         self._table_name = type(self).__name__
         self._table = db.get_table(self._table_name)
+        log.warn(f"{kwargs}")
         super().__init__(**kwargs)
 
     def save(self):

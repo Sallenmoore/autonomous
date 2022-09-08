@@ -85,6 +85,16 @@ def get(pk):
     result = Character.get(pk)
     return package_response(data=result.serialize() if result else None)
 
+@bp.route('/attributes', methods=('GET',))
+def attributes():
+    """
+    _summary_
+    """
+    result = Character().model_attr()
+    result = {k:str(v) for k,v in result.items()}
+    log.warn(f"{result}")
+    return package_response(data=result)
+
 @bp.route('/search', methods=('GET',))
 def search():
     """

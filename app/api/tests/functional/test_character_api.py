@@ -1,7 +1,7 @@
 import urllib
 import json
 import pytest
-from src import create_app
+from app.app import create_app
 from models.campaign.character import Character
 import logging
 log = logging.getLogger()
@@ -31,7 +31,7 @@ def test_char():
 #################### Convenience Functions ####################
 
 def after_test_cleanup():
-    chars = Character.find(name="Test Character", player_class="Test")
+    chars = Character.find(player_class="Test")
     if chars:
         for char in chars:
             char.delete()
@@ -200,9 +200,11 @@ def test_activate(test_client, test_char):
     """
     ch = temp_character_object(test_char)
     ch.active = False
-    ch.save()
+    pk = ch.save()
     response = test_client.post('/character/activate', json={"pk":ch.pk}).json
-            
+    log.info(response)
+    character = test_client.get(f'/character/{ch.pk}').json
+    pk = character['results']['pk']
     assert ch.active
     after_test_cleanup()
 

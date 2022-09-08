@@ -11,7 +11,7 @@ bp = Blueprint('compendium', __name__, url_prefix='/compendium')
 
 REFRESH=False
 
-@bp.route('/classes_list', methods=('GET',))
+@bp.route('/player_class/all', methods=('GET',))
 def classes_list():
     """
     returns a list of available character classes
@@ -27,6 +27,37 @@ def classes_list():
     results = [cl.serialize() for cl in Compendium.class_list(refresh=REFRESH)]
     return package_response(data=results)
 
+@bp.route('/player_class/attributes', methods=('GET',))
+def classes_list_attributes():
+    """
+    returns a list of available character classes
+
+    Returns:
+        dict: {
+                error:<str>, 
+                results:<list> or None, 
+                count: <int> , 
+                api_path:/combendium/classes_list
+            }
+    """
+    results = [cl.serialize() for cl in Compendium.class_list()]
+    return package_response(data=results)
+
+@bp.route('/player_class/<pk>', methods=('GET',))
+def get_player_class(pk):
+    """
+    returns a list of available character classes
+
+    Returns:
+        dict: {
+                error:<str>, 
+                results:<list> or None, 
+                count: <int> , 
+                api_path:/combendium/classes_list
+            }
+    """
+    results = [cl.serialize() for cl in Compendium.class_list(refresh=REFRESH) if cl.pk == pk]
+    return package_response(data=results)
 ####################################################################
 ##                              search                            ##
 ####################################################################
@@ -65,6 +96,22 @@ def item():
     results = Compendium.item_search(**request.json)
     return package_response(data=results.serialize())
 
+@bp.route('/item/attributes', methods=('GET',))
+def item_attributes():
+    """
+    _summary_
+
+    _extended_summary_
+
+    Returns:
+        _type_: _description_
+    """
+    log.debug(f"{request.json}")
+    results = Compendium.item_attrs()
+    result = {k:str(v) for k,v in result.items()}
+    return package_response(data=results)
+
+
 @bp.route('/monster', methods=('POST',))
 def monster():
     """
@@ -82,6 +129,21 @@ def monster():
     results = Compendium.monster_search(**request.json)
     return package_response(data=results.serialize())
 
+@bp.route('/monster/attributes', methods=('GET',))
+def monster_attributes():
+    """
+    _summary_
+
+    _extended_summary_
+
+    Returns:
+        _type_: _description_
+    """
+    log.debug(f"{request.json}")
+    results = Compendium.monster_attrs()
+    results = {k:str(v) for k,v in result.items()}
+    return package_response(data=results)
+
 @bp.route('/spell', methods=('POST',))
 def spell():
     """
@@ -98,4 +160,19 @@ def spell():
     log.debug(f"{request.json}")
     results = Compendium.spell_search(**request.json)
     return package_response(data=results.serialize())
+
+@bp.route('/spell/attributes', methods=('GET',))
+def spell_attributes():
+    """
+    _summary_
+
+    _extended_summary_
+
+    Returns:
+        _type_: _description_
+    """
+    log.debug(f"{request.json}")
+    results = Compendium.spell_attrs()
+    results = {k:str(v) for k,v in result.items()}
+    return package_response(data=results)
 

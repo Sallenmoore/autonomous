@@ -11,7 +11,7 @@ from pathlib import Path
 import logging
 import shutil
 
-logging.basicConfig(level=logging.INFO, format="==%(levelname)s== [%(filename)s - %(funcName)s:%(lineno)d] --\n %(message)s")
+logging.basicConfig(level=logging.WARNING, format="==%(levelname)s== [%(filename)s - %(funcName)s:%(lineno)d]: %(message)s")
 log = logging.getLogger()
 
 def create_app(test_config=None):

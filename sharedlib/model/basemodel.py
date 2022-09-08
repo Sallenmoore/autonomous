@@ -39,6 +39,7 @@ class BaseModel():
             kwargs["_BaseModel__base_attrs"].pop() 
             
         #log.info(f"base_attrs for {self}: {self.__base_attrs}")
+        log.warn(f"{kwargs}")
         self.update(**kwargs)
 
     def __str__(self):
@@ -100,8 +101,7 @@ class BaseModel():
             if self.validate(k, v):
                 setattr(self, k, v)
 
-        log.debug("===============   NO PK  =================")
-        log.debug(self)
+        log.info(self)
     
     def validate(self, key, value):
         """
@@ -137,7 +137,8 @@ class BaseModel():
                     #log.debug(f"{key} : {value}")
                     json.dumps(value)
                 except TypeError as e:
-                    log.debug(f"{e} -- {key} nonserializable")
+                    log.warning(f"{e} -- {key} nonserializable")
+                    json_data[key] = str(value)
                 else:
                     json_data[key] = value
         return json_data

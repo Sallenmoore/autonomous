@@ -99,6 +99,11 @@ class Compendium:
 
 
     @classmethod
+    def item_attrs(cls):
+        return Item().model_attr()
+
+
+    @classmethod
     def monster_search(cls, search_term, refresh=False):
         """
         _summary_
@@ -114,6 +119,10 @@ class Compendium:
         return Compendium.search(search_term=search_term, model=Monster, refresh=refresh)
 
     @classmethod
+    def monster_attrs(cls):
+        return Monster().model_attr()
+
+    @classmethod
     def spell_search(cls, search_term, refresh=False):
         """
         _summary_
@@ -127,6 +136,10 @@ class Compendium:
             _type_: _description_
         """
         return Compendium.search(search_term=search_term, model=Spell, refresh=refresh)
+
+    @classmethod
+    def spell_attrs(cls):
+        return Spell().model_attr()
 
     @classmethod
     def class_list(cls, refresh=False):

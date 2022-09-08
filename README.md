@@ -89,7 +89,7 @@ DM Buddy has 4 inital container components:
 ### Read Logs
 
 * `sudo docker logs --since=15m -t <container>`
-* `sudo docker logs -f --since=15m -t <container> &`
+* `sudo docker logs -f --since=10m -t <container> &`
     * follows as a background process
 
 ### BUGS
@@ -117,7 +117,6 @@ DM Buddy has 4 inital container components:
 ### IMPROVEMENTS
 
 * Make it work?
-* Reorganize Architecture
 * Use [Hypertag](http://hypertag.io/) instead of jinja?
 * add tests to shared lib
 * Move doc module to shared lib

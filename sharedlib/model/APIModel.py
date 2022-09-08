@@ -59,6 +59,7 @@ class APIModel(BaseModel):
             #create a new object
             super().__init__(**kwargs)
 
+
     def delete(self, api_path="delete"):
         """
         _summary_
@@ -99,7 +100,13 @@ class APIModel(BaseModel):
             raise Exception(result['error'])
         return self.pk
 
-    ######## Class Methods #########
+    def model_attr(self, **kwargs):
+        response = self._get(f"attributes")
+        return response['results']
+
+###########################################################################################
+##                                     CLASS METHODS                                     ##
+###########################################################################################
     
     @classmethod
     def _post(cls, endpoint, data):
@@ -116,11 +123,11 @@ class APIModel(BaseModel):
         """
         headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
         
-        log.debug(f"sending data: {data} to: {cls.API_URL}/{endpoint}")
+        log.info(f"sending data: {data} to: {cls.API_URL}/{endpoint}")
         
         response = requests.post(f"{cls.API_URL}/{endpoint}", json=data, headers=headers)
 
-        log.debug(f"received response: {response.text}")
+        log.info(f"received response: {response.text}")
 
         return response.json()
 
@@ -136,10 +143,11 @@ class APIModel(BaseModel):
         Returns:
             dict: the json response from the API converted to a dictionary
         """
-        log.debug(f"{cls.API_URL}/{endpoint}")
+        log.warning(f"{cls.API_URL}/{endpoint}")
+        
         response = requests.get(f"{cls.API_URL}/{endpoint}")
         
-        log.debug(f"recieved response: {response}")
+        log.warning(f"recieved response: {response.text}")
 
         return response.json()
 
@@ -154,8 +162,6 @@ class APIModel(BaseModel):
         Returns:
             dict: a dictionary of the requested record
         """
-        # NOTE: this is the public method so I can add 
-        # transformations later if needed
         
         results =  cls._get(endpoint)
         log.info(results)

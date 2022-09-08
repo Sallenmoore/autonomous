@@ -5,7 +5,8 @@ log = logging.getLogger()
 
 class TestCharacter:
 
-    test_char = Character(
+    def test_char(self):
+        return Character(
         name="Test Character", 
         image_url = "test.png",
         player_class = "Test",
@@ -22,25 +23,7 @@ class TestCharacter:
         Returns:
             _type_: _description_
         """
-        assert self.test_char.image_url == "test.png"
-        assert self.test_char.name == "Test Character"
-        assert self.test_char.player_class == "Test"
-        assert self.test_char.history == "Test"
-        assert self.test_char.hp == 100
-        assert self.test_char.status == "None"
-        assert self.test_char.inventory == ["Test Item #1", "Test Item #2"]
-
-
-    def test_save(self):
-        """
-        _summary_
-
-        Returns:
-            _type_: _description_
-        """
-
-        
-        pk = self.test_char.save()
+        pk = self.test_char().save()
         assert pk >= 0
 
         result = Character.get(pk)
@@ -53,9 +36,6 @@ class TestCharacter:
         assert result.hp == 100 
         assert result.status == "None" 
         assert result.inventory == ["Test Item #1", "Test Item #2"]
-        
-        
-
 
     def test_all(self):
         """
@@ -71,19 +51,49 @@ class TestCharacter:
             assert(char.name)
             log.debug(char)
 
-    def test_wikipull(self):
+    def test_read(self):
         """
         _summary_
 
         Returns:
             _type_: _description_
         """
-
         results = Character.all()
         log.debug(results)
         for char in results:
-            char.wiki_pull()
-            log.info(char.name)
-            if char.name in ["Retta", "Nicodemus"]:
-                assert char.image_url
-                assert char.history
+            result = Character.get(char.pk)
+            assert result.pk == char.pk
+            assert result.name
+            assert result.player_class 
+            assert result.hp
+
+
+    def test_update(self):
+        """
+        _summary_
+
+        Returns:
+            _type_: _description_
+        """
+        test = self.test_char()
+        test.save()
+        test.name = "Updated Test Character"
+        test.save()
+        test = Character.get(test.pk)
+        assert test.name == "Updated Test Character"
+
+
+    def test_delete(self):
+        """
+        _summary_
+
+        Returns:
+            _type_: _description_
+        """
+        test = Character.search(player_class="Test")
+        for r in test['results']:
+            r.delete()
+
+        test = Character.search(player_class="Test")
+        assert len(test['results'])
+

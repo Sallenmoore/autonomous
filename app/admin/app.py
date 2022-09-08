@@ -1,5 +1,5 @@
 
-from models import Compendium, Character
+from models import Compendium, Character, PlayerClass
 # Required Imports
 import os
 import pytest
@@ -11,7 +11,7 @@ import logging
 from collections import defaultdict
 import urllib.parse
 
-logging.basicConfig(level=logging.INFO, format="==%(levelname)s== [%(filename)s - %(funcName)s:%(lineno)d] --\n %(message)s")
+logging.basicConfig(level=logging.WARNING, format="==%(levelname)s== [%(filename)s - %(funcName)s:%(lineno)d] --\n %(message)s")
 log = logging.getLogger()
 
 def create_app(test_config=None):
@@ -50,7 +50,7 @@ def create_app(test_config=None):
 
             
             context = {
-                'classes': [cl['name'] for cl in Compendium.get_classes()], 
+                'classes': [cl['name'] for cl in PlayerClass.class_list()], 
                 'characters': characters
             }
             return render_template("index.html", **context)
