@@ -14,6 +14,8 @@ services:
     volumes:
       - ./app/api:/var/app/
       - ./sharedlib:/var/app/sharedlib
+    ports:
+      - "44666:44666"
     command: ["gunicorn", "app:create_app()", "-c/var/gunicorn.conf.py"]
   admin:
     image: dmbuddy_admin:latest
@@ -28,6 +30,8 @@ services:
     volumes:
       - ./app/admin:/var/app
       - ./sharedlib:/var/app/sharedlib
+    ports:
+      - "44555:44555"
     command: ["gunicorn", "app:create_app()", "-c/var/gunicorn.conf.py"]
   server:
     image: nginx

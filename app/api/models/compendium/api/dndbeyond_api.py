@@ -1,8 +1,6 @@
 import requests
 import os
 import urllib.parse
-import logging
-log = logging.getLogger()
 
 class DnDBeyondAPI:
 
@@ -24,10 +22,10 @@ class DnDBeyondAPI:
             encoding: {r.encoding},
             headers: {r.headers},
         '''
-        log.debug(debug_msg)
+
         r.raise_for_status()
         res = r.json()
-        log.debug(f"res")
+
         return  res
 
 

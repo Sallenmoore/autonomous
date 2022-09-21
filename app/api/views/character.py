@@ -1,9 +1,8 @@
 # Local Modules
 from models.campaign.character import Character
+from models.compendium.compendium import Compendium
+from sharedlib.logger import log
 from views import package_response
-
-import logging
-log = logging.getLogger()
 
 # External Modules
 from flask import (
@@ -45,10 +44,9 @@ def create():
                     error:"use the /update api for existing characters"|| "Character could not be saved. Unknown error.",  
                     results:None, 
                     count: 0, 
-                    api_path:/character/activate
+                    api_path:/character/create
                }
     """
-    log.debug(f"request data: {request.json}")
     
     if request.json.get('pk'):
         return package_response(error="use the /update api for existing characters", api_path="/character/update")
@@ -58,6 +56,47 @@ def create():
     if not new_character.save():
         return package_response(error="Character could not be saved. Unknown error.")
     return package_response(data=new_character.serialize())
+
+#################### UPDATE ENDPOINTS ########################
+
+@bp.route('/update', methods=('POST',))
+def update():
+    """
+    Update one or more attributes for the character with the given primary key
+    * METHOD: post
+    * REQUIRED REQUEST DATA: 
+        {
+            pk:<int>,
+            <...additonal attributes>: <updated value>
+        }
+
+    Returns:
+        updated character attributes in serialized form
+    """
+    
+    character = Character.get(request.json.get('pk'))
+    
+    if not character:
+        return package_response(error="unknown character")
+    
+    character.update(**request.json)
+    character.save()
+    return package_response(data=character.serialize())
+
+
+#################### DELETE ENDPOINTS ########################
+
+@bp.route('/delete', methods=('POST',))
+def delete():
+    """
+    _summary_
+    """
+    pk = request.json.get('pk')
+    #log(pk)
+    if result := Character.get(pk):
+        #log(result)
+        return package_response(data=result.delete())
+    return package_response(error="not deleted")
 
 #################### READ ENDPOINTS ########################
 @bp.route('/all', methods=('GET',))
@@ -77,22 +116,13 @@ def all():
     results = [c.serialize() for c in Character.search()]
     return package_response(data=results)
 
-@bp.route('/<pk>', methods=('GET',))
-def get(pk):
-    """
-    _summary_
-    """
-    result = Character.get(pk)
-    return package_response(data=result.serialize() if result else None)
-
 @bp.route('/attributes', methods=('GET',))
 def attributes():
     """
     _summary_
     """
     result = Character().model_attr()
-    result = {k:str(v) for k,v in result.items()}
-    log.warn(f"{result}")
+    result = {k:v.__name__ for k,v in result.items()}
     return package_response(data=result)
 
 @bp.route('/search', methods=('GET',))
@@ -104,52 +134,18 @@ def search():
     Returns:
         list: a list of matching character models in serialized form
     """
-    log.debug(f"request {vars(request.args)}")
+    log(request.args)
     if not request.args:
         return all()
     response = Character.search(**request.args)
     results = [r.serialize() for r in response]
     return package_response(data=results)
 
-#################### UPDATE ENDPOINTS ########################
-
-@bp.route('/update', methods=('POST',))
-def update():
-    """
-    Update one or more attributes for the character with the given primary key
-    * METHOD: post
-    * REQUIRED REQUEST DATA: 
-        {
-            pk:<int>,
-            <...additonal attributes>: <updated value>
-        }
-
-    Returns:
-        updated character attributes in serialized form
-    """
-    #log.info(f"request data: {request.json}")
-    
-    character = Character.get(request.json.get('pk'))
-
-    #log.debug(f"character: {character}")
-    
-    if not character:
-        return package_response(error="unknown character")
-    
-    character.update(**request.json)
-    log.debug(f"character: {character}")
-    character.save()
-    return package_response(data=character.serialize())
-
-#################### DELETE ENDPOINTS ########################
-
-@bp.route('/delete', methods=('POST',))
-def delete():
+@bp.route('/<int:pk>', methods=('GET',))
+def get(pk):
     """
     _summary_
     """
-    pk = request.json.get('pk')
-    if result := Character.get(pk):
-        log.debug(result)
-        return package_response(data=result.delete())
-    return package_response(error="not deleted")
+    Compendium.update_characters()
+    result = Character.get(pk)
+    return package_response(data=result.serialize() if result else None)

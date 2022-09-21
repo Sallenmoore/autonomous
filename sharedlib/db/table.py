@@ -1,9 +1,10 @@
 #external imports
-from tinydb import Query, TinyDB, table, storages
+import re
+
+from tinydb import Query, TinyDB, table, storages, where
 import tinydb
 
-import logging
-log = logging.getLogger()
+from sharedlib.logger import log
 
 class Table:
     
@@ -24,12 +25,8 @@ class Table:
         """
         if not object.get('pk'):
             doc_id = len(self._table)
-
-            log.debug(f'doc_id: {doc_id}')
             
             object['pk'] = self._table.insert(table.Document(object, doc_id=doc_id+1))
-
-            log.debug(f'after_insert: {object}')
             
         self._table.update(object, doc_ids=[object['pk']])
         return object.get('pk') 
@@ -38,29 +35,45 @@ class Table:
         """
         [summary]
         """ 
-        log.debug(id)
-
-        result = self._table.remove(doc_ids=[id,])
-
-        log.debug(result)
-
-        return result
+        return self._table.remove(doc_ids=[id,])
 
     def search(self, **kwargs):
         """
         Returns an list of objects based on passed arguments
         as key/value pairs
         """
-        q = Query().fragment(kwargs)
-        return self._table.search(q)
+        results = []
+        #log(f"kwargs: {kwargs}")
+        for k,v in kwargs.items():
+            q = Query()
+            field = getattr(q, k)
+            #log((f"table: {self._table.name} field : {field} -- searching for v : {v} "))
+            if not isinstance(v, (list, tuple)):
+                #log(f"kwargs: {kwargs}")
+                results += self._table.search(field.search(v,flags=re.IGNORECASE))
+                #log(f"kwargs: {kwargs}")
+            else:
+                #log(f"v: {v}")
+                #log(f"kwargs: {kwargs}")
+                final_query = field.search(v[0], flags=re.IGNORECASE)
+                #log(f"kwargs: {kwargs}")
+                if len(v) > 1:
+                    for term in v[1:]:
+                        final_query = final_query & field.search(term, flags=re.IGNORECASE)
+                result = self._table.search(final_query)
+                #log(f"table: {self._table.name} field : {field}  result: {result}")
+                results+=result
+        #log(f"table: {self._table.name} results: {results}")
 
-    def get(self, id):
+        #log(f"results: {results}")
+        return results
+
+    def get(self, obj_id):
         """
         [summary]
         """
-        log.debug(f"get {id}")
         
-        return self._table.get(doc_id=id)
+        return self._table.get(doc_id=obj_id) if obj_id else None
 
     def all(self):
         return self._table.all()

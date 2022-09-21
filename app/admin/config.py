@@ -25,8 +25,6 @@ class DevConfig(Config):
     LOG_LEVEL = logging.WARNING
     #EXPLAIN_TEMPLATE_LOADING= os.environ.get("DEBUG", False)
 
-    import os
-import logging
 
 
 

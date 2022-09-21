@@ -4,9 +4,6 @@ import pytest
 from app.app import create_app
 
 
-import logging
-log = logging.getLogger()
-
 @pytest.fixture
 def test_client():
     app = create_app()
@@ -26,46 +23,12 @@ def test_classes_list(test_client):
     Returns:
         _type_: _description_
     """
-    response = test_client.get('/compendium/classes_list')
-    log.info(f'response: {response}')
+    response = test_client.get('/compendium/player_class/all')
     assert response.status_code == 200
     data = response.json
-    log.info(f'data: {data}')
     assert not data['error']
     assert data['count'] > 0
-
-def test_all(test_client):
-    """
-    _summary_
-
-    Returns:
-        _type_: _description_
-    """
-
-    response = test_client.get('/compendium/all')
-    assert response.status_code == 200
-    log.info(f'response: {response}')
-    data = response.json
-    log.info(f'data: {data}')
-    assert not data['error']
-    assert data['results']
-
-def test_random(test_client):
-    """
-    _summary_
-
-    Returns:
-        _type_: _description_
-    """
-
-    response = test_client.get('/compendium/random')
-    #log.debug(f'response: {response}')
-    assert response.status_code == 200
-    log.info(f'response: {response}')
-    data = response.json
-    log.info(f'data: {data}')
-    assert not data['error']
-    assert data['results']
+    assert any(d['name'] == 'Warlock' for d in data['results'])
 
 def test_search(test_client):
     """
@@ -77,12 +40,11 @@ def test_search(test_client):
     Returns:
         _type_: _description_
     """
-    search_terms = {'search': 'druid', 'spell':'fire', "monster":"fire", "item":"fire"}
+    search_terms = {'name': 'druid', 'name':'fire', 'name':"", 'name':"dhfkashlA"}
     for k,v in search_terms.items():
         url = f'/compendium/search?{urllib.parse.urlencode({k:v})}'
         result = test_client.get(url).json
-        log.info(f'result: {result}')
-        assert result['results']
+        assert all('name' in r for r in result['results'])
 
 def test_monster(test_client):
     """
@@ -94,9 +56,82 @@ def test_monster(test_client):
     Returns:
         _type_: _description_
     """
-    search_terms = {'search': 'fire', 'search':'ice', "search":"none", "search":""}
+    search_terms = {'name': 'fire', 'name':'ice', 'name':"none", 'name':""}
     for k,v in search_terms.items():
-        url = f'/compendium/monster?{urllib.parse.urlencode({k:v})}'
+        url = f'/compendium/monster/search?{urllib.parse.urlencode({k:v})}'
         result = test_client.get(url).json
-        log.info(f'result: {result}')
-        assert result['results']
+        assert not result['error']
+
+def test_monster_attributes(test_client):
+    """
+    _summary_
+
+    Args:
+        test_client (_type_): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    url = f'/compendium/monster/attributes'
+    result = test_client.get(url).json
+    assert "name" in result['results']
+
+def test_item(test_client):
+    """
+    _summary_
+
+    Args:
+        test_client (_type_): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    search_terms = {'name': 'fire', 'name':'ice', 'name':"none", 'name':""}
+    for k,v in search_terms.items():
+        url = f'/compendium/item/search?{urllib.parse.urlencode({k:v})}'
+        result = test_client.get(url).json
+        assert not result['error']
+
+def test_item_attributes(test_client):
+    """
+    _summary_
+
+    Args:
+        test_client (_type_): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    url = f'/compendium/item/attributes'
+    result = test_client.get(url).json
+    assert "name" in result['results']
+
+def test_spell(test_client):
+    """
+    _summary_
+
+    Args:
+        test_client (_type_): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    search_terms = {'name': 'fire', 'name':'ice', 'name':"none", 'name':""}
+    for k,v in search_terms.items():
+        url = f'/compendium/spell/search?{urllib.parse.urlencode({k:v})}'
+        result = test_client.get(url).json
+        assert not result['error']
+
+def test_spell_attributes(test_client):
+    """
+    _summary_
+
+    Args:
+        test_client (_type_): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    url = f'/compendium/spell/attributes'
+    result = test_client.get(url).json
+    assert "name" in result['results']

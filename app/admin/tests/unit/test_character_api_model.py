@@ -1,6 +1,17 @@
 from models.character import Character
-import logging
-log = logging.getLogger()
+import pytest
+from sharedlib.logger import log
+
+
+# @pytest.fixture(scope='session', autouse=True)
+# def db_cleanup():
+#     yield
+#     # Will be executed after the last test
+#     results = Character.all()
+#     for r in results:
+#         log.warning(r)
+#         if (not hasattr(r, "player_class")) or r.player_class == "Test":
+#             r.delete()
 
 class TestCharacterAPIModel: 
     testchar = {
@@ -13,19 +24,38 @@ class TestCharacterAPIModel:
         "inventory":["Test Item #1", "Test Item #2"]
     }
 
-    def verify_results(self, r):
+
+    def test_character_create(self):
         """
         _summary_
-
-        Args:
-            results (_type_): _description_
 
         Returns:
             _type_: _description_
         """
-        return all([r.name == "Test Character", r.player_class == "Test"])
+        ch = Character(**self.testchar)
+        assert ch.name
+        assert ch.player_class
+        
+    def test_character_save(self):
+        """
+        _summary_
 
-    def test_delete(self):
+        Returns:
+            _type_: _description_
+        """
+        ch = Character(**self.testchar)
+        assert ch.name
+        assert ch.player_class
+        
+        result = ch.save()
+        log(ch)
+        assert type(ch.pk) is int
+        
+        r = Character.get(ch.pk)
+        log(r)
+        assert all([r.name == "Test Character", r.player_class == "Test"])
+
+    def test_character_all(self):
         """
         _summary_
 
@@ -35,30 +65,13 @@ class TestCharacterAPIModel:
         ch = Character(**self.testchar)
         ch.save()
         results = Character.all()
-        results = [r for r in results if self.verify_results(r)]
-        assert results
+
+        count = 0
         for r in results:
-            if self.verify_results(r):
-                Character.delete(r)
-        results = Character.all()
-        assert not [r for r in results if self.verify_results(r)]
-
-    def test_save(self):
-        """
-        _summary_
-
-        Returns:
-            _type_: _description_
-        """
-        ch = Character(**self.testchar)
-        result = ch.save()
-        log.info(result)
-        assert type(ch.pk) is int
-        
-        results = Character.all()
-        log.info(results)
-        assert any(r for r in results if self.verify_results(r))
-        self.test_delete()
+            log(r)
+            if all([r.name == "Test Character", r.player_class == "Test"]):
+                count += 1
+        assert count
 
     def test_update(self):
         """
@@ -80,22 +93,22 @@ class TestCharacterAPIModel:
         assert ch.status == "Dead"
 
         #update all test objects with new hp
-        results = [r for r in Character.all() if self.verify_results(r)]
+        results = [r for r in Character.all() if all([r.name == "Test Character", r.player_class == "Test"])]
         for r in results:
-            log.info(r.pk)
+            log(r.pk)
             r.hp = 50
             r.status = "Dead"
             r.inventory.append("Test Item #3")
             r.save()
+            log(f"{r}")
 
         #verify update    
-        results = [r for r in Character.all() if self.verify_results(r)]
+        results = [r for r in Character.all() if all([r.name == "Test Character", r.player_class == "Test"])]
         for r in results:
-            if self.verify_results(r):
+            if all([r.name == "Test Character", r.player_class == "Test"]):
                 assert r.hp == 50
                 assert r.status == "Dead"
-                assert r.inventory == ["Test Item #1", "Test Item #2", "Test Item #3"]
-        self.test_delete()
+                assert "Test Item #3" in r.inventory
         
     def test_search(self):
         """
@@ -106,8 +119,28 @@ class TestCharacterAPIModel:
         """
         ch = Character(**self.testchar)
         ch.save()
-        results = [r for r in Character.search(name="Test Character") if self.verify_results(r)]
+        results = Character.search(name="Test Character")
         assert results
+        for r in results:
+            assert r.name == "Test Character" and r.player_class == "Test"
 
-        self.test_delete()
+    def test_delete(self):
+        """
+        _summary_
+
+        Returns:
+            _type_: _description_
+        """
+        ch = Character(**self.testchar)
+        ch.save()
+        results = Character.all()
+        verify = []
+        for r in results:
+            if all([r.name == "Test Character", r.player_class == "Test"]):
+                verify.append(r)
+        assert verify
+        for r in verify:
+            r.delete()
+        results = Character.all()
+        assert not [r for r in results if all([r.name == "Test Character", r.player_class == "Test"])]
 

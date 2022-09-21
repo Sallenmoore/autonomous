@@ -6,6 +6,9 @@ from models.compendium.spell import Spell
 from models.compendium.monster import Monster
 from models.compendium.item import Item
 from models.compendium.player_class import PlayerClass
+from models.campaign.character import Character
+
+from sharedlib.logger import log
 
 from flask import (
     current_app, abort
@@ -13,9 +16,7 @@ from flask import (
 import random
 import requests
 from urllib.parse import urlencode
-
-import logging
-log = logging.getLogger()
+from concurrent.futures import ThreadPoolExecutor
 
 
 
@@ -29,149 +30,135 @@ class Compendium:
     """
 
     resource = ["search"]
+    apis = [Spell,Monster,Item,PlayerClass]
+
+    ############ Methods for updating the db using various apis ############
 
     @classmethod
-    def _find_and_update(cls, model, r):
-        m = model.find(name=r['name'])
-        log.debug(f"find: {m}")
-        if m:
-            m = m.pop()
-            m.update(**r)
-        else: 
-            m = model(**r)
-        log.debug(f"m: {m}")
-        m.save()
-        return m
+    def update_compendium(cls):
+        """
+        Update the compendium with the latest data from the apis
+        """
+        log("Updating Compendium")
+        # DOCS https://docs.python.org/3/library/concurrent.futures.html#concurrent.futures.ThreadPoolExecutor
+        executor = ThreadPoolExecutor(2)
+        executor.submit(Compendium.updatedb)
+        executor.submit(Compendium.update_characters)
+        log("Compendium Updated")
+        return "success"
 
     @classmethod
-    def search(cls, search_term=None, model=None, refresh=False):
+    def updatedb(cls):
+        ### OpenDND API
+        opendnd5e = OpenDnDAPI()
+        results = []
+        for model in cls.apis:
+            results = opendnd5e.get(model.resource)
+            log(f"updating {model.__name__} with {len(results)} entries...")
+            for r in results:
+                m = model.find(name=r['name'])
+                if m:
+                    m = m.pop()
+                    m.update(**r)
+                else: 
+                    m = model(**r)
+                m.save()
+                log(f"updating: {r['name']}")
+            log(f"[{m.model_class}] -- updated")
+
+    @classmethod
+    def update_characters(cls):
+        characters = Character.all()
+        beyond_api = DnDBeyondAPI()
+        for ch in characters:
+            if hasattr(ch, 'dndbeyond_id') and ch.dndbeyond_id: 
+                result =  beyond_api.get_character_updates(ch.dndbeyond_id)
+                ch.update(**result)
+                ch.save()
+                log(f"{ch.name} -- updated")
+        return True
+
+    @classmethod
+    def all(cls):
         """
         _summary_
 
         _extended_summary_
 
-        Args:
-            refresh (bool, optional): _description_. Defaults to False.
-
         Returns:
             _type_: _description_
         """
-        if model:
-            result = model.all()
-            if not refresh and result:
-                return result
-        else:
-            model = Compendium
+        return cls.search()
 
-        result = OpenDnDAPI.search(model.resource, search_term) if search_term else OpenDnDAPI.all(model.resource)
-
+    @classmethod
+    def search(cls, model=None, **kwargs):
         results = []
-        log.debug(result)
-        for r in result:
-            routes = {
-                    'spells/': Spell, 
-                    'monsters/': Monster, 
-                    'magicitems/': Item, 
-                    'weapons/':Item, 
-                    'armor/':Item, 
-            }
-            if r.get('route') in routes:
-                m = cls._find_and_update(routes[r['route']], r)
-            elif model != Compendium:
-                m = cls._find_and_update(model, r)
-            results.append(m)
+        apis = [model] if model else cls.apis
+        if kwargs.get('name'):
+            kwargs['name'] = kwargs['name'].split()
+        #log(kwargs)
+        for model in apis:
+            results += model.find(**kwargs) if kwargs else model.all()
+        #log(len(results))
         return results
 
     @classmethod
-    def item_search(cls, search_term, refresh=False):
-        """
-        _summary_
+    def item_all(cls):
+        return cls.item_search()
 
-        _extended_summary_
+    @classmethod
+    def item_search(cls, **kwargs):
+        return Compendium.search(model=Item, **kwargs)
 
-        Args:
-            refresh (bool, optional): _description_. Defaults to False.
-
-        Returns:
-            _type_: _description_
-        """
-        return Compendium.search(search_term=search_term, model=Item, refresh=refresh)
+    @classmethod
+    def get_item(cls, pk):
+        return Item.get(pk)
 
 
     @classmethod
     def item_attrs(cls):
         return Item().model_attr()
 
+    @classmethod
+    def monster_all(cls):
+        return cls.monster_search()
 
     @classmethod
-    def monster_search(cls, search_term, refresh=False):
-        """
-        _summary_
+    def monster_search(cls, **kwargs):
+        return Compendium.search(**kwargs, model=Monster)
 
-        _extended_summary_
-
-        Args:
-            refresh (bool, optional): _description_. Defaults to False.
-
-        Returns:
-            _type_: _description_
-        """
-        return Compendium.search(search_term=search_term, model=Monster, refresh=refresh)
+    @classmethod
+    def get_monster(cls, pk):
+        return Monster.get(pk)
 
     @classmethod
     def monster_attrs(cls):
         return Monster().model_attr()
 
     @classmethod
-    def spell_search(cls, search_term, refresh=False):
-        """
-        _summary_
+    def spell_all(cls):
+        return cls.spell_search()
+    
+    @classmethod
+    def spell_search(cls, **kwargs):
+        return Compendium.search(**kwargs, model=Spell)
 
-        _extended_summary_
-
-        Args:
-            refresh (bool, optional): _description_. Defaults to False.
-
-        Returns:
-            _type_: _description_
-        """
-        return Compendium.search(search_term=search_term, model=Spell, refresh=refresh)
+    @classmethod
+    def get_spell(cls, pk):
+        return Spell.get(pk)
 
     @classmethod
     def spell_attrs(cls):
         return Spell().model_attr()
 
     @classmethod
-    def class_list(cls, refresh=False):
-        """
-        _summary_
-
-        _extended_summary_
-
-        Args:
-            refresh (bool, optional): _description_. Defaults to False.
-
-        Returns:
-            _type_: _description_
-        """
-        return Compendium.search(model=PlayerClass, refresh=refresh)
+    def class_list(cls):
+        return PlayerClass.all()
 
     @classmethod
-    def character_update(cls, character):
-        """
-        _summary_
+    def get_class(cls, pk):
+        return PlayerClass.get(pk)
 
-        _extended_summary_
-
-        Args:
-            id (_type_): _description_
-
-        Returns:
-            _type_: _description_
-        """
-        if hasattr(character, 'dndbeyond_id'): 
-            beyond_api = DnDBeyondAPI()
-            result =  beyond_api.get_character_updates(character.dndbeyond_id)
-            log.info(result)
-            return result
-        return None
+    @classmethod
+    def player_class_attrs(cls):
+        return PlayerClass().model_attr()

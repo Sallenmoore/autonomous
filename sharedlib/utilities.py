@@ -1,14 +1,14 @@
-######### Standard Imports ###########
+import os, sys
 
-import pathlib
-import os
-import sys
-import json
-import requests
-
-######### Configure Logger ###########
-import logging
-log = logging.getLogger()
+######### CONSTANTS ###########
+ROOT_DIR = os.path.dirname(sys.modules['__main__'].__file__)
+APP_NAME = os.path.dirname(sys.modules['__main__'].__name__)
 
 
-#TODO: still figuring this out
+def zip_csv_to_dict(self, myfile):
+    try:
+        zf = ZipFile(myfile, 'r')
+        in_file = zf.open(zf.filelist.pop(), 'r')
+        return csv.DictReader(io.TextIOWrapper(in_file, 'utf-8'))
+    except Exception as e:
+        return []

@@ -1,13 +1,10 @@
 from sharedlib.model.model import Model
 
-import logging
-log = logging.getLogger()
 
 class Item(Model):
     resource = ["magicitems", "weapons", "armor"]
 
     def model_attr(self):
-        #current_app.logger.info(kwargs)
         return {
             "name": str,
             "type": str,

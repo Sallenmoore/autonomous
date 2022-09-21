@@ -1,8 +1,13 @@
 from sharedlib.model.APIModel import APIModel
-import logging
-import requests
+from .monster import Monster
+from .spell import Spell
+from .item import Item
+from .character import Character
+from .player_class import PlayerClass
 
-log = logging.getLogger()
+from sharedlib.logger import log
+import requests
+from urllib.parse import quote
 
 class Compendium(APIModel):
     """
@@ -17,21 +22,25 @@ class Compendium(APIModel):
     """
     
     API_URL="http://api:44666/compendium"
-    
 
     @classmethod
-    def search(cls, search=None, endpoint="search"):
-        headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
-        data = {
-            'search_term':search
-        }
-        url = f"{cls.API_URL}/{endpoint}"
-        log.debug(url )
-        response = requests.post(url, json=data, headers=headers)
-        results = response.json()
-        log.debug(results['results'])
-        return results
-    
+    def deserialize(cls, result):
+        objects = []
+        for r in result:
+            
+            if "Spell" in r.get('model_class'):
+                o = Spell(**r)
+            elif "Item" in r.get('model_class'):
+                o = Item(**r)
+            elif "Monster" in r.get('model_class'):
+                o = Monster(**r)
+            elif "Character" in r.get('model_class'):
+                o = Character(**r)
+            elif "PlayerClass" in r.get('model_class'):
+                o = PlayerClass(**r)
+            #log(o)
 
+            objects.append(o)
+        return objects
 
     

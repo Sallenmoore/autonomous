@@ -1,6 +1,7 @@
 #local modules
 from ..db import Database
 from .basemodel import BaseModel
+from sharedlib.logger import log
 
 #external modules
 #from flask import g, current_app
@@ -9,36 +10,30 @@ from .basemodel import BaseModel
 #import json
 #import copy
 
-import logging
-log = logging.getLogger()
-
 db = Database()
 
 class Model(BaseModel):
 
     def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         #These should not be stored in the db
         self._table_name = type(self).__name__
         self._table = db.get_table(self._table_name)
-        log.warn(f"{kwargs}")
-        super().__init__(**kwargs)
+        self.model_class = self._table_name
 
     def save(self):
         """
         save() :save object to db
         """
-        log.debug(self.attributes)
 
         obj_serialize = {}
         for k,v in self.serialize().items():
             if self.validate(k,v):
                 obj_serialize[k] = v
             else:
-                log.debug(f'{k}{v} attribute ignored')
+                log(f'{k}{v} attribute ignored', "INFO")
 
         self.pk = self._table.update(obj_serialize)
-
-        log.debug(f'{self}')
 
         return self.pk
 
@@ -59,7 +54,12 @@ class Model(BaseModel):
         params: keyword arguments to the model 
         return: Always returned a list
         """
+        #log(f"kwargs: {kwargs}")
         json_objects = cls()._table.search(**kwargs)
+        #log(f"kwargs: {kwargs}")
+        # else:
+        #     json_objects = cls.all()
+        #log(json_objects)
         return [cls(**o) for o in json_objects]
 
     @classmethod
@@ -71,5 +71,4 @@ class Model(BaseModel):
         """
         pk = pk or doc_id
         json_object = cls()._table.get(pk)
-        #log.debug(f'{kwargs}, {json_object}')
         return cls(**json_object) if json_object else None

@@ -1,7 +1,5 @@
 from sharedlib.db import Table, Database
 import pytest
-import logging
-log = logging.getLogger()
 
 @pytest.fixture
 def session(): 
@@ -46,7 +44,6 @@ def test_table(session, test_obj):
     assert str(table) == "Test"
     
     result = table.update(test_obj)
-    log.debug("result")
     
     result = table.search(name=test_obj['name'], hp=test_obj['hp'])
     result = result.pop() #check first item in list
@@ -63,7 +60,6 @@ def test_table(session, test_obj):
 
     result['name'] = "Test2"
     del result['pk']
-    log.debug(f"{type(result)}{result}")
     table.update(result)
 
     results = table.all()

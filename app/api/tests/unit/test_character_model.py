@@ -1,8 +1,5 @@
 from models.campaign.character import Character
 
-import logging
-log = logging.getLogger()
-
 class TestCharacter:
 
     def test_char(self):
@@ -46,10 +43,9 @@ class TestCharacter:
         """
 
         results = Character.all()
-        log.debug(results)
         for char in results:
             assert(char.name)
-            log.debug(char)
+
 
     def test_read(self):
         """
@@ -59,13 +55,11 @@ class TestCharacter:
             _type_: _description_
         """
         results = Character.all()
-        log.debug(results)
         for char in results:
             result = Character.get(char.pk)
             assert result.pk == char.pk
             assert result.name
             assert result.player_class 
-            assert result.hp
 
 
     def test_update(self):
@@ -91,9 +85,9 @@ class TestCharacter:
             _type_: _description_
         """
         test = Character.search(player_class="Test")
-        for r in test['results']:
+        for r in test:
             r.delete()
 
         test = Character.search(player_class="Test")
-        assert len(test['results'])
+        assert len(test) == 0
 

@@ -3,8 +3,6 @@ import json
 import pytest
 from app.app import create_app
 from models.campaign.character import Character
-import logging
-log = logging.getLogger()
 
 @pytest.fixture
 def test_client():
@@ -61,31 +59,15 @@ def verify_results(r):
         _type_: _description_
     """
     return all([r.get('image_url') == "test.png",
-            r.get('name') == "Test Character",
             r.get('player_class') == "Test",
-            r.get('history') == "Test",
+            r.get('history') == "Test", 
+            r['name']
         ])
 
 def filtered_results(results):
     return [r for r in results if verify_results(r)]
 
 #################### TESTING ####################
-
-def test_create(test_client, test_char):
-    """
-    _summary_
-
-    Returns:
-        _type_: _description_
-    """
-    #log.debug(f'test_char: {test_char}')
-    response = test_client.post('/character/create', json=test_char)
-    #log.debug(f'response: {response}')
-    assert response.status_code == 200
-    data = response.json
-    assert not data['error']
-    assert data['count'] > 0
-    assert verify_results(data['results'])
 
 def test_all(test_client, test_char):
     """
@@ -96,14 +78,31 @@ def test_all(test_client, test_char):
     """
 
     temp_character_object(test_char)
-    #log.debug(f'test_char: {test_char}')
     response = test_client.get('/character/all')
-    #log.debug(f'response: {response}')
     assert response.status_code == 200
-    data = response.json
-    assert not data['error']
-    assert data['count'] > 0
-    assert len(filtered_results(data['results'])) > 0
+    results = response.json
+    assert not results['error']
+    assert results['count'] > 0
+    for r in results['results']:
+        assert r['name']
+    after_test_cleanup()
+
+
+def test_character_create(test_client, test_char):
+    """
+    _summary_
+
+    Returns:
+        _type_: _description_
+    """
+    response = test_client.post('/character/create', json=test_char)
+    assert response.status_code == 200
+    response = test_client.get('/character/all')
+    results = response.json
+    assert not results['error']
+    assert results['count'] > 0
+    for r in results['results']:
+        assert r['name']
     after_test_cleanup()
 
 def test_update(test_client, test_char):
@@ -121,7 +120,6 @@ def test_update(test_client, test_char):
 
         response = test_client.post('/character/update', json=c).json
 
-        log.info(f'response: {response}')
         
     response = test_client.get('/character/all').json
     for c in filtered_results(response['results']):
@@ -143,9 +141,21 @@ def test_get(test_client, test_char):
     response = test_client.get('/character/all').json
     for c in filtered_results(response['results']):
         response = test_client.get(f'/character/{c["pk"]}').json
-        log.info(response)
         assert response['results']['pk'] == c['pk']
     after_test_cleanup()
+
+def test_character_get_attributes(test_client, test_char):
+    """
+    _summary_
+
+    Args:
+        test_client (_type_): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    response = test_client.get('/character/attributes').json
+    assert "name" in response['results']
 
 def test_search(test_client, test_char):
     """
@@ -187,41 +197,3 @@ def test_delete(test_client, test_char):
     response = test_client.get('/character/all').json
     data =  filtered_results(response['results'])
     assert len(data) == 0
-
-def test_activate(test_client, test_char):
-    """
-    _summary_
-
-    Args:
-        test_client (_type_): _description_
-
-    Returns:
-        _type_: _description_
-    """
-    ch = temp_character_object(test_char)
-    ch.active = False
-    pk = ch.save()
-    response = test_client.post('/character/activate', json={"pk":ch.pk}).json
-    log.info(response)
-    character = test_client.get(f'/character/{ch.pk}').json
-    pk = character['results']['pk']
-    assert ch.active
-    after_test_cleanup()
-
-def test_deactivate(test_client, test_char):
-    """
-    _summary_
-
-    Args:
-        test_client (_type_): _description_
-
-    Returns:
-        _type_: _description_
-    """
-    ch = temp_character_object(test_char)
-    ch.active = True
-    ch.save()
-    response = test_client.post('/character/deactivate', json={"pk":ch.pk}).json
-            
-    assert not ch.active
-    after_test_cleanup()

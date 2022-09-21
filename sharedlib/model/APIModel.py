@@ -1,11 +1,12 @@
 from urllib.parse import urlencode, quote
 from flask import redirect, url_for
 from .basemodel import BaseModel
+from sharedlib.logger import log
 import requests
-import logging
 import pprint
 import json
-log = logging.getLogger()
+from pydoc import locate
+
 
 class APIModel(BaseModel):
     """
@@ -35,29 +36,24 @@ class APIModel(BaseModel):
         Raises:
             Exception: _description_
         """
-        log.debug(f"pk: {kwargs.get('pk')}")
-        log.debug(f"kwargs: {kwargs}")
-
+        #log(f"{kwargs.get('pk')}")
         #if the kwargs have a pk, that means this should be an existing record
         if kwargs.get('pk'):
             #set the endpoint to the pk
             #get the current data values
             result = self._get(kwargs['pk'])
             #if there is an error, print it out and throw an exception
+            #log(result)
             if result.get("error"):
                 raise Exception(response['error'])
             #otherwise, update the object with the current data
             else:
                 #update existing attribute dict, then update object
-                log.debug(f"kwargs: {result['results']}")
                 result['results'].update(kwargs)
-                log.debug(f"kwargs: {result['results']}")
-                super().__init__(**result['results'])
-                log.info("===============   PK  =================")
-                log.info(self)
-        else:
-            #create a new object
-            super().__init__(**kwargs)
+                #log(result)
+                kwargs = result['results']
+                
+        super().__init__(**kwargs)
 
 
     def delete(self, api_path="delete"):
@@ -72,6 +68,7 @@ class APIModel(BaseModel):
         Returns:
             _type_: _description_
         """
+        #log(f"{self.name}:{self.pk}")
         return self._post(api_path, self.serialize())
 
     def save(self, api_path="create"):
@@ -82,15 +79,13 @@ class APIModel(BaseModel):
         Args:
             api_path (str, optional): the endpoint save path if not 'create'. Defaults to "create".
         """
-        log.debug("================================")
-        log.debug(self)
 
-        for k,v in self.serialize().items():
-            if not k.startswith('_') and not self.validate(k,v):
-                raise Exception(f"Invalid {self.__class__.__name__} Attribute {k}: {v}")
+        # checks attributes for type
+        for k,v in self.attributes.items():
+            if hasattr(self, k) and not self.validate(k,getattr(self, k)):
+                raise Exception(f"Invalid {self.__class__.__name__} attribute type {k}: {type(v)}")
         
         if hasattr(self, 'pk'):
-            log.debug(f"update object: {self.pk}")
             api_path = "update"
 
         result = self._post(api_path, self.serialize())
@@ -101,8 +96,11 @@ class APIModel(BaseModel):
         return self.pk
 
     def model_attr(self, **kwargs):
+        attrs = {}
         response = self._get(f"attributes")
-        return response['results']
+        for k,v in response['results'].items():
+            attrs[k] = locate(v)
+        return attrs
 
 ###########################################################################################
 ##                                     CLASS METHODS                                     ##
@@ -122,12 +120,8 @@ class APIModel(BaseModel):
             _type_: _description_
         """
         headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
-        
-        log.info(f"sending data: {data} to: {cls.API_URL}/{endpoint}")
-        
+        #log(data)
         response = requests.post(f"{cls.API_URL}/{endpoint}", json=data, headers=headers)
-
-        log.info(f"received response: {response.text}")
 
         return response.json()
 
@@ -135,7 +129,7 @@ class APIModel(BaseModel):
     @classmethod
     def _get(cls, endpoint):
         """
-        _summary_
+        returns the raw json response from a class API endpoint
 
         Args:
             endpoint (str): the additional endpoint to append to the API_URL
@@ -143,18 +137,15 @@ class APIModel(BaseModel):
         Returns:
             dict: the json response from the API converted to a dictionary
         """
-        log.warning(f"{cls.API_URL}/{endpoint}")
         
         response = requests.get(f"{cls.API_URL}/{endpoint}")
-        
-        log.warning(f"recieved response: {response.text}")
 
         return response.json()
 
     @classmethod
-    def get(cls, endpoint):
+    def get(cls, pk):
         """
-        get a single record from the api endpoint based on the pk
+        get a single record from the api based on the pk
 
         Args:
             pk (int): primary key of the requested record
@@ -163,14 +154,12 @@ class APIModel(BaseModel):
             dict: a dictionary of the requested record
         """
         
-        results =  cls._get(endpoint)
-        log.info(results)
+        results =  cls._get(pk)['results']
         obj = cls(**results)
-        log.info(obj)
         return obj
 
     @classmethod
-    def search(cls, search_term=None, **kwargs):
+    def search(cls, **kwargs):
         """
         returns objects filtered by search terms
         Args:
@@ -178,32 +167,21 @@ class APIModel(BaseModel):
         Returns:
             _type_: _description_
         """
-        log.debug("searching...")
-        endpoint = "all"
-        if search_term:
-            endpoint = f"search?search_term={quote(search_term)}"
-        elif kwargs:
-            endpoint = f"search?{urlencode(kwargs)}"
-        log.debug(endpoint)
+        import urllib.parse
+
+        if kwargs:
+            endpoint = f"search?{urllib.parse.urlencode(kwargs)}"
+        else:
+            endpoint = "all"
+        #log(endpoint)
         result = cls._get(endpoint)
 
         if result.get("error"):
-            log.error(response['error'])
+            #log(response['error'])
             raise Exception(response['error'])
         else:
-            result = result.get("results")
-        log.debug(result)
-        objects = []
-        for r in result:
-            
-            log.debug(r)
-
-            o = cls(**r)
-
-            log.debug(o)
-
-            objects.append(o)
-        return objects
+             result = result.get("results")
+        return cls.deserialize(result)
 
     @classmethod
     def all(cls):
@@ -215,7 +193,6 @@ class APIModel(BaseModel):
         Returns:
             _type_: _description_
         """
-        log.debug("all...")
         return cls.search()
 
     @classmethod

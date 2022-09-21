@@ -1,13 +1,10 @@
 from sharedlib.model.model import Model
 
-import logging
-log = logging.getLogger()
 
 class Monster(Model):
     resource = ["monsters"]
 
     def model_attr(self):
-        #current_app.logger.info(kwargs)
         return {
             'name':str,  
             'size':str,  

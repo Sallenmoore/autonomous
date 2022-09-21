@@ -1,14 +1,12 @@
 #local modules
 from sharedlib.db.db import Database
+from sharedlib.logger import log
 #external modules
 from flask import g, current_app
 
 #python modules
 import json
 import copy
-
-import logging
-log = logging.getLogger()
 
 db = Database()
 
@@ -32,14 +30,13 @@ class BaseModel():
 
         _extended_summary_
         """
-        self.__base_attrs = list(vars(self).keys())
 
-        #TODO: Fix for these being save din the DB. They Shouldn't be though.
-        if kwargs.get("_BaseModel__base_attrs"):
-            kwargs["_BaseModel__base_attrs"].pop() 
-            
-        #log.info(f"base_attrs for {self}: {self.__base_attrs}")
-        log.warn(f"{kwargs}")
+        if not hasattr(self.__class__, "attributes"):
+            log(f"getting attributes for {self.__class__.__name__}")
+            self.__class__.attributes = self.model_attr()
+            self.__class__.attributes['pk'] = self.__class__.attributes.get('pk', int)
+            self.__class__.attributes['model_class'] = str
+        #log(kwargs)
         self.update(**kwargs)
 
     def __str__(self):
@@ -53,35 +50,13 @@ class BaseModel():
         return text
 
     def __setattr__(self, name, value):
-        attrs = self._model_attrs()
-        log.debug(f"previous type: {type(value)}")
-        if value is not None and name in attrs:
-            log.debug(f"{name} type {type(value)}, should be {type(value)}")
+            
+        if name != "attributes" and value != None and name in self.attributes:
             # cast it, ex. str -> int: 
             # attr = type(attr)
-            log.debug(f"type casting {name} to {attrs[name]}: {value}")
-            try:
-                value = attrs[name](value)
-            except TypeError as e:
-                #set value to the default value for the type
-                value = attrs[name]()
-            
+            value = self.attributes[name](value)
             
         self.__dict__[name] = value
-    
-############################## Private Methods #####################################
-    def _model_attrs(self):
-        """
-        private proxy method to allow hooks fro pulling attribute types
-        adds 'pk' to model_attr()
-
-        Returns:
-            _type_: _description_
-        """
-        attrs = self.model_attr()
-        attrs['pk'] = attrs.get('pk', int)
-
-        return attrs
 
 ############################## Public Methods #####################################
     def update(self, **kwargs):
@@ -91,64 +66,50 @@ class BaseModel():
         _extended_summary_
         """
         
-        if not kwargs:
-            kwargs = self.attributes
-        attrs = self._model_attrs()
-        
-        log.debug(f"{kwargs.get('name')}  pk: {kwargs.get('pk')}")
-        
-        for k,v in kwargs.items():
-            if self.validate(k, v):
-                setattr(self, k, v)
-
-        log.info(self)
+        if kwargs:
+            for k,v in kwargs.items():
+                if self.validate(k, v):
+                    setattr(self, k, v)
     
     def validate(self, key, value):
         """
-        only validate values being updated
-
-        Raises:
-            ValueError: if the value being updated doesn't match type
-
-        Returns:
-            bool: whether or not the updates to the object validate
+        Placeholder for future validation
         """
-
-        attrs = self._model_attrs()
-        if key in attrs and attrs[key] == type(value):
-            log.debug(f'valid key: {key} for value:{value}')
-            return True
-        log.debug(f'invalid key: {key} for value:{value}')
-        return False
+        return True
     
     def serialize(self):
         """
         
         """
-        #log.debug(f'attributes: {vars(self)}')
-        #log.debug(f'attributes: {self._attributes}')
         filtered_attrs = {k:v for k,v in self.attributes.items() if v is not None}
         json_data= {}
-        for key, value in filtered_attrs.items():
-            if hasattr(value, 'serialize') and callable(value.serialize):
-                json_data[key] = value.serialize()
+        for key in filtered_attrs.keys():
+
+            # verify the attribute is valid
+            try:
+                attr = getattr(self, key)
+            except AttributeError as e:
+                continue
+
+            # check if object has serialize()
+            try:
+                json_data[key] = attr.serialize()  
+            except AttributeError as e:
+                log(f"{e} -- {key} is an invalid attribute", "DEBUG")
             else:
-                try:
-                    #log.debug(f"{key} : {value}")
-                    json.dumps(value)
-                except TypeError as e:
-                    log.warning(f"{e} -- {key} nonserializable")
-                    json_data[key] = str(value)
-                else:
-                    json_data[key] = value
+                continue
+
+            # check if object is serializable
+            try:
+                json.dumps(attr)
+            except TypeError as e:
+                log(f"{e} -- {key} nonserializable", "DEBUG")
+            else:
+                json_data[key] = attr
         return json_data
 
     ##############################  Properties       #####################################
-    @property
-    def attributes(self):
-        log.debug(f'attributes: {vars(self)}')
-        log.debug(f'base: {self.__base_attrs}')
-        return {k:v for k,v in vars(self).items() if k not in self.__base_attrs}
+
 
     ############################## Operators       #####################################
     def __EQ__(self, other):
@@ -165,9 +126,16 @@ class BaseModel():
         """
         raise NotImplementedError("set model attrs")
 
+
     ############################## Class Methods ########################################
     
 
     @classmethod
-    def deserialize(cls, **kwargs):
-        return cls(**kwargs)
+    def deserialize(cls, results):
+        objects = []
+        for r in results:
+
+            o = cls(**r)
+
+            objects.append(o)
+        return objects

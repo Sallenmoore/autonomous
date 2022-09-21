@@ -1,22 +1,23 @@
 #local modules
 import filters
+from sharedlib.logger import log
+
 #external Modules
 import pytest
 import pdoc
 from flask import Flask, render_template
 
 # Built-In Modules
+
 import os
 from pathlib import Path
-import logging
 import shutil
-
-logging.basicConfig(level=logging.WARNING, format="==%(levelname)s== [%(filename)s - %(funcName)s:%(lineno)d]: %(message)s")
-log = logging.getLogger()
+import logging 
 
 def create_app(test_config=None):
     app = Flask(__name__, instance_relative_config=True)
-    
+    #app.logger.disabled = True
+    #logging.getLogger('werkzeug').disabled = True
     #set to 'config.Config' to use ENV_VARS
     #set to 'config.DevConfig' to use development settings
     #set to 'config.ProdConfig' to use production settings
@@ -89,7 +90,6 @@ def create_app(test_config=None):
         def test():
             retcode = pytest.main(["-rxl --no-header -vv", "tests"])
             return {'results': f"{retcode}"}
-        
         return app
 #application factory
 app = create_app()

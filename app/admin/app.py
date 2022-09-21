@@ -1,5 +1,7 @@
 
-from models import Compendium, Character, PlayerClass
+from models import Compendium, Character, PlayerClass, Monster, Item, Spell
+from sharedlib.logger import log
+
 # Required Imports
 import os
 import pytest
@@ -7,12 +9,8 @@ from flask import Flask, render_template, request, redirect, url_for, session
 import sass
 import requests
 import json
-import logging
 from collections import defaultdict
 import urllib.parse
-
-logging.basicConfig(level=logging.WARNING, format="==%(levelname)s== [%(filename)s - %(funcName)s:%(lineno)d] --\n %(message)s")
-log = logging.getLogger()
 
 def create_app(test_config=None):
     app = Flask(__name__)
@@ -50,7 +48,7 @@ def create_app(test_config=None):
 
             
             context = {
-                'classes': [cl['name'] for cl in PlayerClass.class_list()], 
+                'classes': [cl.name for cl in PlayerClass.all()], 
                 'characters': characters
             }
             return render_template("index.html", **context)
@@ -67,7 +65,6 @@ def create_app(test_config=None):
         @app.route('/character/create', methods=('POST',))
         def create_character():
             char = Character(**request.form)
-            #logger.debug(f"Creating character: {char}")
             session['character_create'] = char.save()
             return redirect(url_for("index"))
 
@@ -79,29 +76,30 @@ def create_app(test_config=None):
         @app.route('/character/update', methods=('GET', 'POST'))
         def update_character():
             
-            log.debug(request.form)
+            log(request.form, "DEBUG")
 
             character = Character(**request.form)
-
-            log.info("===============   NO PK  =================")
-            log.info(character)
+            
+            log(character, "DEBUG")
 
             character.save()
             return redirect(url_for("index"))
 
         @app.route('/character/delete', methods=('POST',))
         def delete_character():
+            log(request.form)
             session['character_delete'] = Character(**request.form).delete()
             return redirect(url_for("index"))
 
         @app.route('/character/activate', methods=('POST',))
         def activate_character():
+            #log(request.form)
             char_data = {
                 "pk":request.form.get("pk"),
                 "active" : True if request.form.get('activate') else False,
             }
             
-            log.info(f'{request.form}')
+            log(f'{request.form}', "DEBUG")
             Character(**char_data).save()
             return redirect(url_for("index"))
 
@@ -132,8 +130,21 @@ def create_app(test_config=None):
         
         @app.route('/compendium', methods=('POST',))
         def compendium():
-            #log.info(f"search: {request.json.get('search_term')}, endpoint:{request.json.get('endpoint')}")
-            results = Compendium.search(search=request.json.get('search_term'), endpoint=request.json.get('endpoint'))
+            endpoint = request.json.pop('endpoint', 'search')
+            log(f"search: {request.json}, endpoint:{endpoint}")
+            
+            endpoints = {
+                "search": Compendium,
+                "item": Item, 
+                "spell": Spell, 
+                "monster": Monster,
+                "player_class": PlayerClass,
+            }
+            api = endpoints[endpoint]
+            results = api.search(**request.json)
+            
+            results = [r.serialize() for r in results]
+            #log(f"results: {results}")
             return results
 
     ###### returns the application instance to the caller ######

@@ -1,8 +1,6 @@
 import requests
 import os
 import urllib.parse
-import logging
-log = logging.getLogger()
 
 class WikiAPI:
     WIKI_APIKEY = os.getenv("WIKI_APIKEY")
@@ -13,7 +11,6 @@ class WikiAPI:
 
     def make_query(self, query):
         ## get list of associated pages
-        log.debug(query)
             # TODO need t move this key into environment variable
         headers= {
             "Authorization": f"Bearer {self.WIKI_APIKEY}", 
@@ -29,10 +26,8 @@ class WikiAPI:
             encoding: {r.encoding},
             headers: {r.headers},
         '''
-        log.debug(debug_msg)
         r.raise_for_status()
         res = r.json()
-        log.debug(f"res")
         return  res
 
 
@@ -130,13 +125,10 @@ class WikiAPI:
         filename = None
         result = self.make_query(query)
         for asset in result["data"]["assets"]["list"]:
-            log.info(name.lower())
-            log.info(asset['filename'].split('.')[0])
             if name.lower() == asset['filename'].split('.')[0].lower():
                 filename = asset['filename']
                 break
         url = self.base_url+'/'+path+'/'+filename if filename else None
-        log.info(url)
         return url
 
     def wikipull(self, title=None, id=None, assets_path=None):
@@ -165,14 +157,11 @@ class WikiAPI:
         content = page.get('content')
             
         data = {'content': page.get('content')}
-        
-        log.debug(data)
 
         if not assets_path:
             return data
             
         data['asset_url'] = f"http://{self.get_asset_url(assets_path, title)}"
-        log.debug(data)
         return data
             
 

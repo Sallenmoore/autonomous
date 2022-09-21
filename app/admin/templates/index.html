@@ -13,16 +13,24 @@
 
 <div class="container">
     <div class="row">
-        <div class="col s12">
+        <div class="col s6">
             {{ general_macros.search() }}
         </div>
-    </div>
-    <div class="row">
-        <div class="col s8">
-            <h2>Players</h2>
+        <div class="col s6">
             <div class="row">
                 <div class="col s12">
-                    {{ character_macros.display(characters, classes) }}
+                    <h2> Initiative </h2>
+                    {{ character_macros.initiative(characters) }}
+                </div>
+            </div>
+            <div class="row">
+                <div class="col s12">
+                    <h2>Players</h2>
+                    <div class="row">
+                        <div class="col s12">
+                            {{ character_macros.display(characters, classes) }}
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="row">
@@ -30,15 +38,16 @@
                     {{ character_macros.inactive_characters(characters) }}
                 </div>
             </div>
-            {{ character_macros.create(classes) }}
         </div>
-        <div class="col s4">
-            <div class="row">
-                <div class="col s12">
-                    <h2> Initiative </h2>
-                    {{ character_macros.initiative(characters) }}
-                </div>
-            </div>
+    </div>
+    <div class="row">
+        <div class="col s6">
+            <button class="btn waves-effect waves-light" id="update_compendium" name="update_compendium">
+                Update Compendium
+            </button>
+        </div>
+        <div class="col s6">
+            {{ character_macros.create(classes) }}
         </div>
     </div>
 </div>
