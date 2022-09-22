@@ -54,8 +54,9 @@ class BaseModel():
         if name != "attributes" and value != None and name in self.attributes:
             # cast it, ex. str -> int: 
             # attr = type(attr)
+            #log(f"casting {name}:{value} to {self.attributes[name]}")
             value = self.attributes[name](value)
-            
+        #log(f"setting {name} to {value}")
         self.__dict__[name] = value
 
 ############################## Public Methods #####################################

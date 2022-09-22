@@ -78,14 +78,14 @@ class Compendium:
         if hasattr(ch, 'dndbeyond_id') and ch.dndbeyond_id: 
             result =  beyond_api.get_character_updates(ch.dndbeyond_id)
             
-            log(result['name'])
-            log(result['race']['fullName'])
-            log(result['decorations']['avatarUrl'])
-            log(result['classes'][0]['definition']['name'])
-            log(result["notes"]["backstory"])
-            log(result['baseHitPoints'])
-            log(";".join(f"{result['conditions']}"))
-            log([name['definition']['name'] for name in result['inventory']])
+            # log(result['name'])
+            # log(result['race']['fullName'])
+            # log(result['decorations']['avatarUrl'])
+            # log(result['classes'][0]['definition']['name'])
+            # log(result["notes"]["backstory"])
+            # log(result['baseHitPoints'])
+            # log(";".join(f"{result['conditions']}"))
+            # log([name['definition']['name'] for name in result['inventory']])
             
             updates = {
                 "name":result['name'],
@@ -97,7 +97,7 @@ class Compendium:
                 "status":";".join(f"{result['conditions']}"),
                 "inventory":[name['definition']['name'] for name in result['inventory']],
             }
-            log(updates)
+            #log(updates)
             ch.update(**updates)
             ch.save()
             log(f"{ch.name} -- updated")

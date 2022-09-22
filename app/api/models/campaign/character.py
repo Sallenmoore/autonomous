@@ -33,7 +33,7 @@ class Character(Model):
             "inventory":list,
             "dndbeyond_id":int,
             "active":bool,
-            "race":dict,
+            "race":str,
         }
    
     @classmethod
