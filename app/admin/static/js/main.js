@@ -1,7 +1,7 @@
 $(document).ready(function(){
-    //$('.collapsible').collapsible();
-    //$('select').formSelect();
+    
     M.AutoInit();
+
     $('.update_character').each(function(){
         $(this).change( function(){
             $(this).submit();
@@ -10,15 +10,21 @@ $(document).ready(function(){
 
     var sortable = Sortable.create($('#battle_initiative')[0]);
 
+    $('#next_initiative').click(function(){
+        var prev = $("#battle_initiative li:first-child");
+        $.unique(prev).each(function(i) {
+            $(this).slideUp(function() {
+                $(this).appendTo(this.parentNode).slideDown();
+            });
+        });
+    });
+
 });
 
-$('#next_initiative').click(function(){
-    var prev = $("#character_initiative li:first-child");
-    $.unique(prev).each(function(i) {
-      $(this).slideUp(function() {
-        $(this).appendTo(this.parentNode).slideDown();
-      });
-    });
+//##################### Search #########################
+$("#auto_search_results").on('click',".modal-trigger", function(){
+    $('.modal').modal();
+    M.updateTextFields();
 });
 
 update_search_results = function(event) {
@@ -77,34 +83,38 @@ update_search_results = function(event) {
                 monsters = false
                 items = false
                 obj.forEach(function(item){
+                    /////// MODAL ///////
                     let modal = `
-                    <div id="modal-${item.model_class}-${item.pk}" class="modal">
+                    <div id="modal_${item.model_class}_${item.pk}" class="modal">
                         <div class="modal-content">
-                            <h4>${item.name}</h4>
+                            <h1>${item.name}</h1>
+                            <div class="row">
                     `;
                     for (let key in item) {
                         modal += `
-                        <div class="input-field col s12">
-                            <input value="${item[key]}" name="${key}" type="text">
-                            <label for="${key}">${key}</label>
-                        </div>
+                            <div class="input-field col s4">
+                                <input value="${item[key]}" name="${key}" type="text">
+                                <label class="active" for="${key}">${key}</label>
+                            </div>
                         `;
                     }
                     modal += `
+                            </div>
                         </div>
                         <div class="modal-footer">
                             <a href="#!" class="modal-close waves-effect waves-green btn-flat">Close</a>
                         </div>
                     </div>
                     `;
-
+                    
+                    /////// TABLE ///////
                     let row = `
                         <tr>
                             <td>
                                 ${item.name}
                             </td>
                         <td>
-                            <a class="waves-effect waves-light btn-small modal-trigger" href="#modal-${item.model_class}-${item.pk}">
+                            <a class="waves-effect waves-light btn-small modal-trigger" href="#modal_${item.model_class}_${item.pk}">
                                 more info
                             </a>
                             ${modal}
@@ -146,14 +156,34 @@ update_search_results = function(event) {
 // ################## Initiative Functions ##################
 // Add to random spot on the list
 function add_to_initiative(event) {
+    console.log($(this).attr('name'));
     let name = $(this).attr('name');
-    let inits = $('#battle_initiative > .collection-item')
-    let index = Math.floor(Math.random()*inits.length);
-    $(inits[index]).after(`
+
+    let found = false;
+    let player = false;
+    $('#battle_initiative > .collection-item').each(function(i){
+        if ($(this).attr('name') === name){
+            found = true;
+        }
+    });
+
+
+    let icon = "person_3";
+    $('.add_character_initiative > .add_to_initiative').each(function(){
+        console.log($(this).attr('name'), name)
+        if ($(this).attr('name') === name){
+            icon = "face";
+            player = true;
+        }
+    });
+    if (found && player) return;
+
+    let index = Math.floor(Math.random()*$('#battle_initiative > .collection-item').length);
+    $($('#battle_initiative > .collection-item')[index]).after(`
             <li class="collection-item">
                 <div class="row">
                     <div class="col s10 truncate initiative_name">
-                        <i class="material-icons">monster</i> ${name}
+                        <i class="material-icons">${icon}</i> ${name}
                     </div>
                     <div class="col s2">
                         <a class="waves-effect waves-light btn-small btn-floating red remove_from_initiative">

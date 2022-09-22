@@ -32,7 +32,7 @@ class BaseModel():
         """
 
         if not hasattr(self.__class__, "attributes"):
-            log(f"getting attributes for {self.__class__.__name__}")
+            #log(f"getting attributes for {self.__class__.__name__}")
             self.__class__.attributes = self.model_attr()
             self.__class__.attributes['pk'] = self.__class__.attributes.get('pk', int)
             self.__class__.attributes['model_class'] = str

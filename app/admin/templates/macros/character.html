@@ -98,8 +98,8 @@
           <div class="col s10 modal-trigger" href="#{{character.pk}}_details">
             <i class="material-icons">face</i> <span class="character_name">{{character.name}}</span>
           </div>
-          <div class="col s2">
-            <a id="initative_character_{{character.pk}}" name="${character.name}" class="btn-floating btn-small waves-effect waves-light red add_to_initiative"><i class="material-icons">add</i></a>
+          <div class="col s2 add_character_initiative">
+            <a id="initative_character_{{character.pk}}" name="{{character.name}}" class="btn-floating btn-small waves-effect waves-light red add_to_initiative"><i class="material-icons">add</i></a>
           </div>
         </div>
 
@@ -205,7 +205,7 @@
 <ul class="collection" id="battle_initiative">
   {%for character in characters %}
     {%if character.active %}
-      <li class="collection-item">
+      <li class="collection-item" name="{{character.name}}">
         <div class="row">
           <div class="col s10 truncate">
             <i class="material-icons">face</i> {{character.name}}

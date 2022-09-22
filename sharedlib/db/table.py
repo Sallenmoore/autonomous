@@ -42,31 +42,27 @@ class Table:
         Returns an list of objects based on passed arguments
         as key/value pairs
         """
-        results = []
+        matches_needed = len(kwargs)
+        results = {}
         #log(f"kwargs: {kwargs}")
         for k,v in kwargs.items():
+
             q = Query()
             field = getattr(q, k)
             #log((f"table: {self._table.name} field : {field} -- searching for v : {v} "))
-            if not isinstance(v, (list, tuple)):
-                #log(f"kwargs: {kwargs}")
-                results += self._table.search(field.search(v,flags=re.IGNORECASE))
-                #log(f"kwargs: {kwargs}")
-            else:
-                #log(f"v: {v}")
-                #log(f"kwargs: {kwargs}")
-                final_query = field.search(v[0], flags=re.IGNORECASE)
-                #log(f"kwargs: {kwargs}")
-                if len(v) > 1:
-                    for term in v[1:]:
-                        final_query = final_query & field.search(term, flags=re.IGNORECASE)
-                result = self._table.search(final_query)
-                #log(f"table: {self._table.name} field : {field}  result: {result}")
-                results+=result
-        #log(f"table: {self._table.name} results: {results}")
+            v = v if isinstance(v, (list, tuple)) else [v]
+            
+            #log(f"v: {v}")
+            #log(f"kwargs: {kwargs}")
+            for term in v:
+                log(f"v: {v}, term: {term}")
+                records = self._table.search(field.search(term,flags=re.IGNORECASE))
+                records = {r['pk']:r for r in records}
+                results.update(records) 
 
+        #log(f"table: {self._table.name} results: {results}")
         #log(f"results: {results}")
-        return results
+        return results.values()
 
     def get(self, obj_id):
         """

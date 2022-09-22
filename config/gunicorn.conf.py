@@ -8,13 +8,11 @@ syslog = True
 # Whether to send output to the error log 
 capture_output = True
 # How verbose the Gunicorn error logs should be 
-loglevel = "error"
+loglevel = "info"
 
 reload=True
 
 ## DEBUG Options
-
-loglevel = "warning"
 
 #spew=True #Install a trace function that spews every line executed by the server.
 
