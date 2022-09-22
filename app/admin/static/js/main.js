@@ -3,11 +3,21 @@ $(document).ready(function(){
     M.AutoInit();
 
     $('.update_character').each(function(){
-        $(this).change( function(){
-            $(this).submit();
+        //console.log("update character")
+        $(this).on('change', function(){
+            console.log("update form submitting...")
+            $.post("/character/update", $(this).serializeArray(), function(response) {
+                console.log("Status: " + response.result)
+                if (response.status === 200) {
+                    return console.log("character updated")
+                } else {
+                    return Promise.reject("server")
+                }
+            }).catch(error => {
+                console.log(error);
+            });
         });
     });
-
     var sortable = Sortable.create($('#battle_initiative')[0]);
 
     $('#next_initiative').click(function(){

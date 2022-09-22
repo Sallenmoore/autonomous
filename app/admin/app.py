@@ -73,17 +73,17 @@ def create_app(test_config=None):
             session['character_get']  = Character.get(**request.form)
             return redirect(url_for("index"))
 
-        @app.route('/character/update', methods=('GET', 'POST'))
+        @app.route('/character/update', methods=('POST',))
         def update_character():
             
-            log(request.form, "DEBUG")
+            log(request.form)
 
             character = Character(**request.form)
             
-            log(character, "DEBUG")
-
-            character.save()
-            return redirect(url_for("index"))
+            log(character)
+            if character.name:
+                character.save()
+            return {"result": "success"}
 
         @app.route('/character/delete', methods=('POST',))
         def delete_character():

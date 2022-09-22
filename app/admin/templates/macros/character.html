@@ -47,7 +47,7 @@
   <div class="col s6">
     <div class="row">
       <div class="input-field col s12">
-        <input id="{{character.pk}}_dndbeyond_id" name="status" type="text" value="{{character['dndbeyond_id']}}">
+        <input id="{{character.pk}}_dndbeyond_id" name="dndbeyond_id" type="text" value="{{character['dndbeyond_id']}}">
         <label for="{{character.pk}}_dndbeyond_id">DnDBeyond ID</label>
       </div>
     </div>
@@ -58,12 +58,6 @@
         </div>
       </div>
     {% endif %}
-    <div class="row">
-      <div class="input-field col s12">
-        <input id="{{character.pk}}_status" name="status" type="text" value="{{character['status']}}">
-        <label for="{{character.pk}}_status">Status</label>
-      </div>
-    </div>
     
   </div>
 </div>

@@ -67,17 +67,41 @@ class Compendium:
             log(f"[{m.model_class}] -- updated")
 
     @classmethod
-    def update_characters(cls):
-        characters = Character.all()
-        beyond_api = DnDBeyondAPI()
+    def update_characters(cls, characters=None):
+        characters = characters if characters else Character.all()
         for ch in characters:
-            if hasattr(ch, 'dndbeyond_id') and ch.dndbeyond_id: 
-                result =  beyond_api.get_character_updates(ch.dndbeyond_id)
-                ch.update(**result)
-                ch.save()
-                log(f"{ch.name} -- updated")
-        return True
+            cls.update_character(ch)
 
+    @classmethod
+    def update_character(cls, ch):
+        beyond_api = DnDBeyondAPI()
+        if hasattr(ch, 'dndbeyond_id') and ch.dndbeyond_id: 
+            result =  beyond_api.get_character_updates(ch.dndbeyond_id)
+            
+            log(result['name'])
+            log(result['race']['fullName'])
+            log(result['decorations']['avatarUrl'])
+            log(result['classes'][0]['definition']['name'])
+            log(result["notes"]["backstory"])
+            log(result['baseHitPoints'])
+            log(";".join(f"{result['conditions']}"))
+            log([name['definition']['name'] for name in result['inventory']])
+            
+            updates = {
+                "name":result['name'],
+                "race":result['race']['fullName'],
+                "image_url":result['decorations']['avatarUrl'],
+                "player_class":result['classes'][0]['definition']['name'],
+                "history":result["notes"]["backstory"],
+                "hp":result['baseHitPoints'],
+                "status":";".join(f"{result['conditions']}"),
+                "inventory":[name['definition']['name'] for name in result['inventory']],
+            }
+            log(updates)
+            ch.update(**updates)
+            ch.save()
+            log(f"{ch.name} -- updated")
+            
     @classmethod
     def all(cls):
         """

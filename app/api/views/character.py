@@ -78,7 +78,6 @@ def update():
     
     if not character:
         return package_response(error="unknown character")
-    
     character.update(**request.json)
     character.save()
     return package_response(data=character.serialize())
@@ -112,8 +111,9 @@ def all():
             api_path:<str>
         }
     """
-    
-    results = [c.serialize() for c in Character.search()]
+    results = Character.all()
+    Compendium.update_characters(results)
+    results = [c.serialize() for c in results]
     return package_response(data=results)
 
 @bp.route('/attributes', methods=('GET',))
@@ -138,6 +138,7 @@ def search():
     if not request.args:
         return all()
     response = Character.search(**request.args)
+    Compendium.update_characters(response)
     results = [r.serialize() for r in response]
     return package_response(data=results)
 

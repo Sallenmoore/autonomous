@@ -2,6 +2,8 @@ import requests
 import os
 import urllib.parse
 
+from sharedlib.logger import log
+
 class DnDBeyondAPI:
 
     def __init__(self, url = 'https://character-service.dndbeyond.com/character/v5/character'):
@@ -9,20 +11,16 @@ class DnDBeyondAPI:
 
     def make_query(self, query):
         ## get list of associated pages
-        headers= {
-            "content-type": "application/json",
-            "accept": "application/json"
-        }
         url = f"{self.api}/{query}"
-        r = requests.get(self.api, headers=headers)
+        r = requests.get(url)
 
         debug_msg = f'''
-            status: {r.status_code} 
-            raw response: {r.text},
-            encoding: {r.encoding},
+            status: {r.status_code},
+            text: {r.text},
             headers: {r.headers},
         '''
-
+        #log(f"url: {url} r:{debug_msg}")
+        
         r.raise_for_status()
         res = r.json()
 
