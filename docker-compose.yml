@@ -9,6 +9,8 @@ services:
     working_dir: /var/app
     env_file: ./config/api.env
     container_name: api
+    expose:
+      - "${PORT}"
     networks:
       - app_net
     volumes:
@@ -23,6 +25,8 @@ services:
     working_dir: /var/app
     env_file: ./config/admin.env
     container_name: admin
+    expose:
+      - "${PORT}"
     networks:
       - app_net
     volumes:
