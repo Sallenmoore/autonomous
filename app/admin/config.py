@@ -10,6 +10,7 @@ class Config:
     PORT=os.environ.get('PORT', 80)
     SCSS_ASSET_DIR= os.environ.get("STATIC_DIR", "static")
     SCSS_STATIC_DIR=SCSS_ASSET_DIR
+    API_PORT=os.environ.get("API_PORT", 5001)
 
 class ProdConfig(Config):
     FLASK_ENV = 'production'

@@ -109,7 +109,7 @@ def create_app(test_config=None):
         
         # def campaign_api(endpoint, data):
         #     headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
-        #     requests.post(f"http://api:44666/campaign/{endpoint}", data=data, headers=headers)
+        #     requests.post(f"http://api:{API_PORT}/campaign/{endpoint}", data=data, headers=headers)
         #     return redirect(url_for('index'))
 
         # @app.route('/add_campaign', methods=('GET', 'POST'))

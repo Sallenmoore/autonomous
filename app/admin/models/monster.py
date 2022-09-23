@@ -1,5 +1,6 @@
 
 from sharedlib.model.APIModel import APIModel
+from config import Config
 
 class Monster(APIModel):
-    API_URL="http://api:44666/compendium/monster"
+    API_URL=f"http://api:{Config.API_PORT}/compendium/monster"

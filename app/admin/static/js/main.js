@@ -213,7 +213,7 @@ $('#battle_initiative').on('click', ".remove_from_initiative", function(event) {
 
 // ########## Compendium Functions ##########
 $('#update_compendium').click(function(){    
-    fetch(`//api:44666/compendium/update_compendium`, {
+    fetch(`//api:5001/compendium/update_compendium`, {
         method: "get"
     }).then(response => {
         console.log("Status: " + response.status)

@@ -7,6 +7,7 @@ from .player_class import PlayerClass
 
 from sharedlib.logger import log
 import requests
+from config import Config
 from urllib.parse import quote
 
 class Compendium(APIModel):
@@ -21,7 +22,7 @@ class Compendium(APIModel):
         _type_: _description_
     """
     
-    API_URL="http://api:44666/compendium"
+    API_URL=f"http://api:{Config.API_PORT}/compendium"
 
     @classmethod
     def deserialize(cls, result):

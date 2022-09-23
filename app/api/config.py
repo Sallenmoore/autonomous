@@ -8,6 +8,7 @@ class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "secretkey")
     HOST=os.environ.get('HOST', '0.0.0.0')
     PORT=os.environ.get('PORT', 80)
+    API_PORT=os.environ.get('API_PORT', 5001)
 
 class ProdConfig(Config):
     FLASK_ENV = 'production'

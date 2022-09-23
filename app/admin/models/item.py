@@ -1,4 +1,4 @@
 from sharedlib.model.APIModel import APIModel
-
+from config import Config
 class Item(APIModel):
-    API_URL="http://api:44666/compendium/item"
+    API_URL=f"http://api:{Config.API_PORT}/compendium/item"
