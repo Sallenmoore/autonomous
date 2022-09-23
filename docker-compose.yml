@@ -9,8 +9,6 @@ services:
     working_dir: /var/app
     env_file: ./config/api.env
     container_name: api
-    expose:
-      - "5001"
     networks:
       - app_net
     volumes:
@@ -25,8 +23,6 @@ services:
     working_dir: /var/app
     env_file: ./config/admin.env
     container_name: admin
-    expose:
-      - "5000"
     networks:
       - app_net
     volumes:
