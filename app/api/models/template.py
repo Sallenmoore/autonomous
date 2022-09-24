@@ -37,16 +37,3 @@ class Template(Model):
     #########################################################################
     ###                       Class Methods                                ##
     #########################################################################
-    @classmethod
-    def search(cls, **kwargs):
-        """
-        _summary_
-
-        _extended_summary_
-
-        Returns:
-            _type_: _description_
-        """
-        
-        objs = cls.find(**kwargs) if kwargs else cls.all()
-        return [o.serialize() for o in objs]

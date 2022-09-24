@@ -1,6 +1,4 @@
 import inspect
-import logging
-log = logging.getLogger()
 
 def package_response(error="", data=None, api_path=""):
     """
@@ -32,5 +30,4 @@ def package_response(error="", data=None, api_path=""):
         "results": data,
         "count": count
     }
-    #log.debug(f"results data: {results}")
     return results

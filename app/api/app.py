@@ -1,23 +1,28 @@
-# Required Imports
-import os
-import sass
-import requests
-import json
-from flask import Flask, render_template, request, redirect, url_for, session
+#local modules
+import filters
+from sharedlib.logger import log
 
-import logging
-logging.basicConfig(level=logging.INFO, format="==%(levelname)s== [%(filename)s - %(funcName)s:%(lineno)d] --\n %(message)s")
-log = logging.getLogger()
+#external Modules
+import pytest
+import pdoc
+from flask import Flask, render_template
+
+# Built-In Modules
+
+import os
+from pathlib import Path
+import shutil
+import logging 
 
 def create_app(test_config=None):
-    app = Flask(__name__)
-
+    app = Flask(__name__, instance_relative_config=True)
+    
     #set to 'config.Config' to use ENV_VARS
     #set to 'config.DevConfig' to use development settings
     #set to 'config.ProdConfig' to use production settings
     app.config.from_object('config.DevConfig') 
-    
-    # ensure the instance folder exists
+
+    #TODO: ensure the instance folder exists ???is this necessary?
     try:
         os.makedirs(app.instance_path)
     except OSError:

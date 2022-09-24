@@ -11,6 +11,6 @@ pdoc
 Flask>=2.0
 
 ###### App Specific Requirements w/ Version Specifiers ######
-d20
+
 
 ###### App Specific Requirements w/o Version Specifiers ######

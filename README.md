@@ -72,23 +72,23 @@ Self has 4 container components:
 - stop and remove running containers
   - `docker-compose down --remove-orphans`
 - stop all running containers
-    - `sudo docker kill $(sudo docker ps -q)`
+  - `sudo docker kill $(sudo docker ps -q)`
 - remove all stopped containers
   - `sudo docker rm $(sudo docker ps -a -q)`
 
 ### Run Tests
 
 - To run tests:
-  - `sudo docker-compose exec <service name> pytest --log-level=DEBUG -rl -x`
+  - `sudo docker-compose exec <service name> pytest --log-level=INFO -rx -l -x`
 - To run only < name > tests on the `api` service:
-  - `sudo docker-compose exec <service name>  pytest --log-level=DEBUG -rl -x -k <name>`
+  - `sudo docker-compose exec <service name>  pytest --log-level=INFO -rA -l -x -k "<test_target>"`
 - To check test coverage:
   - `sudo docker-compose exec <service name>  coverage run -m pytest ...`
 
 ### Read Logs
 
-- `docker logs --since=15m -t <container>`
-- `docker logs -f --since=15m -t <container> &`
+- `sudo docker logs --since=15m -t <container>`
+- `sudo docker logs -f --since=10m -t <container> &`
   - follows as a background process
 
 ### BUGS
@@ -102,12 +102,12 @@ Self has 4 container components:
 
 ### TODOs
 
-- Models
-  - APIModel - pull attributes from API
+1. TBD
 
 ### IMPROVEMENTS
 
-- Use [Hypertag](http://hypertag.io/) instead of jinja?
+- add tests to shared lib
+- Move doc module to shared lib
 
 ---
 
