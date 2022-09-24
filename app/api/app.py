@@ -1,6 +1,6 @@
 #local modules
 import filters
-from sharedlib.logger import log
+from self.utilities.logger import log
 
 #external Modules
 import pytest

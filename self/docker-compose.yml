@@ -12,8 +12,7 @@ services:
     networks:
       - app_net
     volumes:
-      - ./app/api:/var/app/
-      - ./sharedlib:/var/app/src/sharedlib
+      - ../app/api:/var/app/
     command: ["gunicorn", "app:create_app()", "-c/var/gunicorn.conf.py"]
     ports:
      - "5001:5001" #this port is open for testing purposes only
@@ -30,8 +29,7 @@ services:
     networks:
       - app_net
     volumes:
-      - ./app/admin:/var/app
-      - ./sharedlib:/var/app/src/sharedlib
+      - ../app/admin:/var/app
     command: ["gunicorn", "app:create_app()", "-c/var/gunicorn.conf.py"]
   user:
     image: user:latest
@@ -46,8 +44,7 @@ services:
     networks:
       - app_net
     volumes:
-      - ./app/user:/var/app
-      - ./sharedlib:/var/app/src/sharedlib
+      - ../app/user:/var/app
     command: ["gunicorn", "app:create_app()", "-c/var/gunicorn.conf.py"]
   server:
     image: nginx
@@ -55,9 +52,9 @@ services:
     networks:
       - app_net
     volumes:
-      - ./app/admin/static:/srv/static/admin
-      - ./app/api/static:/srv/static/api
-      - ./app/user/static:/srv/static/user
+      - ../app/admin/static:/srv/static/admin
+      - ../app/api/static:/srv/static/api
+      - ../app/user/static:/srv/static/user
       - ./config/nginx.conf:/etc/nginx/nginx.conf
     ports:
       - "80:80"

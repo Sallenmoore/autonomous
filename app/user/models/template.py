@@ -1,4 +1,4 @@
-from src.sharedlib.db.APIModel import APIModel
+from self.db.APIModel import APIModel
 
 
 class Template(APIModel):

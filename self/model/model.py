@@ -1,7 +1,7 @@
 #local modules
 from ..db import Database
 from .basemodel import BaseModel
-from sharedlib.logger import log
+from self.utilities.logger import log
 
 #external modules
 #from flask import g, current_app

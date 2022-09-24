@@ -1,8 +1,8 @@
 #local modules
-from sharedlib.db.db import Database
-from sharedlib.logger import log
+from self.db.db import Database
+from self.logger import log
+
 #external modules
-from flask import g, current_app
 
 #python modules
 import json

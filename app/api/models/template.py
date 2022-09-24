@@ -1,4 +1,4 @@
-from src.sharedlib.db import Model
+from self.db import Model
 
 import logging
 log = logging.getLogger()

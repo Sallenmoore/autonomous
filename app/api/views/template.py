@@ -1,5 +1,5 @@
 # Local Modules
-from sharedlib.logger import log
+from self.logger import log
 from views import package_response
 
 # External Modules

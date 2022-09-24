@@ -1,7 +1,6 @@
 from urllib.parse import urlencode, quote
-from flask import redirect, url_for
-from .basemodel import BaseModel
-from sharedlib.logger import log
+from self.db.basemodel import BaseModel
+from self.logger import log
 import requests
 import pprint
 import json

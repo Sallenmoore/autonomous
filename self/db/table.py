@@ -4,7 +4,7 @@ import re
 from tinydb import Query, TinyDB, table, storages, where
 import tinydb
 
-from sharedlib.logger import log
+from self.utilities.logger import log
 
 class Table:
     
