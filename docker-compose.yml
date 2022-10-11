@@ -1,0 +1,23 @@
+version: "3"
+
+services:
+  test:
+    image: dmbuddy_test:latest
+    build: 
+      context: ./config
+      dockerfile: test.Dockerfile
+    working_dir: /var/app
+    env_file: ./config/test.env
+    container_name: test
+    networks:
+      - app_net
+    ports:
+      - "80:80"
+    volumes:
+      - ./app/test:/var/app/
+      - ./selflib:/var/app/selflib
+    command: ["gunicorn", "app:create_app()", "-c/var/gunicorn.conf.py"]
+
+networks:
+  app_net:
+
