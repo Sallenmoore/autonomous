@@ -11,13 +11,9 @@ Self has 4 container components:
 - **server**
   - nginx proxy server listening on port 80
   - static files and assets are served from here. This is also the main entry point for the application.
-- **api**
-  - access documentation on port:8000
-  - The backend API and database
-- **admin**
-  - An admin web interface
-- **user**
-  - *Coming Soon*
+- **test**
+  - access documentation on port:6000
+  - Test app for the library
   
 ---
 
@@ -93,21 +89,15 @@ Self has 4 container components:
 
 ### BUGS
 
-- Documentation
-  - sidemenu submenu items not linking properly
-- Admin
-  - table folder being created in admin service
-- API
-  - static folder being placed in the wrong place
+
 
 ### TODOs
 
-1. TBD
+1. Improve database storage
+2. Improve database search
+2. Auto generate API documentation
 
 ### IMPROVEMENTS
-
-- add tests to shared lib
-- Move doc module to shared lib
 
 ---
 
