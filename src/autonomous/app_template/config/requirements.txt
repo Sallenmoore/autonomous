@@ -1,0 +1,32 @@
+###### Common Requirements w/o Version Specifiers ######
+#framework
+autonomous
+
+#frontend
+libsass
+
+#network
+requests
+gunicorn
+
+##testing
+pytest
+coverage
+pytest-flakes
+
+## data storage
+tinydb
+jsonpickle
+
+###### Common Requirements w/ Version Specifiers ######
+
+##Framework libs
+Flask>=2.0
+flask-cors #https://flask-cors.readthedocs.io/en/latest/
+
+###### App Specific Requirements w/ Version Specifiers ######
+
+
+###### App Specific Requirements w/o Version Specifiers ######
+pdoc
+pypandoc

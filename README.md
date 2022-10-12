@@ -1,4 +1,4 @@
-# Self
+# Autonomous
 
 ***In Development - Not Suitable for Production***
 
@@ -6,7 +6,7 @@ A framework that attempts to make it easy to create self-contained applications 
 
 ## Container Apps
 
-Self has 4 container components:
+Autonomous has minimally 2 container components:
 
 - **server**
   - nginx proxy server listening on port 80
@@ -84,7 +84,7 @@ Self has 4 container components:
 ### Read Logs
 
 - `sudo docker logs --since=15m -t <container>`
-- `sudo docker logs -f --since=10m -t <container> &`
+- `sudo docker logs -f --since=15m -t <container> &`
   - follows as a background process
 
 ### BUGS
