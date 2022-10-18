@@ -25,26 +25,28 @@ def package_response(error="", data=None, api_path=""):
     Returns:
         _type_: _description_
     """
+
     if api_path == "":
         api_path = f"{inspect.stack()[1].function}"
 
+    log(data)
     count = 0
     if not isinstance(data, (list, tuple, dict)):
         data = [data,]
     count = len(data)
-    [log(f"package_response: {d.pk}") for d in data if d]
     try:
         response = [d.serialize() for d in data]
     except AttributeError:
         response = data
 
-    [log(f"package_response: {d}") for d in response]
+    #log(response)
     results = {
         "api": api_path,
         "error":error,
         "results": response,
         "count": count
     }
+    #log(results)
     return results
 
 def unpackage_response(data=None):
@@ -64,6 +66,6 @@ def unpackage_response(data=None):
     #log(data)
     data = data['data']
     items = Model.deserialize(data)
-    #Slog(f"items: {items}")
+    #log(f"items: {items}")
     
     return items

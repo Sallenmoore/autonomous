@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "autonomous"
-version = "0.0.2"
+version = "0.0.3"
 authors = [
   { name="Steven Allen Moore", email="samoore@binghamton.edu" },
 ]

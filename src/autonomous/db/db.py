@@ -2,7 +2,7 @@
 import os
 import pathlib
 
-from .table import Table
+from autonomous.db.table import Table
 
 
 class Database:

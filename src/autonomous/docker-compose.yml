@@ -7,25 +7,24 @@ services:
     networks:
       - app_net
     volumes:
-      - ./app/admin/static:/srv/static
-      - ./app/api/static/docs:/srv/static/docs
+      - ./app/<template>/static:/srv/static
       - ./config/nginx.conf:/etc/nginx/nginx.conf
     ports:
       - "80:80"
     depends_on:
-      - template
-  template:
-    image: template:latest
+      - <template>
+  <template>:
+    image: <template>:latest
     build: 
       context: ./config
-      dockerfile: template.Dockerfile
+      dockerfile: <template>.Dockerfile
     working_dir: /var/app
-    env_file: ./config/template.env
-    container_name: template
+    env_file: ./config/<template>.env
+    container_name: <template>
     networks:
       - app_net
     volumes:
-      - ./app/template:/var/app/
+      - ./app/<template>:/var/app/
     command: ["gunicorn", "app:create_app()", "-c/var/gunicorn.conf.py"]
 
 networks:

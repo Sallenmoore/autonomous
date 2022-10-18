@@ -1,5 +1,4 @@
 from urllib.parse import urlencode, quote
-from flask import redirect, url_for
 from .basemodel import BaseModel
 from autonomous.logger import log
 import requests
@@ -54,12 +53,14 @@ class ProxyModel(BaseModel):
             api_path = "update"
 
         result = self._post(api_path, self)
+        #log(f"result: {result}")
         if  result.get("error"):
                 raise Exception(f"Error sending data: {result['error']}")
-        #log(f"result: {result['results']}")
-            
-        self.pk = result['results'][0].pk
         
+        try:
+            self.pk = result['results'][0].pk
+        except:
+            return None
         return self.pk
 
 ###########################################################################################
@@ -82,11 +83,11 @@ class ProxyModel(BaseModel):
         #log(f"endpoint: {endpoint} \ndata:{data.__dict__}")
         headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
         try:
-            payload = {'data':jsonpickle.encode(data.__dict__)}
-        except AttributeError:
-            # log("dictless")
-            payload = {'data':jsonpickle.encode(data)}
-        #log(f"endpoint: {endpoint}, playload: {payload}")
+            payload = {'data':data.serialize()}
+        except AttributeError as e:
+            log(f"{e}: no serialize()", LEVEL="DEBUG")
+            payload = {'data': data}
+        #log(f"endpoint: {endpoint}, payload: {payload}")
         response = requests.post(f"{cls.API_URL}/{endpoint}", json=payload, headers=headers)
         response = response.json()
         #log(f"endpoint: {endpoint}, response: {response}")
@@ -128,7 +129,7 @@ class ProxyModel(BaseModel):
         """
         
         obj =  cls._get(pk)['results']
-        log(f"obj: {obj}")
+        #log(f"obj: {obj}")
         return obj[0] if obj else None
 
     @classmethod
@@ -168,3 +169,37 @@ class ProxyModel(BaseModel):
             _type_: _description_
         """
         return cls.search()
+
+    ############################## Serialization ########################################
+    def serialize(self, **kwargs):
+        obj_dict = {}
+        for k,v in self.__dict__.items():
+            try:
+                obj_dict[k] = jsonpickle.encode(v)
+            except:
+                log(f"[ {e} ] cannot decode data -- {k}: {v}")
+        return obj_dict
+    
+    @classmethod
+    def deserialize_list(cls, pickled_objs, **kwargs):
+        results = []
+        for obj in pickled_objs:
+            try:
+                results.append(cls.deserialize(obj, **kwargs))
+            except:
+                results.append(obj)
+        return results
+
+    @classmethod
+    def deserialize(cls, pickled_obj, **kwargs):
+        if not pickled_obj:
+            return None
+        obj_attr = {}
+        for k,v in pickled_obj.items():
+            #log(f"{k}: {v}")
+            try:
+                obj_attr[k] = jsonpickle.decode(v, **kwargs)
+            except Exception as e:
+                log(f"[ {e} ] cannot decode data -- {obj_dict[k]}: {v}")
+
+        return cls(**obj_attr)
