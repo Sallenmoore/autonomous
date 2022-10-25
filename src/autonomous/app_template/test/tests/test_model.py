@@ -16,7 +16,7 @@ def model_tester():
 def test_model_create():
     model_testerA = model_tester()
     model_testerB = model_tester()
-    log(model_testerA)
+    #log(model_testerA)
     assert isinstance(model_testerA, ModelTest)
     assert model_testerA.pk > 0
     assert model_testerB.pk > model_testerA.pk
@@ -71,7 +71,7 @@ def test_delete():
     model_testerA = model_tester()
     pk = model_testerA.pk
     results = ModelTest.get(pk)
-    log(results)
+    #log(results)
     results.delete()
     assert ModelTest.get(pk) == None
     results = ModelTest.all()

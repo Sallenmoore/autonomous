@@ -30,7 +30,7 @@ def create_app(test_config=None):
         @app.route('/modeltest/<int:pk>', methods=('GET',))
         def modeltestget(pk):
             mt = ModelTest.get(pk)
-            log(f"modeltestget: {mt}")
+            #log(f"modeltestget: {mt}")
             return package_response(data=mt)
 
         @app.route('/modeltest/all', methods=('GET',))
@@ -47,9 +47,9 @@ def create_app(test_config=None):
         @app.route('/modeltest/update', methods=('POST',))
         def modeltestupdate():
             kwargs = unpackage_response(request.json)
-            log(f"kwargs: {kwargs}")
+            #log(f"kwargs: {kwargs}")
             ch = ModelTest(**kwargs)
-            log(f"ch: {vars(ch)}")
+            #log(f"ch: {vars(ch)}")
             pk = ch.save()
             if not pk:
                 return package_response(error="Test could not be saved. Unknown error.")

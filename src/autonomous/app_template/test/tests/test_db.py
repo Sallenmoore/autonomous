@@ -24,9 +24,9 @@ def test_db_create(db_tester):
 def test_db_read(db_tester):
     t = Record()
     t.pk = db_tester.update(t)
-    log(t.pk)
+    #log(t.pk)
     obj = db_tester.get(t.pk)
-    log(obj.pk)
+    #log(obj.pk)
     assert t.pk == obj.pk
     assert obj.num == 5
 

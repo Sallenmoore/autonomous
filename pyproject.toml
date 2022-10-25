@@ -4,11 +4,11 @@ build-backend = "hatchling.build"
 
 [project]
 name = "autonomous"
-version = "0.0.3"
+version = "0.0.5"
 authors = [
   { name="Steven Allen Moore", email="samoore@binghamton.edu" },
 ]
-description = "A self-reliant application framework for python"
+description = "An containerized application framework for python"
 readme = "README.md"
 requires-python = ">=3.8"
 classifiers = [

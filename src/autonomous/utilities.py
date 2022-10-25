@@ -29,7 +29,7 @@ def package_response(error="", data=None, api_path=""):
     if api_path == "":
         api_path = f"{inspect.stack()[1].function}"
 
-    log(data)
+    #log(data)
     count = 0
     if not isinstance(data, (list, tuple, dict)):
         data = [data,]

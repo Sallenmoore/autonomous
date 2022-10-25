@@ -12,29 +12,41 @@ class Model(BaseModel):
     _attributes = {"pk":int, "model_class":str, "attributes":dict}
     
     def __init__(self, **kwargs):
-        #initializes the table
+        
         self.pk = kwargs.get('pk')
         rec = self.table().get(self.pk)
-        #log(f"rec:{rec}")
+        #log(self.__dict__)
         if rec:
             self.__dict__.update(rec.__dict__)
-            
+        log(self.__dict__, kwargs)
         # update remaining attributes
-        for k,v in kwargs.items():
-            try:
-                kwargs[k] = self.__class__.attributes[k](v)
-                #log(kwargs[k])
-            except Exception as e:
-                log(f"{e} -- attribute/value invalid: {k}=>{v}", LEVEL="INFO")
-        
+        # for k,v in kwargs.items():
+        #     try:
+        #         kwargs[k] = self.__class__.attributes[k](v)
+        #         #log(kwargs[k])
+        #     except Exception as e:
+        #         log(f"{e} -- attribute/value invalid: {k}=>{v}", LEVEL="INFO")
+        for k,v in self.__class__.attributes.items():
+            # valid attribute - cast to verify value is valid
+            if kwargs.get(k):
+                kwargs[k] = self.__class__.attributes[k](kwargs[k])
+                #log(f"attribute set: {k}=>{kwargs[k]}", LEVEL="INFO")
+            # attribute not set - set to default value
+            elif not hasattr(self, k):
+                kwargs[k] = self.__class__.attributes[k]()
+                #log(f"attribute not set, setting to default: {k}=>{kwargs[k]}", LEVEL="INFO")
+            else:
+                #log(f" data invalid: {k}=>{v}", LEVEL="INFO")
+                pass
+                
         self.__dict__.update(kwargs)
-        #log(self.__dict__)
+        log(self.__dict__)
 
     def save(self):
         """
         save() :save object to db
         """
-        #log(self.name, hasattr(self, "pk"))
+        log(self)
         self.pk = self.__class__.table().update(self.serialize())
         return self.pk
 
@@ -81,7 +93,7 @@ class Model(BaseModel):
         """
         #log(f"obj: {self}")
         data = cls.table().get(pk)
-        log(f"obj: {data}")
+        #log(f"obj: {data}")
         return cls.deserialize(data)
 
     ############################## Serialization ########################################
@@ -89,18 +101,27 @@ class Model(BaseModel):
         """
         
         """
-        log(self.__class__.attributes)
+        #log(self.__class__.attributes)
         if hasattr(self.__class__, "attributes"):
             self.attributes = self.__class__.attributes
             self.model_class = self.__class__.model_class
 
         obj_dict = {}
-        for k,v in self.__dict__.items():
+        # for k,v in self.__dict__.items():
+        #     if k in self.attributes:
+        #         try:
+        #             obj_dict[k] = self.__class__.attributes[k](v)
+        #             obj_dict[k] = jsonpickle.encode(obj_dict[k])
+        #         except TypeError as e:
+        #             log(f"ERROR: {e} \n [attribute name]: {k} [type]: {type(v)}", LEVEL="INFO")
+        #             obj_dict[k] = None
+        for k,v in self.__class__.attributes.items():
             try:
-                obj_dict[k] = self.__class__.attributes[k](v)
-                obj_dict[k] = jsonpickle.encode(obj_dict[k])
-            except Exception as e:
-                log(f"[ {e} ] Skipping invalid attribute -- {k}: {v}")
+                obj_dict[k] = v(self.__dict__[k]) if self.__dict__[k] else None
+            except TypeError as e:
+                log(f"ERROR: {e} \n [attribute name]: {k} [type]: {type(v)}", LEVEL="INFO")
+            else:
+                obj_dict[k] = jsonpickle.encode(obj_dict[k]) if obj_dict[k] else None
         return obj_dict
     
     @classmethod

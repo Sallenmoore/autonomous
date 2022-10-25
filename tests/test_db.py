@@ -36,9 +36,9 @@ def test_db_create(db_tester):
 def test_db_read(db_tester):
     t = RecordTest()
     t.pk = db_tester.update(t.serialize())
-    log(t.pk)
+    #log(t.pk)
     obj = RecordTest.deserialize(db_tester.get(t.pk))
-    log(obj.pk)
+    #log(obj.pk)
     assert t.pk == obj.pk
     assert obj.num == 5
 

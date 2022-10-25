@@ -20,7 +20,7 @@ class Logger:
         level = logging.getLevelName(LEVEL) if LEVEL else LOG_LEVEL
         caller = inspect.stack()[1]
         fn = caller.filename.split('/')[-1]
-        msg = ", ".join([str(x) for x in args])
+        msg = "\n".join([str(x) for x in args])
         built_in_log.log(level, f"[{fn}:{caller.function}():{caller.lineno}]\n\t{msg}\n")
 
 

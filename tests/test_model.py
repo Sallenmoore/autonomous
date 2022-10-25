@@ -30,7 +30,7 @@ def model_tester():
 def test_model_create():
     model_testerA = model_tester()
     model_testerB = model_tester()
-    log(model_testerA)
+    #log(model_testerA)
     assert isinstance(model_testerA, ModelTest)
     assert model_testerA.pk > 0
     assert model_testerB.pk > model_testerA.pk
@@ -56,7 +56,15 @@ def test_model_read():
     assert isinstance(resultB.collection, list)
     assert isinstance(resultB.value, int)
     assert isinstance(resultB.keystore, dict)
-
+    
+def test_model_attributes_type():
+    resultC = model_tester()
+    resultC.status = None
+    resultC.save()
+    resultC = ModelTest.get(resultC.pk)
+    log(resultC)
+    assert not resultC.status
+    
 
 def test_model_update():
     model_testerA = model_tester()
@@ -88,7 +96,7 @@ def test_delete():
     model_testerA = model_tester()
     pk = model_testerA.pk
     results = ModelTest.get(pk)
-    log(results)
+    #log(results)
     results.delete()
     assert ModelTest.get(pk) == None
     results = ModelTest.all()

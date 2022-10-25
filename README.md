@@ -2,9 +2,29 @@
 
 ***In Development - Not Suitable for Production***
 
+# Autonomous
+
 A framework that attempts to make it easy to create self-contained applications with minimal dependencies. Built to be as modular as possible and run entirely in containers.
 
-## Container Apps
+## TODO
+
+- Setup test app
+- add more testing
+- Improve database storage
+- Improve database search
+- Auto generate API documentation
+
+## Issue Tracking
+
+- None that I am aware of
+
+## Basic Info
+
+- **Latest Version**: 0.0.5
+- **pypi**: https://test.pypi.org/project/autonomous/0.0.4/
+- **github**: https://github.com/Sallenmoore/autonomous
+
+### Container Apps
 
 Autonomous has minimally 2 container components:
 
@@ -14,91 +34,48 @@ Autonomous has minimally 2 container components:
 - **test**
   - access documentation on port:6000
   - Test app for the library
-  
----
-
-## Stack Documentation
-
-### Docker
-
-- [Docker](https://docs.docker.com/)
-- [Docker Compose](https://github.com/compose-spec/compose-spec/blob/master/spec.md)
-
-### Server
-
-- [nginx](https://docs.nginx.com/nginx/)
-- [gunicorn](https://docs.gunicorn.org/en/stable/configure.html)
-
-### Backend Stack
-
-- [Python](https://docs.python.org/3.9/)
-- [Flask](https://flask.palletsprojects.com/en/2.1.x/)
-
-### Frontend Stack
-
-- [Materialize](https://materializecss.com/select.html)
-- [JQuery](https://api.jquery.com/)
-
-### Database
-
-- [TinyDB](https://tinydb.readthedocs.io/en/latest/usage.html)
-
-### Testing
-
-- [pytest](https://docs.pytest.org/en/7.1.x/reference/reference.html)
-- [coverage](https://coverage.readthedocs.io/en/6.4.1/cmd.html)
-
-### Documentation
-
-- [pdoc](https://pdoc.dev/docs/pdoc/doc.html)
-- [highlight.js](https://highlightjs.org/)
 
 ---
 
-## Developer Notes
+## Make PyPi Update
 
-### Start/Status/Stop Commands
+```
+rm -rf dist && python3 -m build && pip install -e . && python3 -m twine upload --verbose --repository testpypi dist/*
+```
 
-- build and start the container
-  - `docker-compose up --build -d`
-- container status
-  - `docker-compose ps -a`
-- run a command in the container
-  - `docker-compose exec -option <service name> <command>`
-- stop and remove running containers
-  - `docker-compose down --remove-orphans`
-- stop all running containers
-  - `sudo docker kill $(sudo docker ps -q)`
-- remove all stopped containers
-  - `sudo docker rm $(sudo docker ps -a -q)`
+## Run Tests
 
-### Run Tests
+```
+pytest ./tests --log-level=INFO -rx -l -x; rm -rf tables
+```
 
-- To run tests:
-  - `sudo docker-compose exec <service name> pytest --log-level=INFO -rx -l -x`
-- To run only < name > tests on the `api` service:
-  - `sudo docker-compose exec <service name>  pytest --log-level=INFO -rA -l -x -k "<test_target>"`
-- To check test coverage:
-  - `sudo docker-compose exec <service name>  coverage run -m pytest ...`
+## Show Logs
 
-### Read Logs
+- `sudo docker logs -f --since=15m -t test`
 
-- `sudo docker logs --since=15m -t <container>`
-- `sudo docker logs -f --since=15m -t <container> &`
-  - follows as a background process
+## Dependencies
 
-### BUGS
-
-
-
-### TODOs
-
-1. Improve database storage
-2. Improve database search
-2. Auto generate API documentation
-
-### IMPROVEMENTS
-
----
-
-### Misc Notes
+- **Languages**
+  - [Python 3.9](/Dev/language/python)
+- **Frameworks**
+  - [Flask](https://flask.palletsprojects.com/en/2.1.x/)
+- **Containers**
+  - [Docker](https://docs.docker.com/)
+  - [Docker Compose](https://github.com/compose-spec/compose-spec/blob/master/spec.md)
+- **Server**
+  - [nginx](https://docs.nginx.com/nginx/)
+  - [gunicorn](https://docs.gunicorn.org/en/stable/configure.html)
+- **Networking and Serialization**
+  - [jsonpickle](https://jsonpickle.github.io/api.html#jsonpickle-high-level-api)
+  - [requests](https://requests.readthedocs.io/en/latest/)
+- **Database**
+  - [TinyDB](https://tinydb.readthedocs.io/en/latest/usage.html)
+- **Frontend Stack**
+  - [Materialize](https://materializecss.com/select.html)
+  - [JQuery](https://api.jquery.com/)
+- **Testing**
+  - [pytest](/Dev/tools/pytest)
+  - [coverage](https://coverage.readthedocs.io/en/6.4.1/cmd.html)
+- **Documentation**
+  - [pdoc](https://pdoc.dev/docs/pdoc/doc.html)
+  - [highlight.js](https://highlightjs.org/)

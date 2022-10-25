@@ -51,7 +51,7 @@ class Table:
         try:
             self._table.remove(doc_ids=[pk,]) 
         except Exception as e:
-            log(e)
+            #log(e)
             return None
         else:
             return pk
@@ -73,7 +73,7 @@ class Table:
                 
         objs = self.all()
         if not objs:
-            log("No objects found")
+            #"No objects found")
             return []
         matches = []
         for obj in objs:
