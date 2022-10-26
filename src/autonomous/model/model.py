@@ -107,17 +107,12 @@ class Model(BaseModel):
             self.model_class = self.__class__.model_class
 
         obj_dict = {}
-        # for k,v in self.__dict__.items():
-        #     if k in self.attributes:
-        #         try:
-        #             obj_dict[k] = self.__class__.attributes[k](v)
-        #             obj_dict[k] = jsonpickle.encode(obj_dict[k])
-        #         except TypeError as e:
-        #             log(f"ERROR: {e} \n [attribute name]: {k} [type]: {type(v)}", LEVEL="INFO")
-        #             obj_dict[k] = None
         for k,v in self.__class__.attributes.items():
             try:
-                obj_dict[k] = v(self.__dict__[k]) if self.__dict__[k] else None
+                if hasattr(obj_dict[k], "serialize"):
+                    obj_dict[k] = obj_dict[k].serialize()
+                else:
+                    obj_dict[k] = v(self.__dict__[k]) if self.__dict__[k] else None
             except TypeError as e:
                 log(f"ERROR: {e} \n [attribute name]: {k} [type]: {type(v)}", LEVEL="INFO")
             else:
@@ -144,5 +139,8 @@ class Model(BaseModel):
             try:
                 obj_attr[k] = jsonpickle.decode(v, **kwargs)
             except Exception as e:
-                log(f"[ {e} ] cannot decode data -- {pickled_obj[k]}: {v}")
+                log(f"[ {e} ] cannot decode data -- {k}: {v}")
+
+            if hasattr(obj_attr[k], 'deserialize'):
+                obj_attr[k] = obj_attr[k].deserialize(obj_attr[k]) 
         return cls(**obj_attr)

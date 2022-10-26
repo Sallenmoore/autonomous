@@ -21,7 +21,7 @@ A framework that attempts to make it easy to create self-contained applications 
 ## Basic Info
 
 - **Latest Version**: 0.0.5
-- **pypi**: https://test.pypi.org/project/autonomous/0.0.4/
+- **pypi**: https://test.pypi.org/project/autonomous/0.0.5/
 - **github**: https://github.com/Sallenmoore/autonomous
 
 ### Container Apps
