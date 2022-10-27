@@ -24,7 +24,7 @@ class Table:
         """
         [summary]
         """
-        log(obj)
+        #log(obj)
         if not obj.get('pk'):
             #log(len(self._table))
             #log(self._table.all()[-1])
