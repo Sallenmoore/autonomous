@@ -12,29 +12,24 @@ class Model(BaseModel):
     _attributes = {"pk":int, "model_class":str, "attributes":dict}
     
     def __init__(self, **kwargs):
-        
+        #log(LEVEL="DEBUG")
         self.pk = kwargs.get('pk')
-        rec = self.table().get(self.pk)
-        #log(self.__dict__)
-        if rec:
+        
+        if rec:= self.table().get(self.pk):
             self.__dict__.update(rec.__dict__)
-        for k,v in self.__class__.attributes.items():
+            
+        for k,v in kwargs.items():
             # valid attribute - cast to verify value is valid
-            if kwargs.get(k):
-                kwargs[k] = self.__class__.attributes[k](kwargs[k])
+            if k in self.__class__.attributes and kwargs[k] and not isinstance(kwargs[k], Model) :
+                    self.__class__.attributes[k](kwargs[k])
                 #log(f"attribute set: {k}=>{kwargs[k]}", LEVEL="INFO")
-            # attribute not set - set to default value
-            elif not hasattr(self, k):
-                kwargs[k] = self.__class__.attributes[k]()
-                #log(f"attribute not set, setting to default: {k}=>{kwargs[k]}", LEVEL="INFO")
-            else:
-                #log(f" data invalid: {k}=>{v}", LEVEL="INFO")
-                pass
-                
+            
+        log(self.__class__.__name__,kwargs)
         self.__dict__.update(kwargs)
-        #log(self.__dict__)
+        #log(self.__class__.__name__,self.__dict__)
 
     def save(self):
+        log(LEVEL="DEBUG")
         """
         save() :save object to db
         """
@@ -78,6 +73,7 @@ class Model(BaseModel):
 
     @classmethod
     def get(cls, pk=None):
+        #log(LEVEL="DEBUG")
         """
         get - 
         params: pk
@@ -86,14 +82,17 @@ class Model(BaseModel):
         #log(f"obj: {self}")
         data = cls.table().get(pk)
         #log(f"obj: {data}")
-        return cls.deserialize(data)
+        ddata = cls.deserialize(data)
+        #log(f"obj: {ddata}")
+        return ddata
 
     ############################## Serialization ########################################
     def serialize(self):
+        #log(LEVEL="INFO")
         """
         
         """
-        #log(self.__class__.attributes)
+        #log(self)
         if hasattr(self.__class__, "attributes"):
             self.attributes = self.__class__.attributes
             self.model_class = self.__class__.model_class
@@ -109,8 +108,6 @@ class Model(BaseModel):
             if hasattr(attrib, "serialize"):
                 #log(f"\nserializing...")
                 obj_dict[k] = attrib.serialize()
-            elif k == "pk":
-                obj_dict[k] = attrib
             else:
                 #log(f"no serialize")
                 try:
@@ -131,6 +128,7 @@ class Model(BaseModel):
 
     @classmethod
     def deserialize(cls, pickled_obj, **kwargs):
+        #log(pickled_obj)
         """
         _summary_
 
@@ -142,11 +140,13 @@ class Model(BaseModel):
         
         obj_attr = {}
         for k,v in pickled_obj.items():
-            try:
-                obj_attr[k] = jsonpickle.decode(str(v), **kwargs)
-            except Exception as e:
-                log(f"[ {e} ] cannot decode data -- {k}: {v}")
+            if isinstance(v, dict):
+                log(cls)
+                obj_attr[k] = cls.attributes[k].deserialize(v)
             else:
-                if hasattr(obj_attr[k], 'deserialize'):
-                    obj_attr[k] = obj_attr[k].deserialize(obj_attr[k]) 
+                try:
+                    obj_attr[k] = jsonpickle.decode(v, **kwargs)
+                except Exception as e:
+                    log(f"[ {e} ] cannot decode data -- {k}: {v}")
+        #log(obj_attr)
         return cls(**obj_attr)

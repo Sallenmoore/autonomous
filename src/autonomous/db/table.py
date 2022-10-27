@@ -25,17 +25,18 @@ class Table:
         [summary]
         """
         #log(obj)
-        if not obj.get('pk'):
+        #make it work even if pk has not been pickled
+        try:
+            pk = jsonpickle.decode(obj.get('pk'))
+        except TypeError:
+            pk = obj.get('pk')
+        #log(obj, pk)      
+        if not pk:
             #log(len(self._table))
             #log(self._table.all()[-1])
             pk = self._table.all()[-1].doc_id+1 if len(self._table) else 1
             obj["pk"] = jsonpickle.encode(pk)
-        else:
-            #make it work even if pk has not been pickled
-            try:
-                pk = jsonpickle.decode(obj.get('pk'))
-            except TypeError:
-                pk = obj.get('pk')
+
         #log(f"pk: {obj['pk']}")
         new_pk = self._table.upsert(table.Document(obj, doc_id=pk)).pop()
         #log(f"old_pk:{pk}, new_pk:{new_pk}")

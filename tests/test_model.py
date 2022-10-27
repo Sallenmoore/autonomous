@@ -45,7 +45,6 @@ def test_model_create():
     assert isinstance(model_testerA.value, int)
     assert isinstance(model_testerA.keystore, dict)
 
-
 def test_model_read():
     a_pk = model_tester().save()
     b_pk = model_tester().save()
@@ -67,23 +66,24 @@ def test_model_attributes_type():
     resultC = model_tester()
     resultC.status = None
     resultC.save()
+    #log(resultC)
     resultC = ModelTest.get(resultC.pk)
-    log(resultC)
+    #log(resultC)
     assert not resultC.status
     
 
 def test_model_update():
     model_testerA = model_tester()
     model_testerB = model_tester()
-    model_testerA.status = "Changed"
-    model_testerB.status = "Altered"
+    model_testerA.name = "Changed"
+    model_testerB.name = "Altered"
     model_testerA.save()
     model_testerB.save()
     resultA = ModelTest.get(model_testerA.pk)
     resultB = ModelTest.get(model_testerB.pk)
     assert resultA.status != resultB.status
-    assert resultA.status == "Changed"
-    assert resultB.status == "Altered"
+    assert resultA.name == "Changed"
+    assert resultB.name == "Altered"
 
     model_testerA.collection.append("Changed")
     model_testerB.keystore["added"] = "Altered"
@@ -168,24 +168,12 @@ def test_submodel_attributes_type():
 def test_submodel_update():
     model_testerA = model_tester()
     model_testerB = model_tester()
-    model_testerA.status = "Changed"
-    model_testerB.status = "Altered"
+    model_testerA.status.name = "Changed"
+    model_testerB.status.name = "Altered"
     model_testerA.save()
     model_testerB.save()
     resultA = ModelTest.get(model_testerA.pk)
     resultB = ModelTest.get(model_testerB.pk)
     assert resultA.status != resultB.status
-    assert resultA.status == "Changed"
-    assert resultB.status == "Altered"
-
-    model_testerA.collection.append("Changed")
-    model_testerB.keystore["added"] = "Altered"
-    model_testerA.save()
-    model_testerB.save()
-    resultA = ModelTest.get(model_testerA.pk)
-    resultB = ModelTest.get(model_testerB.pk)
-    assert isinstance(resultA.collection, list)
-    assert isinstance(resultB.keystore, dict)
-    assert "Changed" in resultA.collection
-    assert "added" in resultB.keystore
-    assert resultB.keystore['added'] == "Altered"
+    assert resultA.status.name == "Changed"
+    assert resultB.status.name == "Altered"

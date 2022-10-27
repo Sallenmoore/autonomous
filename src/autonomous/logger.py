@@ -21,7 +21,7 @@ class Logger:
         caller = inspect.stack()[1]
         fn = caller.filename.split('/')[-1]
         msg = "\n\t".join([str(x) for x in args])
-        built_in_log.log(level, f"\n{'='*40}\n{caller.function}():{caller.lineno}\n\n\t{msg}\n")
+        built_in_log.log(level, f"\n{'='*40}\n{fn}:{caller.function}()[{caller.lineno}]\n\n\t{msg}\n")
 
 
 # Global logger instance
