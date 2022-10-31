@@ -24,10 +24,17 @@ class Model(BaseModel):
                     self.__class__.attributes[k](kwargs[k])
                 #log(f"attribute set: {k}=>{kwargs[k]}", LEVEL="INFO")
             
-        log(self.__class__.__name__,kwargs)
+        #log(self.__class__.__name__,kwargs)
         self.__dict__.update(kwargs)
         #log(self.__class__.__name__,self.__dict__)
 
+    def __getattr__(self, attr):
+
+        if attr in self.attributes:
+            return None
+
+        raise AttributeError
+    
     def save(self):
         log(LEVEL="DEBUG")
         """
@@ -114,8 +121,8 @@ class Model(BaseModel):
                     #log(f"Attempting cast...")
                     obj_dict[k] = v(attrib) if attrib else None
                 except TypeError as e:
-                    #log(f"ERROR: {e} -- casting failed")
-                    raise
+                    log(f"ERROR: {e} -- casting failed")
+                    obj_dict[k] = None
                 else:
                     obj_dict[k] = jsonpickle.encode(attrib)
                     #log(f"Cast and serialize successful")
