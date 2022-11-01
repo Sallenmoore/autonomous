@@ -1,4 +1,5 @@
 import pytest
+from datetime import datetime
 from autonomous.logger import log
 from autonomous.model.model import Model
 
@@ -13,6 +14,7 @@ class ModelTest(Model):
     attributes = {
         "name": str,
         "status": SubModelTest,
+        "thing_date": datetime,
         "collection": list,
         "value": int,
         "nothing": str,
@@ -29,6 +31,7 @@ def model_tester():
     mt.nothing = None
     mt.keystore = {"test1": "value1", "test2": "value2"}
     mt.invalid_attribute = "This should not be saved"
+    mt.thing_date = datetime.today()
     mt.save()
     return mt
 
@@ -61,6 +64,8 @@ def test_model_read():
     assert isinstance(resultB.collection, list)
     assert isinstance(resultB.value, int)
     assert isinstance(resultB.keystore, dict)
+    assert resultB.thing_date.day == datetime.today().day
+    assert resultB.thing_date.hour == datetime.today().hour
     
 def test_model_attributes_type():
     resultC = model_tester()

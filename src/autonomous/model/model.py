@@ -18,14 +18,9 @@ class Model(BaseModel):
         if rec:= self.table().get(self.pk):
             self.__dict__.update(rec.__dict__)
             
-        for k,v in kwargs.items():
-            # valid attribute - cast to verify value is valid
-            if k in self.__class__.attributes and kwargs[k] and not isinstance(kwargs[k], Model) :
-                    self.__class__.attributes[k](kwargs[k])
-                #log(f"attribute set: {k}=>{kwargs[k]}", LEVEL="INFO")
-            
         #log(self.__class__.__name__,kwargs)
         self.__dict__.update(kwargs)
+        self.validate()
         #log(self.__class__.__name__,self.__dict__)
 
     def __getattr__(self, attr):
@@ -94,16 +89,26 @@ class Model(BaseModel):
         return ddata
 
     ############################## Serialization ########################################
+    def validate(self):
+        for k,v in self.__dict__.items():
+            # valid attribute - cast to verify value is valid
+            if k in self.__class__.attributes and self.__class__.attributes[k] != type(v):
+                try:
+                    setattr(self, k, self.__class__.attributes[k](v))
+                except Exception as e:
+                    log(f"ERROR: {e} -- casting {k} to {self.__class__.attributes[k]} failed")
+                    setattr(self, k, None) #NOT SURE ABOUT THIS - MAYBE JUST RAISE ERROR to enforce strict typing?
+                    
     def serialize(self):
         #log(LEVEL="INFO")
         """
         
         """
         #log(self)
-        if hasattr(self.__class__, "attributes"):
-            self.attributes = self.__class__.attributes
-            self.model_class = self.__class__.model_class
-
+        self.attributes = self.__class__.attributes
+        self.model_class = self.__class__.model_class
+        self.validate()
+        
         obj_dict = {}
         for k,v in self.__class__.attributes.items():
             try:
@@ -116,17 +121,9 @@ class Model(BaseModel):
                 #log(f"\nserializing...")
                 obj_dict[k] = attrib.serialize()
             else:
-                #log(f"no serialize")
-                try:
-                    #log(f"Attempting cast...")
-                    obj_dict[k] = v(attrib) if attrib else None
-                except TypeError as e:
-                    log(f"ERROR: {e} -- casting failed")
-                    obj_dict[k] = None
-                else:
-                    obj_dict[k] = jsonpickle.encode(attrib)
+                obj_dict[k] = jsonpickle.encode(attrib)
                     #log(f"Cast and serialize successful")
-        log(obj_dict)
+        #log(obj_dict)
         return obj_dict
     
     @classmethod
@@ -148,7 +145,7 @@ class Model(BaseModel):
         obj_attr = {}
         for k,v in pickled_obj.items():
             if isinstance(v, dict):
-                log(cls)
+                log(k, v)
                 obj_attr[k] = cls.attributes[k].deserialize(v)
             else:
                 try:
