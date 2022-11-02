@@ -79,6 +79,7 @@ class Model(BaseModel):
         return: Always returns single objecrt
         """
         #log(f"obj: {self}")
+        pk = cls.attributes['pk'](pk) #TODO: added cast to type, need to test
         data = cls.table().get(pk)
         #log(f"obj: {data}")
         ddata = cls.deserialize(data)
