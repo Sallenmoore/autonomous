@@ -20,20 +20,21 @@ class RecordTest:
         record['stuff'] = record.get('stuff')
         return cls(**record)
 
-@pytest.fixture
-def db_tester():
+def db_test_obj():
     db = Database()
     table = db.get_table("RecordTest")
-    yield table
     table.clear()
+    return table
 
 #############################   TESTS FOR db.py   #############################
-def test_db_create(db_tester):
+def test_db_create():
+    db_tester = db_test_obj()
     t = RecordTest()
     t.pk = db_tester.update(t.serialize())
     assert t.pk > 0
 
-def test_db_read(db_tester):
+def test_db_read():
+    db_tester = db_test_obj()
     t = RecordTest()
     t.pk = db_tester.update(t.serialize())
     #log(t.pk)
@@ -42,7 +43,8 @@ def test_db_read(db_tester):
     assert t.pk == obj.pk
     assert obj.num == 5
 
-def test_db_update(db_tester):
+def test_db_update():
+    db_tester = db_test_obj()
     t = RecordTest()
     t.pk = db_tester.update(t.serialize())
     rec = db_tester.get(t.pk)
@@ -55,14 +57,16 @@ def test_db_update(db_tester):
     assert obj.pk == pk
     assert obj.num == 6
 
-def test_db_delete(db_tester):
+def test_db_delete():
+    db_tester = db_test_obj()
     t = RecordTest()
     t.pk = db_tester.update(t.serialize())
     obj = RecordTest.deserialize(db_tester.get(t.pk))
     db_tester.delete(obj.pk)
     assert not db_tester.get(t.pk)
 
-def test_db_search(db_tester):
+def test_db_search():
+    db_tester = db_test_obj()
     t = RecordTest()
     db_tester.update(t.serialize())
     t.pk = None
@@ -83,7 +87,8 @@ def test_db_search(db_tester):
     results = [RecordTest.deserialize(o) for o in db_tester.search(name="xxx")]
     assert len(results) == 0
     
-def test_db_all(db_tester):
+def test_db_all():
+    db_tester = db_test_obj()
     num = 10
     t = RecordTest()
     for i in range(num):

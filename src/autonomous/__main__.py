@@ -1,9 +1,15 @@
 import os, sys, shutil
 
 def createapp(app_name):
-    task = sys.argv[1]
+    """
+    _summary_
 
-    app_template = os.path.join(os.path.dirname(__file__), "app_template/test")
+    _extended_summary_
+
+    Args:
+        app_name (_type_): _description_
+    """
+    app_template = os.path.join(os.path.dirname(__file__), "app_template/app")
 
     shutil.copytree(app_template, f"./app/{app_name}")
 

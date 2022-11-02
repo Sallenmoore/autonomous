@@ -31,11 +31,15 @@ class Model(BaseModel):
         raise AttributeError
     
     def save(self):
-        log(LEVEL="DEBUG")
+        #log(LEVEL="DEBUG")
         """
         save() :save object to db
         """
         #log(self)
+        #save any submodels
+        for val in self.__dict__.values():
+            if hasattr(val, "save") and callable(val.save):
+                val.save()
         self.pk = self.__class__.table().update(self.serialize())
         return self.pk
 
@@ -48,14 +52,7 @@ class Model(BaseModel):
         if not hasattr(cls, "_table") or not cls._table:
             cls.model_class = cls.__name__
             cls._table = db.get_table(cls.model_class)
-            try:
-                cls.attributes.update(Model._attributes)
-            except AttributeError:
-                log("""
-                    Models must have a class variable called 'attributes' that is a dict in the form:
-                    attributes = {"attribute_name":attribute_type}
-                """)
-                raise
+            cls.attributes.update(Model._attributes)
         return cls._table
     
     @classmethod
@@ -96,7 +93,7 @@ class Model(BaseModel):
                 try:
                     setattr(self, k, self.__class__.attributes[k](v))
                 except Exception as e:
-                    log(f"ERROR: {e} -- casting {k} to {self.__class__.attributes[k]} failed")
+                    #log(f"ERROR: {e} -- casting {k} to {self.__class__.attributes[k]} failed")
                     setattr(self, k, None) #NOT SURE ABOUT THIS - MAYBE JUST RAISE ERROR to enforce strict typing?
                     
     def serialize(self):
@@ -145,12 +142,13 @@ class Model(BaseModel):
         obj_attr = {}
         for k,v in pickled_obj.items():
             if isinstance(v, dict):
-                log(k, v)
+                #log(k, v)
                 obj_attr[k] = cls.attributes[k].deserialize(v)
             else:
                 try:
                     obj_attr[k] = jsonpickle.decode(v, **kwargs)
                 except Exception as e:
-                    log(f"[ {e} ] cannot decode data -- {k}: {v}")
-        #log(obj_attr)
+                    pass
+                    #log(f"[ {e} ] cannot decode data -- {k}: {v}")
+        #log(cls, obj_attr)
         return cls(**obj_attr)

@@ -13,8 +13,13 @@ class Table:
         """
         [summary]
         """
-        db = TinyDB(f"{path}/{name}.json")
+        self.path = path
+        db = TinyDB(f"{self.path}/{name}.json")
         self._table = db.table(name=name)
+
+    @property
+    def db(self):
+        return TinyDB(f"{self.path}/{self.name}.json")
 
     @property
     def name(self):

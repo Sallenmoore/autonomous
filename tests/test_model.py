@@ -123,10 +123,14 @@ def test_search():
 
 
 def test_all():
+    results = ModelTest.all()
     model_testerA = model_tester()
     model_testerB = model_tester()
     results = ModelTest.all()
     [o.delete() for o in results]
+    results = ModelTest.all()
+    assert not results
+    ModelTest.table().db.drop_tables()
     results = ModelTest.all()
     assert not results
 
