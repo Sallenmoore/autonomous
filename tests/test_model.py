@@ -33,6 +33,7 @@ def model_tester():
     mt.invalid_attribute = "This should not be saved"
     mt.thing_date = datetime.today()
     mt.save()
+    assert mt.status
     return mt
 
 

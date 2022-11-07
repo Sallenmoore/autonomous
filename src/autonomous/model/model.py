@@ -22,25 +22,20 @@ class Model(BaseModel):
         self.__dict__.update(kwargs)
         self.validate()
         #log(self.__class__.__name__,self.__dict__)
-
-    def __getattr__(self, attr):
-
-        if attr in self.attributes:
-            return None
-
-        raise AttributeError
     
     def save(self):
         #log(LEVEL="DEBUG")
         """
-        save() :save object to db
+        save(): save object to db
         """
         #log(self)
         #save any submodels
-        for val in self.__dict__.values():
-            if hasattr(val, "save") and callable(val.save):
-                val.save()
-        self.pk = self.__class__.table().update(self.serialize())
+        [val.save()for key, val in self.__dict__.items() if isinstance(val, Model)]
+
+        log(self)
+        serialized_obj = self.serialize()
+        log(serialized_obj)
+        self.pk = self.__class__.table().update(serialized_obj)
         return self.pk
 
     def delete(self):
@@ -78,7 +73,6 @@ class Model(BaseModel):
         params: pk
         return: Always returns single objecrt
         """
-        #log(f"obj: {self}")
         pk = cls.attributes['pk'](pk) #TODO: added cast to type, need to test
         data = cls.table().get(pk)
         #log(f"obj: {data}")
@@ -89,15 +83,16 @@ class Model(BaseModel):
     ############################## Serialization ########################################
     def validate(self):
         for k,v in self.__dict__.items():
-            # valid attribute - cast to verify value is valid
-            if k in self.__class__.attributes and self.__class__.attributes[k] != type(v):
-                try:
+            # valid attribute - verify value is valid
+            if v and k in self.__class__.attributes:
+                #check if it is a model object
+                if issubclass(self.__class__.attributes[k], Model):
+                    assert isinstance(v, Model) or "__auto_pk" in v
+                elif self.__class__.attributes[k] != type(v):
                     setattr(self, k, self.__class__.attributes[k](v))
-                except Exception as e:
-                    #log(f"ERROR: {e} -- casting {k} to {self.__class__.attributes[k]} failed")
-                    setattr(self, k, None) #NOT SURE ABOUT THIS - MAYBE JUST RAISE ERROR to enforce strict typing?
+                    #NOT SURE ABOUT THIS - MAYBE JUST RAISE WARNING rather than enforce strict typing?
                     
-    def serialize(self):
+    def serialize(self, full_object=False):
         #log(LEVEL="INFO")
         """
         
@@ -109,19 +104,17 @@ class Model(BaseModel):
         
         obj_dict = {}
         for k,v in self.__class__.attributes.items():
+
             try:
                 attrib = getattr(self, k)
             except:
                 continue
 
-            #log(f"{self.__class__}", f"{self.__dict__}", f"{k} = {attrib}", f"actual type: {type(attrib)}", f"expected type: {v}")
-            if hasattr(attrib, "serialize"):
-                #log(f"\nserializing...")
-                obj_dict[k] = attrib.serialize()
-            else:
-                obj_dict[k] = jsonpickle.encode(attrib)
-                    #log(f"Cast and serialize successful")
-        #log(obj_dict)
+            if not full_object and isinstance(attrib, Model):
+                attrib = {"__auto_pk":attrib.pk, "__auto_model":v.__name__}
+
+            obj_dict[k] = jsonpickle.encode(attrib)
+
         return obj_dict
     
     @classmethod
@@ -142,14 +135,12 @@ class Model(BaseModel):
         
         obj_attr = {}
         for k,v in pickled_obj.items():
-            if isinstance(v, dict):
-                #log(k, v)
-                obj_attr[k] = cls.attributes[k].deserialize(v)
-            else:
-                try:
-                    obj_attr[k] = jsonpickle.decode(v, **kwargs)
-                except Exception as e:
-                    pass
-                    #log(f"[ {e} ] cannot decode data -- {k}: {v}")
-        #log(cls, obj_attr)
+            try:
+                obj_attr[k] = jsonpickle.decode(v, **kwargs)
+            except Exception as e:
+                log(f"[ {e} ] cannot decode data -- {k}: {v}")
+                continue
+            if isinstance(obj_attr[k], dict) and "__auto_pk" in obj_attr[k]:
+                obj_attr[k] = cls.attributes[k].get(obj_attr[k]["__auto_pk"])
+        log(cls, obj_attr)
         return cls(**obj_attr)
