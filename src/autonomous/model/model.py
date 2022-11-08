@@ -12,9 +12,11 @@ class Model(BaseModel):
     _attributes = {"pk":int, "model_class":str, "attributes":dict}
     
     def __init__(self, **kwargs):
-        #log(LEVEL="DEBUG")
+        for k,v in self.__class__.attributes.items():
+            setattr(self, k, None)
+            
         self.pk = kwargs.get('pk')
-        
+            
         if rec:= self.table().get(self.pk):
             self.__dict__.update(rec.__dict__)
             
@@ -90,7 +92,8 @@ class Model(BaseModel):
                 if issubclass(self.__class__.attributes[k], Model):
                     assert isinstance(v, Model) or "__auto_pk" in v
                 elif self.__class__.attributes[k] != type(v):
-                    setattr(self, k, self.__class__.attributes[k](v))
+                    log(f"type not equal k:{k} v:{v}")
+                    #setattr(self, k, self.__class__.attributes[k](v))
                     #NOT SURE ABOUT THIS - MAYBE JUST RAISE WARNING rather than enforce strict typing?
                     
     def serialize(self, full_object=False):
