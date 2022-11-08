@@ -24,7 +24,6 @@ class Model(BaseModel):
         #log(self.__class__.__name__,self.__dict__)
     
     def save(self):
-        #log(LEVEL="DEBUG")
         """
         save(): save object to db
         """
@@ -73,7 +72,9 @@ class Model(BaseModel):
         params: pk
         return: Always returns single objecrt
         """
-        pk = cls.attributes['pk'](pk) #TODO: added cast to type, need to test
+        if not pk:
+            return None
+        
         data = cls.table().get(pk)
         #log(f"obj: {data}")
         ddata = cls.deserialize(data)
@@ -142,5 +143,5 @@ class Model(BaseModel):
                 continue
             if isinstance(obj_attr[k], dict) and "__auto_pk" in obj_attr[k]:
                 obj_attr[k] = cls.attributes[k].get(obj_attr[k]["__auto_pk"])
-        log(cls, obj_attr)
+        #log(cls, obj_attr)
         return cls(**obj_attr)
