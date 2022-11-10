@@ -10,4 +10,4 @@ class Config:
     HOST=os.environ.get('HOST', '0.0.0.0')
     PORT=os.environ.get('PORT', 6000)
     API_PORT=os.environ.get('API_PORT', 6000)
-    LOG_LEVEL = logging.INFO
+    LOG_LEVEL = os.environ.get("LOG_LEVEL", logging.INFO)

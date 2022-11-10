@@ -1,7 +1,17 @@
 import inspect
 import logging
+import os
 
-LOG_LEVEL = logging.INFO
+LOG_KEYS = {"DEBUG": logging.DEBUG, "INFO": logging.INFO, "WARNING": logging.WARNING, "ERROR": logging.ERROR, "CRITICAL": logging.CRITICAL}
+
+def get_log_level():
+    lvl = os.environ.get("LOG_LEVEL")
+    if lvl:
+        return LOG_KEYS[lvl]
+    else:
+        return logging.INFO
+
+LOG_LEVEL = get_log_level()
 
 class LogFilter(logging.Filter):
     def filter(self, record):
@@ -12,9 +22,6 @@ built_in_log = logging.getLogger(__name__)
 built_in_log.addFilter(LogFilter())
 
 class Logger:
-
-    def __init__(LEVEL=LOG_LEVEL):
-        LOG_LEVEL = LEVEL
 
     def __call__(self, *args, LEVEL=None):
         level = logging.getLevelName(LEVEL) if LEVEL else LOG_LEVEL

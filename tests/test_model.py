@@ -148,6 +148,13 @@ def test_submodel_create():
     assert isinstance(model_testerA.value, int)
     assert isinstance(model_testerA.keystore, dict)
 
+    model_testerA.collection = [SubModelTest(name="I am test. Hear me test.") for i in range(3)]
+    model_testerA.save()
+    resultA = ModelTest.get(model_testerA.pk)
+    log(resultA.collection)
+    assert len(resultA.collection) == 3
+    assert resultA.collection[0].name == "I am test. Hear me test."
+
 
 def test_submodel_read():
     a_pk = model_tester().save()
