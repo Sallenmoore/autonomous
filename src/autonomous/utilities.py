@@ -35,7 +35,7 @@ def package_response(error="", data=None, api_path=""):
         data = [data,]
     count = len(data)
     try:
-        response = [d.serialize(full_object=True) for d in data]
+        response = [d.serialize() for d in data]
     except AttributeError:
         response = data
 
@@ -66,6 +66,13 @@ def unpackage_response(data=None):
     #log(data)
     data = data['data']
     items = Model.deserialize(data)
-    #log(f"items: {items}")
+    for i, o in enumerate(data):
+        if isinstance(o, Model):
+            log(o, type(o))
+        elif isinstance(o, list):
+            for i, o in enumerate(o):
+                if isinstance(o, Model):
+                    log(o)
+                    attrib[i] = o
     
     return items

@@ -135,8 +135,7 @@ class Model(BaseModel):
                 elif isinstance(attrib, list):
                     for i, o in enumerate(attrib):
                         if isinstance(o, Model):
-                            attrib[i] = {"__auto_pk":o.pk, "__auto_model":o.__class__} 
-                    
+                            attrib[i] = {"__auto_pk":o.pk, "__auto_model":o.__class__}
             log(f" {k}:{attrib}", LEVEL="DEBUG")
 
             obj_dict[k] = jsonpickle.encode(attrib)

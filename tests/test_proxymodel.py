@@ -10,8 +10,11 @@ import pytest
 from unittest.mock import MagicMock, patch
 import json
 
+class SubModelTest(ProxyModel):
+    API_URL = f"http://localhost/submodeltest"
+
 class ProxyModelTest(ProxyModel):
-    API_URL = f"http://localhost"
+    API_URL = f"http://localhost/proxymodeltest"
 
 
 def proxymodel_tester(**kwargs):
@@ -21,6 +24,7 @@ def proxymodel_tester(**kwargs):
     mt.collection = ["one", "two", "three"]
     mt.value = 100
     mt.keystore = {"test1": "value1", "test2": "value2"}
+    mt.sub= SubModelTest()
     mt.__dict__.update(kwargs)
     return mt
 
@@ -38,7 +42,7 @@ def test_model_create(requests):
     pmt.save()
 
     requests.assert_called_with(
-        'http://localhost/create',
+        'http://localhost/proxymodeltest/create',
         json={'data':pmt.serialize()},
         headers={'Content-type': 'application/json', 'Accept': 'text/plain'}
     )
@@ -56,8 +60,22 @@ def test_model_get(requests):
 
     pm = ProxyModelTest.get(1)
 
-    requests.assert_called_with('http://localhost/1',)
+    requests.assert_called_with('http://localhost/proxymodeltest/1',)
+    
+@patch('autonomous.model.proxymodel.requests.get')
+def test_submodel_get(requests):
+    # Configure the requests
+    pmt = proxymodel_tester()
+    pmt.pk = 1
+    
+    serialize_mock = MagicMock()
+    serialize_mock.json.return_value = package_response(data=pmt)
+    requests.return_value = serialize_mock
 
+    pm = ProxyModelTest.get(1)
+    assert type(pm.sub) == SubModelTest
+
+    requests.assert_called_with('http://localhost/proxymodeltest/1',)
 
 @patch('autonomous.model.proxymodel.requests.post')
 def test_model_update(requests):
@@ -73,7 +91,7 @@ def test_model_update(requests):
     pmt.save()
 
     requests.assert_called_with(
-        'http://localhost/update',
+        'http://localhost/proxymodeltest/update',
         json={'data':pmt.serialize()},
         headers={'Content-type': 'application/json', 'Accept': 'text/plain'}
     )
@@ -93,7 +111,7 @@ def test_model_delete(requests):
     pmt.delete()
 
     requests.assert_called_with(
-        'http://localhost/delete',
+        'http://localhost/proxymodeltest/delete',
         json={'data':pmt.pk},
         headers={'Content-type': 'application/json', 'Accept': 'text/plain'}
     )
@@ -111,7 +129,7 @@ def test_search(requests):
     requests.return_value = serialize_mock
 
     results = ProxyModelTest.search(name="ProxyTest")
-    requests.assert_called_once_with('http://localhost/search?name=ProxyTest',)
+    requests.assert_called_once_with('http://localhost/proxymodeltest/search?name=ProxyTest',)
     
     assert results
     assert results[0].name == "ProxyTest"
@@ -129,7 +147,7 @@ def test_all(requests):
     requests.return_value = serialize_mock
 
     results = ProxyModelTest.all()
-    requests.assert_called_once_with('http://localhost/all',)
+    requests.assert_called_once_with('http://localhost/proxymodeltest/all',)
     
     assert results
     assert results[0].name == "ProxyTest"

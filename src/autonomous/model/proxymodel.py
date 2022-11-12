@@ -6,8 +6,7 @@ import pprint
 import json
 import jsonpickle
 from pydoc import locate
-
-
+    
 class ProxyModel(BaseModel):
 
 
@@ -22,7 +21,6 @@ class ProxyModel(BaseModel):
         """
         #log(f"kwargs: {kwargs}")
         self.__dict__.update(kwargs)
-        
 
 
     def delete(self, api_path="delete"):

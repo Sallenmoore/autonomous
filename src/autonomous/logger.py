@@ -7,7 +7,7 @@ LOG_KEYS = {"DEBUG": logging.DEBUG, "INFO": logging.INFO, "WARNING": logging.WAR
 def get_log_level():
     lvl = os.environ.get("LOG_LEVEL")
     if lvl:
-        return LOG_KEYS[lvl]
+        return LOG_KEYS.get(lvl, logging.INFO)
     else:
         return logging.INFO
 
