@@ -1,28 +1,16 @@
 # Autonomous
 
-***In Development - Not Suitable for Production***
+A local, comtainerized, service based application framework that attempts to make it easy to create self-contained Python applications with minimal dependencies (coming soon!).
 
-# Autonomous
-
-A framework that attempts to make it easy to create self-contained applications with minimal dependencies. Built to be as modular as possible and run entirely in containers.
-
-## TODO
-
-- Setup test app
-- add more testing
-- Improve database storage
-- Improve database search
-- Auto generate API documentation
-
-## Issue Tracking
-
-- None that I am aware of
-
-## Basic Info
-
-- **Latest Version**: 0.0.5
-- **pypi**: https://test.pypi.org/project/autonomous/0.0.5/
+- **Latest Version**: 0.0.16
+- **pypi**: https://test.pypi.org/project/autonomous/0.0.26/
 - **github**: https://github.com/Sallenmoore/autonomous
+
+## Features
+
+- Fully containerized, service based archetecture
+- All services are localized, interfacing walled-garden network
+- Dynamic typed lists, like python.
 
 ### Container Apps
 
@@ -34,24 +22,6 @@ Autonomous has minimally 2 container components:
 - **test**
   - access documentation on port:6000
   - Test app for the library
-
----
-
-## Make PyPi Update
-
-```
-rm -rf dist && python3 -m build && pip install -e . && python3 -m twine upload --verbose --repository testpypi dist/*
-```
-
-## Run Tests
-
-```
-pytest ./tests --log-level=INFO -rx -l -x; rm -rf tables
-```
-
-## Show Logs
-
-- `sudo docker logs -f --since=15m -t test`
 
 ## Dependencies
 
@@ -79,3 +49,38 @@ pytest ./tests --log-level=INFO -rx -l -x; rm -rf tables
 - **Documentation**
   - [pdoc](https://pdoc.dev/docs/pdoc/doc.html)
   - [highlight.js](https://highlightjs.org/)
+
+---
+
+## Developer Notes
+
+### TODO
+
+- Setup test app
+- Add more testing
+- Improve database search
+- Auto generate API documentation
+
+### Issue Tracking
+
+- None
+
+### Make PyPi Update
+
+1. Update version in `pyproject.toml`
+
+2. ```sh
+   rm -rf dist && python3 -m build && pip install -e . && python3 -m twine upload --verbose --repository testpypi dist/*
+   ```
+
+### Run Tests
+
+```sh
+pytest ./tests --log-level=INFO -rx -l -x; rm -rf tables
+```
+
+### Show Logs
+
+```sh
+sudo docker logs -f --since=15m -t app_name`
+```
