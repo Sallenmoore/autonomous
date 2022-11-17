@@ -131,7 +131,7 @@ def test_all():
     [o.delete() for o in results]
     results = ModelTest.all()
     assert not results
-    ModelTest.table().db.drop_tables()
+    ModelTest._table().db.drop_tables()
     results = ModelTest.all()
     assert not results
 

@@ -23,12 +23,6 @@ flask-cors #https://flask-cors.readthedocs.io/en/latest/
 pdoc
 pypandoc
 
-## development
-torch
-diffusers
-transformers 
-scipy
-
 ###### Common Requirements w/ Version Specifiers ######
 
 ##Framework libs

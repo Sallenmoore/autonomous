@@ -17,7 +17,7 @@ class Model(BaseModel):
             
         self.pk = kwargs.get('pk')
             
-        if rec:= self.table().get(self.pk):
+        if rec:= self._table().get(self.pk):
             self.__dict__.update(rec.__dict__)
             
         #log(self.__class__.__name__,kwargs)
@@ -43,7 +43,7 @@ class Model(BaseModel):
         #log(self)
         serialized_obj = self.serialize()
         #log(serialized_obj)
-        self.pk = self.__class__.table().update(serialized_obj)
+        self.pk = self.__class__._table().update(serialized_obj)
         return self.pk
 
     def delete(self, keep_related=False):
@@ -51,20 +51,20 @@ class Model(BaseModel):
             for k,v in self.__dict__.items():
                 if isinstance(v, Model):
                     v.delete()
-        self.__class__.table().delete(self.pk)
+        self.__class__._table().delete(self.pk)
 
     ################## class methods ####################
     @classmethod
-    def table(cls):
-        if not hasattr(cls, "_table") or not cls._table:
+    def _table(cls):
+        if not hasattr(cls, "__table") or not cls.__table:
             cls.model_class = cls.__name__
-            cls._table = db.get_table(cls.model_class)
+            cls.__table = db.get_table(cls.model_class)
             cls.attributes.update(Model._attributes)
-        return cls._table
+        return cls.__table
     
     @classmethod
     def all(cls):
-        return cls.deserialize_list(cls.table().all())
+        return cls.deserialize_list(cls._table().all())
     
     @classmethod
     def search(cls, **kwargs):
@@ -74,7 +74,7 @@ class Model(BaseModel):
         return: Always returned a list
         """
         #log(f"kwargs: {kwargs}")
-        results = cls.table().search(**kwargs)
+        results = cls._table().search(**kwargs)
         return cls.deserialize_list(results)
 
     @classmethod
@@ -88,7 +88,7 @@ class Model(BaseModel):
         if not pk:
             return None
         
-        data = cls.table().get(pk)
+        data = cls._table().get(pk)
         #log(f"obj: {data}")
         ddata = cls.deserialize(data)
         #log(f"obj: {ddata}")
