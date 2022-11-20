@@ -24,6 +24,13 @@ class Model(BaseModel):
         self.__dict__.update(kwargs)
         self.validate()
         #log(self.__class__.__name__,self.__dict__)
+
+    def __getattr__(self, name):
+        attr = self.__dict__[name]
+        if isinstance(attr, dict) and "__auto_pk" in attr:
+            value = cls.attributes[name](**attr["__auto_updates"])
+            setattr(self, name, value)
+        return attr
     
     def save(self):
         """
@@ -52,6 +59,9 @@ class Model(BaseModel):
                 if isinstance(v, Model):
                     v.delete()
         self.__class__._table().delete(self.pk)
+
+    def delete_all(self):
+        self.__class__._table().clear()
 
     ################## class methods ####################
     @classmethod
@@ -108,7 +118,7 @@ class Model(BaseModel):
                     except Exception as e:
                         log(f"type not equal k:{k} v:{v}", e, LEVEL="DEBUG")
 
-    def serialize(self, full_object=False):
+    def serialize(self):
         #log(LEVEL="INFO")
         """
         
@@ -122,10 +132,10 @@ class Model(BaseModel):
         for k,v in self.__class__.attributes.items():
             log(f" k:{k} v:{v}", LEVEL="DEBUG")
 
-            try:
-                attrib = getattr(self, k)
-            except:
-                continue
+            #try:
+            attrib = getattr(self, k)
+            #except:
+            #    continue
 
             log(f" {k}:{attrib}", LEVEL="DEBUG")
             
@@ -160,17 +170,32 @@ class Model(BaseModel):
         
         obj_attr = {}
         for k,v in pickled_obj.items():
-            try:
-                obj_attr[k] = jsonpickle.decode(v, **kwargs)
-            except Exception as e:
-                log(f"[ {e} ] cannot decode data -- {k}: {v}", LEVEL="DEBUG")
-                continue
-            if isinstance(obj_attr[k], dict) and "__auto_pk" in obj_attr[k]:
-                obj_attr[k] = cls.attributes[k].get(obj_attr[k]["__auto_pk"])
-            elif isinstance(obj_attr[k], list):
-                for i, o in enumerate(obj_attr[k]):
-                    if isinstance(o, dict) and "__auto_pk" in o:
-                        obj_attr[k][i] = o['__auto_model'].get(o["__auto_pk"])
-                        
+            obj_attr[k] = cls._decode(v)
         #log(cls, obj_attr)
         return cls(**obj_attr)
+
+
+    def _decode(cls, v, **kwargs):
+        """
+
+        _extended_summary_
+        """
+
+        try:
+            attr = jsonpickle.decode(v, **kwargs)
+        except Exception as e:
+            log(f"[ {e} ] cannot decode data -- {v}", LEVEL="DEBUG")
+            return
+        else:
+            
+            if isinstance(attr, dict) and "__auto_pk" in attr:
+                inst = cls.attributes[k].get(attr["__auto_pk"])
+                inst.__dict__.update(attr["__auto_updates"])
+                attr = inst
+                
+            elif isinstance(attr, list):
+                for i, o in enumerate(attr):
+                    if isinstance(o, dict) and "__auto_pk" in o:
+                        inst = o['__auto_model'].get(o["__auto_pk"])
+                        attr[i] = inst
+            return attr

@@ -1,0 +1,48 @@
+version: "3"
+
+services:
+  api:
+    image: api:latest
+    build: 
+      context: ./_config
+      dockerfile: api.Dockerfile
+    working_dir: /var/app
+    env_file: ./_config/api.env
+    container_name: api
+    networks:
+      - app_net
+    volumes:
+      - ./app/api:/var/app/
+      - ../src/autonomous:/var/app/autonomous
+    command: ["gunicorn", "app:create_app()", "-c/var/gunicorn.conf.py"]
+  app:
+    image: app:latest
+    build: 
+      context: ./_config
+      dockerfile: app.Dockerfile
+    working_dir: /var/app
+    env_file: ./_config/app.env
+    container_name: app
+    networks:
+      - app_net
+    volumes:
+      - ./app/app:/var/app
+      - ../src/autonomous:/var/app/autonomous
+    command: ["gunicorn", "app:create_app()", "-c/var/gunicorn.conf.py"]
+  server:
+    image: nginx
+    container_name: server
+    networks:
+      - app_net
+    volumes:
+      - ./app/app/static:/srv/static
+      - ./app/api/static/docs:/srv/static/docs
+      - ./_config/nginx.conf:/etc/nginx/nginx.conf
+    ports:
+      - "7357:80"
+    depends_on:
+      - app
+
+networks:
+  app_net:
+

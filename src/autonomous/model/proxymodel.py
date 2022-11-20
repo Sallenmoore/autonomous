@@ -1,27 +1,73 @@
-from urllib.parse import urlencode, quote
+from urllib.parse import urlencode
 from .basemodel import BaseModel
 from autonomous.logger import log
+
 import requests
-import pprint
 import json
+import inspect
+import pkgutil
+
 import jsonpickle
-from pydoc import locate
     
 class ProxyModel(BaseModel):
 
+    _subproxies = {}
 
-    def __init__(self, **kwargs):
+###########################################################################################
+##                                    DUNDER METHODS                                     ##
+###########################################################################################
+
+    def __init__(self, attributes, **kwargs):
+        """
+        _summary_
+
+        args:
+            - attributes: a dict of attributes and their types
+
+        Raises:
+            Exception: _description_
+        """
+        for k, v in attributes.items():
+            if k in kwargs:
+                setattr(self, k, kwargs[v])
+            else:
+                setattr(self, k, None)
+
+        # log(self.__class__.__name__,kwargs)
+        self.__dict__.update(kwargs)
+
+    def __getattr__(self, name):
+        attr = self.__dict__[name]
+        if isinstance(attr, dict) and name in self._subproxies: 
+            attr = self.model_loader(
+                self._subproxies[name]["__auto_model"], 
+                self._subproxies[name]["__auto_pk"]
+            )
+            setattr(self, name, attr)
+        return attr
+
+###########################################################################################
+##                                  INSTANCE METHODS                                     ##
+###########################################################################################
+
+    def get_record(self):
         """
         _summary_
 
         _extended_summary_
 
-        Raises:
-            Exception: _description_
+        Returns:
+            _type_: _description_
         """
-        #log(f"kwargs: {kwargs}")
-        self.__dict__.update(kwargs)
-
+        obj_dict = {}
+        for k,v in self.__dict__.items():
+            try:
+                json.dumps(v)
+            except Exception as e:
+                log(f"{e}: cannot jsonify attribute {k}: {v}", "INFO")
+            else:
+                obj_dict[k] = v
+        return obj_dict
 
     def delete(self, api_path="delete"):
         """
@@ -86,11 +132,14 @@ class ProxyModel(BaseModel):
             log(f"{e}: no serialize()", LEVEL="DEBUG")
             payload = {'data': data}
         #log(f"endpoint: {endpoint}, payload: {payload}")
-        response = requests.post(f"{cls.API_URL}/{endpoint}", json=payload, headers=headers)
-        response = response.json()
-        #log(f"endpoint: {endpoint}, response: {response}")
+        if cls.API_URL == "TEST":
+            response['results'] = [data]
+        else:
+            response = requests.post(f"{cls.API_URL}/{endpoint}", json=payload, headers=headers)
+            response = response.json()
+            #log(f"endpoint: {endpoint}, response: {response}")
         response['results'] = cls.deserialize_list(response['results'])
-        #log(f"endpoint: {endpoint}, response: {response}")
+            #log(f"endpoint: {endpoint}, response: {response}")
         return response
 
 
@@ -168,28 +217,63 @@ class ProxyModel(BaseModel):
         """
         return cls.search()
 
-    ############################## Serialization ########################################
+###########################################################################################
+##                                SERIALIZATION METHODS                                  ##
+###########################################################################################
     def serialize(self, **kwargs):
-        obj_dict = {}
+        """
+        _summary_
+
+        _extended_summary_
+
+        Returns:
+            _type_: _description_
+        """
+        #log(self)
+        object_dict = {}
         for k,v in self.__dict__.items():
+            if isinstance(v, ProxyModel):
+                v = {
+                    "__auto_pk": getattr(self, 'pk', None), 
+                    "__auto_model":self.__class__,
+                    "__auto_updates" : v.serialize()
+                }
             try:
-                obj_dict[k] = jsonpickle.encode(v)
+                object_dict[k] = jsonpickle.encode(v)
             except:
-                log(f"[ {e} ] cannot decode data -- {k}: {v}")
-        return obj_dict
+                log(f"[ {e} ] cannot encode data -- {k}: {v}")
+           
+        #log(obj_dict)
+        return object_dict
     
     @classmethod
     def deserialize_list(cls, pickled_objs, **kwargs):
-        results = []
-        for obj in pickled_objs:
-            try:
-                results.append(cls.deserialize(obj, **kwargs))
-            except:
-                results.append(obj)
-        return results
+        """
+        _summary_
+
+        _extended_summary_
+
+        Args:
+            pickled_objs (_type_): _description_
+
+        Returns:
+            _type_: _description_
+        """
+        return [cls.deserialize(obj) for obj in pickled_objs]
 
     @classmethod
     def deserialize(cls, pickled_obj, **kwargs):
+        """
+        _summary_
+
+        _extended_summary_
+
+        Args:
+            pickled_obj (_type_): _description_
+
+        Returns:
+            _type_: _description_
+        """
         if not pickled_obj:
             return None
         obj_attr = {}
@@ -199,5 +283,16 @@ class ProxyModel(BaseModel):
                 obj_attr[k] = jsonpickle.decode(v, **kwargs)
             except Exception as e:
                 log(f"[ {e} ] cannot decode data -- {obj_dict[k]}: {v}")
+            else:
+                if isinstance(v, dict) and "__auto_pk" in v:
+                    cls._subproxies[k] = v ## Let's be lazy and just store the dict for now
 
         return cls(**obj_attr)
+    
+    @classmethod
+    def model_loader(cls, name, pk):
+        for (module_loader, module_name, ispkg) in pkgutil.iter_modules(["models"]):
+            for pclass in inspect.getmembers(module_name, inspect.isclass):
+                if name == pclass.__module__.__name__:
+                    value = pclass.get(pk)
+                    return value

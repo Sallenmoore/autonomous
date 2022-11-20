@@ -20,17 +20,8 @@ class BaseModel():
             text += f"\t{k} : {v} ({type(v)})\n"
         text += "}"
         return text
+    
 
-    # def get_record(self):
-    #     obj_dict = {}
-    #     for k,v in self.__dict__.items():
-    #         try:
-    #             json.dumps(v)
-    #         except Exception as e:
-    #             log(f"{e}: cannot jsonify attribute {k}: {v}", "INFO")
-    #         else:
-    #             obj_dict[k] = self.attributes[k](v)
-    #     return obj_dict
 
     ############################## Public Methods #####################################
 

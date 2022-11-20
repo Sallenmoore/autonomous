@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "autonomous"
-version = "0.0.26"
+version = "0.0.27"
 authors = [
   { name="Steven Allen Moore", email="samoore@binghamton.edu" },
 ]
@@ -16,8 +16,39 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
+dependencies = [
+  #frontend
+  "libsass",
+
+  #network
+  "requests",
+  "gunicorn",
+
+  ##testing
+  "pytest",
+  "coverage",
+  "pytest-flakes",
+
+  ## data storage
+  "tinydb",
+  "jsonpickle",
+
+  ## security
+  "flask-cors", #https://flask-cors.readthedocs.io/en/latest/
+
+  ## documentation
+  "pdoc",
+  "pypandoc",
+
+  ## Version Control
+  "pygit2",
+  "PyGithub",
+
+  ##Framework libs
+  "Flask>=2.2",
+
+]
 
 [project.urls]
 "Homepage" = "https://github.com/Sallenmoore/autonomous"
 "Bug Tracker" = "https://github.com/Sallenmoore/autonomous/issues"
-
