@@ -36,14 +36,31 @@ class ProxyModel(BaseModel):
         # log(self.__class__.__name__,kwargs)
         self.__dict__.update(kwargs)
 
-    def __getattr__(self, name):
-        attr = self.__dict__[name]
-        if isinstance(attr, dict) and name in self._subproxies: 
-            attr = self.model_loader(
-                self._subproxies[name]["__auto_model"], 
-                self._subproxies[name]["__auto_pk"]
-            )
-            setattr(self, name, attr)
+    def __getattribute__(self, name):
+        """
+        _summary_
+
+        _extended_summary_
+
+        Args:
+            name (str): _description_
+
+        Returns:
+            _type_: _description_
+        """
+        attr = super().__getattribute__(name)
+        if BaseModel.is_auto_model(attr):
+            model = self.attributes[name].get(attr.get("_auto_pk"))
+            setattr(self, name, model)
+            attr = model
+        elif isinstance(attr, list):
+            for i, v in enumerate(attr):
+                if BaseModel.is_auto_model(v):
+                    model_class = self.model_loader(v['_auto_model'])
+                    log(v['_auto_model'], model_class.__name__, LEVEL="DEBUG")
+                    model = model_class.get(v["_auto_pk"])
+                    model.update(**v.get("_auto_updates", {}))
+                    attr[i] = model
         return attr
 
 ###########################################################################################
@@ -234,9 +251,9 @@ class ProxyModel(BaseModel):
         for k,v in self.__dict__.items():
             if isinstance(v, ProxyModel):
                 v = {
-                    "__auto_pk": getattr(self, 'pk', None), 
-                    "__auto_model":self.__class__,
-                    "__auto_updates" : v.serialize()
+                    "_auto_pk": getattr(self, 'pk', None), 
+                    "_auto_model":self.__class__.__name__,
+                    "_auto_updates" : v.serialize()
                 }
             try:
                 object_dict[k] = jsonpickle.encode(v)
@@ -283,16 +300,5 @@ class ProxyModel(BaseModel):
                 obj_attr[k] = jsonpickle.decode(v, **kwargs)
             except Exception as e:
                 log(f"[ {e} ] cannot decode data -- {obj_dict[k]}: {v}")
-            else:
-                if isinstance(v, dict) and "__auto_pk" in v:
-                    cls._subproxies[k] = v ## Let's be lazy and just store the dict for now
 
         return cls(**obj_attr)
-    
-    @classmethod
-    def model_loader(cls, name, pk):
-        for (module_loader, module_name, ispkg) in pkgutil.iter_modules(["models"]):
-            for pclass in inspect.getmembers(module_name, inspect.isclass):
-                if name == pclass.__module__.__name__:
-                    value = pclass.get(pk)
-                    return value

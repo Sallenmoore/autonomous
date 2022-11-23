@@ -23,17 +23,20 @@ class ModelTest(Model):
 
 
 def model_tester():
-    mt = ModelTest()
-    mt.name = "Test"
-    mt.status = SubModelTest(name="TestSub", number=1)
-    mt.collection = ["one", "two", "three"]
-    mt.value = 100
-    mt.nothing = None
-    mt.keystore = {"test1": "value1", "test2": "value2"}
-    mt.invalid_attribute = "This should not be saved"
-    mt.thing_date = datetime.today()
+    mt = ModelTest(
+        name = "Test",
+        status = SubModelTest(name="TestSub", number=1),
+        collection = ["one", "two", "three"],
+        value = 100,
+        nothing = None,
+        keystore = {"test1": "value1", "test2": "value2"},
+        invalid_attribute = "This should not be saved",
+        thing_date = datetime.today(),
+    )
+    #log(mt)
     mt.save()
-    assert mt.status
+    #log(mt)
+    #assert mt.status
     return mt
 
 
@@ -76,16 +79,21 @@ def test_model_attributes_type():
     resultC = ModelTest.get(resultC.pk)
     #log(resultC)
     assert not resultC.status
+    assert not hasattr(resultC, "invalid_attribute")
     
 
 def test_model_update():
     model_testerA = model_tester()
     model_testerB = model_tester()
+    #log(model_testerA, model_testerB)
     model_testerA.name = "Changed"
     model_testerB.name = "Altered"
+    #log(model_testerA, model_testerB)
     model_testerA.save()
     model_testerB.save()
+    #log(model_testerA, model_testerB)
     resultA = ModelTest.get(model_testerA.pk)
+    #log(resultA)
     resultB = ModelTest.get(model_testerB.pk)
     assert resultA.status != resultB.status
     assert resultA.name == "Changed"
@@ -149,9 +157,12 @@ def test_submodel_create():
     assert isinstance(model_testerA.keystore, dict)
 
     model_testerA.collection = [SubModelTest(name="I am test. Hear me test.") for i in range(3)]
+    #log(model_testerA, LEVEL="DEBUG")
     model_testerA.save()
+    #log(model_testerA, LEVEL="DEBUG")
     resultA = ModelTest.get(model_testerA.pk)
-    log(resultA.collection)
+    #log(resultA.collection, LEVEL="INFO")
+    #log(resultA.collection, LEVEL="INFO")
     assert len(resultA.collection) == 3
     assert resultA.collection[0].name == "I am test. Hear me test."
 

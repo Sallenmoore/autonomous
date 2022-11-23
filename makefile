@@ -8,15 +8,15 @@ package:
 	pip install -e .
 	python -m twine upload --verbose --repository testpypi dist/*
 
+test:
+	pytest ./tests --log-level=INFO -rx -l -x --tb=long
+
 testapp:
 	cd test_app && docker-compose up --build -d
 
-test:
-	cd tests/app_test/ && docker-compose up --build -d
-	pytest ./tests --log-level=INFO -rx -l -x
-
 clean:
-	rm -rf tables; rm -rf .pytest_cache;
+	rm -rf tables
+	rm -rf .pytest_cache
 	sudo docker ps -a
-	sudo docker rm $(sudo docker ps -a -q)
+	sudo docker kill $(sudo docker ps -q) && sudo docker rm $(sudo docker ps -a -q)
 	

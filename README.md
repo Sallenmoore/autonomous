@@ -60,6 +60,7 @@ Autonomous has minimally 2 container components:
 - Add more testing
 - Improve database search
 - Auto generate API documentation
+- Remove flask as a dependency
 
 ### Issue Tracking
 

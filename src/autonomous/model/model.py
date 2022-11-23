@@ -5,31 +5,75 @@ from autonomous.logger import log
 
 import jsonpickle
 
+import inspect, os
+
 db = Database()
 
 class Model(BaseModel):
 
-    _attributes = {"pk":int, "model_class":str, "attributes":dict}
+    _attributes = {"pk":int, "_auto_model":str, "attributes":dict}
+    _type_defaults = {
+        str: "",
+        list: [],
+        dict: {},
+    }
     
     def __init__(self, **kwargs):
-        for k,v in self.__class__.attributes.items():
-            setattr(self, k, None)
-            
+        # set attributes to default values
+        #log(f"updated values:{kwargs}")
         self.pk = kwargs.get('pk')
-            
-        if rec:= self._table().get(self.pk):
-            self.__dict__.update(rec.__dict__)
-            
-        #log(self.__class__.__name__,kwargs)
-        self.__dict__.update(kwargs)
-        self.validate()
-        #log(self.__class__.__name__,self.__dict__)
+        rec = self.__class__._table().get(self.pk)
+        model = {k:self._decode(k, v) for k,v in rec.items()} if rec else {}
 
-    def __getattr__(self, name):
-        attr = self.__dict__[name]
-        if isinstance(attr, dict) and "__auto_pk" in attr:
-            value = cls.attributes[name](**attr["__auto_updates"])
-            setattr(self, name, value)
+        for k,v in self.__class__.attributes.items():
+            #log(self.__class__.__name__,self.attributes, LEVEL="INFO")
+            if k in kwargs:
+                #log(f"updated value:{kwargs[k]}", LEVEL="INFO")
+                setattr(self, k, kwargs[k])
+            elif k in model:
+                #log(f"stored value:{model[k]}", LEVEL="INFO")
+                setattr(self, k, model[k])
+            elif k not in Model._attributes:
+                #log("default", LEVEL="DEBUG")
+                setattr(self, k, self._type_defaults.get(v))
+
+        self.attributes = self.__class__.attributes
+        self._auto_model = self.__class__._auto_model
+        self.validate()
+        #log(self.__class__.__name__,self, LEVEL="DEBUG")
+        assert self.attributes
+
+    def __getattribute__(self, name):
+        """
+        _summary_
+
+        _extended_summary_
+
+        Args:
+            name (str): _description_
+
+        Returns:
+            _type_: _description_
+        """
+        attr = super().__getattribute__(name)
+        #log(name, attr)
+        if BaseModel.is_auto_model(attr):
+            #log(f"{self.attributes}", LEVEL="INFO")
+            model = self.attributes[name].get(attr["_auto_pk"])
+            if "_auto_updates" in attr:
+                model.update(**attr["_auto_updates"])
+            setattr(self, name, model)
+            attr = model
+        elif isinstance(attr, list):
+            for i, v in enumerate(attr):
+                if BaseModel.is_auto_model(v):
+                    model_class = self.model_loader(v['_auto_model'])
+                    
+                    #log(v['_auto_model'], model_class.__name__)
+
+                    model = model_class.get(v["_auto_pk"])
+                    model.update(**v.get("_auto_updates", {}))
+                    attr[i] = model
         return attr
     
     def save(self):
@@ -47,10 +91,11 @@ class Model(BaseModel):
                     if isinstance(v, Model):
                         v.save()
 
-        #log(self)
+        log(self, LEVEL="DEBUG")
         serialized_obj = self.serialize()
-        #log(serialized_obj)
-        self.pk = self.__class__._table().update(serialized_obj)
+        log(serialized_obj, LEVEL="DEBUG")
+        self.pk = self._table().update(serialized_obj)
+        log(self, LEVEL="DEBUG")
         return self.pk
 
     def delete(self, keep_related=False):
@@ -58,18 +103,26 @@ class Model(BaseModel):
             for k,v in self.__dict__.items():
                 if isinstance(v, Model):
                     v.delete()
-        self.__class__._table().delete(self.pk)
+        self._table().delete(self.pk)
 
-    def delete_all(self):
-        self.__class__._table().clear()
-
+    def update(self, **updates):
+        for k,v in updates.items():
+            log(f"{k}  {self.attributes}", LEVEL="DEBUG")
+            if k in self.attributes:
+                log(f"Updating {k}: {getattr(self, k)} => {v}", LEVEL="DEBUG")
+                setattr(self, k, v)
+                log(f"Updated {k}: {getattr(self, k)}", LEVEL="DEBUG")
+            
+    
     ################## class methods ####################
     @classmethod
     def _table(cls):
-        if not hasattr(cls, "__table") or not cls.__table:
-            cls.model_class = cls.__name__
-            cls.__table = db.get_table(cls.model_class)
+        log(cls, LEVEL="DEBUG")
+        if not getattr(cls, "__table", None):
+            cls._auto_model = cls.__name__
+            cls.__table = db.get_table(cls._auto_model)
             cls.attributes.update(Model._attributes)
+            log(cls.__table,cls.attributes, LEVEL="DEBUG")
         return cls.__table
     
     @classmethod
@@ -89,21 +142,32 @@ class Model(BaseModel):
 
     @classmethod
     def get(cls, pk=None):
-        log(LEVEL="DEBUG")
         """
         get - 
         params: pk
         return: Always returns single objecrt
         """
-        if not pk:
-            return None
+        log(LEVEL="DEBUG")
+        
+        if not pk: return None
+        
+        log(f"pk: {pk}", LEVEL="DEBUG")
         
         data = cls._table().get(pk)
-        #log(f"obj: {data}")
-        ddata = cls.deserialize(data)
-        #log(f"obj: {ddata}")
-        return ddata
+        
+        log(f"data: {data}", LEVEL="DEBUG")
+        
+        obj = cls.deserialize(data)
+        
+        log(f"obj: {obj}", LEVEL="DEBUG")
+        
+        return obj
+        
 
+                
+    @classmethod
+    def delete_all(cls):
+        cls._table().clear()
     ############################## Serialization ########################################
     def validate(self):
         for k,v in self.__dict__.items():
@@ -111,7 +175,7 @@ class Model(BaseModel):
             if v and k in self.__class__.attributes:
                 #check if it is a model object
                 if issubclass(self.__class__.attributes[k], Model):
-                    assert isinstance(v, Model) or "__auto_pk" in v
+                    assert isinstance(v, Model) or "_auto_pk" in v
                 elif self.__class__.attributes[k] != type(v):
                     try:
                         setattr(self, k, self.__class__.attributes[k](v))
@@ -124,32 +188,16 @@ class Model(BaseModel):
         
         """
         #log(self)
-        self.attributes = self.__class__.attributes
-        self.model_class = self.__class__.model_class
         self.validate()
         
         obj_dict = {}
         for k,v in self.__class__.attributes.items():
-            log(f" k:{k} v:{v}", LEVEL="DEBUG")
 
-            #try:
-            attrib = getattr(self, k)
-            #except:
-            #    continue
+            #log(f" {k}:{getattr(self, k)}")
 
-            log(f" {k}:{attrib}", LEVEL="DEBUG")
-            
-            if not full_object:
-                if isinstance(attrib, Model):
-                    attrib = {"__auto_pk":attrib.pk, "__auto_model":v}
-                elif isinstance(attrib, list):
-                    for i, o in enumerate(attrib):
-                        if isinstance(o, Model):
-                            attrib[i] = {"__auto_pk":o.pk, "__auto_model":o.__class__}
-            log(f" {k}:{attrib}", LEVEL="DEBUG")
+            obj_dict[k] = self._encode(k, getattr(self, k))
 
-            obj_dict[k] = jsonpickle.encode(attrib)
-            #log(f" obj_dict[k]:{obj_dict[k]}", LEVEL="DEBUG")
+            #log(f" {k}:{obj_dict[k]}")
         return obj_dict
     
     @classmethod
@@ -167,15 +215,15 @@ class Model(BaseModel):
 
         if not pickled_obj:
             return None
-        
+        #log(cls, pickled_obj)
         obj_attr = {}
         for k,v in pickled_obj.items():
-            obj_attr[k] = cls._decode(v)
+            obj_attr[k] = cls._decode(k, v)
         #log(cls, obj_attr)
         return cls(**obj_attr)
 
-
-    def _decode(cls, v, **kwargs):
+    @classmethod
+    def _decode(cls, k, v, **kwargs):
         """
 
         _extended_summary_
@@ -186,16 +234,21 @@ class Model(BaseModel):
         except Exception as e:
             log(f"[ {e} ] cannot decode data -- {v}", LEVEL="DEBUG")
             return
-        else:
-            
-            if isinstance(attr, dict) and "__auto_pk" in attr:
-                inst = cls.attributes[k].get(attr["__auto_pk"])
-                inst.__dict__.update(attr["__auto_updates"])
-                attr = inst
-                
-            elif isinstance(attr, list):
-                for i, o in enumerate(attr):
-                    if isinstance(o, dict) and "__auto_pk" in o:
-                        inst = o['__auto_model'].get(o["__auto_pk"])
-                        attr[i] = inst
-            return attr
+
+        return attr
+
+    @classmethod
+    def _encode(cls, k, v, **kwargs):
+        """
+
+        _extended_summary_
+        """
+
+        if isinstance(v, Model):
+            v = {"_auto_pk":v.pk, "_auto_model":v.__class__.__name__}
+        elif isinstance(v, list):
+            for i, o in enumerate(v):
+                if isinstance(o, Model):
+                    v[i] = {"_auto_pk":o.pk, "_auto_model":o.__class__.__name__}
+
+        return jsonpickle.encode(v, **kwargs)

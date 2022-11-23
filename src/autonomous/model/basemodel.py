@@ -5,7 +5,6 @@ from autonomous.logger import log
 #python modules
 import jsonpickle
 import json
-import copy
 
 db = Database()
 
@@ -25,11 +24,17 @@ class BaseModel():
 
     ############################## Public Methods #####################################
 
-
+                    
     ##############################  Properties       #####################################
 
 
     ############################## Operators       #####################################
+
+    ################## boolean methods ####################
+
+    @classmethod
+    def is_auto_model(cls, obj):
+        return isinstance(obj, dict) and "_auto_pk" in obj  
 
     ############################## Serialization ########################################
     def serialize(self, **kwargs):
@@ -42,3 +47,15 @@ class BaseModel():
     @classmethod
     def deserialize(cls, pickled_obj, **kwargs):
         raise NotImplementedError
+
+    @classmethod
+    def model_loader(cls, name):
+        from autonomous.model.model import Model
+        from autonomous.model.proxymodel import ProxyModel
+        
+        for c in Model.__subclasses__() + ProxyModel.__subclasses__():
+            log(name, c.__name__, LEVEL="DEBUG")
+            if name == c.__name__:
+                return c
+
+

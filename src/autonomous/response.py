@@ -1,11 +1,12 @@
-import inspect
+import requests
 from autonomous.logger import log
-
+from autonomous.model.model import Model
+import jsonpickle
 
 class Response:
 
     @classmethod
-    def package(cls, error="", data=None, api_path=""):
+    def package(cls, data):
         """
         _summary_
 
@@ -19,35 +20,24 @@ class Response:
         Returns:
             _type_: _description_
         """
-
-        if api_path == "":
-            api_path = f"{inspect.stack()[1].function}"
 
         #log(data)
         count = 0
-        if not isinstance(data, (list, tuple, dict)):
-            data = [data,]
-        count = len(data)
+        if not isinstance(data, (list, dict)):
+            raise Exception("Data must be a list or dictionary")
 
-        response = []
+        response = {"results":[]}
         for d in data:
             try:
-                response.append(d.serialize())
+                response["results"].append(d.serialize())
             except AttributeError:
-                response.append(d)
+                response["results"].append(d)
 
-        #log(response)
-        results = {
-            "api": api_path,
-            "error":error,
-            "results": response,
-            "count": count
-        }
-        log(results, LEVEL="DEBUG")
-        return results
+        log(response, LEVEL="DEBUG")
+        return response
 
     @classmethod
-    def unpackage(cls, data=None, model=None):
+    def unpackage(cls, data=None):
         """
         _summary_
 
@@ -62,13 +52,22 @@ class Response:
             _type_: _description_
         """
         log(data, LEVEL="DEBUG")
+
+        data = data.get('results', [])
         
-        items = []
-        for o in data.get('results',data.get('error', ["Unknown Error"])):
-            if model:
-                items.append(model.deserialize(o))
-            else:
-                items.append(d)
+        for i, o in enumerate(data):
+            log(o)
+            model = Model.model_loader(o['_auto_model'][1:-1])
+            data[i] = model.deserialize(o)
+            log(data[i])
                 
         log(data, LEVEL="DEBUG")
-        return items
+        return data
+
+    @classmethod
+    def getjson(cls, uri):
+        return cls.unpackage(requests.get(uri).json())
+
+    @classmethod
+    def postjson(cls, uri, data):
+        pass
