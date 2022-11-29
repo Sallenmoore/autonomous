@@ -1,7 +1,7 @@
 import os
 # Non logging stuff
-bind = f"{os.environ.get('HOST', '0.0.0.0')}:{os.environ.get('PORT', 80)}"
-workers = 3
+bind = f"{os.environ.get('HOST', '0.0.0.0')}:{os.environ.get('PORT', 5000)}"
+workers = 2
 # Error log - records Gunicorn server goings-on
 errorlog = "-"
 syslog = True

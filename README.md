@@ -2,15 +2,19 @@
 
 A local, comtainerized, service based application framework that attempts to make it easy to create self-contained Python applications with minimal dependencies (coming soon!).
 
-- **Latest Version**: 0.0.16
-- **pypi**: https://test.pypi.org/project/autonomous/0.0.26/
+- **Latest Version**: 0.0.28
+- **pypi**: https://test.pypi.org/project/autonomous
 - **github**: https://github.com/Sallenmoore/autonomous
 
 ## Features
 
-- Fully containerized, service based archetecture
-- All services are localized, interfacing walled-garden network
-- Dynamic typed lists, like python.
+- Fully containerized, service based Python application framework
+- All services are localized and interface using a virtual intranet
+- Built-in Local NoSQL database and Model API
+- Single Data-Source Models across all services
+- Auto-Generated Documentation Pages (Coming Soon!!!)
+- Dynamically typed database attributes
+- Optional static attribute typing
 
 ### Container Apps
 
@@ -20,7 +24,7 @@ Autonomous has minimally 2 container components:
   - nginx proxy server listening on port 80
   - static files and assets are served from here. This is also the main entry point for the application.
 - **test**
-  - access documentation on port:6000
+  - access documentation on port:TBD
   - Test app for the library
 
 ## Dependencies
@@ -54,13 +58,16 @@ Autonomous has minimally 2 container components:
 
 ## Developer Notes
 
+## {.tabset}
+
 ### TODO
 
-- Setup test app
+- Get Working Again!!!
+- Setup template app
+- Fix app generator
 - Add more testing
 - Improve database search
 - Auto generate API documentation
-- Remove flask as a dependency
 
 ### Issue Tracking
 
@@ -84,4 +91,31 @@ pytest ./tests --log-level=INFO -rx -l -x; rm -rf tables
 
 ```sh
 sudo docker logs -f --since=15m -t app_name`
+```
+
+### Documentation
+
+```md
+
+## Description
+
+_description_of_function_
+
+## Args
+
+- pos_str (_type_, required): _description_
+- key_str (_type_, optional): _description_
+
+## Returns
+
+_type_: _description_
+
+## Exceptions
+
+- None
+
+## Module
+
+- autonomous.package
+
 ```

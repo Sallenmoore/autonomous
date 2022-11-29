@@ -1,5 +1,5 @@
 # Local Modules
-from autonomous.logger import log
+from autonomous import log
 
 # Built-In Modules
 import os, sys, shutil

@@ -1,0 +1,29 @@
+#frontend
+libsass
+
+#network
+requests
+gunicorn
+
+##testing
+pytest
+coverage
+pytest-flakes
+
+## data storage
+tinydb
+jsonpickle
+
+## security
+
+
+## documentation
+pdoc
+pypandoc
+
+## Version Control
+pygit2
+PyGithub
+
+##Framework libs
+Flask>=2.2

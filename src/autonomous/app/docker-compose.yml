@@ -13,7 +13,7 @@ services:
       - app_net
     volumes:
       - ./app/api:/var/app/
-      - ../src/autonomous:/var/app/autonomous
+      - ../../src/autonomous:/var/app/autonomous
     command: ["gunicorn", "app:create_app()", "-c/var/gunicorn.conf.py"]
   app:
     image: app:latest
@@ -27,7 +27,7 @@ services:
       - app_net
     volumes:
       - ./app/app:/var/app
-      - ../src/autonomous:/var/app/autonomous
+      - ../../src/autonomous:/var/app/autonomous
     command: ["gunicorn", "app:create_app()", "-c/var/gunicorn.conf.py"]
   server:
     image: nginx

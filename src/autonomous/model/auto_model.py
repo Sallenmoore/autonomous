@@ -1,20 +1,14 @@
-from urllib.parse import urlencode
-from .basemodel import BaseModel
-from autonomous import log, response
-
-import requests
-import json
-import inspect
-import pkgutil
-import urllib.parse
+from .model import Model
+from .proxymodel import Proxy
+from autonomous import log
     
-class ProxyModel(BaseModel):
+class AutoModel:
 
 ###########################################################################################
 ##                                    DUNDER METHODS                                     ##
 ###########################################################################################
 
-    def __init__(self, **kwargs):
+    def __init__(self, model, pk, **kwargs):
         """
         _summary_
 
@@ -24,14 +18,7 @@ class ProxyModel(BaseModel):
         Raises:
             Exception: _description_
         """
-        #log(f"updated values:{kwargs}")
-        if kwargs.get('attributes'):
-            self.attributes = kwargs['attributes']
-            for k, v in self.attributes.items():
-                setattr(self, k, None)
-        self._auto_model = self.__class__._auto_model
-        self.pk = kwargs.get('_auto_pk')
-        self.__dict__.update(kwargs)
+        
 
 
 ###########################################################################################

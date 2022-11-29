@@ -1,0 +1,23 @@
+version: "3"
+
+services:
+  api:
+    image: api:latest
+    build: 
+      context: ./_config
+      dockerfile: api.Dockerfile
+    working_dir: /var/app
+    env_file: ./_config/api.env
+    container_name: api
+    networks:
+      - app_net
+    ports:
+      - "7359:5001"
+    volumes:
+      - ./app/api:/var/app/
+      - ../../src/autonomous:/var/app/autonomous
+    command: ["gunicorn", "app:create_app()", "-c/var/gunicorn.conf.py"]
+
+networks:
+  app_net:
+

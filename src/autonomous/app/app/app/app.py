@@ -1,4 +1,4 @@
-from autonomous.logger import log
+from autonomous import log
 from autonomous import config, response
 #from autonomous import create_app
 from models.proxytest import ModelTest
@@ -8,19 +8,6 @@ from flask import Flask, request
 
 # Built-In Modules
 import os
-
-def make_model():
-    m = ModelTest(
-                name="test",
-                status=SubModelTest(name="subtest", number=2),
-                collection=[1,2,3], 
-                value = 754,
-                nothing = None, 
-                keystore = {'a':1, 'b':2},
-                timestamp = datetime.now()
-            )
-    m.save()
-    return m
 
 
 def create_app():
@@ -94,6 +81,11 @@ def create_app():
             assert ModelTest.all()
             return response.package(data=ModelTest.all())
 
-        #msg = "".join([f"{rule}: {rule.endpoint}\n" for rule in app.url_map.iter_rules()])
-        #log(f"{msg}")
+        # msg = "".join([f"{rule} => {rule.endpoint}\n" for rule in app.url_map.iter_rules()])
+        # log(f"{msg}")
+        # log(f"====================")
         return app
+    
+
+#application factory
+app = create_app()

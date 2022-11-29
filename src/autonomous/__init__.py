@@ -1,7 +1,10 @@
-from .logger import log
+from autonomous.logger import Logger
+log = Logger()
 
 from autonomous.response import Response
-from autonomous.config import Config
-
-config = Config()
 response = Response()
+
+from autonomous.config import Config
+config = Config()
+
+

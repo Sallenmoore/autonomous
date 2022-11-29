@@ -1,28 +1,32 @@
 import pytest
 from datetime import datetime
-from autonomous.logger import log
+from autonomous import log
 from autonomous.model.model import Model
 
 
 class SubModelTest(Model):
-    attributes = {
-        "name": str,
-        "number": int,
-    }
+    @classmethod
+    def auto_attributes(cls):
+        return {
+            "name": str,
+            "number": int,
+        }
 
 class ModelTest(Model):
-    attributes = {
-        "name": str,
-        "status": SubModelTest,
-        "thing_date": datetime,
-        "collection": list,
-        "value": int,
-        "nothing": str,
-        "keystore": dict,
-    }
+    @classmethod
+    def auto_attributes(cls):
+        return {
+            "name": str,
+            "status": SubModelTest,
+            "thing_date": datetime,
+            "collection": list,
+            "value": int,
+            "nothing": str,
+            "keystore": dict,
+        }
 
 
-def model_tester():
+def model_create():
     mt = ModelTest(
         name = "Test",
         status = SubModelTest(name="TestSub", number=1),
@@ -35,173 +39,114 @@ def model_tester():
     )
     #log(mt)
     mt.save()
+    assert mt.save()
     #log(mt)
-    #assert mt.status
+    assert mt.pk
+    assert mt.name == "Test"
+    assert isinstance(mt.status, SubModelTest)
+    assert isinstance(mt.collection, list)
+    assert isinstance(mt.value, int)
+    assert isinstance(mt.keystore, dict)
     return mt
 
 
-def test_model_create():
-    model_testerA = model_tester()
-    model_testerB = model_tester()
-    #log(model_testerA)
-    assert isinstance(model_testerA, ModelTest)
-    assert model_testerA.pk > 0
-    assert model_testerB.pk > model_testerA.pk
-    assert model_testerA.name == "Test"
-    assert isinstance(model_testerA.collection, list)
-    assert isinstance(model_testerA.value, int)
-    assert isinstance(model_testerA.keystore, dict)
 
-def test_model_read():
-    a_pk = model_tester().save()
-    b_pk = model_tester().save()
-    resultA = ModelTest.get(a_pk)
-    resultB = ModelTest.get(b_pk)
-    assert resultA.pk > 0
-    assert resultB.pk > 0
-    assert resultA.pk != resultB.pk
+def model_read(mt):
+    resultA = ModelTest.get(mt.pk)
+    assert resultA.pk == mt.pk
     assert resultA.name == "Test"
     assert isinstance(resultA.collection, list)
     assert isinstance(resultA.value, int)
     assert isinstance(resultA.keystore, dict)
-    assert resultB.name == "Test"
-    assert isinstance(resultB.collection, list)
-    assert isinstance(resultB.value, int)
-    assert isinstance(resultB.keystore, dict)
-    assert resultB.thing_date.day == datetime.today().day
-    assert resultB.thing_date.hour == datetime.today().hour
-    
-def test_model_attributes_type():
-    resultC = model_tester()
-    resultC.status = None
-    resultC.save()
-    #log(resultC)
-    resultC = ModelTest.get(resultC.pk)
-    #log(resultC)
-    assert not resultC.status
-    assert not hasattr(resultC, "invalid_attribute")
-    
+    assert resultA.thing_date.day == datetime.today().day
+    assert resultA.thing_date.hour == datetime.today().hour
 
-def test_model_update():
-    model_testerA = model_tester()
-    model_testerB = model_tester()
-    #log(model_testerA, model_testerB)
-    model_testerA.name = "Changed"
-    model_testerB.name = "Altered"
-    #log(model_testerA, model_testerB)
-    model_testerA.save()
-    model_testerB.save()
-    #log(model_testerA, model_testerB)
-    resultA = ModelTest.get(model_testerA.pk)
+def model_all():
+    results = ModelTest.all()
+    #log(results)
+    pks = [r.pk for r in results]
+    assert pks
+    assert pks == list(set(pks))
+
+def model_attributes_type(mt):
+    mt.value = None
+    mt.save()
+    #log(resultC)
+    clone_mt = ModelTest.get(mt.pk)
+    #log(resultC)
+    assert clone_mt.pk == mt.pk
+    assert not mt.value
+    assert not hasattr(mt, "invalid_attribute")
+
+def model_update(mt):
+    mt.nothing = "Changed"
+    mt.save()
+    resultA = ModelTest.get(mt.pk)
     #log(resultA)
-    resultB = ModelTest.get(model_testerB.pk)
-    assert resultA.status != resultB.status
-    assert resultA.name == "Changed"
-    assert resultB.name == "Altered"
+    assert resultA.nothing == "Changed"
 
     model_testerA.collection.append("Changed")
-    model_testerB.keystore["added"] = "Altered"
+    model_testerA.keystore["added"] = "Changed"
     model_testerA.save()
-    model_testerB.save()
     resultA = ModelTest.get(model_testerA.pk)
-    resultB = ModelTest.get(model_testerB.pk)
     assert isinstance(resultA.collection, list)
-    assert isinstance(resultB.keystore, dict)
+    assert isinstance(resultA.keystore, dict)
     assert "Changed" in resultA.collection
-    assert "added" in resultB.keystore
-    assert resultB.keystore['added'] == "Altered"
+    assert "added" in resultA.keystore
+    assert resultB.keystore['added'] == "Changed"
 
+def model_delete(mt):
+    assert not mt.delete()
+    assert not ModelTest.get(mt.pk)
 
-def test_delete():
-    model_testerA = model_tester()
-    pk = model_testerA.pk
-    results = ModelTest.get(pk)
-    #log(results)
-    results.delete()
-    assert ModelTest.get(pk) == None
-    results = ModelTest.all()
-    [o.delete() for o in results]
-    results = ModelTest.all()
-    assert not results
+def model_search(mt):
+    results = ModelTest.search(name=mt.name)
+    assert len(results)
+    assert all(r.name in mt.name for r in results)
 
-
-def test_search():
-    model_testerA = model_tester()
-    results = ModelTest.search(name="Test")
-    assert any(r.pk == model_testerA.pk for r in results)
-
-
-def test_all():
-    results = ModelTest.all()
-    model_testerA = model_tester()
-    model_testerB = model_tester()
-    results = ModelTest.all()
-    [o.delete() for o in results]
-    results = ModelTest.all()
-    assert not results
-    ModelTest._table().db.drop_tables()
-    results = ModelTest.all()
-    assert not results
-
-
-def test_submodel_create():
-    model_testerA = model_tester()
-    model_testerB = model_tester()
-    #log(model_testerA)
-    assert isinstance(model_testerA, ModelTest)
-    assert model_testerA.pk > 0
-    assert model_testerB.pk > model_testerA.pk
-    assert model_testerA.name == "Test"
-    assert isinstance(model_testerA.collection, list)
-    assert isinstance(model_testerA.value, int)
-    assert isinstance(model_testerA.keystore, dict)
-
-    model_testerA.collection = [SubModelTest(name="I am test. Hear me test.") for i in range(3)]
+def submodel_create():
+    model_testerA = model_create()
+    model_testerA.collection += [SubModelTest(name="I am test. Hear me test.") for i in range(3)]
     #log(model_testerA, LEVEL="DEBUG")
     model_testerA.save()
+    assert len(model_testerA.collection) == 3
+    assert all(r.name == "I am test. Hear me test." for r in model_testerA.collection)
+    return model_testerA
+
+
+def submodel_read(mt):
     #log(model_testerA, LEVEL="DEBUG")
-    resultA = ModelTest.get(model_testerA.pk)
+    resultA = ModelTest.get(mt.pk)
     #log(resultA.collection, LEVEL="INFO")
     #log(resultA.collection, LEVEL="INFO")
     assert len(resultA.collection) == 3
-    assert resultA.collection[0].name == "I am test. Hear me test."
+    assert all(r.name == "I am test. Hear me test." for r in resultA.collection)
 
+def submodel_update(mt):
+    mt.status.name = "Changed"
+    mt.save()
+    result = ModelTest.get(mt.pk)
+    assert result.status.name == "Changed"
 
-def test_submodel_read():
-    a_pk = model_tester().save()
-    b_pk = model_tester().save()
-    resultA = ModelTest.get(a_pk)
-    resultB = ModelTest.get(b_pk)
-    assert resultA.pk > 0
-    assert resultB.pk > 0
-    assert resultA.pk != resultB.pk
-    assert resultA.name == "Test"
-    assert isinstance(resultA.collection, list)
-    assert isinstance(resultA.value, int)
-    assert isinstance(resultA.keystore, dict)
-    assert resultB.name == "Test"
-    assert isinstance(resultB.collection, list)
-    assert isinstance(resultB.value, int)
-    assert isinstance(resultB.keystore, dict)
+def test_main():
+    ModelTest.delete_all()
+    SubModelTest.delete_all()
+    objs = [model_create() for i in range(2)]
     
-def test_submodel_attributes_type():
-    resultC = model_tester()
-    resultC.status = None
-    resultC.save()
-    resultC = ModelTest.get(resultC.pk)
-    log(resultC)
-    assert not resultC.status
-    
+    model_all()
 
-def test_submodel_update():
-    model_testerA = model_tester()
-    model_testerB = model_tester()
-    model_testerA.status.name = "Changed"
-    model_testerB.status.name = "Altered"
-    model_testerA.save()
-    model_testerB.save()
-    resultA = ModelTest.get(model_testerA.pk)
-    resultB = ModelTest.get(model_testerB.pk)
-    assert resultA.status != resultB.status
-    assert resultA.status.name == "Changed"
-    assert resultB.status.name == "Altered"
+    all(model_read(obj) for obj in objs)
+
+    all(model_attributes_type(obj) for obj in objs)
+    
+    model_search(obj)
+
+    all(model_update(obj) for obj in objs)
+
+    all(model_delete(obj) for obj in objs)
+    
+    objs = [submodel_create() for i in range(2)]
+
+    all(submodel_read(obj) for obj in objs)
+
+    all(submodel_update(obj) for obj in objs)

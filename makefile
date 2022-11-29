@@ -8,15 +8,33 @@ package:
 	pip install -e .
 	python -m twine upload --verbose --repository testpypi dist/*
 
-test:
-	pytest ./tests --log-level=INFO -rx -l -x --tb=long
+###### TESTING #######
 
-testapp:
-	cd test_app && docker-compose up --build -d
+#OPTIONS
+TEST_FUNC?="test_"
+TB?="short"
+
+#TEST SCRIPTS
+
+quicktest: 
+	-pytest ./tests --log-level=INFO -vv -rx -l -x --tb=$(TB) -k $(TEST_FUNC) --full-trace
+
+test_app:
+	cd tests/test_app && docker-compose up --build -d
+
+test:clean test_app quicktest
+
+###### CLEANING #######
+
+CONTAINERS=$(shell docker ps -a -q)
 
 clean:
-	rm -rf tables
-	rm -rf .pytest_cache
 	sudo docker ps -a
-	sudo docker kill $(sudo docker ps -q) && sudo docker rm $(sudo docker ps -a -q)
+	-cd tests/test_app && docker-compose down --remove-orphans
+	-sudo docker kill 
+
+deepclean: clean
+	-rm -rf tables
+	-echo "$(CONTAINERS)" && sudo docker rm $(CONTAINERS)
+	-sudo docker system prune -a -f --volumes
 	

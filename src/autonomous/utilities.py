@@ -1,7 +1,7 @@
 import os, sys
 import inspect
 from autonomous.model.model import Model
-from autonomous.logger import log
+from autonomous import log
 
 def zip_csv_to_dict(myfile):
     try:
