@@ -1,6 +1,7 @@
 import requests
 from autonomous import log
 import jsonpickle
+from autonomous.model.basemodel import BaseModel
 
 class Response:
 
@@ -22,7 +23,8 @@ class Response:
 
         #log(data)
         if not isinstance(data, list):data = [data]
-        
+
+        data = [d._proxy_auto_models() for d in data if isinstance(d, BaseModel)]
         return {"results":jsonpickle.encode(data)}
 
     @classmethod
@@ -39,11 +41,57 @@ class Response:
             _type_: _description_
         """
         #log(data)
-
         data = data.get('results')
         data = jsonpickle.decode(data)
-        log(data)
+        
+        #log(data)
         return data
+
+    @classmethod
+    def post_request(cls, url, data):
+        """
+        _summary_
+
+        Args:
+            endpoint (_type_): _description_
+            data (_type_): _description_
+            redirect_path (str, optional): _description_. Defaults to "index".
+
+        Returns:
+            _type_: _description_
+        """
+        #log(f"endpoint: {endpoint} \ndata:{data.__dict__}")
+        headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
+
+        payload = cls.package(data)
+
+        #log(f"endpoint: {endpoint}, payload: {payload}")
+        response = requests.post(url, json=payload, headers=headers).json()
+        
+        response = response.unpackage(response)
+        #log(f"endpoint: {endpoint}, response: {response}")
+        return response
+
+
+    @classmethod
+    def get_request(cls, url):
+        """
+        returns the raw json response from a class API endpoint
+
+        Args:
+            endpoint (str): the additional endpoint to append to the API_URL
+
+        Returns:
+            dict: the json response from the API converted to a dictionary
+        """
+        response = requests.get(url).json()
+        #log(f"endpoint: {endpoint}, response: {response}")
+        try:
+            response = response.unpackage(response)
+        except Exception as e:
+            log(f"Error deserializing results: {e} \n results: {response}")
+            raise
+        return response
 
     # @classmethod
     # def getjson(cls, uri):

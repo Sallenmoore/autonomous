@@ -5,16 +5,16 @@ from autonomous import log
 from autonomous.model.model import Model
 
 
-class SubModelTest(Model):
+class ResponseSubModelTest(Model):
     attributes = {
         "name": str,
         "number": int,
     }
 
-class ModelTest(Model):
+class ResponseModelTest(Model):
     attributes = {
         "name": str,
-        "status": SubModelTest,
+        "status": ResponseSubModelTest,
         "thing_date": datetime,
         "collection": list,
         "value": int,
@@ -26,9 +26,9 @@ def clear_test_models():
     ModelTest.delete_all()
 
 def model_tester():
-    mt = ModelTest()
+    mt = ResponseModelTest()
     mt.name = "Test"
-    mt.status = SubModelTest(name="TestSub", number=1)
+    mt.status = ResponseSubModelTest(name="TestSub", number=1)
     mt.collection = ["one", "two", "three"]
     mt.value = 100
     mt.nothing = None

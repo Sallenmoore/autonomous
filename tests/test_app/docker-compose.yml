@@ -12,7 +12,7 @@ services:
     networks:
       - app_net
     ports:
-      - "7359:5001"
+      - "7357:5001"
     volumes:
       - ./app/api:/var/app/
       - ../../src/autonomous:/var/app/autonomous

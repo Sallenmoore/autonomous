@@ -1,6 +1,6 @@
 #local modules
 from ..db import Database
-from .basemodel import BaseModel
+from .basemodel import BaseModel, AutoModel
 from autonomous import log
 
 ## routing modules
@@ -25,82 +25,98 @@ class Model(BaseModel):
 
         _extended_summary_
         """
-        super().__init__()
         
+        #log(BaseModel._auto_models)
+        self._auto_pk = None
+        self._auto_model = self.__class__.__name__
+        #log(self.__class__, self, self._auto_model, self._auto_pk, self._auto_attributes, kwargs)
+        #log(self.autoattributes)
+        self._auto_attributes = {**self.autoattributes(), **self._auto_attributes}
+        #log(self.autoattributes)
         if rec := self._table().get(kwargs.get('_auto_pk')):
-            self.update(**rec)
-        #log(rec, self)
-        self.update(**kwargs)
-        #log(kwargs, self)
+            #log(self.__class__, self._auto_attributes)
+            self.__dict__.update(**rec)
+        #log(self.__class__, self._auto_attributes)
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+        #log(self.autoattributes)
+            
+    def __setattr__(self, k, v):
+        #log(self)
+        if k == 'pk': k = '_auto_pk'
+
+        if k == '_auto_attributes':
+            #log(k, v, self._auto_attributes)
+            self.__dict__[k] = v
+            #log(k, v, self._auto_attributes)
+            return
+        
+        if k in self._auto_attributes:
+            if BaseModel.is_auto(v):
+                #log(k, v.autoattributes) 
+                v = AutoModel(v)
+            self.verify_types(k, v)
+            #log(k, v, self.autoattributes)
+            self.__dict__[k] = v
+        else:
+            log(f"Invalid attribute {k} for {self.__class__.__name__}. Must be one of", self._auto_attributes)
+        #log(self)
+            
+    def autoattributes(self):
+        #log(self.autoattributes)
+        raise NotImplementedError("Must be implemented by Models")
+
+    def verify_types(self, k, v):
+        if not v: return True
+        if BaseModel.is_auto(v):
+            #breakpoint()
+            if BaseModel.model_loader(v._auto_model) != self._auto_attributes[k]:
+                log(f"WARNING: INVALID MODEL ATTRIBUTE TYPE => {k} : {v} [{type(v)}!={self._auto_attributes[k]}]")
+                raise TypeError(f"WARNING: INVALID AUTOMODEL => {k} : {v} [{type(v)}!={self._auto_attributes[k]}]")
+            return True
+        else:
+            if self._auto_attributes[k] != type(v):
+                try:
+                    self._auto_attributes[k](v)
+                except Exception as e:
+                    log(f"[{e}]", f"WARNING: INVALID MODEL ATTRIBUTE TYPE => {k} : [{self._auto_attributes[k]}!={type(v)}]")
+                return True
+                
 
     ################## db methods ####################
     @classmethod
     def _table(cls):
-        
-        #log(cls)
-        if not getattr(cls, "__table", None):
-            cls.__table = db.get_table(cls._auto_model)
-            #log(cls.__table,cls.attributes)
-            
-        return cls.__table
+        """
+        _summary_
+
+        _extended_summary_
+
+        Returns:
+            _type_: _description_
+        """
+        try:
+            return cls.__table
+        except AttributeError:
+            cls.__table = db.get_table(cls.__name__)
+            return cls.__table
     
-    def save(self):
-        """
-        _summary_
-
-        _extended_summary_
-
-        Returns:
-            _type_: _description_
-        """
-        #log(self)
-        
-        #save any submodels
-        self._proxy_auto_models()
-                        
-        self.pk = self._table().update(self)
-        #log(self.pk, self)
-        return self.pk
-
-    def update(self, **updates):
-        """
-        _summary_
-
-        """
-        filtered_attribs = {}
-        #log(self.auto_attributes(), self._auto_attributes)
-        for k,t in self._auto_attributes.items():
-            #log(self.__class__, f"{self._auto_model}::{k}: {t}")
-            if updates.get(k):
-                #log(self.__class__, f"updating {k} => {updates[k]}")
-                if t != type(updates[k]):
-                    try:
-                        filtered_attribs[k] = t(updates[k])
-                    except Exception as e:
-                        log(f"Error [{e}]", f"INVALID MODEL ATTRIBUTE => {k} : {updates[k]} [{type(updates[k])}!={t}]")
-                else:
-                    filtered_attribs[k] = updates[k]
-            elif not getattr(self, k, None):
-                #log(self.__class__, f"default:{self._auto_type_defaults.get(k)}")
-                filtered_attribs[k] = self.__class__._auto_type_defaults.get(t)
-        #log(self.__class__, f"filtered:{filtered_attribs}")
-        super().update(**filtered_attribs)
-        #log(filtered_attribs=filtered_attribs)
-
     @classmethod
-    def all(cls):
+    def get(cls, pk=None):
         """
-        _summary_
-
-        _extended_summary_
-
-        Returns:
-            _type_: _description_
+        get - 
+        params: pk
+        return: Always returns single objecrt
         """
-        results = []
-        for item in cls._table().all():
-            result = cls(**item)
-        return 
+        
+        if not pk: return None
+        
+        #log(f"pk: {pk}", type(pk))
+        
+        data = cls._table().get(pk)
+        
+        #log(f"cls: {cls}", cls._auto_attributes, data)
+        
+        return cls(**data) if data else None
     
     @classmethod
     def search(cls, **kwargs):
@@ -114,22 +130,37 @@ class Model(BaseModel):
         return [cls(**items) for items in results]
 
     @classmethod
-    def get(cls, pk=None):
+    def all(cls):
         """
-        get - 
-        params: pk
-        return: Always returns single objecrt
+        _summary_
+
+        _extended_summary_
+
+        Returns:
+            _type_: _description_
         """
+        results = [cls(**item) for item in cls._table().all()]
+        return results
+
+    def save(self):
+        """
+        _summary_
+
+        _extended_summary_
+
+        Returns:
+            _type_: _description_
+        """
+        #log(self)
         
-        if not pk: return None
-        
-        #log(f"pk: {pk}")
-        
-        data = cls._table().get(pk)
-        
-        #log(f"obj: {obj}", type(data))
-        
-        return cls(**data)
+        #save any submodels
+        self._proxy_auto_models()
+
+        self.pk = self._table().update(self)
+
+        #log("="*100, "\n\n\nleft off here -  everything seems good after save in make_model()\n\n\n===", "="*100)
+        #breakpoint()
+        return self.pk
     
     def delete(self, keep_related=False):
         """
@@ -141,53 +172,58 @@ class Model(BaseModel):
             keep_related (bool, optional): _description_. Defaults to False.
         """
         if not keep_related:
-            for k,v in self.__dict__:
-                if isinstance(getattr(self, k), BaseModel):
+            for k, v in self.__dict__.items():
+                #breakpoint()
+                if BaseModel.is_auto(v):
                     v.delete()
+                    self.__dict__[k] = self.__class__._auto_type_defaults.get(self._auto_attributes[k])
+                    
         self._table().delete(self.pk)
 
     @classmethod
     def delete_all(cls):
-        cls._table().clear()
+        return cls._table().clear()
 
     ############## routing methods ##############
 
     @classmethod
     def crud(cls, app):
         
-        #app.add_url_rule(rule, endpoint="get", view_func=Model.modelget, methods=('GET',))
-        app.add_url_rule(f'{route}/<int:pk>', endpoint="get", view_func=Model.modelget, methods=('GET',))
-        app.add_url_rule(f'{route}/all', endpoint="all", view_func=Model.modelall,  methods=('GET',))
-        app.add_url_rule(f'{route}/update', endpoint="update", view_func=Model.modelupsert,  methods=('POST',))
-        app.add_url_rule(f'{route}/create', endpoint="create", view_func=Model.modelupsert,  methods=('POST',))
-        app.add_url_rule(f'{route}/delete', endpoint="delete", view_func=Model.modeldelete,  methods=('POST',))
-        app.add_url_rule(f'{route}/search/', endpoint="search", view_func=Model.modelsearch,  methods=('GET','POST'))
-
+        #log(cls)
+        route=cls.__name__.lower()
+        #app.add_url_rule(rule, endpoint="get", view_func=cls.modelget, methods=('GET',))
+        cls.__route_get = cls.__route_get
+        app.add_url_rule(f'/{route}/<int:pk>', endpoint="get", view_func=cls.__route_get, methods=('GET',))
+        cls.__route_all = cls.__route_all
+        app.add_url_rule(f'/{route}/all', endpoint="all", view_func=cls.__route_all,  methods=('GET',))
+        cls.__route_upsert = cls.__route_upsert
+        app.add_url_rule(f'/{route}/update', endpoint="update", view_func=cls.__route_upsert,  methods=('POST',))
+        cls.__route_delete = cls.__route_delete
+        app.add_url_rule(f'/{route}/delete', endpoint="delete", view_func=cls.__route_delete,  methods=('POST',))
+        cls.__route_search = cls.__route_search
+        app.add_url_rule(f'/{route}/search/', endpoint="search", view_func=cls.__route_search,  methods=('GET','POST'))
+        cls.__route_delete_all = cls.__route_delete_all
+        app.add_url_rule(f'/{route}/deleteall', endpoint="deleteall", view_func=cls.__route_delete_all,  methods=('POST',))
+        
     @classmethod
-    def modelget(cls, pk):
+    def __route_get(cls, pk):
+        log(cls, pk)
         mt = cls.get(pk)
-        #log(f"modeltestget: {mt}")
-        return response.package(mt)
-    
-    @classmethod
-    def modelall(cls):
-        mt = cls.all()
+        
         return response.package(mt)
 
     @classmethod
-    def modelsearch(cls):
+    def __route_search(cls):
         model_objs = cls.search(**request.values)
         return response.package(model_objs)
 
     @classmethod
-    def modeldelete(cls):
-        pk = response.unpackage(request.json)[0]
-        mt = cls.get(pk)
-        mt.delete()
+    def __route_all(cls):
+        mt = cls.all()
         return response.package(mt)
-    
+
     @classmethod
-    def modelupsert(cls):
+    def __route_upsert(cls):
         #log(f"request.json: {request.json}")
         model_objs = response.unpackage(request.json)
         for i, mo in enumerate(model_objs):
@@ -204,3 +240,16 @@ class Model(BaseModel):
                 model_objs[i] = mt
                 
         return response.package(model_objs)
+
+    @classmethod
+    def __route_delete(cls):
+        pk = response.unpackage(request.json)[0]
+        mt = cls.get(pk)
+        mt.delete()
+        return response.package(mt)
+
+    @classmethod
+    def __route_delete_all(cls):
+        log("Here")
+        mt = cls.delete_all()
+        return response.package(mt)

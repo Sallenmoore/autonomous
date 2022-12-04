@@ -4,29 +4,41 @@ from autonomous.model.proxymodel import ProxyModel
 
 from datetime import datetime
 
-class SubModelTest(ProxyModel):
-    API_URL="http://localhost:7359/submodeltest"
+class ProxySubModelTest(ProxyModel):
+    API_URL="http://localhost:7357/submodeltest"
+    API_CLASS="SubModelTest"
 
-class ModelTest(ProxyModel):
-    API_URL="http://localhost:7359/modeltest"
+class ProxyModelTest(ProxyModel):
+    API_URL="http://localhost:7357/modeltest"
+    API_CLASS="ModelTest"
 
+def clear_db():
+    ProxyModelTest.delete_all()
+    ProxySubModelTest.delete_all()
 
 def make_model():
-    m = ModelTest(
-        name="test",
-        sub=SubModelTest(name="subtest", number=2),
-        collection=[1,2,3], 
-        value = 754,
-        nothing = None, 
-        keystore = {'a':1, 'b':2},
-        timestamp = datetime.now()
+    subobj = ProxySubModelTest(name="TestSub", number=1)
+    log(subobj)
+    mt = ProxyModelTest(
+        name = "test",
+        status = subobj,
+        collection = ["one", "two", "three"],
+        value = 100,
+        nothing = None,
+        keystore = {"test1": "value1", "test2": "value2"},
+        invalid_attribute = "This should not be saved",
+        thing_date = datetime.today(),
     )
-    return m
+    mt.save()
+    return mt
 
+def start_test():
+    clear_db()
+    return make_model()
 
 def test_proxy_create():
-    result = make_model().save()
-    model = ModelTest.get(result)
+    result = start_test()
+    model = ProxyModelTest.get(result)
     assert result.name == model.name
     assert result.status == model.status
     assert result.collection == model.collection
@@ -34,42 +46,33 @@ def test_proxy_create():
     assert result.keystore == model.keystore
     assert result.sub.subname == model.sub.name
     assert result.sub.number == model.sub.number
-    return response.package(data=result)
 
 def test_read():
-    make_model().save()
-    for m in ModelTest.all():
-        assert ModelTest.get(m.pk)
-    return response.package(data=m)
+    result = start_test()
+    assert ProxyModelTest.get(result.pk).pk == result.pk
 
 def test_update():
-    make_model().save()
-    data=ModelTest.all()[0]
-    data.name = "updated"
-    data.sub.name = "updated"
-    data.save()
-    data2=ModelTest.get(pk)
-    assert data.name == data2.name == "updated"
-    assert data.sub.name == data2.sub.name == "updated"
-    return response.package(data=ModelTest.get(pk))
+    result = start_test()
+    result.name = "updated"
+    result.sub.name = "updated"
+    result.save()
+    result2=ProxyModelTest.get(pk)
+    assert result.name == result2.name == "updated"
+    assert result.sub.name == result2.sub.name == "updated"
 
 
 def test_delete():
-    make_model().save()
-    for m in ModelTest.all():
-        ModelTest.get(m.pk).delete()
-    assert not ModelTest.all()
-    return response.package(data=[])
+    result = start_test()
+    result.delete()
+    assert not ProxyModelTest.get(result.pk)
 
 
 def test_search():
-    make_model().save()
-    assert ModelTest.search(name="test")
-    return {}
+    result = start_test()
+    assert ProxyModelTest.search(name="test")
 
 
 def test_all():
-    make_model().save()
-    assert ModelTest.all()
-    return response.package(data=ModelTest.all())
+    result = start_test()
+    assert ProxyModelTest.all()
 

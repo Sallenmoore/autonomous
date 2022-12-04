@@ -90,7 +90,7 @@ pytest ./tests --log-level=INFO -rx -l -x; rm -rf tables
 ### Show Logs
 
 ```sh
-sudo docker logs -f --since=15m -t app_name`
+sudo docker logs -f --since=15m -t app_name
 ```
 
 ### Documentation

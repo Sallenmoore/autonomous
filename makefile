@@ -17,7 +17,7 @@ TB?="short"
 #TEST SCRIPTS
 
 quicktest: 
-	-pytest ./tests --log-level=INFO -vv -rx -l -x --tb=$(TB) -k $(TEST_FUNC) --full-trace
+	-pytest ./tests --log-level=INFO -vv -rx -l -x --tb=$(TB) -k $(TEST_FUNC)
 
 test_app:
 	cd tests/test_app && docker-compose up --build -d
