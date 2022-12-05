@@ -1,0 +1,1 @@
+{"HandlerSubModelTest": {"1": {"_auto_pk": 1, "_auto_model": "HandlerSubModelTest", "_auto_attributes": {"name": {"py/type": "builtins.str"}, "number": {"py/type": "builtins.int"}, "_auto_pk": {"py/type": "builtins.int"}, "_auto_model": {"py/type": "builtins.str"}}, "name": "TestSub", "number": 1}}}

@@ -1,6 +1,7 @@
 from urllib.parse import urlencode
 from .basemodel import BaseModel
-from autonomous import log, response
+from autonomous import log
+from autonomous.handler import NetworkHandler
 
 import requests
 import json
@@ -46,7 +47,7 @@ class ProxyModel(BaseModel):
             dict: a dictionary of the requested record
         """
         
-        obj =  response.get_request(f"{cls.API_URL}/{pk}",)
+        obj =  NetworkHandler.get_request(f"{cls.API_URL}/{pk}",)
         #log(f"obj: {obj}")
         return cls(**obj[0]) if obj else None
 
@@ -65,7 +66,7 @@ class ProxyModel(BaseModel):
         api_path = f"search?{urllib.parse.urlencode(kwargs)}"
 
         #log(endpoint)
-        result = [cls(**r) for r in response.get_request(f"{cls.API_URL}/{api_path}")]
+        result = [cls(**r) for r in NetworkHandler.get_request(f"{cls.API_URL}/{api_path}")]
         return result
 
     @classmethod
@@ -79,7 +80,7 @@ class ProxyModel(BaseModel):
             _type_: _description_
         """
         #log(endpoint)
-        result = [cls(**r) for r in response.get_request(f"{cls.API_URL}/all")]
+        result = [cls(**r) for r in NetworkHandler.get_request(f"{cls.API_URL}/all")]
         return result
     
     def save(self, api_path=""):
@@ -93,7 +94,7 @@ class ProxyModel(BaseModel):
         #log(self)
         self._proxy_auto_models()
         
-        result = response.post_request(f"{self.API_URL}/update", self)
+        result = NetworkHandler.post_request(f"{self.API_URL}/update", self)
         return result[0]['_auto_pk']
 
     def delete(self, api_path="delete"):
@@ -109,7 +110,7 @@ class ProxyModel(BaseModel):
             _type_: _description_
         """
         #log(f"pk: {self.pk}:{type(self.pk)}")
-        return response.post_request(f"{cls.API_URL}/{api_path}", self.pk)[0] if self.pk else None
+        return NetworkHandler.post_request(f"{cls.API_URL}/{api_path}", self.pk)[0] if self.pk else None
 
     @classmethod
     def delete_all(cls, api_path="deleteall"):
@@ -124,6 +125,6 @@ class ProxyModel(BaseModel):
         Returns:
             _type_: _description_
         """
-        res = response.post_request(f"{cls.API_URL}/{api_path}", None)
+        res = NetworkHandler.post_request(f"{cls.API_URL}/{api_path}", None)
         return res
     

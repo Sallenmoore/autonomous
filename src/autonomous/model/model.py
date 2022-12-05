@@ -4,7 +4,7 @@ from .basemodel import BaseModel, AutoModel
 from autonomous import log
 
 ## routing modules
-from autonomous import response
+from autonomous.handler import NetworkHandler
 from flask import request
 
 import inspect, os
@@ -204,22 +204,22 @@ class Model(BaseModel):
         log(cls, pk)
         mt = cls.get(pk)
         
-        return response.package(mt)
+        return NetworkHandler.package(mt)
 
     @classmethod
     def __route_search(cls):
         model_objs = cls.search(**request.values)
-        return response.package(model_objs)
+        return NetworkHandler.package(model_objs)
 
     @classmethod
     def __route_all(cls):
         mt = cls.all()
-        return response.package(mt)
+        return NetworkHandler.package(mt)
 
     @classmethod
     def __route_upsert(cls):
         #log(f"request.json: {request.json}")
-        model_objs = response.unpackage(request.json)
+        model_objs = NetworkHandler.unpackage(request.json)
         for i, mo in enumerate(model_objs):
             
             model = BaseModel.model_loader(mo._auto_model)
@@ -233,17 +233,17 @@ class Model(BaseModel):
             else:
                 model_objs[i] = mt
                 
-        return response.package(model_objs)
+        return NetworkHandler.package(model_objs)
 
     @classmethod
     def __route_delete(cls):
-        pk = response.unpackage(request.json)[0]
+        pk = NetworkHandler.unpackage(request.json)[0]
         mt = cls.get(pk)
         mt.delete()
-        return response.package(mt)
+        return NetworkHandler.package(mt)
 
     @classmethod
     def __route_delete_all(cls):
         log("Here")
         mt = cls.delete_all()
-        return response.package(mt)
+        return NetworkHandler.package(mt)

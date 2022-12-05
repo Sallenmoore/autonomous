@@ -20,9 +20,10 @@ quicktest:
 	-pytest ./tests --log-level=INFO -vv -rx -l -x --tb=$(TB) -k $(TEST_FUNC)
 
 test_app:
-	cd tests/test_app && docker-compose up --build -d
+	- cd tests/test_app && docker-compose up --build -d
 
 test:clean test_app quicktest
+
 
 ###### CLEANING #######
 

@@ -1,15 +1,16 @@
 #local modules
 from autonomous.db.db import Database
 from autonomous import log
+from autonomous import handler
 #python modules
-import json
+from jsonpickle.handlers import register
 import importlib
 import inspect
 import pprint
 
 class AutoModel:
     
-    def __init__(self, model):
+    def __init__(self, model, save=True):
         #log(self.__class__)
         """
         _summary_
@@ -21,17 +22,15 @@ class AutoModel:
             Exception: _description_
         """
         #log(f"Auto modeling", model)
-        if not isinstance(model, AutoModel): 
+        if save and not isinstance(model, AutoModel): 
             model.save()
-            self._auto_model = model._auto_model
-            self._auto_pk = model._auto_pk
-        else:
-            self.__dict__.update(model.__dict__)
-        #breakpoint()
-        self._auto_real_obj = None
+        self._auto_model = model._auto_model
+        self._auto_pk = model._auto_pk
+        self._auto_real_obj = model
+        self._auto_name = None
 
     def __repr__(self):
-        return f"AutoModel({self._auto_model}, {self._auto_pk})"
+        return f"AutoModel({self._auto_model}, {self._auto_pk}, {self._auto_name}, {self._auto_real_obj})"
     
     def __set_name__(self, owner, name):
         log(name)
@@ -57,8 +56,10 @@ class AutoModel:
         if key == "_auto_obj":
             if not self._auto_real_obj:
                 self._auto_real_obj = BaseModel.model_loader(self._auto_model).get(self._auto_pk) 
-            return self._auto_real_obj
-        return getattr(self._auto_obj, key)
+            result = self._auto_real_obj
+        else:
+            result = getattr(self._auto_obj, key)
+        return result
     
     def __setattr__(self, key, value):
         #log(self.__class__)
@@ -67,10 +68,12 @@ class AutoModel:
         else:
             model = self._auto_obj
             setattr(model, key, value)
+            model.save()
 
     def __delattr__(self, key):
         model = self._auto_obj
         model.__delattr__(key)
+        
         
 class BaseModel:
     _auto_attributes = {"_auto_pk":int, "_auto_model":str}
@@ -87,6 +90,7 @@ class BaseModel:
         _extended_summary_
         """
         if 'autonomous' not in str(cls):
+            register(cls, handler.AutoHandler)
             BaseModel._auto_models[cls.__name__] = cls
 
     ############################## Public Methods #####################################

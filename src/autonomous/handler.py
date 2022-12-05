@@ -1,20 +1,36 @@
 import requests
 from autonomous import log
 import jsonpickle
+import json
 from autonomous.model.basemodel import BaseModel, AutoModel
-from jsonpickle.handlers import BaseHandler
 
-class AutoHandler:
-    
-    @staticmethod
-    def flatten(obj, data):
+##############################################################################################
+#
+#    Network Handler
+#
+##############################################################################################
+class AutoHandler(jsonpickle.handlers.BaseHandler):
+
+    def flatten(self, obj, data):
+        log(data, type(data))
+        autom = AutoModel(obj, save=False)
         #Flatten obj into a json-friendly form and write result to data.
-        data = AutoModel(obj).__dict__
+        log(autom, type(autom))
+        data['autom']= json.dumps(autom.__dict__)
+        return data
 
-    @staticmethod
-    def restore(data):
+    def restore(self, data):
+        log(data, type(data))
+        return self.context.restore(data['autom'])
         #Restore an object of the registered type from the json-friendly representation obj and return it.
 
+
+##############################################################################################
+#
+#    Network Handler
+#
+##############################################################################################
+class NetworkHandler:
     @classmethod
     def package(cls, data):
         """
@@ -33,8 +49,6 @@ class AutoHandler:
 
         #log(data)
         if not isinstance(data, list):data = [data]
-
-        data = [d._proxy_auto_models() for d in data if isinstance(d, BaseModel)]
         return {"results":jsonpickle.encode(data)}
 
     @classmethod
@@ -58,6 +72,26 @@ class AutoHandler:
         return data
 
     @classmethod
+    def get_request(cls, url):
+        """
+        returns the raw json response from a class API endpoint
+
+        Args:
+            endpoint (str): the additional endpoint to append to the API_URL
+
+        Returns:
+            dict: the json response from the API converted to a dictionary
+        """
+        response = requests.get(url).json()
+        #log(f"endpoint: {endpoint}, response: {response}")
+        try:
+            response = response.unpackage(response)
+        except Exception as e:
+            log(f"Error deserializing results: {e} \n results: {response}")
+            raise
+        return response
+
+    @classmethod
     def post_request(cls, url, data):
         """
         _summary_
@@ -79,27 +113,6 @@ class AutoHandler:
         resp = requests.post(url, json=payload, headers=headers).json()
         
         return cls.unpackage(resp)
-
-
-    @classmethod
-    def get_request(cls, url):
-        """
-        returns the raw json response from a class API endpoint
-
-        Args:
-            endpoint (str): the additional endpoint to append to the API_URL
-
-        Returns:
-            dict: the json response from the API converted to a dictionary
-        """
-        response = requests.get(url).json()
-        #log(f"endpoint: {endpoint}, response: {response}")
-        try:
-            response = response.unpackage(response)
-        except Exception as e:
-            log(f"Error deserializing results: {e} \n results: {response}")
-            raise
-        return response
 
     # @classmethod
     # def getjson(cls, uri):

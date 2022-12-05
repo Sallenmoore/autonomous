@@ -1,0 +1,5 @@
+{
+    "models": [
+      { "id": 1, "_auto_pk": 1, "_auto_model": "TestModel" }
+    ]
+}
