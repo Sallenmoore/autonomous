@@ -93,7 +93,7 @@ class ProxyModel(BaseModel):
         #log(self)
         self._proxy_auto_models()
         
-        result = response.post_request(f"{cls.API_URL}/update", self)
+        result = response.post_request(f"{self.API_URL}/update", self)
         return result[0]['_auto_pk']
 
     def delete(self, api_path="delete"):
@@ -124,6 +124,6 @@ class ProxyModel(BaseModel):
         Returns:
             _type_: _description_
         """
-        #log(f"pk: {self.pk}:{type(self.pk)}")
-        return response.post_request(f"{cls.API_URL}/{api_path}", None)[0]
+        res = response.post_request(f"{cls.API_URL}/{api_path}", None)
+        return res
     

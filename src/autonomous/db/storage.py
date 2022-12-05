@@ -7,7 +7,8 @@ class JSONPickleStorage(tinydb.storages.Storage):
         self.filename = filename
 
     def read(self):
-        with open(self.filename) as fptr:
+        with open(self.filename, "a+") as fptr:
+            fptr.seek(0,0)
             try:
                 data = jsonpickle.decode(fptr.read())
                 return data

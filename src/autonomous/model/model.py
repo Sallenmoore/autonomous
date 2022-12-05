@@ -188,22 +188,16 @@ class Model(BaseModel):
 
     @classmethod
     def crud(cls, app):
-        
-        #log(cls)
+        from functools import partial
+        log(cls)
         route=cls.__name__.lower()
         #app.add_url_rule(rule, endpoint="get", view_func=cls.modelget, methods=('GET',))
-        cls.__route_get = cls.__route_get
-        app.add_url_rule(f'/{route}/<int:pk>', endpoint="get", view_func=cls.__route_get, methods=('GET',))
-        cls.__route_all = cls.__route_all
-        app.add_url_rule(f'/{route}/all', endpoint="all", view_func=cls.__route_all,  methods=('GET',))
-        cls.__route_upsert = cls.__route_upsert
-        app.add_url_rule(f'/{route}/update', endpoint="update", view_func=cls.__route_upsert,  methods=('POST',))
-        cls.__route_delete = cls.__route_delete
-        app.add_url_rule(f'/{route}/delete', endpoint="delete", view_func=cls.__route_delete,  methods=('POST',))
-        cls.__route_search = cls.__route_search
-        app.add_url_rule(f'/{route}/search/', endpoint="search", view_func=cls.__route_search,  methods=('GET','POST'))
-        cls.__route_delete_all = cls.__route_delete_all
-        app.add_url_rule(f'/{route}/deleteall', endpoint="deleteall", view_func=cls.__route_delete_all,  methods=('POST',))
+        app.add_url_rule(f'/{route}/<int:pk>', endpoint=f"{route}_get", view_func=partial(cls.__route_get), methods=('GET',))
+        app.add_url_rule(f'/{route}/all', endpoint=f"{route}_all", view_func=partial(cls.__route_all),  methods=('GET',)) 
+        app.add_url_rule(f'/{route}/update', endpoint=f"{route}_update", view_func=partial(cls.__route_upsert),  methods=('POST',))
+        app.add_url_rule(f'/{route}/delete', endpoint=f"{route}_delete", view_func=partial(cls.__route_delete),  methods=('POST',))
+        app.add_url_rule(f'/{route}/search/', endpoint=f"{route}_search", view_func=partial(cls.__route_search),  methods=('GET','POST'))
+        app.add_url_rule(f'/{route}/deleteall', endpoint=f"{route}_deleteall", view_func=partial(cls.__route_delete_all),  methods=('POST',))
         
     @classmethod
     def __route_get(cls, pk):
@@ -228,7 +222,7 @@ class Model(BaseModel):
         model_objs = response.unpackage(request.json)
         for i, mo in enumerate(model_objs):
             
-            #log(f"mo: {mo}")
+            model = BaseModel.model_loader(mo._auto_model)
             if mt := mo.get("_auto_pk"):
                 mt.update(**mo)
             else:

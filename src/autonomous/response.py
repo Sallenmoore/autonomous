@@ -1,9 +1,19 @@
 import requests
 from autonomous import log
 import jsonpickle
-from autonomous.model.basemodel import BaseModel
+from autonomous.model.basemodel import BaseModel, AutoModel
+from jsonpickle.handlers import BaseHandler
 
-class Response:
+class AutoHandler:
+    
+    @staticmethod
+    def flatten(obj, data):
+        #Flatten obj into a json-friendly form and write result to data.
+        data = AutoModel(obj).__dict__
+
+    @staticmethod
+    def restore(data):
+        #Restore an object of the registered type from the json-friendly representation obj and return it.
 
     @classmethod
     def package(cls, data):
@@ -66,11 +76,9 @@ class Response:
         payload = cls.package(data)
 
         #log(f"endpoint: {endpoint}, payload: {payload}")
-        response = requests.post(url, json=payload, headers=headers).json()
+        resp = requests.post(url, json=payload, headers=headers).json()
         
-        response = response.unpackage(response)
-        #log(f"endpoint: {endpoint}, response: {response}")
-        return response
+        return cls.unpackage(resp)
 
 
     @classmethod
