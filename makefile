@@ -1,4 +1,6 @@
 
+.PHONY: all clean deepclean test inspect trace
+
 all: test clean package
 
 package:
@@ -16,14 +18,22 @@ TB?="short"
 
 #TEST SCRIPTS
 
-quicktest: 
-	-pytest ./tests --log-level=INFO -vv -rx -l -x --tb=$(TB) -k $(TEST_FUNC)
 
-test_app:
-	- cd tests/test_app && docker-compose up --build -d
+testapp:
+	-cd tests/apitester && docker-compose up --build -d
+	@cd tests/apitester && docker-compose logs api
 
-test:clean test_app quicktest
+test:
+	@echo "Setting up environment variables"
+	@export PYTHONDONTWRITEBYTECODE=1; export PYTHONUNBUFFERED=1; export APP_NAME="api"; \
+	export AUTO_TABLE_PATH="tests"; export DEBUG=True; export PORT=7537; export HOST=0.0.0.0;\
+	pytest ./tests --log-level=INFO -rx -l -x -k $(TEST_FUNC)
 
+trace:
+	@export PYTHONDONTWRITEBYTECODE=1; export PYTHONUNBUFFERED=1; export APP_NAME="api"; \
+	export AUTO_TABLE_PATH="tests"; export DEBUG=True; export PORT=7537; export HOST=0.0.0.0;\
+	pytest ./tests --log-level=INFO --trace -rx -l -x --tb=$(TB) -k $(TEST_FUNC)
+	
 
 ###### CLEANING #######
 
@@ -31,7 +41,7 @@ CONTAINERS=$(shell docker ps -a -q)
 
 clean:
 	sudo docker ps -a
-	-cd tests/test_app && docker-compose down --remove-orphans
+	-cd tests/apitester && docker-compose down --remove-orphans
 	-sudo docker kill 
 
 deepclean: clean

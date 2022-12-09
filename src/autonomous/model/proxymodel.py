@@ -26,9 +26,12 @@ class ProxyModel(BaseModel):
             Exception: _description_
         """
         #log(f"updated values:{kwargs}")
+        self._auto_pk = kwargs.pop("_auto_pk", None)
         self.__dict__.update(kwargs)
         if hasattr(self.__class__,"API_MODEL"):
             self._auto_model = self.__class__.API_MODEL
+        else:
+            self._auto_model = self.__class__.__name__
 
 
 ###########################################################################################
@@ -47,9 +50,9 @@ class ProxyModel(BaseModel):
             dict: a dictionary of the requested record
         """
         
-        obj =  NetworkHandler.get_request(f"{cls.API_URL}/{pk}",)
+        obj =  NetworkHandler.get(f"{cls.API_URL}/{pk}",)
         #log(f"obj: {obj}")
-        return cls(**obj[0]) if obj else None
+        return obj[0] if obj else None
 
     @classmethod
     def search(cls, **kwargs):
@@ -66,8 +69,7 @@ class ProxyModel(BaseModel):
         api_path = f"search?{urllib.parse.urlencode(kwargs)}"
 
         #log(endpoint)
-        result = [cls(**r) for r in NetworkHandler.get_request(f"{cls.API_URL}/{api_path}")]
-        return result
+        return NetworkHandler.get(f"{cls.API_URL}/{api_path}")
 
     @classmethod
     def all(cls):
@@ -80,8 +82,7 @@ class ProxyModel(BaseModel):
             _type_: _description_
         """
         #log(endpoint)
-        result = [cls(**r) for r in NetworkHandler.get_request(f"{cls.API_URL}/all")]
-        return result
+        return NetworkHandler.get(f"{cls.API_URL}/all")
     
     def save(self, api_path=""):
         """
@@ -92,10 +93,11 @@ class ProxyModel(BaseModel):
             api_path (str, optional): the endpoint save path if not 'create'. Defaults to "create".
         """
         #log(self)
-        self._proxy_auto_models()
+        self.proxy_auto_models()
         
-        result = NetworkHandler.post_request(f"{self.API_URL}/update", self)
-        return result[0]['_auto_pk']
+        result = NetworkHandler.post(f"{self.API_URL}/update", self)
+        self._auto_pk = result[0]._auto_pk
+        return self._auto_pk
 
     def delete(self, api_path="delete"):
         """
@@ -110,7 +112,7 @@ class ProxyModel(BaseModel):
             _type_: _description_
         """
         #log(f"pk: {self.pk}:{type(self.pk)}")
-        return NetworkHandler.post_request(f"{cls.API_URL}/{api_path}", self.pk)[0] if self.pk else None
+        return NetworkHandler.post(f"{self.API_URL}/{api_path}", self.pk)[0] if self.pk else None
 
     @classmethod
     def delete_all(cls, api_path="deleteall"):
@@ -125,6 +127,6 @@ class ProxyModel(BaseModel):
         Returns:
             _type_: _description_
         """
-        res = NetworkHandler.post_request(f"{cls.API_URL}/{api_path}", None)
+        res = NetworkHandler.post(f"{cls.API_URL}/{api_path}", None)
         return res
     

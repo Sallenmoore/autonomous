@@ -11,8 +11,8 @@ class Table:
         [summary]
         """
         self.path = path
-        self.db = tinydb.TinyDB(f"{self.path}/{name}.json", storage=JSONPickleStorage)
-        self._table = self.db.table(name=name)
+        #breakpoint()
+        self._table = tinydb.TinyDB(f"{self.path}/{name}.json", storage=JSONPickleStorage).table(name=name)
 
     @property
     def name(self):
@@ -22,12 +22,13 @@ class Table:
         """
         [summary]
         """
-        #log(obj['_auto_pk'])
+        #log(obj)
         if not obj._auto_pk:
             obj._auto_pk = self._table.all()[-1].doc_id+1 if len(self._table) else 1
-        #log(obj, obj['_auto_pk'], len(self._table), self._table.all()[-1])
+        #log(obj, len(self._table))
         pk = self._table.upsert(tinydb.table.Document(obj.__dict__, doc_id=obj._auto_pk)).pop()
         #log(f"_auto_pk:{pk}")
+        #breakpoint()
         return pk
 
     def count(self):
@@ -87,10 +88,13 @@ class Table:
         """
         [summary]
         """
+        
         obj = None
         if isinstance(obj_id, int):
-            #log(obj_id)
+            #breakpoint()
             obj = self._table.get(doc_id=obj_id)
+            #breakpoint()
+            #log(obj_id, obj, self, self._table)
         return obj
 
     def all(self):
@@ -102,7 +106,7 @@ class Table:
         return json.dumps(self.all(), indent=4)
 
     def clear(self):
-        self._table.truncate()
+        len(self._table) and self._table.truncate()
 
 
 

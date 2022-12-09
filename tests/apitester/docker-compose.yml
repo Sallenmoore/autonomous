@@ -12,10 +12,11 @@ services:
     networks:
       - app_net
     ports:
-      - "7357:5001"
+      - "7357:7357"
     volumes:
       - ./app/api:/var/app/
       - ../../src/autonomous:/var/app/autonomous
+      - ../tables:/var/app/tests/tables
     command: ["gunicorn", "app:create_app()", "-c/var/gunicorn.conf.py"]
 
 networks:

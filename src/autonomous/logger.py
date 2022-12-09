@@ -30,9 +30,9 @@ class Logger:
         fn = caller.filename.split('/')[-1]
         msg = f"\n{'='*40}\n{fn}:{caller.function}()::{caller.lineno}\n\n"
 
-        params = list(args)
         if kwargs:
-            params+= [{k:v} for k,v in kwargs.items()]
+            args = list(args)
+            args+= [{k:v} for k,v in kwargs.items()]
             
-        msg += "\n\n=====\n\n".join([pprint.pformat(a, indent=2, compact=False) for a in params])
+        msg += "\n\n=====\n\n".join([pprint.pformat(a, indent=2, compact=False) for a in args])
         built_in_log.log(level, f"{msg}\n")

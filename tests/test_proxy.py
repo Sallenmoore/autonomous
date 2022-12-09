@@ -6,11 +6,11 @@ from datetime import datetime
 
 class ProxySubModelTest(ProxyModel):
     API_URL="http://localhost:7357/submodeltest"
-    API_CLASS="SubModelTest"
+    API_MODEL="SubModelTest"
 
 class ProxyModelTest(ProxyModel):
     API_URL="http://localhost:7357/modeltest"
-    API_CLASS="ModelTest"
+    API_MODEL="ModelTest"
 
 def clear_db():
     ProxyModelTest.delete_all()
@@ -21,13 +21,12 @@ def make_model():
     log(subobj)
     mt = ProxyModelTest(
         name = "test",
-        status = subobj,
+        sub = subobj,
         collection = ["one", "two", "three"],
         value = 100,
         nothing = None,
         keystore = {"test1": "value1", "test2": "value2"},
-        invalid_attribute = "This should not be saved",
-        thing_date = datetime.today(),
+        timestamp = datetime.today(),
     )
     mt.save()
     return mt
@@ -38,13 +37,13 @@ def start_test():
 
 def test_proxy_create():
     result = start_test()
-    model = ProxyModelTest.get(result)
+    log(result)
+    model = ProxyModelTest.get(result.pk)
     assert result.name == model.name
-    assert result.status == model.status
     assert result.collection == model.collection
     assert result.value == model.value
     assert result.keystore == model.keystore
-    assert result.sub.subname == model.sub.name
+    assert result.sub.name == model.sub.name
     assert result.sub.number == model.sub.number
 
 def test_read():
@@ -56,7 +55,7 @@ def test_update():
     result.name = "updated"
     result.sub.name = "updated"
     result.save()
-    result2=ProxyModelTest.get(pk)
+    result2=ProxyModelTest.get(result.pk)
     assert result.name == result2.name == "updated"
     assert result.sub.name == result2.sub.name == "updated"
 

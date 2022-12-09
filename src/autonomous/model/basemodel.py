@@ -1,16 +1,15 @@
 #local modules
 from autonomous.db.db import Database
 from autonomous import log
-from autonomous import handler
 #python modules
-from jsonpickle.handlers import register
+
 import importlib
 import inspect
 import pprint
 
 class AutoModel:
     
-    def __init__(self, model, save=True):
+    def __init__(self, model):
         #log(self.__class__)
         """
         _summary_
@@ -21,16 +20,53 @@ class AutoModel:
         Raises:
             Exception: _description_
         """
-        #log(f"Auto modeling", model)
-        if save and not isinstance(model, AutoModel): 
-            model.save()
-        self._auto_model = model._auto_model
-        self._auto_pk = model._auto_pk
-        self._auto_real_obj = model
         self._auto_name = None
+        self._auto_real_obj = None
+        if BaseModel.model_loader(model.__class__.__name__):
+            model.save()
+            self._auto_real_obj = model
+        elif isinstance(model, dict):
+            log(model)
+            model_cls = BaseModel.model_loader(model['_auto_model'])
+            self._auto_real_obj = model_cls(**model)
+            self._auto_pk = self._auto_real_obj._auto_pk
+        elif isinstance(model, AutoModel):
+            self._auto_model = model._auto_model
+            self._auto_pk = model._auto_pk
+
+        #self._auto_model = model._auto_model
+
+    
+    @property
+    def _auto_obj(self):
+        if not self._auto_real_obj:
+            self._auto_real_obj = BaseModel.model_loader(self._auto_model).get(self._auto_pk) 
+        return self._auto_real_obj
+
+    # def __setitem__(self, key, item):
+    #     setattr(self._auto_obj, key, item)
+
+    # def __getitem__(self, key):
+    #     return getattr(self._auto_obj, key)
+
+    def __getstate__(self):
+        if self._auto_obj:
+            self._auto_pk = self._auto_obj.save()
+        return {
+            "_auto_name":self._auto_name,
+            "_auto_model":self._auto_model,
+            "_auto_pk":self._auto_pk
+        }
+
+    def __setstate__(self, state):
+        log(state)
+        self._auto_name = state.get("_auto_name")
+        self._auto_model = state["_auto_model"]
+        self._auto_pk = state["_auto_pk"]
+        self._auto_real_obj = None
 
     def __repr__(self):
-        return f"AutoModel({self._auto_model}, {self._auto_pk}, {self._auto_name}, {self._auto_real_obj})"
+        return f"AutoModel({self._auto_model}, _auto_pk:{self._auto_pk}, _auto_name:{self._auto_name}, _auto_real_object:{self._auto_real_obj})"
     
     def __set_name__(self, owner, name):
         log(name)
@@ -53,12 +89,7 @@ class AutoModel:
 
     def __getattr__(self, key):
         #breakpoint()
-        if key == "_auto_obj":
-            if not self._auto_real_obj:
-                self._auto_real_obj = BaseModel.model_loader(self._auto_model).get(self._auto_pk) 
-            result = self._auto_real_obj
-        else:
-            result = getattr(self._auto_obj, key)
+        result = getattr(self._auto_obj, key)
         return result
     
     def __setattr__(self, key, value):
@@ -69,18 +100,24 @@ class AutoModel:
             model = self._auto_obj
             setattr(model, key, value)
             model.save()
-
+ 
     def __delattr__(self, key):
         model = self._auto_obj
         model.__delattr__(key)
+
+    # def __getstate__(self):
         
+    #     return 
+
+    # def __setstate__(self, state):
+    #     self.__dict__.update(state)
         
 class BaseModel:
-    _auto_attributes = {"_auto_pk":int, "_auto_model":str}
+    _base_attributes = {"_auto_pk":int, "_auto_model":str}
     _auto_models = {}
         
     def __repr__(self):
-        return pprint.pformat({**self.__dict__, "_auto_attributes":self._auto_attributes, "Class name":self.__class__}, indent=4, compact=False)
+        return pprint.pformat({**self.__dict__, "classname":self.__class__}, indent=4, compact=False)
 
     @classmethod
     def __init_subclass__(cls, **kwargs):
@@ -90,8 +127,19 @@ class BaseModel:
         _extended_summary_
         """
         if 'autonomous' not in str(cls):
-            register(cls, handler.AutoHandler)
             BaseModel._auto_models[cls.__name__] = cls
+
+    # def __getstate__(self):
+    #     self.proxy_auto_models()
+    #     return self.__dict__
+
+    # def __setstate__(self, state):
+    #     log(state)
+    #     self.__dict__.update(state)
+
+    def __reduce__(self):
+        self.proxy_auto_models()
+        return (AutoModel, ({'_auto_model':self._auto_model,"_auto_pk":self._auto_pk, **self.__dict__},))
 
     ############################## Public Methods #####################################
         
@@ -133,7 +181,7 @@ class BaseModel:
         return BaseModel._auto_models.get(name)
 
     @classmethod
-    def is_auto(cls, name):
+    def is_auto(cls, obj):
         """
         _summary_
 
@@ -145,14 +193,21 @@ class BaseModel:
         Returns:
             _type_: _description_
         """
-        if hasattr(name, '__class__'):
-             name = name.__class__.__name__
-        else:
-            raise Exception("Unknown type")
-        return name in BaseModel._auto_models or name == "AutoModel"
+        return isinstance(obj, (AutoModel, *BaseModel._auto_models.values(),))
 
-    
-    def _proxy_auto_models(self):
+    def _proxy_auto_models(self, val):
+        if BaseModel.is_auto(val):
+            #log(val.autoattributes)
+            val = AutoModel(val)
+        elif isinstance(val, (list, set)):
+            for i, v in enumerate(val): 
+                val[i] = self._proxy_auto_models(v)
+        elif isinstance(val, dict):
+            for k, v in val.items(): 
+                val[k] = self._proxy_auto_models(v)
+        return val
+
+    def proxy_auto_models(self):
         """
         _summary_
 
@@ -162,21 +217,10 @@ class BaseModel:
             val (_type_): _description_
         """
         #log(self.autoattributes)
-        def aux_proxy_auto_models(val):
-            if BaseModel.is_auto(val):
-                #log(val.autoattributes)
-                val = AutoModel(val)
-            elif isinstance(val, list):
-                for i, v in enumerate(val): 
-                    val[i] = aux_proxy_auto_models(v)
-            elif isinstance(val, dict):
-                for k, v in val.items(): 
-                    val[k] = aux_proxy_auto_models(v)
-            return val
         
         for k, v in self.__dict__.items():
             #log(k, v, type(v))
-            self.__dict__[k] = aux_proxy_auto_models(v)
+            self.__dict__[k] = self._proxy_auto_models(v)
         #log(self.autoattributes)
         return self
 

@@ -2,27 +2,25 @@ import requests
 from autonomous import log
 import jsonpickle
 import json
-from autonomous.model.basemodel import BaseModel, AutoModel
-
+from .model.basemodel import BaseModel, AutoModel
 ##############################################################################################
 #
-#    Network Handler
+#    Auto Handler - Not sure why this would be needed
+#                   Leaving the code here in case I need it later 
 #
 ##############################################################################################
-class AutoHandler(jsonpickle.handlers.BaseHandler):
+# @jsonpickle.handlers.register(BaseModel, base=True)
+# class AutoHandler(jsonpickle.handlers.BaseHandler):
 
-    def flatten(self, obj, data):
-        log(data, type(data))
-        autom = AutoModel(obj, save=False)
-        #Flatten obj into a json-friendly form and write result to data.
-        log(autom, type(autom))
-        data['autom']= json.dumps(autom.__dict__)
-        return data
+    # def flatten(self, obj, data):
+    #     data['_auto_model'] = (AutoModel, (obj.__dict__,))
+    #     log(data)
+    #     return data
 
-    def restore(self, data):
-        log(data, type(data))
-        return self.context.restore(data['autom'])
-        #Restore an object of the registered type from the json-friendly representation obj and return it.
+    # def restore(self, data):
+    #     log(data, type(data))
+    #     return self.context.restore(data['_auto_model'])
+    #     #Restore an object of the registered type from the json-friendly representation obj and return it.
 
 
 ##############################################################################################
@@ -32,7 +30,7 @@ class AutoHandler(jsonpickle.handlers.BaseHandler):
 ##############################################################################################
 class NetworkHandler:
     @classmethod
-    def package(cls, data):
+    def package(cls, data, unpicklable=True):
         """
         _summary_
 
@@ -47,12 +45,15 @@ class NetworkHandler:
             _type_: _description_
         """
 
-        #log(data)
-        if not isinstance(data, list):data = [data]
-        return {"results":jsonpickle.encode(data)}
+        #log(data, isinstance(data, list))
+        if not isinstance(data, list):
+            data = [data]
+        response = {"results":jsonpickle.encode(data, unpicklable=unpicklable)}
+        #log(response)
+        return response
 
     @classmethod
-    def unpackage(cls, data=None):
+    def unpackage(cls, data):
         """
         _summary_
 
@@ -64,15 +65,15 @@ class NetworkHandler:
         Returns:
             _type_: _description_
         """
-        #log(data)
-        data = data.get('results')
-        data = jsonpickle.decode(data)
-        
-        #log(data)
-        return data
+        results = None
+        if data.get('results'): 
+            log(data.get('results'), type(data.get('results')))
+            results = jsonpickle.decode(data['results'])
+            log(results)
+        return results
 
     @classmethod
-    def get_request(cls, url):
+    def get(cls, url):
         """
         returns the raw json response from a class API endpoint
 
@@ -82,17 +83,19 @@ class NetworkHandler:
         Returns:
             dict: the json response from the API converted to a dictionary
         """
-        response = requests.get(url).json()
-        #log(f"endpoint: {endpoint}, response: {response}")
+        response = requests.get(url)
+        log(response.text)
+        response = response.json()
+        log(response)
         try:
-            response = response.unpackage(response)
+            response = cls.unpackage(response)
         except Exception as e:
             log(f"Error deserializing results: {e} \n results: {response}")
             raise
         return response
 
     @classmethod
-    def post_request(cls, url, data):
+    def post(cls, url, data, package=True):
         """
         _summary_
 
@@ -107,12 +110,12 @@ class NetworkHandler:
         #log(f"endpoint: {endpoint} \ndata:{data.__dict__}")
         headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
 
-        payload = cls.package(data)
+        payload = cls.package(data) if package else data
 
         #log(f"endpoint: {endpoint}, payload: {payload}")
         resp = requests.post(url, json=payload, headers=headers).json()
         
-        return cls.unpackage(resp)
+        return cls.unpackage(resp) if package else resp
 
     # @classmethod
     # def getjson(cls, uri):

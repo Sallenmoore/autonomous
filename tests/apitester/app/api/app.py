@@ -1,5 +1,5 @@
 from autonomous import log
-from autonomous import config, response
+from autonomous import config
 #from autonomous import create_app
 from models.modeltest import ModelTest
 from models.submodeltest import SubModelTest
@@ -31,4 +31,4 @@ def create_app():
         
         return app
 #application factory
-app = create_app()
+#app = create_app()
