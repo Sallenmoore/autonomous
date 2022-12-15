@@ -28,6 +28,19 @@ def start_test():
     #clear_db()
     return make_model()
 
+def test_model_attributes():
+    mt = ModelTest()
+    assert mt.name == None
+    assert mt.sub == None 
+    assert mt.collection == None
+    assert mt.value == None
+    assert mt.nothing == None
+    assert mt.keystore == None
+    assert mt.timestamp == None
+    log(vars(ModelTest.__base__))
+    attributes = ModelTest._Model__route_attributes()
+    assert "_auto_model" in attributes['results']
+
 def test_model_create():
     mt = start_test()
     assert mt.save()

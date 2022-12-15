@@ -34,7 +34,17 @@ def make_model():
 def start_test():
     clear_db()
     return make_model()
-
+  
+def test_proxy_attributes():
+    mt = ProxyModelTest()
+    assert mt.name == None
+    assert mt.sub == None 
+    assert mt.collection == None
+    assert mt.value == None
+    assert mt.nothing == None
+    assert mt.keystore == None
+    assert mt.timestamp == None
+    
 def test_proxy_create():
     result = start_test()
     #log(result)
