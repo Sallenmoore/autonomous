@@ -30,7 +30,7 @@ def start_test():
 def test_response_package():
     pmt = start_test()
     results = NetworkHandler.package(data=[pmt])
-    log(results)
+    #log(results)
     assert isinstance(results, dict)
     assert isinstance(results.get('results'), str)
     assert '_auto_pk' in results['results']
@@ -42,7 +42,7 @@ def test_response_unpackage():
     pmt = start_test()
     data = {"results":jsonpickle.encode([pmt])}
     results = NetworkHandler.unpackage(data)
-    log(results)
+    #log(results)
     assert pmt.pk and results[0]._auto_pk
     assert results[0]._auto_pk == pmt.pk
     assert results[0]._auto_pk == pmt.pk
@@ -51,7 +51,7 @@ def test_response_unpackage():
 def test_response_get():
     pmt = start_test()
     result = NetworkHandler.get(url="http://localhost:7357/modeltest/all")
-    log(result)
+    #log(result)
     assert result[0]._auto_pk == pmt.pk
 
 def test_response_post():

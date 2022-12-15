@@ -5,7 +5,7 @@ from models.modeltest import ModelTest
 from models.submodeltest import SubModelTest
 
 # External Modules
-from flask import Flask, request
+from flask import Flask
 
 # Built-In Modules
 import os

@@ -18,7 +18,7 @@ def clear_db():
 
 def make_model():
     subobj = ProxySubModelTest(name="TestSub", number=1)
-    log(subobj)
+    #log(subobj)
     mt = ProxyModelTest(
         name = "test",
         sub = subobj,
@@ -37,7 +37,7 @@ def start_test():
 
 def test_proxy_create():
     result = start_test()
-    log(result)
+    #log(result)
     model = ProxyModelTest.get(result.pk)
     assert result.name == model.name
     assert result.collection == model.collection

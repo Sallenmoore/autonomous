@@ -25,6 +25,12 @@ class ProxyModel(BaseModel):
         Raises:
             Exception: _description_
         """
+        if kwargs.get('attributes'):
+          attributes = kwargs.get('attributes')
+        else:
+          attributes = NetworkHandler.get(f"{self.API_URL}/attributes",)[0]
+        [setattr(self, k, None) for k in attributes]
+            
         #log(f"updated values:{kwargs}")
         self._auto_pk = kwargs.pop("_auto_pk", None)
         self.__dict__.update(kwargs)

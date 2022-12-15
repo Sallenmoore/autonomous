@@ -21,7 +21,7 @@ def create_app():
         pass
 
     with app.app_context():
-        log(f"====================")
+        #log(f"====================")
 
         @app.get('/')
         def index():

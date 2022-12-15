@@ -5,9 +5,9 @@ all: test clean package
 
 package:
 	pip install --upgrade pip
-	rm -rf dist
+	-rm -rf dist
 	python3 -m build
-	pip install -e .
+	-pip install -e .
 	python -m twine upload --verbose --repository testpypi dist/*
 
 ###### TESTING #######
@@ -21,13 +21,13 @@ TB?="short"
 
 testapp:
 	-cd tests/apitester && docker-compose up --build -d
-	@cd tests/apitester && docker-compose logs api
-
-test:
+	
+test: testapp
 	@echo "Setting up environment variables"
-	@export PYTHONDONTWRITEBYTECODE=1; export PYTHONUNBUFFERED=1; export APP_NAME="api"; \
+	-export PYTHONDONTWRITEBYTECODE=1; export PYTHONUNBUFFERED=1; export APP_NAME="api"; \
 	export AUTO_TABLE_PATH="tests"; export DEBUG=True; export PORT=7537; export HOST=0.0.0.0;\
 	pytest ./tests --log-level=INFO -rx -l -x -k $(TEST_FUNC)
+	cd tests/apitester && docker-compose logs api
 
 trace:
 	@export PYTHONDONTWRITEBYTECODE=1; export PYTHONUNBUFFERED=1; export APP_NAME="api"; \
@@ -45,7 +45,6 @@ clean:
 	-sudo docker kill 
 
 deepclean: clean
-	-rm -rf tables
 	-echo "$(CONTAINERS)" && sudo docker rm $(CONTAINERS)
 	-sudo docker system prune -a -f --volumes
 	

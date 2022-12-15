@@ -20,7 +20,7 @@ def create_app():
         pass
 
     with app.app_context():
-        log(f"====================")
+        #log(f"====================")
 
         @app.get('/')
         def index():
@@ -45,10 +45,10 @@ def create_app():
         @app.route('/modeltest/update', methods=('POST',))
         @app.route('/modeltest/create', methods=('POST',))
         def modeltestupsert():
-            log(f"request.json: {request.json}")
+            #log(f"request.json: {request.json}")
             
             models = response.unpackage(request.json)
-            log(f"models: {models}")
+            #log(f"models: {models}")
             if not all(m.save() for m in models):
                 return response.package("Test could not be saved. Unknown error.")
             return response.package(models)

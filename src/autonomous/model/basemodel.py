@@ -26,7 +26,7 @@ class AutoModel:
             model.save()
             self._auto_real_obj = model
         elif isinstance(model, dict):
-            log(model)
+            #log(model)
             model_cls = BaseModel.model_loader(model['_auto_model'])
             self._auto_real_obj = model_cls(**model)
             self._auto_pk = self._auto_real_obj._auto_pk
@@ -59,7 +59,7 @@ class AutoModel:
         }
 
     def __setstate__(self, state):
-        log(state)
+        #log(state)
         self._auto_name = state.get("_auto_name")
         self._auto_model = state["_auto_model"]
         self._auto_pk = state["_auto_pk"]
@@ -69,7 +69,7 @@ class AutoModel:
         return f"AutoModel({self._auto_model}, _auto_pk:{self._auto_pk}, _auto_name:{self._auto_name}, _auto_real_object:{self._auto_real_obj})"
     
     def __set_name__(self, owner, name):
-        log(name)
+        #log(name)
         self._auto_name = '_' + name
         
     def __get__(self, instance, owner):
@@ -115,7 +115,12 @@ class AutoModel:
 class BaseModel:
     _base_attributes = {"_auto_pk":int, "_auto_model":str}
     _auto_models = {}
-        
+    _auto_type_defaults = {
+        str: "",
+        list: [],
+        dict: {},
+    }
+    
     def __repr__(self):
         return pprint.pformat({**self.__dict__, "classname":self.__class__}, indent=4, compact=False)
 

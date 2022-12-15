@@ -16,11 +16,7 @@ import jsonpickle
 
 class Model(BaseModel):
 
-    _auto_type_defaults = {
-        str: "",
-        list: [],
-        dict: {},
-    }
+    
     
     def __init__(self, **kwargs):
         """
@@ -28,8 +24,11 @@ class Model(BaseModel):
 
         _extended_summary_
         """
+        
         self._auto_attributes = self.autoattributes()
         self._auto_attributes.update(BaseModel._base_attributes)
+        [setattr(self, k, None) for k in self.autoattributes()]
+        
         self._auto_pk = None
         self._auto_model = self.__class__.__name__
         
@@ -177,13 +176,19 @@ class Model(BaseModel):
         #log(cls)
         route=cls.__name__.lower()
         #app.add_url_rule(rule, endpoint="get", view_func=cls.modelget, methods=('GET',))
+        app.add_url_rule(f'/{route}/attributes', endpoint=f"{route}_attributes", view_func=partial(cls.__route_attributes), methods=('GET',))
         app.add_url_rule(f'/{route}/<int:pk>', endpoint=f"{route}_get", view_func=partial(cls.__route_get), methods=('GET',))
         app.add_url_rule(f'/{route}/all', endpoint=f"{route}_all", view_func=partial(cls.__route_all),  methods=('GET',)) 
         app.add_url_rule(f'/{route}/update', endpoint=f"{route}_update", view_func=partial(cls.__route_upsert),  methods=('POST',))
         app.add_url_rule(f'/{route}/delete', endpoint=f"{route}_delete", view_func=partial(cls.__route_delete),  methods=('POST',))
         app.add_url_rule(f'/{route}/search/', endpoint=f"{route}_search", view_func=partial(cls.__route_search),  methods=('GET','POST'))
         app.add_url_rule(f'/{route}/deleteall', endpoint=f"{route}_deleteall", view_func=partial(cls.__route_delete_all),  methods=('POST',))
-        
+
+    @classmethod
+    def __route_attributes(cls):
+        #log(cls)
+        return NetworkHandler.package(cls()._auto_attributes)
+    
     @classmethod
     def __route_get(cls, pk):
         #log(cls, pk)
@@ -199,7 +204,7 @@ class Model(BaseModel):
     @classmethod
     def __route_all(cls):
         mt = cls.all()
-        log(mt)
+        #log(mt)
         return NetworkHandler.package(mt)
 
     @classmethod
@@ -207,7 +212,7 @@ class Model(BaseModel):
         #log(f"request.json: {request.json}")
         model_objs = NetworkHandler.unpackage(request.json)
         for i, mo in enumerate(model_objs):
-            log(i, mo)
+            #log(i, mo)
             if not mo.save():
                 model_objs[i] = f"{mo._auto_model} could not be saved. Unknown error."
             else:
@@ -224,6 +229,6 @@ class Model(BaseModel):
 
     @classmethod
     def __route_delete_all(cls):
-        log("Here")
+        #log("Here")
         mt = cls.delete_all()
         return NetworkHandler.package(mt)

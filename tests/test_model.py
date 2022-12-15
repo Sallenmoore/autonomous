@@ -93,7 +93,7 @@ def test_model_update():
 
 def test_model_delete():
     mt = start_test()
-    log(mt)
+    #log(mt)
     assert not mt.delete()
     assert not ModelTest.get(mt.pk)
 

@@ -67,9 +67,9 @@ class NetworkHandler:
         """
         results = None
         if data.get('results'): 
-            log(data.get('results'), type(data.get('results')))
+            #log(data.get('results'), type(data.get('results')))
             results = jsonpickle.decode(data['results'])
-            log(results)
+            #log(results)
         return results
 
     @classmethod
@@ -84,9 +84,9 @@ class NetworkHandler:
             dict: the json response from the API converted to a dictionary
         """
         response = requests.get(url)
-        log(response.text)
+        #log(response.text)
         response = response.json()
-        log(response)
+        #log(response)
         try:
             response = cls.unpackage(response)
         except Exception as e:

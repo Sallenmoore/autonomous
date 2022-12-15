@@ -38,7 +38,7 @@ def test_db_read():
     t = start_test()
     t._auto_pk = db.update(t)
     model = db.get(t._auto_pk)
-    log(type(model), model)
+    #log(type(model), model)
     obj = RecordTest(**model)
     #log(obj._auto_pk)
     assert obj._auto_pk == t._auto_pk
@@ -58,7 +58,7 @@ def test_db_update():
     tester.num = 6
     db.update(tester)
     model = db.get(tester._auto_pk)
-    log(type(model), model)
+    #log(type(model), model)
     obj = RecordTest(**model)
     assert obj._auto_pk == tester._auto_pk
     assert tester.num == obj.num == 6
