@@ -1,10 +1,6 @@
 #local modules
-from autonomous.db.db import Database
 from autonomous import log
 #python modules
-
-import importlib
-import inspect
 import pprint
 
 class AutoModel:
@@ -71,7 +67,10 @@ class AutoModel:
     def __set_name__(self, owner, name):
         #log(name)
         self._auto_name = '_' + name
-        
+
+    def __contains__(self, item):
+      return item in self._auto_obj
+    
     def __get__(self, instance, owner):
         setattr(owner, self._auto_name, self._auto_obj)
         #log(f"Un-Auto modeling")
@@ -145,6 +144,9 @@ class BaseModel:
     def __reduce__(self):
         self.proxy_auto_models()
         return (AutoModel, ({'_auto_model':self._auto_model,"_auto_pk":self._auto_pk, **self.__dict__},))
+
+    def __contains__(self, item):
+      return item in self._auto_attributes
 
     ############################## Public Methods #####################################
         

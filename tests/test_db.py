@@ -7,6 +7,7 @@ import pytest
 class RecordTest:
     def __init__(self, **kwargs):
         self._auto_pk = None
+        self._auto_model = self.__class__
         self.num =  5
         self.name = "buh"
         self.__dict__.update(kwargs)
@@ -38,9 +39,8 @@ def test_db_read():
     t = start_test()
     t._auto_pk = db.update(t)
     model = db.get(t._auto_pk)
-    #log(type(model), model)
     obj = RecordTest(**model)
-    #log(obj._auto_pk)
+    log(obj)
     assert obj._auto_pk == t._auto_pk
     assert obj.num == 5
 

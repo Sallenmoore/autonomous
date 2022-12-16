@@ -1,8 +1,10 @@
 #external imports
 import tinydb
+from autonomous.model.basemodel import BaseModel, AutoModel
 from autonomous.db.storage import JSONPickleStorage
 from autonomous import log
 import json
+import re
 
 class Table:
     
@@ -24,12 +26,12 @@ class Table:
         """
         #log(obj)
         if not obj._auto_pk:
-            obj._auto_pk = self._table.all()[-1].doc_id+1 if len(self._table) else 1
+            obj._auto_pk = self._table.insert(obj.__dict__)
         #log(obj, len(self._table))
-        pk = self._table.upsert(tinydb.table.Document(obj.__dict__, doc_id=obj._auto_pk)).pop()
+        self._table.update(obj.__dict__, doc_ids=[obj._auto_pk]).pop()
         #log(f"_auto_pk:{pk}")
         #breakpoint()
-        return pk
+        return obj._auto_pk
 
     def count(self):
         return len(self._table)
@@ -46,42 +48,35 @@ class Table:
         else:
             return None
 
-    def search(self, **kwargs):
+    def search(self, **search_terms):
         """
         Returns an list of objects based on passed arguments
         as key/value pairs
         """
-        matches_needed = len(kwargs)
-        
-        search_terms = {}
-        for key, value in kwargs.items():
-            if isinstance(value, str):
-                search_terms[key] = value.lower().split()
-                matches_needed += len(search_terms[key]) - 1
-            else:
-                search_terms[key] = value
-                
-        objs = self.all()
-        if not objs:
-            #"No objects found")
-            return []
         matches = []
-        for obj in objs:
-            match_count = 0
-            for k, v in search_terms.items():
-                if isinstance(v, list):
-                    for term in v:
-                        #log(f"obj: {obj} k: {k}, term: {term} ")
-                        if k in obj and str(term).lower() in str(obj[k]).lower():
-                            match_count += 1
-                elif isinstance(v, str) and v.lower() in str(obj[k]).lower():
-                    match_count += 1
-                elif v == obj[k]:
-                    match_count += 1
-            if match_count == matches_needed:
-                #log(f"obj.name: {obj.name} match_count: {match_count}")
-                matches.append(obj)
-        #log(f"matches: {matches}")
+        if objs := self.all():
+          #number of fields to search
+          #matches_needed = len(search_terms)
+          #search each field
+          for k, v in search_terms.items():
+            if not v: continue
+            #split search term on spaces for combination search
+            query = getattr(tinydb.Query(), k)
+            if isinstance(v, str):
+              search_text = v.strip().split()
+              query = query.search(search_text.pop(0), flags=re.IGNORECASE)
+              while len(search_text):
+                 query = query & query.search(first, flags=re.IGNORECASE)
+              #matches_needed += len(search_terms[k]) - 1 #subtract 1 because the original term is already counted
+            else:
+              query = query.search(v)
+
+            matches += self._table.search(query)
+
+        filtered_matches = [] 
+        filtered_matches = filter(lambda m: m not in filtered_matches, matches)
+        #log(list(matches))
+        #log(list(map(lambda m : id(m), matches)))
         return matches
 
     def get(self, obj_id):

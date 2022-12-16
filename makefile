@@ -27,7 +27,7 @@ test: testapp
 	-export PYTHONDONTWRITEBYTECODE=1; export PYTHONUNBUFFERED=1; export APP_NAME="api"; \
 	export AUTO_TABLE_PATH="tests"; export DEBUG=True; export PORT=7537; export HOST=0.0.0.0;\
 	pytest ./tests --log-level=INFO -rx -l -x -k $(TEST_FUNC)
-	cd tests/apitester && docker-compose logs api
+	cd tests/apitester && docker logs --since=5m api
 
 trace:
 	@export PYTHONDONTWRITEBYTECODE=1; export PYTHONUNBUFFERED=1; export APP_NAME="api"; \

@@ -142,3 +142,14 @@ def test_submodel_update():
     mt.save()
     result = ModelTest.get(mt.pk)
     assert result.sub.name == "Changed"
+
+def test_submodel_search():
+    mt = start_test()
+    mt = make_model()
+    mt = make_model()
+    results = mt.sub.search(name='TestSub')
+    log(mt, results)
+    assert len(results)
+    assert all(r.name in mt.sub.name for r in results)
+    results = mt.sub.search(name='')
+    assert not results
