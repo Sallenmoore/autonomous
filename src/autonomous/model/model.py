@@ -12,7 +12,7 @@ import inspect, os
 from functools import partial
 
 ## for debugging
-import jsonpickle
+import pprint
 
 class Model(BaseModel):
 
@@ -28,26 +28,21 @@ class Model(BaseModel):
         self._auto_attributes = self.autoattributes()
         self._auto_attributes.update(BaseModel._base_attributes)
         [setattr(self, k, None) for k in self.autoattributes()]
-        
+
+        #breakpoint()
         self._auto_pk = None
         self._auto_model = self.__class__.__name__
-        
-        
+
         if rec := self._table().get(kwargs.get('_auto_pk')):
             self.__dict__.update(**rec)
-        #breakpoint()
         for k, v in kwargs.items():
             setattr(self, k, v)
-        #breakpoint()
 
-        def __repr__(self):
-            return pprint.pformat({**self.__dict__, "_auto_attributes":self._auto_attributes, "classname":self.__class__}, indent=4, compact=False)
-    
     def __setattr__(self, k, v):
         if k == "_auto_attributes" and isinstance(v, dict):
             self.__dict__[k] = v
         elif k in self._auto_attributes:
-            self.__dict__[k] = AutoModel(v) if BaseModel.is_auto(v) else self.verify_type(k, v)
+            self.__dict__[k] = self.verify_type(k, v)
         else:
             raise AttributeError(f"Invalid attribute {k} for {self.__class__.__name__}. Must be one of {self._auto_attributes}")
         
@@ -56,13 +51,21 @@ class Model(BaseModel):
         raise NotImplementedError("Must be implemented by Models")
 
     def verify_type(self, k, v):
-        if v != None and self._auto_attributes[k] != type(v): 
-            try:
-                v = self._auto_attributes[k](v)
-            except Exception as e:
-                log(f"[{e}]", f"WARNING: INVALID MODEL ATTRIBUTE TYPE => {k} : [{self._auto_attributes[k]}!={type(v)}]")
-                raise e
-        return v
+      if v == None:
+        try:
+          v = self.autoattributes.get(k)()
+        except:
+          log(f"Complex object, {self._auto_attributes.get(k)}, will remain None", k)
+      elif BaseModel.is_auto(v):
+        v = AutoModel(v)
+      elif self._auto_attributes[k] != type(v): 
+          try:
+              log(k, v)
+              v = self._auto_attributes[k](v)
+          except Exception as e:
+              log(f"[{e}]", f"WARNING: INVALID MODEL ATTRIBUTE TYPE => {k} : [{self._auto_attributes[k]}!={type(v)}]")
+              raise e
+      return v
             
 
     ################## db methods ####################
@@ -157,11 +160,11 @@ class Model(BaseModel):
             keep_related (bool, optional): _description_. Defaults to False.
         """
         if not keep_related:
-            for k, v in self.__dict__.items():
+            for k, v in self._auto_attributes.items():
                 #breakpoint()
                 if BaseModel.is_auto(v):
                     v.delete()
-                    self.__dict__[k] = self.__class__._auto_type_defaults.get(self._auto_attributes[k])
+                    setattr(self, k, None)
                     
         self._table().delete(self._auto_pk)
 

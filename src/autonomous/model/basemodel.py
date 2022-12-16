@@ -114,14 +114,9 @@ class AutoModel:
 class BaseModel:
     _base_attributes = {"_auto_pk":int, "_auto_model":str}
     _auto_models = {}
-    _auto_type_defaults = {
-        str: "",
-        list: [],
-        dict: {},
-    }
     
     def __repr__(self):
-        return pprint.pformat({**self.__dict__, "classname":self.__class__}, indent=4, compact=False)
+        return pprint.pformat({**self.__dict__}, indent=4, compact=False)
 
     @classmethod
     def __init_subclass__(cls, **kwargs):

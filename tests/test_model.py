@@ -25,18 +25,19 @@ def make_model():
     return mt
 
 def start_test():
-    #clear_db()
+    clear_db()
     return make_model()
 
 def test_model_attributes():
+    clear_db()
     mt = ModelTest()
-    assert mt.name == None
-    assert mt.sub == None 
-    assert mt.collection == None
-    assert mt.value == None
-    assert mt.nothing == None
-    assert mt.keystore == None
-    assert mt.timestamp == None
+    assert not mt.name
+    assert not mt.sub 
+    assert not mt.collection
+    assert not mt.value
+    assert not mt.nothing
+    assert not mt.keystore
+    assert not mt.timestamp
     #log(vars(ModelTest.__base__))
     attributes = ModelTest._Model__route_attributes()
     assert "_auto_model" in attributes['results']

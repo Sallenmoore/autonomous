@@ -27,6 +27,8 @@ test: testapp
 	-export PYTHONDONTWRITEBYTECODE=1; export PYTHONUNBUFFERED=1; export APP_NAME="api"; \
 	export AUTO_TABLE_PATH="tests"; export DEBUG=True; export PORT=7537; export HOST=0.0.0.0;\
 	pytest ./tests --log-level=INFO -rx -l -x -k $(TEST_FUNC)
+
+testlogs: test
 	cd tests/apitester && docker logs --since=5m api
 
 trace:
@@ -40,11 +42,11 @@ trace:
 CONTAINERS=$(shell docker ps -a -q)
 
 clean:
-	sudo docker ps -a
 	-cd tests/apitester && docker-compose down --remove-orphans
+	-echo "$(CONTAINERS)" && sudo docker rm $(CONTAINERS)
 	-sudo docker kill 
 
 deepclean: clean
-	-echo "$(CONTAINERS)" && sudo docker rm $(CONTAINERS)
+	
 	-sudo docker system prune -a -f --volumes
 	
