@@ -55,19 +55,14 @@ class Table:
         """
         matches = []
         if objs := self.all():
-          #number of fields to search
-          #matches_needed = len(search_terms)
-          #search each field
           for k, v in search_terms.items():
             if not v: continue
-            #split search term on spaces for combination search
             query = getattr(tinydb.Query(), k)
             if isinstance(v, str):
               search_text = v.strip().split()
               query = query.search(search_text.pop(0), flags=re.IGNORECASE)
               while len(search_text):
                  query = query & query.search(first, flags=re.IGNORECASE)
-              #matches_needed += len(search_terms[k]) - 1 #subtract 1 because the original term is already counted
             else:
               query = query.search(v)
 

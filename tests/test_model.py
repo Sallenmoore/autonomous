@@ -37,7 +37,7 @@ def test_model_attributes():
     assert mt.nothing == None
     assert mt.keystore == None
     assert mt.timestamp == None
-    log(vars(ModelTest.__base__))
+    #log(vars(ModelTest.__base__))
     attributes = ModelTest._Model__route_attributes()
     assert "_auto_model" in attributes['results']
 
@@ -148,7 +148,7 @@ def test_submodel_search():
     mt = make_model()
     mt = make_model()
     results = mt.sub.search(name='TestSub')
-    log(mt, results)
+    #log(mt, results)
     assert len(results)
     assert all(r.name in mt.sub.name for r in results)
     results = mt.sub.search(name='')

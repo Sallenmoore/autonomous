@@ -40,7 +40,7 @@ def test_db_read():
     t._auto_pk = db.update(t)
     model = db.get(t._auto_pk)
     obj = RecordTest(**model)
-    log(obj)
+    #log(obj)
     assert obj._auto_pk == t._auto_pk
     assert obj.num == 5
 
