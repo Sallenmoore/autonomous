@@ -57,16 +57,16 @@ class Table:
         if objs := self.all():
           for k, v in search_terms.items():
             if not v: continue
-            query = getattr(tinydb.Query(), k)
+            query = tinydb.Query()[k]
             if isinstance(v, str):
               search_text = v.strip().split()
-              query = query.search(search_text.pop(0), flags=re.IGNORECASE)
-              while len(search_text):
-                 query = query & query.search(first, flags=re.IGNORECASE)
+              test_contains = lambda value: any(s in value for s in search_text)
+              #breakpoint()
+              results = self._table.search(query.test(test_contains))
             else:
-              query = query.search(v)
+              results = self._table.search(query.search(v))
 
-            matches += self._table.search(query)
+            matches += results
 
         filtered_matches = [] 
         filtered_matches = filter(lambda m: m not in filtered_matches, matches)

@@ -8,7 +8,7 @@ from autonomous.handler import NetworkHandler
 from flask import request
 
 ## built-ins
-import inspect, os
+import collections, os
 from functools import partial
 
 ## for debugging
@@ -32,7 +32,6 @@ class Model(BaseModel):
         #breakpoint()
         self._auto_pk = None
         self._auto_model = self.__class__.__name__
-
         if rec := self._table().get(kwargs.get('_auto_pk')):
             self.__dict__.update(**rec)
         for k, v in kwargs.items():
@@ -50,17 +49,33 @@ class Model(BaseModel):
     def autoattributes(self):
         raise NotImplementedError("Must be implemented by Models")
 
+
     def verify_type(self, k, v):
+      """
+      Verify the type of the attribute, and attempt to cast if incorrect
+
+      If value == None:
+        - if iterable, cast to empty type
+
+      Args:
+          k (_type_): attribute name
+          v (_type_): attribute value
+
+      Raises:
+          e (TypeError): invalid type for attribute
+
+      Returns:
+          _type_: _description_
+      """
+
+      
       if v == None:
-        try:
-          v = self.autoattributes.get(k)()
-        except:
-          log(f"Complex object, {self._auto_attributes.get(k)}, will remain None", k)
+        if issubclass(self.autoattributes().get(k, type(None)), collections.abc.Iterable):
+          v = self.autoattributes().get(k)()
       elif BaseModel.is_auto(v):
         v = AutoModel(v)
       elif self._auto_attributes[k] != type(v): 
           try:
-              log(k, v)
               v = self._auto_attributes[k](v)
           except Exception as e:
               log(f"[{e}]", f"WARNING: INVALID MODEL ATTRIBUTE TYPE => {k} : [{self._auto_attributes[k]}!={type(v)}]")

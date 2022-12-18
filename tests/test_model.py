@@ -31,13 +31,13 @@ def start_test():
 def test_model_attributes():
     clear_db()
     mt = ModelTest()
-    assert not mt.name
-    assert not mt.sub 
-    assert not mt.collection
-    assert not mt.value
-    assert not mt.nothing
-    assert not mt.keystore
-    assert not mt.timestamp
+    assert mt.name == ""
+    assert mt.sub == None
+    assert mt.collection == []
+    assert mt.value == None
+    assert mt.nothing == ""
+    assert mt.keystore == {}
+    assert mt.timestamp == None
     #log(vars(ModelTest.__base__))
     attributes = ModelTest._Model__route_attributes()
     assert "_auto_model" in attributes['results']
