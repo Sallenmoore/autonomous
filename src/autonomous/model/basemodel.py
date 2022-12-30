@@ -87,12 +87,13 @@ class AutoModel:
         del instance
 
     def __getattr__(self, key):
-        #breakpoint()
+        if key == "pk": key = "_auto_pk"
         result = getattr(self._auto_obj, key)
         return result
     
     def __setattr__(self, key, value):
-        #log(self.__class__)
+        if key == "pk": key = "_auto_pk"
+        
         if key.startswith("__") or key.startswith("_auto_"):
             super().__setattr__(key, value)
         else:

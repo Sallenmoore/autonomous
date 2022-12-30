@@ -34,16 +34,19 @@ class Model(BaseModel):
         self._auto_model = self.__class__.__name__
         if rec := self._table().get(kwargs.get('_auto_pk')):
             self.__dict__.update(**rec)
+            
         for k, v in kwargs.items():
             setattr(self, k, v)
 
     def __setattr__(self, k, v):
+        if k == "pk": k = "_auto_pk"
+        
         if k == "_auto_attributes" and isinstance(v, dict):
             self.__dict__[k] = v
         elif k in self._auto_attributes:
             self.__dict__[k] = self.verify_type(k, v)
         else:
-            raise AttributeError(f"Invalid attribute {k} for {self.__class__.__name__}. Must be one of {self._auto_attributes}")
+            log(f"Invalid attribute {k} for {self.__class__.__name__}. Must be one of {self._auto_attributes}")
         
 
     def autoattributes(self):

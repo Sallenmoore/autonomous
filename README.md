@@ -1,8 +1,8 @@
 # Autonomous
 
-A local, comtainerized, service based application framework that attempts to make it easy to create self-contained Python applications with minimal dependencies (coming soon!).
+A local, containerized, service based application framework that attempts to make it easy to create self-contained Python applications with minimal dependencies (coming soon!).
 
-- **Latest Version**: 0.0.28
+- **Latest Version**: 0.0.33
 - **pypi**: https://test.pypi.org/project/autonomous
 - **github**: https://github.com/Sallenmoore/autonomous
 
@@ -44,9 +44,6 @@ Autonomous has minimally 2 container components:
   - [requests](https://requests.readthedocs.io/en/latest/)
 - **Database**
   - [TinyDB](https://tinydb.readthedocs.io/en/latest/usage.html)
-- **Frontend Stack**
-  - [Materialize](https://materializecss.com/select.html)
-  - [JQuery](https://api.jquery.com/)
 - **Testing**
   - [pytest](/Dev/tools/pytest)
   - [coverage](https://coverage.readthedocs.io/en/6.4.1/cmd.html)
@@ -62,12 +59,16 @@ Autonomous has minimally 2 container components:
 
 ### TODO
 
-- Get Working Again!!!
-- Setup template app
-- Fix app generator
-- Add more testing
-- Improve database search
+- Make Model and Basemodel ABC
+- Use Metaclasses for auto_attributes
+- Add type hints
+- Setup/fix template app generator
 - Auto generate API documentation
+- Add more testing
+- Build js Library
+- Build CSS Library
+- Switch to less verbose html preprocessor
+- Improve database search
 
 ### Issue Tracking
 

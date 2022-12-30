@@ -3,24 +3,9 @@ from autonomous import log
 import jsonpickle
 import json
 from .model.basemodel import BaseModel, AutoModel
-##############################################################################################
-#
-#    Auto Handler - Not sure why this would be needed
-#                   Leaving the code here in case I need it later 
-#
-##############################################################################################
-# @jsonpickle.handlers.register(BaseModel, base=True)
-# class AutoHandler(jsonpickle.handlers.BaseHandler):
 
-    # def flatten(self, obj, data):
-    #     data['_auto_model'] = (AutoModel, (obj.__dict__,))
-    #     log(data)
-    #     return data
-
-    # def restore(self, data):
-    #     log(data, type(data))
-    #     return self.context.restore(data['_auto_model'])
-    #     #Restore an object of the registered type from the json-friendly representation obj and return it.
+def response(handler = NetworkHandler):
+  return handler.package(obj, unpicklable=False)
 
 
 ##############################################################################################
