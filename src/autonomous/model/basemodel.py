@@ -87,7 +87,6 @@ class AutoModel:
         del instance
 
     def __getattr__(self, key):
-        if key == "pk": key = "_auto_pk"
         result = getattr(self._auto_obj, key)
         return result
     

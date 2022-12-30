@@ -4,9 +4,6 @@ import jsonpickle
 import json
 from .model.basemodel import BaseModel, AutoModel
 
-def response(handler = NetworkHandler):
-  return handler.package(obj, unpicklable=False)
-
 
 ##############################################################################################
 #

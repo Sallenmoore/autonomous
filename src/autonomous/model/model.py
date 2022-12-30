@@ -39,8 +39,6 @@ class Model(BaseModel):
             setattr(self, k, v)
 
     def __setattr__(self, k, v):
-        if k == "pk": k = "_auto_pk"
-        
         if k == "_auto_attributes" and isinstance(v, dict):
             self.__dict__[k] = v
         elif k in self._auto_attributes:
