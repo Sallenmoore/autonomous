@@ -69,5 +69,3 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-
-.vscode*
