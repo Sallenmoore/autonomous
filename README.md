@@ -2,6 +2,32 @@
 
 ---
 
+# Quick Commands
+
+## Install
+
+```
+make install
+```
+
+```
+make package
+```
+
+## Run
+
+```
+make run
+```
+
+## Test
+
+```
+make test
+```
+
+---
+
 ## Stack Documentation
 
 ### Docker
