@@ -1,15 +1,32 @@
-##Framework libs
-Flask>=2.2
+## Framewpork
+Flask  
 
-# Requests
+#frontend
+libsass
+Flask-WTF
+
+#network
 requests
-
-# Server
 gunicorn
 
-# Server
-tinydb
-
-## Testing
+##testing
 pytest
 coverage
+pytest-flakes
+
+## data storage
+tinydb
+jsonpickle
+
+# ai
+fabler #https://pypi.org/project/fabler/
+
+## security
+
+
+## parsing
+dateparser
+parse
+
+######## DEVELOPMENT ########
+flask_debug
