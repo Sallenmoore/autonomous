@@ -1,0 +1,20 @@
+version: "3"
+
+services:
+  simpleapp:
+    image: simpleapp:latest
+    build: 
+      context: ./config
+    working_dir: /var/app
+    env_file: ./config/.env
+    container_name: simpleapp
+    networks:
+      - app_net
+    volumes:
+      - ./app:/var/app/
+    command: ["gunicorn", "app:app", "-c/var/gunicorn.conf.py"]
+    ports:
+     - "80:2000" #this port is open for testing purposes only
+networks:
+  app_net:
+

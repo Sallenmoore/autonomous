@@ -1,0 +1,40 @@
+body{
+    background-image: linear-gradient(to bottom, rgba(241, 97, 75, 0) 0%, #009113ad 100%);
+}
+
+.digit {
+    display: inline-block;
+    font-size: 200px;
+    color: rgba(0, 0, 0, 0.25);
+    height: 180px;
+    line-height: 1;
+  }
+  
+.time-part-wrapper {
+    display: inline-block;
+    margin-right: 50px;
+    position: relative;
+}
+
+.time-part-wrapper:not(:last-child):after {
+    content: ":";
+    display: block;
+    width: 30px;
+    height: 230px;
+    position: absolute;
+    top: 0px;
+    right: -30px;
+    color: rgba(0, 0, 0, 0.25);
+    font-size: 200px;
+    line-height: 0.9;
+}
+
+.time-part {
+    width: 140px;
+    text-align: center;
+    height: 180px;
+    overflow: hidden;
+    display: inline-block;
+    margin-left: -5px;
+    box-sizing: border-box;
+}

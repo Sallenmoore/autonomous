@@ -1,0 +1,12 @@
+##Framework libs
+Flask>=2.2
+
+# Requests
+requests
+
+# Server
+gunicorn
+
+## Testing
+pytest
+coverage
