@@ -8,32 +8,16 @@ bind = f"{os.environ.get('HOST', '0.0.0.0')}:{os.environ.get('PORT', 5000)}"
 workers = 4
 
 
-# LOGGING
-
-
-class CustomLogger(glogging.Logger):
-    def setup(self, cfg):
-        super().setup(cfg)
-
-        # Add filters to Gunicorn logger
-        self._set_handler(
-            self.error_log,
-            cfg.errorlog,
-            logging.Formatter(
-                fmt=(
-                    "timestamp=%(asctime)s pid=%(process)d "
-                    "loglevel=%(levelname)s msg=%(message)s"
-                )
-            ),
-        )
+# LOGGIN
 
 
 accesslog = "-"
-logger_class = CustomLogger
+access_log_format = "%(U)s -  %(m)s - response time: %(M)s %(b)s \n"
 # Access log - records incoming HTTP requests
 accesslog = "-"
 # Error log - records Gunicorn server goings-on
 errorlog = "-"
+error_log_format = "%(U)s -  %(m)s - response time: %(M)s %(b)s \n"
 loglevel = os.environ.get("LOG_LEVEL", "INFO").upper()
 
 ## DEVELOPMENT OPTIONS
