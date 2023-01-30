@@ -1,51 +1,30 @@
-import os
-import json 
 import logging
+import os
+import random
 
-from flask import Flask, request, render_template
+from config import DevelopmentConfig
+from flask import Flask, render_template, request, session
+from models import Story
+from utils import log
 
-class Config:
-    APP_NAME = os.environ.get("APP_NAME", __name__)
-    HOST=os.environ.get('HOST', '0.0.0.0')
-    PORT=os.environ.get('PORT', 80)
-    API_PORT=os.environ.get('API_PORT', '')
-    
-    SECRET_KEY = os.environ.get("SECRET_KEY", "NATASHA")
-
-class ProductionConfig(Config):
-    DATABASE_URI = 'mysql://user@localhost/foo'
-    LOG_LEVEL = logging.DEBUG
-    DEBUG = False
-    TESTING = False
-
-class DevelopmentConfig(Config):
-    DATABASE_URI = "sqlite:////tmp/foo.db"
-    LOG_LEVEL =logging.ERROR
-    DEBUG = True
-    TESTING = True
-    TRAP_HTTP_EXCEPTIONS=True
-
-hello = HelloExtension()
 
 def create_app():
-    #################################################################
-    #                             Extensions                        #
-    #################################################################
     app = Flask(os.getenv("APP_NAME", __name__))
     app.config.from_object(DevelopmentConfig)
-    
     #################################################################
     #                             Extensions                        #
     #################################################################
 
-    hello.init_app(app)
-
     #################################################################
-    #                             ROUTEs                            #
+    #                             ROUTES                            #
     #################################################################
-    from views import (model)
-    
-    app.register_blueprint(model.bp)
-
+    @app.route("/", methods=["GET", "POST"])
+    def index():
+        # log(request.form)
+        story = Story(prompt=request.form.get("dm", session.get("story")))
+        story.next_chapter(update=request.form.get("party"))
+        session["story"] = story.summary
+        log(vars(story))
+        return render_template("index.html", story=story)
 
     return app

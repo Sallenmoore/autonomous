@@ -1,6 +1,12 @@
 ## Framewpork
 Flask  
 
+## Configuration and Documentation
+
+## data storage
+tinydb
+jsonpickle
+
 #frontend
 libsass
 Flask-WTF
@@ -9,20 +15,17 @@ Flask-WTF
 requests
 gunicorn
 
+## security
+
+
 ##testing
 pytest
 coverage
 pytest-flakes
 
-## data storage
-tinydb
-jsonpickle
-
-# ai
-fabler #https://pypi.org/project/fabler/
-
-## security
-
+## ai
+openai
+replicate
 
 ## parsing
 dateparser
@@ -30,3 +33,4 @@ parse
 
 ######## DEVELOPMENT ########
 flask_debug
+black
