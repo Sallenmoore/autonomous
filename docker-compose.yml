@@ -15,31 +15,6 @@ services:
     command: ["gunicorn", "app:create_app()", "-c/var/gunicorn.conf.py"]
     ports:
      - "80:5000"
-  # dalle-backend:
-  #   container_name: dalle-backend
-  #   build:
-  #     context: .vendors/dalle-playground/backend
-  #     dockerfile: Dockerfile
-  #   restart: always
-  #   ports:
-  #     - 8080:8080
-  #   volumes:
-  #     - app-cache:/root/.cache
-  #   deploy:
-  #     resources:
-  #       reservations:
-  #         devices:
-  #           - capabilities: [ gpu ]
-  # dalle-interface:
-  #   container_name: dalle-interface
-  #   build:
-  #     context: .vendors/dalle-playground/interface
-  #     dockerfile: Dockerfile
-  #   restart: always
-  #   ports:
-  #     - 3000:3000
-  #   stdin_open: true
-  #   tty: true
 networks:
   app_net:
 

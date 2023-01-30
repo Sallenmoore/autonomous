@@ -10,5 +10,6 @@ COPY ./requirements.txt /var/tmp/requirements.txt
 RUN pip install -r /var/tmp/requirements.txt
 
 COPY ./gunicorn.conf.py /var/gunicorn.conf.py
+COPY ./firebase.json /var/firebase.json
 
 

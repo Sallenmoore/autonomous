@@ -3,7 +3,7 @@
 
     <head>
         {% block head %}
-        <meta charset="/favicon-32x32.png">
+        <meta charset="{{url_for('static', filename='favicon-32x32.png')}}">
         <link rel="icon" href="data:,">
         <link rel="apple-touch-icon" sizes="180x180" href="{{url_for('static', filename='apple-touch-icon.png')}}">
         <link rel="icon" type="image/png" sizes="32x32" href="{{url_for('static', filename='favicon-32x32.png')}}">
@@ -22,6 +22,9 @@
     </head>
 
     <body>
+        <div class="nav">
+            {% include "nav.html"%}
+        </div>
         <div class="container">
             {% block content %}{% endblock %}
         </div>

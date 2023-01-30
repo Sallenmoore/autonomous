@@ -1,36 +1,58 @@
-## Framewpork
+# PRODUCTION
+
+## Framework
+
 Flask  
 
 ## Configuration and Documentation
 
-## data storage
-tinydb
-jsonpickle
 
-#frontend
+## API
+
+flask-restful
+
+#jsonpickle
+#marshmallow
+
+## Database
+
+#tinydb
+firebase-admin
+
+## Frontend
+
 libsass
 Flask-WTF
 
-#network
+## Network
+
 requests
 gunicorn
 
-## security
+## Security
 
 
-##testing
-pytest
-coverage
-pytest-flakes
+## AI
 
-## ai
-openai
-replicate
+#openai
+#replicate
 
-## parsing
+## Parsing
+
 dateparser
 parse
 
-######## DEVELOPMENT ########
-flask_debug
+# DEVELOPMENT
+
+## Linting
+
 black
+pytest-flakes
+
+## Debugging
+flask_debug
+
+## Testing
+
+pytest
+coverage

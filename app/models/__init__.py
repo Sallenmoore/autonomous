@@ -1,1 +1,1 @@
-from .story import Story
+from .model import Model
