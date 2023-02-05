@@ -35,7 +35,7 @@
 - container status
   - `docker-compose ps -a`
 - run a command in the container
-  - `docker-compose exec -option simple_app <command>`
+  - `docker-compose exec -option app <command>`
 - stop all running containers
   - `make clean`
 - remove all stopped containers
@@ -44,7 +44,7 @@
 ### Read Logs
 
 ```sh
-docker logs --since=15m -t simple_app
+docker logs --since=15m -t app
 ```
 
 _follows as a background process_

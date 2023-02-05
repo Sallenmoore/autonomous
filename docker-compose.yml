@@ -1,13 +1,13 @@
 version: "3"
 
 services:
-  simpleapp:
-    image: simpleapp:latest
+  app:
+    image: app:latest
     build: 
       context: .
     working_dir: /var/app
     env_file: .env
-    container_name: simpleapp
+    container_name: app
     networks:
       - app_net
     volumes:
