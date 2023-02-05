@@ -14,7 +14,7 @@ services:
       - ./app:/var/app/
     command: ["gunicorn", "app:create_app()", "-c/var/gunicorn.conf.py"]
     ports:
-     - "80:5000"
+     - "5000:5000"
 networks:
   app_net:
 

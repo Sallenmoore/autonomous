@@ -1,7 +1,4 @@
-import logging
 import os
-
-from gunicorn import glogging
 
 # Non logging stuff
 bind = f"{os.environ.get('HOST', '0.0.0.0')}:{os.environ.get('PORT', 5000)}"

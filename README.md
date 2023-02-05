@@ -1,30 +1,4 @@
-# Simple App
-
----
-
-# Quick Commands
-
-## Install
-
-```
-make install
-```
-
-```
-make package
-```
-
-## Run
-
-```
-make run
-```
-
-## Test
-
-```
-make test
-```
+# Auto
 
 ---
 
@@ -46,7 +20,7 @@ make test
 
 ### FrontEnd Stack
 
-- [PyScript](https://pyscript.net/)
+- TBD
 
 ## Developer Notes
 
@@ -73,7 +47,7 @@ make test
 docker logs --since=15m -t simple_app
 ```
 
-*follows as a background process*
+_follows as a background process_
 
 ```sh
 docker logs -f --since=15m -t <container> &`

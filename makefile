@@ -1,7 +1,7 @@
 
 all: test clean run start
 
-APP_NAME?=simpleapp
+APP_NAME?=app
 CONTAINERS=$(sudo docker ps -a -q)
 
 build:

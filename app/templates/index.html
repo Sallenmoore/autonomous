@@ -2,70 +2,23 @@
 
 {% block content %}
 <div class="row">
-  <div class="col s5">
+  <div class="col s6 deep-purple">
     <div class="row">
-      <div class="col s12">
-        <div class="card blue-grey lighten-5">
-          <div class="card-content white-text" id="total_time">
-            <div class="row">
-              <div class="input-field col s5">
-                <input id="total_min" type="number" value="5">
-                <label for="total_min">minutes</label>
-              </div>
-              <div class="input-field col s1">
-                :
-              </div>
-              <div class="input-field col s6">
-                <input id="total_sec" type="number" value="00" max="60" min="00">
-                <label for="total_sec">Seconds</label>
-              </div>
-            </div>
-            <h3 class="blue-grey-text text-darken-2">Intervals</h3>
-            <ul class="flow-text blue-grey-text text-darken-2" id="intervals">
-            </ul>
-            <div class="row valign-wrapper">
-              <div class="input-field col s4">
-                <input id="add_interval_min" type="number" value="0">
-                <label for="add_interval_min">minutes</label>
-              </div>
-              <div class="input-field col s1">
-                :
-              </div>
-              <div class="input-field col s4">
-                <input id="add_interval_sec" type="number" value="00" max="60" min="00">
-                <label for="add_interval_sec">Seconds</label>
-              </div>
-              <div class="input-field col s3">
-                <a class="waves-effect waves-light btn" id="add_interval_button">Add</a>
-              </div>
-            </div>
-          </div>
-        </div>
+      <div class="col s6 deep-purple accent-1">
+      </div>
+      <div class="col s6 deep-purple accent-4">
       </div>
     </div>
   </div>
-  <div class="col s7">
+  <div class="col s6 yellow">
     <div class="row">
-      <div class="col s12">
-        <div class="card-panel indigo lighten-4">
-          <div class="row center-align">
-            <div class="input-field col s4">
-              <a class="waves-effect waves-light btn green darken-4" id="start_button">Start</a>
-            </div>
-            <div class="input-field col s4">
-              <a class="waves-effect waves-light btn yellow darken-1" id="pause_button">Pause</a>
-            </div>
-            <div class="input-field col s4">
-              <a class="waves-effect waves-light btn red darken-4" id="clear_button">Clear</a>
-            </div>
-          </div>
-          <p id="time_remaining" class="flow-text">TIME REMAINING</p>
-          <div id="clock"></div>
-          <div id="clock_msg"></div>
-        </div>
+      <div class="col s6 yellow accent-1">
+      </div>
+      <div class="col s6 yellow accent-4">
       </div>
     </div>
   </div>
+</div>
 </div>
 
 {% endblock %}
