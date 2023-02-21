@@ -1,24 +1,15 @@
 {% extends "base.html" %}
+{% import "macros/template.html" as statblock %}
 
 {% block content %}
-<div class="row">
-  <div class="col s6 deep-purple">
-    <div class="row">
-      <div class="col s6 deep-purple accent-1">
-      </div>
-      <div class="col s6 deep-purple accent-4">
-      </div>
-    </div>
+
+<div class="grid has-bg-primary">
+  <div class="column has-bg-secondary">
+    Content A
   </div>
-  <div class="col s6 yellow">
-    <div class="row">
-      <div class="col s6 yellow accent-1">
-      </div>
-      <div class="col s6 yellow accent-4">
-      </div>
-    </div>
+  <div class="column has-bg-secondary">
+    Content B
   </div>
-</div>
 </div>
 
 {% endblock %}

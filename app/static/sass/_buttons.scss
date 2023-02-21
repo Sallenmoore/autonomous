@@ -1,0 +1,13 @@
+// https://getcssscan.com/css-buttons-examples
+
+.button{
+  box-shadow: rgba(148, 151, 151, 0.5) 0 2px 5px 0;
+  text-shadow: rgba(0, 0, 0, .3) 1px 1px 1px;
+  transition: all .2s ease-in-out;
+  margin: 0 0.5em;
+  &.circle{
+    border-radius: 100%;
+    padding: .25em;
+  }
+  
+}

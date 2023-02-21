@@ -1,47 +1,61 @@
-# PRODUCTION
+##################################
+#           PRODUCTION           #
+##################################
 
-## Framework
+##### Framework #####
 
 Flask  
 
-## Configuration and Documentation
+##### Configuration and Documentation #####
 
+##### System #####
 
-## API
+#Watchdog
 
-flask-restful
+##### API #####
+
+#flask-restful
 #jsonpickle
 #marshmallow
 
-## Database
+##### Database #####
 
 #tinydb
 firebase-admin
+google-cloud-firestore
 
-## Frontend
+##### Frontend #####
 
-libsass
-Flask-WTF
+cssmin
+jsmin
 
-## Network
+##### Network #####
 
 requests
 gunicorn
 
-## Security
+##### Security #####
 
 
-## AI
+##### Async ##### 
+
+# aiofiles
+# aiohttp
+# aiopath
+
+##### AI #####
 
 #openai
 #replicate
 
-## Parsing
+##### Parsing #####
 
 dateparser
 parse
 
-# DEVELOPMENT
+##################################
+#           DEVELOPMENT          #
+##################################
 
 ## Linting
 
@@ -49,6 +63,7 @@ black
 pytest-flakes
 
 ## Debugging
+
 flask_debug
 
 ## Testing

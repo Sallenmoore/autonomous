@@ -1,7 +1,9 @@
 
+.PHONY: all build run clean deepclean test
+
 all: test clean run start
 
-APP_NAME?=app
+APP_NAME?=auto
 CONTAINERS=$(sudo docker ps -a -q)
 
 build:
@@ -9,7 +11,7 @@ build:
 
 run: 
 	docker-compose up --build -d
-	echo "docker logs -t $(APP_NAME) -f"
+	docker logs -f --since=5m -t $(APP_NAME)
 
 ###### CLEANING #######
 
@@ -27,7 +29,9 @@ deepclean: clean
 
 #OPTIONS
 TEST_FUNC?="test_"
+#-s tests/$(TEST_FUNC)*.py
 
-test: clean run
+test: clean
 	echo "Running tests"
-	-docker exec -it $(APP_NAME) python -m pytest -v -s tests/$(TEST_FUNC)*.py
+	docker-compose up --build -d
+	docker exec -it $(APP_NAME) python -m pytest --log-level=INFO -rx -l -x -k $(TEST_FUNC)

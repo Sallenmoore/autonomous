@@ -1,22 +1,6 @@
-// === define a Global object to store all of my page-level variables:
-var Global = {
-  intervals: [],
-  timer: 0,
-  total: 0,
-  paused: false,
-};
-
-function createIcon(name) {
-  const icon = document.createElement("i");
-  icon.classList.add("material-icons");
-  icon.innerHTML = name;
-  return icon;
-}
-
 //===My document.ready() handler...
 document.addEventListener("DOMContentLoaded", () => {
   //=== do some code stuff...
-  M.AutoInit();
   bindEvents();
 });
 
@@ -25,6 +9,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
 function bindEvents() {}
 
-//===Then everything below this is all of the other declared functions for my page...
+//===Then everything below this is all of the other declared functions...
 
 function foo() {}

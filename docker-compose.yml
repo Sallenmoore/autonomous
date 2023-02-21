@@ -1,13 +1,13 @@
 version: "3"
 
 services:
-  app:
-    image: app:latest
+  auto:
+    image: auto:latest
     build: 
       context: .
     working_dir: /var/app
     env_file: .env
-    container_name: app
+    container_name: auto
     networks:
       - app_net
     volumes:

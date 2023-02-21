@@ -25,7 +25,7 @@ class Logger:
         msg += "\n\n=====\n\n".join(
             [pprint.pformat(a, indent=4, compact=False) for a in args]
         )
-        self.logger.log(f"{msg}\n")
+        self.logger.log(self.logger.level, f"{msg}\n")
 
 
 log = Logger()
