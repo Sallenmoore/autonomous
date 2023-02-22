@@ -1,20 +1,22 @@
 import os
 
-import firebase_admin
 from config import DevelopmentConfig
-from firebase_admin import db
-from flask import Flask, render_template, request, session
+from flask import Flask
 
 # from models import Model
-from utils import assets, log
-
-# from webassets.filter import register_filter
-# from webassets.filter.sass import DartSass
+from utils import assets
+from views.admin import admin_page
+from views.index import index_page
 
 
 def create_app():
     app = Flask(os.getenv("APP_NAME", __name__))
     app.config.from_object(DevelopmentConfig)
+
+    #################################################################
+    #                             Filters                           #
+    #################################################################
+    # app.jinja_env.filters['datetime_format'] = datefilters.datetime_format
 
     #################################################################
     #                             Extensions                        #
@@ -26,13 +28,9 @@ def create_app():
     #                             ROUTES                            #
     #################################################################
 
-    @app.route("/", methods=["GET", "POST"])
-    def index():
-        log(ref.get())
-        if request.form:
-            session.update(request.form)
-            log(request.form)
-        ref.push({"testing": 123})
-        return render_template("index.html")
-
+    ########################################
+    ##           Blueprints               ##
+    ########################################
+    app.register_blueprint(index_page)
+    app.register_blueprint(admin_page, url_prefix="/admin")
     return app
