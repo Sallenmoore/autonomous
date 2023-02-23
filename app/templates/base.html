@@ -1,3 +1,6 @@
+{% import 'macros/_nav.html' as nav %}
+{% import 'macros/_jstemplates.html' as jstemplates %}
+
 <!doctype html>
 <html lang="en">
 
@@ -20,14 +23,14 @@
 
     <body>
         <div class="hero">
-            {% include "menu.html"%}
+            {{ nav.nav() }}
         </div>
         <div class="container">
             {% block content %}{% endblock %}
         </div>
 
         <div id="js_templates" class="is-hidden">
-            {% include "templates.html" %}
+            {{ jstemplates.jstemplates() }}
         </div>
         <!-- JavaScript Libs -->
         <script src="https://code.iconify.design/iconify-icon/1.0.3/iconify-icon.min.js"></script>

@@ -2,7 +2,7 @@
 
 # external Modules
 from flask import Blueprint, render_template, request, session
-from utility import log
+from utils import log
 
 index_page = Blueprint("", __name__)
 
@@ -11,7 +11,7 @@ index_page = Blueprint("", __name__)
 def index():
     if request.form:
         session.update(request.form)
-    return render_template("index.html", **context)
+    return render_template("index.html")
 
 
 @index_page.route("/add", methods=("POST",))

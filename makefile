@@ -34,4 +34,4 @@ TEST_FUNC?="test_"
 test: clean
 	echo "Running tests"
 	docker-compose up --build -d
-	docker exec -it $(APP_NAME) python -m pytest --log-level=INFO -rx -l -x -k $(TEST_FUNC)
+	docker exec -it $(APP_NAME) python -m pytest -v --log-level=INFO -rx -l -x -k $(TEST_FUNC)
