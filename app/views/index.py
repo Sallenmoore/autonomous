@@ -2,7 +2,7 @@
 
 # external Modules
 from flask import Blueprint, render_template, request, session
-from utils import log
+from autolib import log
 
 index_page = Blueprint("", __name__)
 

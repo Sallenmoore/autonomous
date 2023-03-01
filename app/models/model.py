@@ -1,6 +1,10 @@
-from utils.automodel import AutoModel
+from autolib.automodel import AutoModel
+from autolib.logger import log
 
 
 class Model(AutoModel):
+    # set model default attributes
+    autoattr = ["name"]
+
     def __init__(self, **kwargs):
-        self.__dict__ |= kwargs
+        log(kwargs)

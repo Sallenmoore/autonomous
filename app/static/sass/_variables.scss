@@ -6,8 +6,8 @@
 
 ///////////////// COLORS //////////////////
 
-$primary: #dddddd;
-$secondary: hsla(358, 96%, 39%, 1.0);
+$primary: rgba(221, 221, 221, 1);
+$secondary: rgba(195, 4, 10, 1);
 // $warning: #ffdd57 !default;
 // $info: #bfd9fe !default;
 // $danger: #ff2b56 !default;
@@ -56,11 +56,10 @@ $body-font-family: 'Open Sans', sans-serif;
 // $hr-margin: calculateRem(20) 0 !default;
 
 //////////////////// BUTTON ////////////////////
-$button-background: $primary;
-$button-color: $secondary;
-$button-radius: 0.5rem;
-$button-font-size: 1.2rem;
-$button-hover-background:darken($primary, 10%);
+$button-background: $secondary;
+$button-color: lighten($secondary, 55%);
+//$button-font-size: 1.1rem;
+$button-hover-background:darken($secondary, 10%);
 
 /////////////////////// CARD ////////////////////
 $card-header-background: $secondary;
@@ -73,3 +72,7 @@ $card-shadow:0 0 3px 0 hsla(0, 0%, 4%, 0.217);
 // $medium: 768px !default;
 // $large: 922px !default;
 // $x-large: 1200px !default;
+
+//################## Tables ##################
+
+$table-font-size: 0.8rem;

@@ -4,7 +4,7 @@ from config import DevelopmentConfig
 from flask import Flask
 
 # from models import Model
-from utils import assets
+from autolib import assets
 from views.admin import admin_page
 from views.index import index_page
 

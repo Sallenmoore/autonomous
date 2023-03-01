@@ -1,6 +1,5 @@
 import inspect
 import logging
-import os
 import pprint
 
 # class LogFilter(logging.Filter):
@@ -21,10 +20,7 @@ class Logger:
         if kwargs:
             args = list(args)
             args += [{k: v} for k, v in kwargs.items()]
-
-        msg += "\n\n=====\n\n".join(
-            [pprint.pformat(a, indent=4, compact=False) for a in args]
-        )
+        msg += "\n\n=====\n\n".join([pprint.pformat(a, indent=4) for a in args])
         self.logger.log(self.logger.level, f"{msg}\n")
 
 

@@ -1,13 +1,25 @@
 // https://getcssscan.com/css-buttons-examples
 
 .button{
-  box-shadow: rgba(148, 151, 151, 0.5) 0 2px 5px 0;
-  text-shadow: rgba(0, 0, 0, .3) 1px 1px 1px;
+  background-image: radial-gradient(circle, $secondary 20%, darken($secondary, 2%) 100%);
+  // color: lighten($secondary, 50%);
+  font-weight: 700;
   transition: all .2s ease-in-out;
-  margin: 0 0.5em;
+  box-shadow: 0 1px 2px darkslategray;
+  border:none;
+  border-radius: 10%;
+
+  &.square{
+    border-radius: 0;
+  }
+
   &.circle{
-    border-radius: 100%;
-    padding: .25em;
+    border-radius: 70%;
+
+  }
+  &.small{
+    padding: .3em;
+    font-size: .9em;
   }
   
 }

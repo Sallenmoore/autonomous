@@ -2,7 +2,7 @@
 
 # external Modules
 from flask import Blueprint, render_template, request, session
-from utils import log
+from autolib import log
 
 admin_page = Blueprint("admin", __name__)
 
