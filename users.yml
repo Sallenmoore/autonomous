@@ -1,0 +1,6 @@
+- !!python/object:__main__.User
+  age: 24
+  name: Misha
+- !!python/object:__main__.User
+  age: 42
+  name: Bob

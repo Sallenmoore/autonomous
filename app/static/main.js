@@ -21,17 +21,18 @@ var Global = {
 //========================================================================//
 //  UTILITY FUNCTIONS                                                     //
 //========================================================================//
-
-function get_class(class_name) {
+//======= Get Elements =======//
+function get_class_elems(class_name) {
   return Array.from(document.getElementsByClassName(class_name));
 }
 
-//======= Get Elements =======//
 function get_id(id) {
   return document.getElementById(id);
 }
 
-function addevent(element, event, fn) {
+//======= Attach Events =======//
+
+function add_event(element, event, fn) {
   if (Array.isArray(element)) {
     element.forEach((el) => {
       el.addEventListener(event, fn);
@@ -40,6 +41,17 @@ function addevent(element, event, fn) {
     element.addEventListener(event, fn);
   }
 }
+
+function id_event(id, event, fn) {
+  add_event(get_id(id), event, fn);
+}
+
+function class_event(class_name, event, fn) {
+  get_class_elems(class_name).forEach((el) => {
+    add_event(el, event, fn);
+  });
+}
+
 //======= Templates =======//
 
 function get_template(selector) {
@@ -70,7 +82,7 @@ function toggle(elem, cssclass = "is-hidden") {
 
 // =============== Intervals =============== //
 
-//============================================ Form ============================================//
+//================== Form ==================//
 function form_values(form) {
   let formData = new FormData(form);
   let data = {};
@@ -83,14 +95,10 @@ function form_values(form) {
 function post_data(
   url = "#",
   data = {},
-  form = null,
   fn = (response) => {
     console.log(response);
   }
 ) {
-  if (form) {
-    data = form_values(form);
-  }
   fetch(url, {
     method: "POST", // *GET, POST, PUT, DELETE, etc.
     mode: "same-origin", // no-cors, *cors, same-origin
@@ -100,7 +108,10 @@ function post_data(
     body: JSON.stringify(data), // body data type must match "Content-Type" header
   })
     .then((response) => {
-      fn(response);
+      return response.json();
+    })
+    .then((data) => {
+      fn(data);
     })
     .catch((error) => {
       console.log(error);
@@ -118,22 +129,23 @@ function createIcon(name) {
 }
 
 //==== Modals
-
+class Modal {}
 //==== Tabs
-
+class Tab {}
 //==== Tooltips
-
+class Tooltip {}
 //==== Tags
-
+class Tag {}
 //==== Popovers
-
+class Popover {}
 //==== Dropdowns
-
+class Modal {}
 //==== Collapsibles
-
+class Collapsible {}
 //==== Accordions
-
+class Accordion {}
 //==== Carousels
-
+class Carousel {}
 //==== Progress Bar
+class ProgressBar {}
 

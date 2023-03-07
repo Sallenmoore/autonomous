@@ -27,11 +27,18 @@ deepclean: clean
 
 ###### TESTING #######
 
-#OPTIONS
-TEST_FUNC?="test_"
-#-s tests/$(TEST_FUNC)*.py
+debug: 
+	docker-compose up --build -d
+	docker logs -f --since=5m -t $(APP_NAME)
 
-test: clean
+tests: clean
 	echo "Running tests"
 	docker-compose up --build -d
-	docker exec -it $(APP_NAME) python -m pytest -v --log-level=INFO -rx -l -x -k $(TEST_FUNC)
+	docker exec -it $(APP_NAME) python -m pytest -v --log-level=INFO -rx -l -x 
+
+RUNTEST?="test_"
+
+test:
+	echo "Running tests"
+	docker-compose up --build -d
+	docker exec -it $(APP_NAME) python -m pytest -v --log-level=INFO -rx -l -x -k $(RUNTEST)

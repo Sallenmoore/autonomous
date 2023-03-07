@@ -17,6 +17,7 @@ Flask
 #flask-restful
 #jsonpickle
 #marshmallow
+#pyyaml
 
 ##### Database #####
 

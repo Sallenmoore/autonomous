@@ -7,11 +7,11 @@
   --color-primary-lighter: hsl(0deg, 0%, 96.6666666667%, 1);
   --color-primary-text: var(--color-black);
   --color-primary-alert: hsl(0deg, 0%, 86.6666666667%, 0.2);
-  --color-secondary: hsl(358deg, 96%, 39%, 1);
-  --color-secondary-darker: hsl(358deg, 96%, 29%, 1);
-  --color-secondary-lighter: hsl(358deg, 96%, 49%, 1);
+  --color-secondary: hsl(358.1151832461deg, 95.9798994975%, 39.0196078431%, 1);
+  --color-secondary-darker: hsl(358.1151832461deg, 95.9798994975%, 29.0196078431%, 1);
+  --color-secondary-lighter: hsl(358.1151832461deg, 95.9798994975%, 49.0196078431%, 1);
   --color-secondary-text: var(--color-white);
-  --color-secondary-alert: hsl(358deg, 96%, 39%, 0.2);
+  --color-secondary-alert: hsl(358.1151832461deg, 95.9798994975%, 39.0196078431%, 0.2);
   --color-warning: hsl(47.8571428571deg, 100%, 67.0588235294%, 1);
   --color-warning-darker: hsl(47.8571428571deg, 100%, 57.0588235294%, 1);
   --color-warning-lighter: hsl(47.8571428571deg, 100%, 77.0588235294%, 1);
@@ -1236,7 +1236,7 @@ abbr {
 .hero {
   --padding: 0;
   --background-color: white;
-  --font-color: hsl(358deg, 96%, 39%);
+  --font-color: rgb(195, 4, 10);
   display: flex;
   flex-direction: column;
 }
@@ -2371,16 +2371,16 @@ label:not(:last-child) {
 .button {
   --border-width: 1px;
   --border-color: var(--color-light-grey);
-  --font-size: 1.2rem;
+  --font-size: 1.1428571429rem;
   --line-height: 1.6;
   --margin-bottom: 0.4571428571rem;
   --padding: 0.5714285714rem 0.8571428571rem;
   --transition: border-color 0.2s ease, background-color 0.3s ease;
-  --background-color: #dddddd;
-  --font-color: hsl(358deg, 96%, 39%);
-  --button-radius: 0.5rem;
-  --hover-background-color: #c4c4c4;
-  --hover-font-color: hsl(358deg, 96%, 39%);
+  --background-color: rgb(195, 4, 10);
+  --font-color: #fee1e2;
+  --button-radius: 0;
+  --hover-background-color: #910307;
+  --hover-font-color: #fee1e2;
   --hover-border-color: var(--color-light-grey-darker);
   --loading-speed: 0.8s;
   --loading-width: 2px;
@@ -2928,8 +2928,8 @@ label:not(:last-child) {
   width: 100%;
 }
 .card .card__header {
-  --background-color: hsl(358deg, 96%, 39%);
-  --font-color: #dddddd;
+  --background-color: rgb(195, 4, 10);
+  --font-color: rgb(221, 221, 221);
   --padding: 0.625rem 1rem;
   align-items: center;
   background-color: var(--card-header-background-color);
@@ -3431,7 +3431,7 @@ label:not(:last-child) {
   --font-color: var(--color-black);
   --border-color: hsl(0deg, 0%, 85.8823529412%, 1);
   --border-width: 1px;
-  --font-size: 1.1428571429rem;
+  --font-size: 0.8rem;
   --padding: 0.5714285714rem 0.7142857143rem;
   --hover-background-color: hsl(0deg, 0%, 97.6470588235%, 1);
   --stripe-background-color: hsl(0deg, 0%, 97.6470588235%, 1);
@@ -3844,14 +3844,22 @@ label:not(:last-child) {
 }
 
 .button {
-  box-shadow: rgba(148, 151, 151, 0.5) 0 2px 5px 0;
-  text-shadow: rgba(0, 0, 0, 0.3) 1px 1px 1px;
+  background-image: radial-gradient(circle, rgb(195, 4, 10) 20%, #b90409 100%);
+  font-weight: 700;
   transition: all 0.2s ease-in-out;
-  margin: 0 0.5em;
+  box-shadow: 0 1px 2px darkslategray;
+  border: none;
+  border-radius: 10%;
+}
+.button.square {
+  border-radius: 0;
 }
 .button.circle {
-  border-radius: 100%;
-  padding: 0.25em;
+  border-radius: 70%;
+}
+.button.small {
+  padding: 0.3em;
+  font-size: 0.9em;
 }
 
 /*# sourceMappingURL=style.css.map */

@@ -3,8 +3,7 @@ import os
 import pprint
 
 import firebase_admin
-from autolib import log
-from autolib.autoencoder import AutoEncoder
+from autonomous import autoencoder, log
 from firebase_admin import credentials, db
 
 cred = credentials.Certificate(os.getenv("FIREBASE_KEY_FILE"))
@@ -12,34 +11,33 @@ firebase_admin.initialize_app(cred, {"databaseURL": os.getenv("FIREBASE_URL")})
 
 
 class AutoModel:
-    _auto_models = {}
     autoattr = []
 
     def __new__(cls, *args, **kwargs):
 
-        pk = kwargs["_ref"].key if kwargs.get("_ref") else kwargs.get("pk")
-        _ref = cls.table().child(str(pk)) if pk else None
-
-        if _ref:
-            result = _ref.get()
-            kwargs = result | kwargs
-
-        kwargs["_ref"] = _ref
-        kwargs["pk"] = pk
-        log(kwargs)
-
         obj = super().__new__(cls)
+
+        obj._pk = kwargs.get("_pk", kwargs["_ref"].key if "_ref" in kwargs else None)
+        obj._ref = cls.table().child(str(obj._pk)) if obj._pk else None
+        kwargs |= obj._ref.get() if obj._ref else {}
 
         for k in cls.autoattr:
             setattr(obj, k, None)
 
+        kwargs = autoencoder.AutoEncoder().decode(kwargs)
         for k, v in kwargs.items():
             setattr(obj, k, v)
-
+        obj.deserialize()
         return obj
 
     def __repr__(self):
         return pprint.pformat(self.__dict__, indent=4, width=7, sort_dicts=True)
+
+    def serialize(self, data):
+        return data
+
+    def deserialize(self):
+        pass
 
     @classmethod
     def table(cls):
@@ -48,34 +46,30 @@ class AutoModel:
             cls._table = ref.child(cls.__name__.lower())
         return cls._table
 
-    def _serialize(self, val):
-        if val.__class__.__name__ in AutoModel._auto_models:
-            # log(val.autoattributes)
-            val.save()
-            val = {"pk": val.pk, "automodel": val.__class__.__name__}
-        elif isinstance(val, list):
-            for i, v in enumerate(val):
-                val[i] = self._serialize(v)
-        elif isinstance(val, dict):
-            for k, v in val.items():
-                val[k] = self._serialize(v)
-        return val
+    @property
+    def pk(self):
+        if not hasattr(self, "_pk"):
+            self._pk = None
+        return self._pk
+
+    @pk.setter
+    def pk(self, value):
+        self._pk = value
 
     def save(self):
         # filter invalid attributes and other models and save them
-        save_data = json.dumps(self, cls=AutoEncoder)
-
+        save_data = autoencoder.AutoEncoder().default(self)
         # update existing record
         if self._ref:
             self._ref.set(save_data)
         # save new record
         else:
             self._ref = self.table().push(value=save_data)
-            self._ref.update({"pk": self._ref.key})
+            self._ref.update({"_pk": self._ref.key})
 
         # set key
-        self.pk = self._ref.key
-        return self.pk
+        self._pk = self._ref.key
+        return self._pk
 
     def delete(self):
         return self._ref.delete()
@@ -84,8 +78,7 @@ class AutoModel:
     def get(cls, id):
         ref = cls.table().child(str(id))
         if data := ref.get():
-            data = AutoEncoder.deserialize(data)
-            data["pk"] = ref.key
+            data["_pk"] = ref.key
             data["_ref"] = ref
             obj = cls(**data)
             return obj
@@ -96,21 +89,18 @@ class AutoModel:
         objs = []
         if data:
             for k, v in data.items():
-                v["pk"] = k
+                if "_pk" not in v:
+                    v["_pk"] = k
                 objs.append(cls(**v))
         return objs
 
     @classmethod
     def search(cls, **kwargs):
-        objs = []
+        objs_dicts = []
         for k, v in kwargs.items():
-            objs += cls.table().order_by_child(k).equal_to(v).get()
-        log(objs)
-        return [cls(**o) for o in objs]
+            objs_dicts.append(cls.table().order_by_child(k).equal_to(v).get())
+        return [cls(**o) for o in objs_dicts]
 
     @classmethod
     def clear_table(cls):
         cls.table().delete()
-
-
-AutoModel._auto_models[AutoModel.__name__] = AutoModel
