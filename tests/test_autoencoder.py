@@ -1,9 +1,8 @@
-import json
 from datetime import datetime
 
-from autonomous import log
-from autonomous.autoencoder import AutoEncoder
-from models.model import Model
+from app_template.app.models.model import Model
+from src.autonomous import log
+from src.autonomous.autoencoder import AutoEncoder
 
 
 class TestAutoencoder:

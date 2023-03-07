@@ -1,67 +1,119 @@
-# Dungeon Arena
+# Autonomous
+
+A local, containerized, service based application framework that attempts to make it easy to create self-contained Python applications with minimal dependencies (coming soon!).
+
+- **Latest Version**: 0.0.33
+- **pypi**: https://test.pypi.org/project/autonomous
+- **github**: https://github.com/Sallenmoore/autonomous
+
+## Features
+
+- Fully containerized, service based Python application framework
+- All services are localized and interface using a virtual intranet
+- Built-in Local NoSQL database and Model API
+- Single Data-Source Models across all services
+- Auto-Generated Documentation Pages (Coming Soon!!!)
+- Dynamically typed database attributes
+- Optional static attribute typing
+
+### Container Apps
+
+Autonomous has minimally 2 container components:
+
+- **server**
+  - nginx proxy server listening on port 80
+  - static files and assets are served from here. This is also the main entry point for the application.
+- **test**
+  - access documentation on port:TBD
+  - Test app for the library
+
+## Dependencies
+
+- **Languages**
+  - [Python 3.10](/Dev/language/python)
+- **Frameworks**
+  - [Flask](https://flask.palletsprojects.com/en/2.1.x/)
+- **Containers**
+  - [Docker](https://docs.docker.com/)
+  - [Docker Compose](https://github.com/compose-spec/compose-spec/blob/master/spec.md)
+- **Server**
+  - [nginx](https://docs.nginx.com/nginx/)
+  - [gunicorn](https://docs.gunicorn.org/en/stable/configure.html)
+- **Networking and Serialization**
+  - [requests](https://requests.readthedocs.io/en/latest/)
+- **Database**
+  - [Firebase](#)
+- **Testing**
+  - [pytest](/Dev/tools/pytest)
+  - [coverage](https://coverage.readthedocs.io/en/6.4.1/cmd.html)
+- **Documentation**
+  - [pdoc](https://pdoc.dev/docs/pdoc/doc.html)
+  - [highlight.js](https://highlightjs.org/)
 
 ---
-
-## Stack Documentation
-
-### Docker
-
-- [Docker](https://docs.docker.com/)
-- [Docker Compose](https://github.com/compose-spec/compose-spec/blob/master/spec.md)
-
-### Server
-
-- [gunicorn](https://docs.gunicorn.org/en/stable/configure.html)
-
-### Backend Stack
-
-- [Python](https://docs.python.org/3.9/)
-- [Flask](https://flask.palletsprojects.com/en/2.1.x/)
-
-### Database
-
-- [Firebase](https://firebase.google.com/docs/database/admin/save-data)
-  - https://console.firebase.google.com/u/0/project/budbuddy-9c55a/database/budbuddy-9c55a-default-rtdb/data
-
-### FrontEnd Stack
-
-- OrbitCSS
 
 ## Developer Notes
 
-### Start/Status/Stop Commands
+## {.tabset}
 
-- build container
-  - `make build`
-- build and run the container
-  - `make run`
-- start the container and open localhost
-  - `make start`
-- container status
-  - `docker-compose ps -a`
-- run a command in the container
-  - `docker-compose exec -option auto <command>`
-- stop all running containers
-  - `make clean`
-- remove all stopped containers
-  - `make deepclean`
+### TODO
 
-### Read Logs
+- Make Model and Basemodel ABC
+- Use Metaclasses for auto_attributes
+- Add type hints
+- Setup/fix template app generator
+- Auto generate API documentation
+- Add more testing
+- Build js Library
+- Build CSS Library
+- Switch to less verbose html preprocessor
+- Improve database search
 
-```sh
-docker logs --since=15m -t  auto
-```
+### Issue Tracking
 
-_follows as a background process_
+- None
 
-```sh
-docker logs -f --since=15m -t auto &`
-```
+### Make PyPi Update
+
+1. Update version in `pyproject.toml`
+
+2. ```sh
+   rm -rf dist && python3 -m build && pip install -e . && python3 -m twine upload --verbose --repository testpypi dist/*
+   ```
 
 ### Run Tests
 
-- `make tests`
+```sh
+pytest ./tests --log-level=INFO -rx -l -x; rm -rf tables
+```
 
----
+### Show Logs
 
-### Misc Notes
+```sh
+sudo docker logs -f --since=15m -t app_name
+```
+
+### Documentation
+
+```md
+## Description
+
+_description_of_function_
+
+## Args
+
+- pos*str (\_type*, required): _description_
+- key*str (\_type*, optional): _description_
+
+## Returns
+
+_type_: _description_
+
+## Exceptions
+
+- None
+
+## Module
+
+- autonomous.package
+```

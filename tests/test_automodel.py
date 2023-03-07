@@ -1,7 +1,7 @@
 from datetime import datetime
 
+from app_template.app.models.model import Model
 from autonomous import log
-from models.model import Model
 
 
 class TestAutomodel:
