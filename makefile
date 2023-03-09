@@ -3,20 +3,13 @@
 
 export FIREBASE_URL := https://autonomous-ae539-default-rtdb.firebaseio.com/
 export FIREBASE_KEY_FILE := app_template/vendor/firebase.json
-export APP_NAME := "autonomous"
+export APP_NAME := "app"
 export TESTING := "True"
 export LOG_LEVEL := "INFO"
 
 all: test clean run start
 
-APP_NAME?=auto
 CONTAINERS=$(sudo docker ps -a -q)
-
-build:
-	docker-compose build --no-cache
-
-run: 
-	docker-compose up --build -d
 
 package:
 	rm -rf dist
@@ -28,7 +21,6 @@ package:
 
 clean:
 	sudo docker ps -a
-	-docker-compose down --remove-orphans
 	-sudo docker kill $(CONTAINERS)
 
 deepclean: clean
@@ -37,10 +29,6 @@ deepclean: clean
 	-sudo docker system prune -a -f --volumes
 
 ###### TESTING #######
-
-debug: 
-	docker-compose up --build -d
-	docker logs -f --since=5m -t $(APP_NAME)
 
 # cd app_templatedocker-compose up --build -d
 tests: testauto testapp
