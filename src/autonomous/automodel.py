@@ -3,11 +3,17 @@ import os
 import pprint
 
 import firebase_admin
-from autonomous import autoencoder, log
 from firebase_admin import credentials, db
 
-cred = credentials.Certificate(os.getenv("FIREBASE_KEY_FILE"))
-firebase_admin.initialize_app(cred, {"databaseURL": os.getenv("FIREBASE_URL")})
+from . import autoencoder, log
+
+try:
+    firebase_admin.get_app()
+except ValueError:
+    firebase_admin.initialize_app(
+        credentials.Certificate(os.getenv("FIREBASE_KEY_FILE")),
+        {"databaseURL": os.getenv("FIREBASE_URL")},
+    )
 
 
 class AutoModel:

@@ -11,6 +11,8 @@ ENV PATH="/var/dart-sass:${PATH}"
 RUN pip install --no-cache-dir --upgrade pip wheel
 COPY ./requirements.txt /var/tmp/requirements.txt
 RUN pip install -r /var/tmp/requirements.txt
+RUN pip install -i https://test.pypi.org/simple/ autonomous==0.0.43
+RUN pip freeze > /var/tmp/requirements.txt.log
 
 COPY ./vendor/gunicorn.conf.py /var/gunicorn.conf.py
 COPY ./vendor/firebase.json /var/firebase.json

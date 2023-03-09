@@ -75,10 +75,13 @@ Autonomous has minimally 2 container components:
 
 ### Make PyPi Update
 
-1. Update version in `pyproject.toml`
+1. Update version
 
 2. ```sh
-   rm -rf dist && python3 -m build && pip install -e . && python3 -m twine upload --verbose --repository testpypi dist/*
+   rm -rf dist
+   python3 -m build
+   pip install -e .
+   python3 -m twine upload --verbose -r testpypi dist/*
    ```
 
 ### Run Tests

@@ -1,17 +1,18 @@
 version: "3"
 
 services:
-  auto:
-    image: auto:latest
+  app:
+    image: app:latest
     build: 
       context: .
     working_dir: /var/app
     env_file: .env
-    container_name: auto
+    container_name: app
     networks:
       - app_net
     volumes:
       - ./app:/var/app/
+      - ./tests:/var/app/tests
     command: ["gunicorn", "app:create_app()", "-c/var/gunicorn.conf.py"]
     ports:
      - "5000:5000"

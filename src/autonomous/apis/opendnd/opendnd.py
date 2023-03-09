@@ -5,7 +5,7 @@ from urllib.parse import urlencode
 import requests
 
 from .logger import log
-from .openapi import OpenAI
+from ..ai import OpenAI
 
 NUM_IMAGES = 3
 
