@@ -5,7 +5,8 @@ with open("README.md", "r") as fh:
 
 setup(
     name="autonomous",
-    version="0.0.43",
+    version="0.0.46",
+    python_requires=">=3.10",
     package_dir={"": "src"},
     packages=find_packages(where="src"),
     author="Steven Allen Moore",
@@ -33,7 +34,9 @@ setup(
         "openai",
         "jsmin",
         "cssmin",
-        "dotenv",
+        "python-dotenv",
+        "pytest",
+        "coverage",
     ],
-    extras_require={"dev": ["pytest", "coverage", "twine", "wheel"]},
+    extras_require={"dev": ["twine", "wheel"]},
 )

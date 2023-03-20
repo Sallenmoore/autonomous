@@ -18,6 +18,10 @@ package:
 	twine check dist/*
 	twine upload -r testpypi dist/*
 
+startdb:
+	-docker network create app_net
+	cd ~/projects/database; sudo docker-compose up -d
+
 ###### CLEANING #######
 
 clean:
@@ -31,21 +35,17 @@ deepclean: clean
 	-sudo docker system prune -a -f --volumes
 
 ###### TESTING #######
-
-startdb:
-	-docker network create app_net
-	cd ~/projects/database; sudo docker-compose up -d
 	
-tests: startdb testauto testapp
+tests: clean startdb testauto testapp
 
 # docker-compose up --build -d
 RUNTEST?='test_'
-test: startdb
+test:
 	python -m pytest -v --log-level=INFO -rx -l -x -k $(RUNTEST)
 
-testauto: startdb
+testauto:
 	python -m pytest -v --log-level=INFO -rx -l -x --ignore=app_template/tests
 
 # docker-compose up --build -d
-testapp: startdb
+testapp:
 	cd app_template; make tests

@@ -3,7 +3,7 @@ version: "3"
 services:
   app:
     image: app:latest
-    build: 
+    build:
       context: .
     working_dir: /var/app
     env_file: .env
@@ -13,9 +13,15 @@ services:
     volumes:
       - ./app:/var/app/
       - ./tests:/var/app/tests
-    command: ["gunicorn", "app:create_app()", "-c/var/gunicorn.conf.py"]
+    command:
+      [
+        "gunicorn",
+        "app:create_app()",
+        "-c/var/gunicorn.conf.py"
+      ]
     ports:
-     - "80:5000"
+      - "80:5000"
 networks:
   app_net:
-
+    name: app_net
+    external: True

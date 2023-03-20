@@ -1,10 +1,13 @@
 
-.PHONY: all build run clean deepclean test
+.PHONY: all build run clean deepclean test tests debug
 
 all: test clean run start
 
 APP_NAME?=app
 CONTAINERS=$(sudo docker ps -a -q)
+
+startdb:
+	docker-compose build --no-cache
 
 build:
 	docker-compose build --no-cache
@@ -31,7 +34,7 @@ debug:
 	docker-compose up --build -d
 	docker logs -f --since=5m -t $(APP_NAME)
 
-tests: clean
+tests: 
 	docker-compose up --build -d
 	docker exec -it $(APP_NAME) python -m pytest -v --log-level=INFO -rx -l -x 
 

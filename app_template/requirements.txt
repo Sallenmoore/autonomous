@@ -10,21 +10,16 @@ Flask
 
 ##### System #####
 
-#Watchdog
+setuptools
+# Watchdog
 
 ##### API #####
 
 #flask-restful
-#jsonpickle
-#marshmallow
-#pyyaml
 
 ##### Database #####
 
-#tinydb
-#firebase-admin
-#google-cloud-firestore
-redis
+#redis
 redis-om
 
 ##### Frontend #####
@@ -53,28 +48,28 @@ gunicorn
 
 ##### Parsing #####
 
-dateparser
-parse
+# dateparser
+# parse
 
 ##################################
 #           DEVELOPMENT          #
 ##################################
 
 ## xxx
-pygit2
-PyGithub
-python-dotenv
+# pygit2
+# PyGithub
+# python-dotenv
 
 ## Linting
 
-black
-pytest-flakes
+# black
+# pytest-flakes
 
 ## Debugging
 
-flask_debug
+# flask_debug
 
 ## Testing
 
-pytest
-coverage
+# pytest
+# coverage

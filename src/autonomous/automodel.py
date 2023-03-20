@@ -33,10 +33,10 @@ class AutoModel(redis_om.JsonModel, ABC):
     def _serialize(self, val):
         if isinstance(val, list):
             for i, v in enumerate(val):
-                val[i] = self.serialize(v)
+                val[i] = self._serialize(v)
         elif isinstance(val, dict):
             for k, v in val.items():
-                val[k] = self.serialize(v)
+                val[k] = self._serialize(v)
         elif issubclass(val.__class__, AutoModel):
             val.save()
             val = {"_pk": val.pk, "_automodel": val.__class__.__name__}
@@ -61,6 +61,7 @@ class AutoModel(redis_om.JsonModel, ABC):
         elif isinstance(val, list):
             for i, v in enumerate(val):
                 val[i] = cls._deserialize(v)
+        return val
 
     def delete(self):
         super().delete(self.pk)

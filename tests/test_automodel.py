@@ -12,8 +12,8 @@ class Model(AutoModel):
     age: int
     date: datetime
     auto: Optional["Model"]
-    autolist: Optional[list]
-    autodict: Optional[dict]
+    autolist: Optional[list] = []
+    autodict: Optional[dict] = {}
     autoobj: Optional["Model"]
 
 
@@ -126,32 +126,27 @@ class TestAutomodel:
         Database.cleardb()
 
     def test_autoencoder_serialize(self):
-        am = Model(name="test", age=11)
+        am = Model(name="test", age=10, date=datetime.now())
         am.save()
 
-        subobjs = [Model(name=f"subtest{i}", age=11).save() for i in range(3)]
-        am.autolist = subobjs
-
-        # breakpoint()
-        Model.serialize(am)
+        for i in range(3):
+            subobj = Model(name=f"subtest{i}", age=11, date=datetime.now())
+            subobj.save()
+            am.autolist.append(subobj)
+        testlist = am.autolist[:]
+        Model._serialize(am)
         for i, a in enumerate(am.autolist):
-            assert isinstance(a, Model)
-            assert a.name == am.autolist[i].name
-            assert a.pk == am.autolist[i].pk
-            assert a.age == am.autolist[i].age
+            assert isinstance(a, dict)
+            assert testlist[i].__class__.__name__ == a["_automodel"]
+            assert testlist[i].pk == a["_pk"]
 
-        am.autodict = {
-            i: {"_automodel": Model.__name__, "_pk": a.pk}
-            for i, a in enumerate(subobjs)
-        }
-
-        # breakpoint()
-        Model.serialize(am)
+        am.autodict = {a.pk: a for a in testlist}
+        testdict = am.autodict.copy()
+        Model._serialize(am)
         # breakpoint()
         for k, a in am.autodict.items():
-            assert isinstance(a, Model)
-            assert a.name == am.autodict[k].name
-            assert a.pk == am.autodict[k].pk
-            assert a.age == am.autodict[k].age
+            assert isinstance(a, dict)
+            assert testdict[k].__class__.__name__ == a["_automodel"]
+            assert testdict[k].pk == a["_pk"]
 
         Database.cleardb()
