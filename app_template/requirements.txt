@@ -6,20 +6,18 @@
 
 Flask 
 
-##### Configuration and Documentation #####
+##### Configuration #####
+
+##### Documentation #####
 
 ##### System #####
 
 setuptools
-# Watchdog
 
 ##### API #####
 
-#flask-restful
-
 ##### Database #####
 
-#redis
 redis-om
 
 ##### Frontend #####
@@ -34,7 +32,6 @@ gunicorn
 
 ##### Security #####
 
-
 ##### Async ##### 
 
 # aiofiles
@@ -43,22 +40,13 @@ gunicorn
 
 ##### AI #####
 
-#openai
-#replicate
-
 ##### Parsing #####
 
-# dateparser
-# parse
+dateparser
 
 ##################################
 #           DEVELOPMENT          #
 ##################################
-
-## xxx
-# pygit2
-# PyGithub
-# python-dotenv
 
 ## Linting
 

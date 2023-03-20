@@ -13,14 +13,12 @@ class Config:
 
 
 class ProductionConfig(Config):
-    # DATABASE_URI = "mysql://user@localhost/foo"
     LOG_LEVEL = logging.ERROR
     DEBUG = False
     TESTING = False
 
 
 class DevelopmentConfig(Config):
-    # DATABASE_URI = "sqlite:////tmp/foo.db"
     LOG_LEVEL = logging.INFO
     DEBUG = True
     TESTING = True

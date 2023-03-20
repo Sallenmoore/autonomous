@@ -1,5 +1,5 @@
 
-.PHONY: all build run clean deepclean debug tests test
+.PHONY: all package startdb create-network clean deepclean tests test testauto testapp
 
 # export FIREBASE_URL := https://autonomous-ae539-default-rtdb.firebaseio.com/
 # export FIREBASE_KEY_FILE := app_template/vendor/firebase.json
@@ -18,8 +18,14 @@ package:
 	twine check dist/*
 	twine upload -r testpypi dist/*
 
-startdb:
-	-docker network create app_net
+###### Database #######
+
+create-network:
+	if [ -z $$(docker network ls --filter name=app_net -q | grep app_net) ]; then \
+		docker network create app_net; \
+	fi
+
+startdb: create-network
 	cd ~/projects/database; sudo docker-compose up -d
 
 ###### CLEANING #######
@@ -36,16 +42,16 @@ deepclean: clean
 
 ###### TESTING #######
 	
-tests: clean startdb testauto testapp
+tests: testauto testapp
 
 # docker-compose up --build -d
 RUNTEST?='test_'
-test:
+test: clean startdb
 	python -m pytest -v --log-level=INFO -rx -l -x -k $(RUNTEST)
 
-testauto:
+testauto: clean startdb
 	python -m pytest -v --log-level=INFO -rx -l -x --ignore=app_template/tests
 
 # docker-compose up --build -d
-testapp:
+testapp: clean startdb
 	cd app_template; make tests

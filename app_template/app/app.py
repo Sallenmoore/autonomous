@@ -1,5 +1,4 @@
 import os
-import sys
 
 from config import DevelopmentConfig
 from flask import Flask

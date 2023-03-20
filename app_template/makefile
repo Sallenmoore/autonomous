@@ -4,15 +4,20 @@
 all: test clean run start
 
 APP_NAME?=app
-CONTAINERS=$(sudo docker ps -a -q)
+CONTAINERS=$$(sudo docker ps -a -q)
 
-startdb:
-	docker-compose build --no-cache
+###### Database #######
 
+create-network:
+	if [ -z $$(docker network ls --filter name=app_net -q | grep app_net) ]; then \
+		docker network create app_net; \
+	fi
+
+###### BUILD and RUN #######
 build:
 	docker-compose build --no-cache
 
-run: 
+run: create-network 
 	docker-compose up --build -d
 	docker logs -f --since=5m -t $(APP_NAME)
 
@@ -30,8 +35,7 @@ deepclean: clean
 
 ###### TESTING #######
 
-debug:
-	docker-compose up --build -d
+debug: run
 	docker logs -f --since=5m -t $(APP_NAME)
 
 tests: 
