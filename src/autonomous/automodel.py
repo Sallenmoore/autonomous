@@ -1,112 +1,70 @@
-import json
-import os
+# opt : Optional[str]  # for optional attributes
+# default : Optional[str] = "value"  # for default values
 import pprint
+from abc import ABC
 
-import firebase_admin
-from firebase_admin import credentials, db
-
-from . import autoencoder, log
-
-try:
-    firebase_admin.get_app()
-except ValueError:
-    firebase_admin.initialize_app(
-        credentials.Certificate(os.getenv("FIREBASE_KEY_FILE")),
-        {"databaseURL": os.getenv("FIREBASE_URL")},
-    )
+import redis_om
 
 
-class AutoModel:
-    autoattr = []
-
+class AutoModel(redis_om.JsonModel, ABC):
     def __new__(cls, *args, **kwargs):
-
         obj = super().__new__(cls)
-
-        obj._pk = kwargs.get("_pk", kwargs["_ref"].key if "_ref" in kwargs else None)
-        obj._ref = cls.table().child(str(obj._pk)) if obj._pk else None
-        kwargs |= obj._ref.get() if obj._ref else {}
-
-        for k in cls.autoattr:
-            setattr(obj, k, None)
-
-        kwargs = autoencoder.AutoEncoder().decode(kwargs)
-        for k, v in kwargs.items():
-            setattr(obj, k, v)
-        obj.deserialize()
+        for k, v in obj.__dict__.items():
+            setattr(obj, k, cls._deserialize(v))
         return obj
+
+    def save(self):
+        for k, v in self.__dict__.items():
+            setattr(self, k, self._serialize(v))
+        super().save()
+        return self.pk
+
+    @classmethod
+    def get(cls, pk):
+        try:
+            return super().get(pk)
+        except redis_om.model.model.NotFoundError as e:
+            return None
 
     def __repr__(self):
         return pprint.pformat(self.__dict__, indent=4, width=7, sort_dicts=True)
 
-    def serialize(self, data):
-        return data
+    @classmethod
+    def _serialize(self, val):
+        if isinstance(val, list):
+            for i, v in enumerate(val):
+                val[i] = self.serialize(v)
+        elif isinstance(val, dict):
+            for k, v in val.items():
+                val[k] = self.serialize(v)
+        elif issubclass(val.__class__, AutoModel):
+            val.save()
+            val = {"_pk": val.pk, "_automodel": val.__class__.__name__}
 
-    def deserialize(self):
-        pass
+        return val
 
     @classmethod
-    def table(cls):
-        if not hasattr(cls, "_table"):
-            ref = db.reference(os.getenv("APP_NAME"))
-            cls._table = ref.child(cls.__name__.lower())
-        return cls._table
-
-    @property
-    def pk(self):
-        if not hasattr(self, "_pk"):
-            self._pk = None
-        return self._pk
-
-    @pk.setter
-    def pk(self, value):
-        self._pk = value
-
-    def save(self):
-        # filter invalid attributes and other models and save them
-        save_data = autoencoder.AutoEncoder().default(self)
-        # update existing record
-        if self._ref:
-            self._ref.set(save_data)
-        # save new record
-        else:
-            self._ref = self.table().push(value=save_data)
-            self._ref.update({"_pk": self._ref.key})
-
-        # set key
-        self._pk = self._ref.key
-        return self._pk
+    def _deserialize(cls, val):
+        if isinstance(val, dict):
+            if "_automodel" in val:
+                autoclass = filter(
+                    lambda klass: val["_automodel"]
+                    == klass.__name__.rsplit(".", 1)[-1],
+                    AutoModel.__subclasses__(),
+                )
+                model = next(autoclass)
+                # breakpoint()
+                val = model.get(val["_pk"])
+            else:
+                for k, v in val.items():
+                    val[k] = cls._deserialize(v)
+        elif isinstance(val, list):
+            for i, v in enumerate(val):
+                val[i] = cls._deserialize(v)
 
     def delete(self):
-        return self._ref.delete()
-
-    @classmethod
-    def get(cls, id):
-        ref = cls.table().child(str(id))
-        if data := ref.get():
-            data["_pk"] = ref.key
-            data["_ref"] = ref
-            obj = cls(**data)
-            return obj
+        super().delete(self.pk)
 
     @classmethod
     def all(cls):
-        data = cls.table().get()
-        objs = []
-        if data:
-            for k, v in data.items():
-                if "_pk" not in v:
-                    v["_pk"] = k
-                objs.append(cls(**v))
-        return objs
-
-    @classmethod
-    def search(cls, **kwargs):
-        objs_dicts = []
-        for k, v in kwargs.items():
-            objs_dicts.append(cls.table().order_by_child(k).equal_to(v).get())
-        return [cls(**o) for o in objs_dicts]
-
-    @classmethod
-    def clear_table(cls):
-        cls.table().delete()
+        return cls.all_pks()

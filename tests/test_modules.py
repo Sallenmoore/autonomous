@@ -11,6 +11,7 @@ def test_imports():
         "src.autonomous.version_control",
         "src.autonomous.assets",
         "src.autonomous.automodel",
+        "src.autonomous.autodb",
         "src.autonomous.logger",
     ):
         __import__(module)

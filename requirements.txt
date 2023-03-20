@@ -15,17 +15,12 @@ Flask
 ##### API #####
 
 #flask-restful
-#jsonpickle
-#marshmallow
-#pyyaml
 
 ##### Database #####
 
-#tinydb
-#firebase-admin
-#google-cloud-firestore
-redis
+#redis
 redis-om
+
 
 ##### Frontend #####
 

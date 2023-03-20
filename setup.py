@@ -22,8 +22,10 @@ setup(
         "Operating System :: OS Independent",
     ],
     install_requires=[
+        "pydantic",
+        "redis",
+        "redis-om",
         "Flask",
-        "firebase-admin",
         "gunicorn",
         "requests",
         "pygit2",

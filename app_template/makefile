@@ -27,17 +27,15 @@ deepclean: clean
 
 ###### TESTING #######
 
-debug: 
+debug:
 	docker-compose up --build -d
 	docker logs -f --since=5m -t $(APP_NAME)
 
 tests: clean
-	echo "Running tests"
 	docker-compose up --build -d
 	docker exec -it $(APP_NAME) python -m pytest -v --log-level=INFO -rx -l -x 
 
 RUNTEST?="test_"
 test:
-	echo "Running tests"
 	docker-compose up --build -d
 	docker exec -it $(APP_NAME) python -m pytest -v --log-level=INFO -rx -l -x -k $(RUNTEST)
