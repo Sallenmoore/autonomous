@@ -1,8 +1,46 @@
+import uuid
 from datetime import datetime
 
-from src.autonomous import log
-from src.autonomous.model.automodel import AutoModel
-from src.autonomous.model.orm import TestORM
+from autonomous import log
+from autonomous.model.automodel import AutoModel
+
+
+class TestORM:
+    def __init__(self, table):
+        self._table = table
+        self.db = {}
+
+    @property
+    def _table(self):
+        return self._table
+
+    def save(self, data):
+        if "pk" not in data:
+            data["pk"] = uuid.uuid4().hex
+        self.db[data["pk"]] = data
+        return data["pk"]
+
+    def get(self, pk):
+        return self.db.get(pk)
+
+    def all(self):
+        return self.db.values()
+
+    def search(self, **kwargs):
+        results = []
+        for key, value in kwargs.items():
+            for item in self.db.values():
+                if item[key] == value:
+                    results.append(item)
+        return list(set(results))
+
+    def delete(self, pk):
+        try:
+            del self.db[pk]
+        except KeyError:
+            return pk
+        else:
+            return None
 
 
 class SubModel(AutoModel):
@@ -84,7 +122,6 @@ class TestAutomodel:
         assert not new_am
 
     def test_automodel_deserialize(self):
-
         am = Model(name="test", age=10, date=datetime.now())
         am.save()
         am_dict = {"_automodel": am.__class__.__name__, "_pk": am.pk}
@@ -122,8 +159,6 @@ class TestAutomodel:
         assert result["b"]["c"].pk == am.pk
         assert result["b"]["c"].name == am.name
         assert result["b"]["c"].age == am.age
-
-        Database.cleardb()
 
     def test_autoencoder_serialize(self):
         am = Model(name="test", age=10, date=datetime.now())

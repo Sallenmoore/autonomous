@@ -1,16 +1,13 @@
-
 import json
 
 import tinydb
 
 from autonomous import log
-from autonomous.automodel import AutoModel
 
 from .storage import AutoStorage
 
 
 class Table:
-
     def __init__(self, name, path="."):
         """
         [summary]
@@ -18,7 +15,8 @@ class Table:
         self.path = path
         # breakpoint()
         self._table = tinydb.TinyDB(
-            f"{self.path}/{name}.json", storage=AutoStorage).table(name=name)
+            f"{self.path}/{name}.json", storage=AutoStorage
+        ).table(name=name)
 
     @property
     def name(self):
@@ -31,7 +29,7 @@ class Table:
         # log(obj)
         if not obj.pk:
             obj.pk = self._table.insert(obj.__dict__)
-        #log(obj, len(self._table))
+        # log(obj, len(self._table))
         self._table.update(obj.__dict__, doc_ids=[obj.pk])
         # log(f"_auto_pk:{pk}")
         # breakpoint()
@@ -45,7 +43,11 @@ class Table:
         [summary]
         """
         try:
-            self._table.remove(doc_ids=[pk, ])
+            self._table.remove(
+                doc_ids=[
+                    pk,
+                ]
+            )
         except Exception as e:
             log(e)
             return pk
@@ -58,26 +60,27 @@ class Table:
         as key/value pairs
         """
         matches = []
-        if objs := self.all():
-            for k, v in search_terms.items():
-                if not v:
-                    continue
-                query = tinydb.Query()[k]
-                if isinstance(v, str):
-                    search_text = v.strip().split()
-                    def test_contains(value): return any(
-                        s in value for s in search_text)
-                    # breakpoint()
-                    results = self._table.search(query.test(test_contains))
-                else:
-                    results = self._table.search(query.search(v))
+        for k, v in search_terms.items():
+            if not v:
+                continue
+            query = tinydb.Query()[k]
+            if isinstance(v, str):
+                search_text = v.strip().split()
 
-                matches += results
+                def test_contains(value):
+                    return any(s in value for s in search_text)
+
+                # breakpoint()
+                results = self._table.search(query.test(test_contains))
+            else:
+                results = self._table.search(query.search(v))
+
+            matches += results
 
         filtered_matches = []
         filtered_matches = filter(lambda m: m not in filtered_matches, matches)
         # log(list(matches))
-        #log(list(map(lambda m : id(m), matches)))
+        # log(list(map(lambda m : id(m), matches)))
         return matches
 
     def get(self, pk):
@@ -90,7 +93,7 @@ class Table:
             # breakpoint()
             obj = self._table.get(doc_id=pk)
             # breakpoint()
-            #log(obj_id, obj, self, self._table)
+            # log(obj_id, obj, self, self._table)
         return obj
 
     def all(self):

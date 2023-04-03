@@ -7,11 +7,11 @@ def test_imports():
         print(p)
     """Test that all modules can be imported."""
     for module in (
-        "src.autonomous.apis",
-        "src.autonomous.version_control",
-        "src.autonomous.assets",
-        "src.autonomous.automodel",
-        "src.autonomous.db.autodb",
-        "src.autonomous.logger",
+        "autonomous.apis",
+        "autonomous.version_control",
+        "autonomous.assets",
+        "autonomous.automodel",
+        "autonomous.db.autodb",
+        "autonomous.logger",
     ):
         __import__(module)

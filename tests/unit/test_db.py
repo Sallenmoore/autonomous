@@ -1,6 +1,7 @@
-from src.autonomous import log
-from src.autonomous.db.autodb import Database
+# from autonomous import log
 from pathlib import Path
+
+from autonomous.db.autodb import Database
 
 
 class RecordTest:
@@ -12,10 +13,7 @@ class RecordTest:
 
 
 class TestDatabase:
-
     db = Database("tests").get_table("RecordTest")
-
-    #############################   TESTS FOR db.py   #############################
 
     def test_db_table(self):
         db = Database("tests")
@@ -61,7 +59,7 @@ class TestDatabase:
         t.num = 6
         self.db.save(t.__dict__)
         model = self.db.get(t.pk)
-        #log(type(model), model)
+        # log(type(model), model)
         obj = RecordTest(**model)
         assert obj.pk == t.pk
         assert t.num == obj.num == 6

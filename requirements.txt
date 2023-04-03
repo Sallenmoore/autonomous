@@ -2,23 +2,24 @@
 #           PRODUCTION           #
 ##################################
 
-##### Framework #####
+##### Frameworks #####
 
 Flask 
 
 ##### Configuration and Documentation #####
 
+
 ##### System #####
 
-#Watchdog
+setuptools
+python-dotenv
 
 ##### API #####
-
-#flask-restful
+PyGithub
+pygit2
 
 ##### Database #####
-
-tinydb
+tinyDB
 
 ##### Frontend #####
 
@@ -35,39 +36,12 @@ gunicorn
 
 ##### Async ##### 
 
-# aiofiles
-# aiohttp
-# aiopath
 
 ##### AI #####
 
-#openai
-#replicate
+openai
 
 ##### Parsing #####
 
 dateparser
-parse
-
-##################################
-#           DEVELOPMENT          #
-##################################
-
-## xxx
-pygit2
-PyGithub
-python-dotenv
-
-## Linting
-
-black
-pytest-flakes
-
-## Debugging
-
-flask_debug
-
-## Testing
-
-pytest
-coverage
+#parse

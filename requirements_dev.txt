@@ -1,0 +1,8 @@
+##################################
+#           DEVELOPMENT          #
+##################################
+tox
+pydantic
+pytest-cov
+mypy
+flake8

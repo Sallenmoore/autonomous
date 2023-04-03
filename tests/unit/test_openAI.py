@@ -1,4 +1,4 @@
-from src.autonomous.apis import OpenAI
+from autonomous.apis import OpenAI
 
 
 class TestOpenAI:

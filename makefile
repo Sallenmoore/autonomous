@@ -32,7 +32,7 @@ deepclean: clean
 
 ###### TESTING #######
 	
-tests: testauto testapp
+tests: testtox testapp
 
 # docker-compose up --build -d
 RUNTEST?='test_'
@@ -44,4 +44,13 @@ testauto: clean
 
 # docker-compose up --build -d
 testapp: clean
-	cd app_template; make tests
+	cd src/autonomous/app_template; make tests
+
+testlint: clean
+	flake8 src
+
+testmypy: clean
+	mypy src
+
+testtox:
+	tox
