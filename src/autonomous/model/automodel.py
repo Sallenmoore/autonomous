@@ -3,31 +3,45 @@
 import pprint
 from abc import ABC
 
-import redis_om
+from orm import ORM
 
 
-class AutoModel(redis_om.JsonModel, ABC):
+class AutoModel(ABC):
+    _ORM = None
+
     def __new__(cls, *args, **kwargs):
+        if not cls._table:
+            cls._table = cls._ORM or ORM(table=cls.__name__)
+        kwargs = cls._deserialize(kwargs)
         obj = super().__new__(cls)
         for k, v in obj.__dict__.items():
             setattr(obj, k, cls._deserialize(v))
         return obj
 
+    def __repr__(self):
+        return pprint.pformat(self.__dict__, indent=4, width=7, sort_dicts=True)
+
     def save(self):
         for k, v in self.__dict__.items():
             setattr(self, k, self._serialize(v))
-        super().save()
+        result = self.serialize()
+        self._table.save(result)
         return self.pk
 
     @classmethod
     def get(cls, pk):
-        try:
-            return super().get(pk)
-        except redis_om.model.model.NotFoundError as e:
-            return None
+        return cls._table.get(table=cls.__name__, pk=pk)
 
-    def __repr__(self):
-        return pprint.pformat(self.__dict__, indent=4, width=7, sort_dicts=True)
+    @classmethod
+    def all(cls):
+        return cls._table.all()
+
+    @classmethod
+    def search(cls, **kwargs):
+        return cls._table.search(**kwargs)
+
+    def delete(self):
+        self._table.delete(pk=self.pk)
 
     @classmethod
     def _serialize(self, val):
@@ -42,6 +56,9 @@ class AutoModel(redis_om.JsonModel, ABC):
             val = {"_pk": val.pk, "_automodel": val.__class__.__name__}
 
         return val
+
+    def serialize(self):
+        return self.__dict__
 
     @classmethod
     def _deserialize(cls, val):
@@ -63,9 +80,6 @@ class AutoModel(redis_om.JsonModel, ABC):
                 val[i] = cls._deserialize(v)
         return val
 
-    def delete(self):
-        super().delete(self.pk)
-
     @classmethod
-    def all(cls):
-        return cls.all_pks()
+    def deserialize(cls, vars):
+        return vars

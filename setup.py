@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setup(
     name="autonomous",
-    version="0.0.46",
+    version="0.0.54",
     python_requires=">=3.10",
     package_dir={"": "src"},
     packages=find_packages(where="src"),
@@ -25,7 +25,6 @@ setup(
     install_requires=[
         "pydantic",
         "redis",
-        "redis-om",
         "Flask",
         "gunicorn",
         "requests",
@@ -37,6 +36,7 @@ setup(
         "python-dotenv",
         "pytest",
         "coverage",
+        "pytest_asyncio",
     ],
     extras_require={"dev": ["twine", "wheel"]},
 )

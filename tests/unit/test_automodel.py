@@ -1,9 +1,16 @@
 from datetime import datetime
-from typing import Optional
 
 from src.autonomous import log
-from src.autonomous.autodb import Database
-from src.autonomous.automodel import AutoModel
+from src.autonomous.model.automodel import AutoModel
+from src.autonomous.model.orm import TestORM
+
+
+class SubModel(AutoModel):
+    # set model default attributes
+    name: str
+    age: int
+    date: datetime
+    _ORM = TestORM()
 
 
 class Model(AutoModel):
@@ -11,10 +18,11 @@ class Model(AutoModel):
     name: str
     age: int
     date: datetime
-    auto: Optional["Model"]
-    autolist: Optional[list] = []
-    autodict: Optional[dict] = {}
-    autoobj: Optional["Model"]
+    auto: SubModel = None
+    autolist: list = []
+    autodict: dict = {}
+    autoobj: SubModel = None
+    _ORM = TestORM()
 
 
 class TestAutomodel:
@@ -36,8 +44,6 @@ class TestAutomodel:
         assert am.age == 10
         assert am.date <= datetime.now()
 
-        Database.cleardb()
-
     def test_automodel_get(self):
         am = Model(name="test", age=10, date=datetime.now())
         am.save()
@@ -55,8 +61,6 @@ class TestAutomodel:
         new_am = Model.get(-1)
         assert not new_am
 
-        Database.cleardb()
-
     def test_automodel_update(self):
         am = Model(name="test", age=10, date=datetime.now())
         am.save()
@@ -70,8 +74,6 @@ class TestAutomodel:
         assert new_am.name == "update"
         assert new_am.age == 99
 
-        Database.cleardb()
-
     def test_automodel_delete(self):
         am = Model(name="test", age=10, date=datetime.now())
         am.save()
@@ -80,8 +82,6 @@ class TestAutomodel:
         new_am = Model.get(am.pk)
 
         assert not new_am
-
-        Database.cleardb()
 
     def test_automodel_deserialize(self):
 
@@ -130,7 +130,7 @@ class TestAutomodel:
         am.save()
 
         for i in range(3):
-            subobj = Model(name=f"subtest{i}", age=11, date=datetime.now())
+            subobj = SubModel(name=f"subtest{i}", age=11, date=datetime.now())
             subobj.save()
             am.autolist.append(subobj)
         testlist = am.autolist[:]
@@ -148,5 +148,3 @@ class TestAutomodel:
             assert isinstance(a, dict)
             assert testdict[k].__class__.__name__ == a["_automodel"]
             assert testdict[k].pk == a["_pk"]
-
-        Database.cleardb()

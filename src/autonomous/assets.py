@@ -4,7 +4,9 @@ import subprocess
 from jsmin import jsmin
 
 
-def dartsass(path="static/sass/main.scss", output="static/style.css", **kwargs):
+def dartsass(
+    path="static/style/sass/main.scss", output="static/style/main.css", **kwargs
+):
     # print(f"==========================> dartsass  {path}, {output}, {kwargs}")
     subprocess.run(["sass", f"{path}:{output}"], capture_output=True)
 
@@ -38,6 +40,11 @@ def javascript(path="static/js", output="static/main.js", **kwargs):
             js_file.write(minified)
 
 
-def build_assets():
-    dartsass()
-    javascript()
+def build_assets(
+    csspath="static/style/sass/main.scss",
+    cssoutput="static/style/main.css",
+    jspath="static/js",
+    jsoutput="static/main.js",
+):
+    dartsass(path=csspath, output=cssoutput)
+    javascript(path=jspath, output=jsoutput)

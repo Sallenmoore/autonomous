@@ -9,7 +9,7 @@ CONTAINERS=$$(sudo docker ps -a -q)
 ###### Database #######
 
 create-network:
-	if [ -z $$(docker network ls --filter name=app_net -q | grep app_net) ]; then \
+	if [ -z $$(docker network ls --filter name=app_net | grep -w app_net) ]; then \
 		docker network create app_net; \
 	fi
 
