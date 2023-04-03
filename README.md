@@ -1,5 +1,7 @@
 # Autonomous
 
+![Tests](https://github.com/Sallenmoore/autonomous/actions/workflows/tests.yml/badge.svg)
+
 A local, containerized, service based application framework that attempts to make it easy to create self-contained Python applications with minimal dependencies (coming soon!).
 
 - **Latest Version**: 0.0.33
