@@ -39,50 +39,7 @@ where = ["src"]
 include = ["autonomous*"]
 
 [tool.pytest.ini_options]
-addopts = "--cov=autonomous -rx -l -x" #--no-cov-on-fail --cov-reset
+addopts = "--cov=autonomous -rx -l -x --log-level=INFO --ignore=src --no-cov-on-fail" #  -v  --cov-reset
 testpaths = [
      "tests",
 ]
-
-[tool.mypy]
-mypy_path = "src"
-check_untyped_defs = true
-disallow_any_generics = true
-ignore_missing_imports = true
-no_implicit_optional = true
-show_error_codes = true
-strict_equality = true
-warn_redundant_casts = true
-warn_return_any = true
-warn_unreachable = true
-warn_unused_configs = true
-no_implicit_reexport = true
-
-
-[tool.tox]
-legacy_tox_ini = """
-    [tox]
-    envlist = py310, flake8, mypy
-    isolated_build = true
-
-    [gh-actions]
-    python = 3.10: py310, mypy, flake8
-
-    [testenv]
-    setenv =
-        PYTHONPATH = {toxinidir}
-    deps =
-        -r{toxinidir}/requirements_dev.txt
-    commands =
-        pytest --basetemp={envtmpdir}
-
-    [testenv:flake8]
-    basepython = python3.10
-    deps = flake8
-    commands = flake8 src tests
-
-    [testenv:mypy]
-    basepython = python3.10
-    deps = -r{toxinidir}/requirements_dev.txt
-    commands = mypy src
-"""

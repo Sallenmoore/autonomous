@@ -1,5 +1,5 @@
 import os
 
-from .autodb import AutoDB
+from .autodb import Database
 
-db = AutoDB(os.environ.get("AUTO_TABLE_PATH", "/"))
+db = Database(os.environ.get("AUTO_TABLE_PATH", "/"))

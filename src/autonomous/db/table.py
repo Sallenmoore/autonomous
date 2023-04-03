@@ -14,9 +14,7 @@ class Table:
         """
         self.path = path
         # breakpoint()
-        self._table = tinydb.TinyDB(
-            f"{self.path}/{name}.json", storage=AutoStorage
-        ).table(name=name)
+        self._table = tinydb.TinyDB(f"{self.path}/{name}.json").table(name=name)
 
     @property
     def name(self):
@@ -27,13 +25,12 @@ class Table:
         [summary]
         """
         # log(obj)
-        if not obj.pk:
-            obj.pk = self._table.insert(obj.__dict__)
+        if not obj["pk"]:
+            obj["pk"] = self._table.insert(obj)
         # log(obj, len(self._table))
-        self._table.update(obj.__dict__, doc_ids=[obj.pk])
+        self._table.update(obj, doc_ids=[obj["pk"]])
         # log(f"_auto_pk:{pk}")
-        # breakpoint()
-        return obj.pk
+        return obj["pk"]
 
     def count(self):
         return len(self._table)

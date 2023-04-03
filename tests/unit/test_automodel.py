@@ -5,25 +5,28 @@ from autonomous import log
 from autonomous.model.automodel import AutoModel
 
 
-class TestORM:
-    def __init__(self, table):
+class MockORM:
+    def __init__(self, table="Model"):
         self._table = table
         self.db = {}
 
     @property
-    def _table(self):
+    def table(self):
         return self._table
 
     def save(self, data):
-        if "pk" not in data:
+        if "pk" not in data or data["pk"] is None:
             data["pk"] = uuid.uuid4().hex
         self.db[data["pk"]] = data
+        log(data)
         return data["pk"]
 
     def get(self, pk):
+        log(pk, self.db.get(pk))
         return self.db.get(pk)
 
     def all(self):
+        log(self.db.values())
         return self.db.values()
 
     def search(self, **kwargs):
@@ -32,7 +35,9 @@ class TestORM:
             for item in self.db.values():
                 if item[key] == value:
                     results.append(item)
-        return list(set(results))
+        results = list(set(results))
+        log(results)
+        return results
 
     def delete(self, pk):
         try:
@@ -45,22 +50,22 @@ class TestORM:
 
 class SubModel(AutoModel):
     # set model default attributes
-    name: str
-    age: int
-    date: datetime
-    _ORM = TestORM()
+    attributes = {"name": "", "age": None, "date": None}
+    _table = MockORM("Submodel")
 
 
 class Model(AutoModel):
     # set model default attributes
-    name: str
-    age: int
-    date: datetime
-    auto: SubModel = None
-    autolist: list = []
-    autodict: dict = {}
-    autoobj: SubModel = None
-    _ORM = TestORM()
+    attributes = {
+        "name": "",
+        "age": None,
+        "date": None,
+        "auto": None,
+        "autolist": [],
+        "autodict": {},
+        "autoobj": None,
+    }
+    _table = MockORM("Model")
 
 
 class TestAutomodel:
@@ -88,12 +93,12 @@ class TestAutomodel:
         assert am.name == "test"
         assert am.age == 10
         assert am.date <= datetime.now()
+        assert am.pk
 
         new_am = Model.get(am.pk)
         assert new_am.pk == am.pk
         assert new_am.name == am.name
         assert new_am.age == am.age
-
         new_am = Model.get(None)
         assert not new_am
         new_am = Model.get(-1)
@@ -169,17 +174,20 @@ class TestAutomodel:
             subobj.save()
             am.autolist.append(subobj)
         testlist = am.autolist[:]
-        Model._serialize(am)
-        for i, a in enumerate(am.autolist):
+
+        result = am.serialize()
+
+        for i, a in enumerate(result["autolist"]):
+            log(a, type(a))
             assert isinstance(a, dict)
             assert testlist[i].__class__.__name__ == a["_automodel"]
             assert testlist[i].pk == a["_pk"]
 
         am.autodict = {a.pk: a for a in testlist}
         testdict = am.autodict.copy()
-        Model._serialize(am)
+        result = am.serialize()
         # breakpoint()
-        for k, a in am.autodict.items():
+        for k, a in result["autodict"].items():
             assert isinstance(a, dict)
             assert testdict[k].__class__.__name__ == a["_automodel"]
             assert testdict[k].pk == a["_pk"]

@@ -1,0 +1,2 @@
+[console_scripts]
+autoapp = autonomous.cli:createapp

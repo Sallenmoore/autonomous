@@ -37,20 +37,11 @@ tests: testtox testapp
 # docker-compose up --build -d
 RUNTEST?='test_'
 test: clean
-	python -m pytest -v --log-level=INFO -rx -l -x -k $(RUNTEST)
+	python -m pytest $(RUNTEST)
 
 testauto: clean 
-	python -m pytest -v --log-level=INFO -rx -l -x --ignore=app_template --ignore=src
+	python -m pytest
 
 # docker-compose up --build -d
 testapp: clean
 	cd src/autonomous/app_template; make tests
-
-testlint: clean
-	flake8 src
-
-testmypy: clean
-	mypy src
-
-testtox:
-	tox

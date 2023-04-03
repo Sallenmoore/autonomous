@@ -3,38 +3,46 @@
 import pprint
 from abc import ABC
 
-from orm import ORM
+from .orm import ORM
 
 
 class AutoModel(ABC):
-    _ORM = None
+    _table = None
+    attributes = []
 
     def __new__(cls, *args, **kwargs):
         if not cls._table:
-            cls._table = cls._ORM or ORM(table=cls.__name__)
-        kwargs = cls._deserialize(kwargs)
+            cls._table = ORM(table=cls.__name__)
         obj = super().__new__(cls)
-        for k, v in obj.__dict__.items():
-            setattr(obj, k, cls._deserialize(v))
+
+        # set default attributes
+        cls.attributes["pk"] = None
+
+        obj.pk = kwargs.pop("pk", None)
+        result = cls._table.get(obj.pk) or {}
+        for k, v in cls.attributes.items():
+            setattr(obj, k, result.get(k, v))
+        obj.__dict__ |= kwargs
+        cls._deserialize(obj)
         return obj
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return pprint.pformat(self.__dict__, indent=4, width=7, sort_dicts=True)
 
     def save(self):
-        for k, v in self.__dict__.items():
-            setattr(self, k, self._serialize(v))
         result = self.serialize()
-        self._table.save(result)
+        record = {k: v for k, v in result.items() if k in self.attributes}
+        self.pk = self._table.save(record)
         return self.pk
 
     @classmethod
     def get(cls, pk):
-        return cls._table.get(table=cls.__name__, pk=pk)
+        result = cls._table.get(pk)
+        return cls(**result) if result else None
 
     @classmethod
     def all(cls):
-        return cls._table.all()
+        return [cls(o) for o in cls._table.all()]
 
     @classmethod
     def search(cls, **kwargs):
@@ -58,7 +66,7 @@ class AutoModel(ABC):
         return val
 
     def serialize(self):
-        return self.__dict__
+        return self._serialize(self.__dict__)
 
     @classmethod
     def _deserialize(cls, val):

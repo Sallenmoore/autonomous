@@ -2,7 +2,6 @@ import sys
 
 
 def test_imports():
-
     for p in sys.path:
         print(p)
     """Test that all modules can be imported."""
@@ -10,7 +9,7 @@ def test_imports():
         "autonomous.apis",
         "autonomous.version_control",
         "autonomous.assets",
-        "autonomous.automodel",
+        "autonomous.model.automodel",
         "autonomous.db.autodb",
         "autonomous.logger",
     ):

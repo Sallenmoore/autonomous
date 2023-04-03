@@ -13,7 +13,7 @@ class RecordTest:
 
 
 class TestDatabase:
-    db = Database("tests").get_table("RecordTest")
+    db = Database().get_table("RecordTest")
 
     def test_db_table(self):
         db = Database("tests")
