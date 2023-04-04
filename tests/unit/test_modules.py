@@ -14,3 +14,9 @@ def test_imports():
         "autonomous.logger",
     ):
         __import__(module)
+
+
+def test_log():
+    from autonomous import log
+
+    log(1, "hello")

@@ -6,7 +6,7 @@ class ORM:
         self._table = _database.get_table(table=table)
 
     @property
-    def table(self):
+    def _table(self):
         return self._table
 
     def save(self, data):

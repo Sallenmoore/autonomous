@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: autonomous
-Version: 0.0.54
+Version: 0.0.57
 Summary: Containerized application framework built on Flask with additional libraries and tools for rapid development of web applications.
 Author-email: Steven A Moore <samoore@binghamton.edu>
 License: MIT License
@@ -34,9 +34,11 @@ License-File: LICENSE
 
 # Autonomous
 
+![Tests](https://github.com/Sallenmoore/autonomous/actions/workflows/tests.yml/badge.svg)
+
 A local, containerized, service based application framework that attempts to make it easy to create self-contained Python applications with minimal dependencies (coming soon!).
 
-- **Latest Version**: 0.0.33
+- **Latest Version**: 0.0.54
 - **pypi**: https://test.pypi.org/project/autonomous
 - **github**: https://github.com/Sallenmoore/autonomous
 

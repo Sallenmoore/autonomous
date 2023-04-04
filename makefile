@@ -13,7 +13,8 @@ CONTAINERS=$$(sudo docker ps -a -q)
 
 package:
 	rm -rf dist
-	python setup.py bdist_wheel sdist
+	python -m build
+	python -m pip install --upgrade twine
 	twine check dist/*
 	twine upload -r testpypi dist/*
 

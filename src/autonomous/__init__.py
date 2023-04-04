@@ -1,3 +1,3 @@
-__version__ = "0.0.54"
+__version__ = "0.0.57"
 
 from .logger import log
