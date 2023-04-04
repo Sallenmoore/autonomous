@@ -32,7 +32,7 @@ deepclean: clean
 
 ###### TESTING #######
 	
-tests: testtox testapp
+tests: testauto testapp
 
 # docker-compose up --build -d
 RUNTEST?='test_'
