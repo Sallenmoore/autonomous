@@ -1,0 +1,3 @@
+[submodule "src/autonomous/app_template"]
+	path = src/autonomous/app_template
+	url = git@github.com:Sallenmoore/autonomous_app.git
