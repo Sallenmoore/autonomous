@@ -3,26 +3,18 @@
 //////////////////////////////////////////////
 // List of variables
 // - https://orbitcss.com/documentation/sass-variables
+
+$background-image: url('/static/images/backgrounds/bg1.jpg');
+
+///////////////// COLORS //////////////////
+
+$primary: #0D8FAD;
+$secondary: #f8f4f2;
+$highlight: #170b73;
+
 //////////////////////////////////////////////
 //                 Styles                   //
 //////////////////////////////////////////////
 
-@import 'all';
-
 // Custom Elements
-:root
-{
-    --animated-graph-msg: " ";
-}
-
-#graph-container:before
-{
-    content: var(--animated-graph-msg);
-    position: absolute;
-    top: inherit;
-    left: inherit;
-
-    font-weight: 600;
-    font-size: 3em;
-    color: #ffffff; //$primary-text;
-}
+@import 'all';

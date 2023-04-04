@@ -135,6 +135,7 @@ class TestAutomodel:
         assert result.pk == am.pk
         assert result.name == am.name
         assert result.age == am.age
+        assert result.date == am.date
 
         result = Model._deserialize([1, am_dict, 3])
         assert result[0] == 1

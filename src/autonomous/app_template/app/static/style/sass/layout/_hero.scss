@@ -1,0 +1,42 @@
+$hero-padding: 0 !default;
+$hero-background-color: transparent !default;
+$hero-sizes: 'medium'(50vh), 'large'(75vh), 'full'(100vh) !default;
+$hero-color: $secondary;
+
+.hero
+{
+  --padding: #{$hero-padding  };
+  --background-color: #{$hero-background-color};
+  --font-color: #{$hero-color};
+
+  display: flex;
+  flex-direction: column;
+
+  &__content,
+  &__footer,
+  &__header
+  {
+    background-color: var(--background-color);
+    color: var(--font-color);
+  }
+
+  &__content
+  {
+    flex: auto;
+    padding: --padding;
+  }
+
+  &__footer,
+  &__header
+  {
+    flex: none;
+  }
+
+  @each $size in $hero-sizes
+  {
+    &.is-#{nth($size, 1)} > &__content
+    {
+      min-height: nth($size, 2);
+    }
+  }
+}

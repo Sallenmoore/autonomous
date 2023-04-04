@@ -6,6 +6,12 @@ var Global = {
 //========================================================================//
 //  UTILITY FUNCTIONS                                                     //
 //========================================================================//
+function random_int(min, max) {
+  min = Math.ceil(min);
+  max = Math.floor(max);
+  return Math.floor(Math.random() * (max - min+1) + min); // The maximum is exclusive and the minimum is inclusive
+}
+
 //======= Get Elements =======//
 function get_class_elems(class_name) {
   return Array.from(document.getElementsByClassName(class_name));
@@ -15,10 +21,20 @@ function get_id(id) {
   return document.getElementById(id);
 }
 
+function outerHeight(el) {
+  const style = getComputedStyle(el);
+
+  return (
+    el.getBoundingClientRect().height +
+    parseFloat(style.marginTop) +
+    parseFloat(style.marginBottom)
+  );
+}
+
 //======= Attach Events =======//
 
 function add_event(element, event, fn) {
-  if (Array.isArray(element)) {
+  if (Array.isArray(element) || element instanceof NodeList) {
     element.forEach((el) => {
       el.addEventListener(event, fn);
     });
@@ -49,21 +65,49 @@ function get_template(selector) {
 //========= Display ===========//
 
 // Show an element
-function show(elem) {
-  elem.classList.remove("is-hidden");
+function show(element) {
+  if (Array.isArray(element) || element instanceof NodeList) {
+    element.forEach((el) => {
+      el.classList.remove("is-hidden");
+    });
+  } else {
+    element.classList.remove("is-hidden");
+  }
 }
 
 // Hide an element
-function hide(elem) {
-  elem.classList.add("is-hidden");
+function hide(element) {
+  if (Array.isArray(element) || element instanceof NodeList) {
+    element.forEach((el) => {
+      el.classList.add("is-hidden");
+    });
+  } else {
+    element.classList.add("is-hidden");
+  }
 }
 
 // Toggle element visibility
-function toggle(elem, cssclass = "is-hidden") {
-  return elem.classList.toggle("is-hidden");
+function toggle(element) {
+  if (Array.isArray(element) || element instanceof NodeList) {
+    element.forEach((el) => {
+      el.classList.toggle("is-hidden");
+    });
+  } else {
+    element.classList.toggle("is-hidden");
+  }
 }
 
+// =============== Intervals =============== //
+
+
 // =============== Animations =============== //
+
+function animate(obj) {
+  obj.context.clearRect ( 0 , 0 , obj.boundaryX , obj.boundaryY );
+  obj.draw();
+  requestAnimationFrame(() => { animate(obj); });
+}
+
 
 // =============== Intervals =============== //
 
