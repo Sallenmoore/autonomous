@@ -11,7 +11,7 @@ def dartsass(
     subprocess.run(["sass", f"{path}:{output}"], capture_output=True)
 
 
-def javascript(path="static/js", output="static/main.js", **kwargs):
+def javascript(path="static/js", output="static/js/main.min.js", **kwargs):
     # Defining the path to the folder where the JS files are saved
     # Getting all the files from that folder
     files = [

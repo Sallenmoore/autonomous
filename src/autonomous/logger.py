@@ -1,16 +1,31 @@
 import inspect
 import logging
+import os
 import pprint
 
 # class LogFilter(logging.Filter):
 #     def filter(self, record):
 #         return record.levelno == LOG_LEVEL
+log_levels = {
+    "DEBUG": logging.DEBUG,
+    "INFO": logging.INFO,
+    "WARNING": logging.WARNING,
+    "ERROR": logging.ERROR,
+    "CRITICAL": logging.CRITICAL,
+}
 
 
 class Logger:
+    """
+    Set the log level to by setting the LOG_LEVEL environment variable to:
+    "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"
+
+    Default: WARNING
+    """
+
     def __init__(self):
-        self.logger = logging.getLogger("gunicorn.error")
-        self.logger.setLevel(logging.INFO)
+        self.logger = logging.getLogger(os.environ.get("APP_NAME", __name__))
+        self.logger.setLevel(log_levels[os.environ.get("LOG_LEVEL", "WARNING")])
         # built_in_log.addFilter(LogFilter())
 
     def __call__(self, *args, **kwargs):

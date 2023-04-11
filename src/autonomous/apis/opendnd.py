@@ -4,10 +4,11 @@ from urllib.parse import urlencode
 
 import requests
 
-from .logger import log
-from ..ai import OpenAI
+from autonomous.logger import log
 
-NUM_IMAGES = 3
+from ..apis import OpenAI
+
+NUM_IMAGES = 1
 
 
 class OpenDnD:
@@ -70,9 +71,8 @@ class OpenDnD:
         if not cls.has_image(img_file):
             log(img_file)
             prompt = f"A Photo-Realistic portrait of a {name} from Dungeons and Dragons Fifth Edition in a battle arena setting {description}"
-            # try:
-            #     OpenAI().generate_image(prompt, path=f"{img_file}", n=NUM_IMAGES)
-            # except Exception as e:
-            #     log(e)
-            return f"static/images/mobs/generic.png"
-        return f"{img_file}-{random.randint(1,NUM_IMAGES)}.png"
+            try:
+                OpenAI().generate_image(prompt, path=f"{img_file}", n=NUM_IMAGES)
+            except Exception as e:
+                log(e)
+        return f"{img_file}-{random.randint(1,NUM_IMAGES+1)}.png"
