@@ -24,9 +24,11 @@ class Logger:
     """
 
     def __init__(self):
-        self.logger = logging.getLogger(os.environ.get("APP_NAME", __name__))
-        self.logger.setLevel(log_levels[os.environ.get("LOG_LEVEL", "WARNING")])
-        # built_in_log.addFilter(LogFilter())
+        self.logger = logging.getLogger("gunicorn.error")
+        self.logger.setLevel(log_levels[os.environ.get("LOG_LEVEL", self.logger.level)])
+
+    def set_level(self, level):
+        self.logger.setLevel(log_levels[level])
 
     def __call__(self, *args, **kwargs):
         caller = inspect.stack()[1]

@@ -4,7 +4,6 @@ python-dotenv
 PyGithub
 pygit2
 tinyDB
-cssmin
 jsmin
 requests
 gunicorn

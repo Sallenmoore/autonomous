@@ -23,7 +23,6 @@ tinyDB
 
 ##### Frontend #####
 
-cssmin
 jsmin
 
 ##### Network #####
