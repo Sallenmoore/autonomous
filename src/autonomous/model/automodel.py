@@ -8,7 +8,7 @@ from .orm import ORM
 
 class AutoModel(ABC):
     _table = None
-    attributes = []
+    attributes = {}
 
     def __new__(cls, *args, **kwargs):
         obj = super().__new__(cls)

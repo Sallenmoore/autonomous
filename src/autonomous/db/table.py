@@ -58,7 +58,7 @@ class Table:
         """
         matches = []
         for k, v in search_terms.items():
-            if not v:
+            if v == None:
                 continue
             query = tinydb.Query()[k]
             if isinstance(v, str):
@@ -74,8 +74,8 @@ class Table:
 
             matches += results
 
-        filtered_matches = []
-        filtered_matches = filter(lambda m: m not in filtered_matches, matches)
+        # filtered_matches = []
+        # filtered_matches = filter(lambda m: m not in filtered_matches, matches)
         # log(list(matches))
         # log(list(map(lambda m : id(m), matches)))
         return matches
