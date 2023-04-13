@@ -4,7 +4,6 @@
 
 A local, containerized, service based application framework that attempts to make it easy to create self-contained Python applications with minimal dependencies (coming soon!).
 
-- **Latest Version**: 0.0.54
 - **pypi**: https://test.pypi.org/project/autonomous
 - **github**: https://github.com/Sallenmoore/autonomous
 
