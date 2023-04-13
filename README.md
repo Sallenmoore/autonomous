@@ -1,8 +1,11 @@
 # Autonomous
 
+!!!!!!!!!!!!!!!!!!!! NOT YET STABLE !!!!!!!!!!!!!!!!!!!!!!!!
+
 ![Tests](https://github.com/Sallenmoore/autonomous/actions/workflows/tests.yml/badge.svg)
 
-A local, containerized, service based application framework that attempts to make it easy to create self-contained Python applications with minimal dependencies (coming soon!).
+A local, containerized, service based application library built on top of Flask. 
+The goal is to make it easy to create self-contained Python applications with minimal dependencies and built in libraries for many different kinds of tasks.
 
 - **pypi**: https://test.pypi.org/project/autonomous
 - **github**: https://github.com/Sallenmoore/autonomous
@@ -10,16 +13,13 @@ A local, containerized, service based application framework that attempts to mak
 ## Features
 
 - Fully containerized, service based Python application framework
-- All services are localized and interface using a virtual intranet
+- All services are localized to a virtual intranet
 - Built-in Local NoSQL database and Model API
-- Single Data-Source Models across all services
 - Auto-Generated Documentation Pages (Coming Soon!!!)
-- Dynamically typed database attributes
-- Optional static attribute typing
 
 ### Container Apps
 
-Autonomous has minimally 2 container components:
+Autonomous App has minimally 2 container components:
 
 - **server**
   - nginx proxy server listening on port 80
@@ -43,11 +43,14 @@ Autonomous has minimally 2 container components:
 - **Networking and Serialization**
   - [requests](https://requests.readthedocs.io/en/latest/)
 - **Database**
-  - [Firebase](#)
+  - [Local](https://tinydb.readthedocs.io/en/latest/)
+  - [MongoDB](#) - Coming Soon
+  - [Redis](#) - Coming Soon
+  - [Firestore](#) - Coming Soon
 - **Testing**
   - [pytest](/Dev/tools/pytest)
   - [coverage](https://coverage.readthedocs.io/en/6.4.1/cmd.html)
-- **Documentation**
+- **Documentation** - Coming Soon
   - [pdoc](https://pdoc.dev/docs/pdoc/doc.html)
   - [highlight.js](https://highlightjs.org/)
 
@@ -59,65 +62,33 @@ Autonomous has minimally 2 container components:
 
 ### TODO
 
-- Make Model and Basemodel ABC
-- Use Metaclasses for auto_attributes
-- Add type hints
-- Setup/fix template app generator
 - Auto generate API documentation
-- Add more testing
-- Build js Library
-- Build CSS Library
+- Setup/fix template app generator
+- Add type hints
 - Switch to less verbose html preprocessor
+- Add more database options
 - Improve database search
+- 100% testing coverage
 
 ### Issue Tracking
 
 - None
 
-### Make PyPi Update
+## Commands
 
-1. Update version
+### Generate app
 
+TDB
+
+### Tests
+
+```sh
+make tests
+```
+
+### package
+
+1. Update version in `/src/autonomous/__init__.py`
 2. ```sh
-   rm -rf dist
-   python3 -m build
-   pip install -e .
-   python3 -m twine upload --verbose -r testpypi dist/*
+   make tests
    ```
-
-### Run Tests
-
-```sh
-pytest ./tests --log-level=INFO -rx -l -x; rm -rf tables
-```
-
-### Show Logs
-
-```sh
-sudo docker logs -f --since=15m -t app_name
-```
-
-### Documentation
-
-```md
-## Description
-
-_description_of_function_
-
-## Args
-
-- pos*str (\_type*, required): _description_
-- key*str (\_type*, optional): _description_
-
-## Returns
-
-_type_: _description_
-
-## Exceptions
-
-- None
-
-## Module
-
-- autonomous.package
-```
