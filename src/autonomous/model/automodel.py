@@ -25,9 +25,10 @@ class AutoModel(ABC):
         return obj
 
     @classmethod
-    def table():
+    def table(cls):
         if not cls._table:
             cls._table = ORM(table=cls.__name__)
+        return cls._table
 
     def __repr__(self) -> str:
         return pprint.pformat(self.__dict__, indent=4, width=7, sort_dicts=True)
