@@ -11,20 +11,23 @@ class AutoModel(ABC):
     attributes = []
 
     def __new__(cls, *args, **kwargs):
-        if not cls._table:
-            cls._table = ORM(table=cls.__name__)
         obj = super().__new__(cls)
 
         # set default attributes
         cls.attributes["pk"] = None
 
         obj.pk = kwargs.pop("pk", None)
-        result = cls._table.get(obj.pk) or {}
+        result = cls.table().get(obj.pk) or {}
         for k, v in cls.attributes.items():
             setattr(obj, k, result.get(k, v))
         obj.__dict__ |= kwargs
         cls._deserialize(obj)
         return obj
+
+    @classmethod
+    def table():
+        if not cls._table:
+            cls._table = ORM(table=cls.__name__)
 
     def __repr__(self) -> str:
         return pprint.pformat(self.__dict__, indent=4, width=7, sort_dicts=True)
@@ -32,24 +35,24 @@ class AutoModel(ABC):
     def save(self):
         result = self.serialize()
         record = {k: v for k, v in result.items() if k in self.attributes}
-        self.pk = self._table.save(record)
+        self.pk = self.table().save(record)
         return self.pk
 
     @classmethod
     def get(cls, pk):
-        result = cls._table.get(pk)
+        result = cls.table().get(pk)
         return cls(**result) if result else None
 
     @classmethod
     def all(cls):
-        return [cls(o) for o in cls._table.all()]
+        return [cls(o) for o in cls.table().all()]
 
     @classmethod
     def search(cls, **kwargs):
-        return cls._table.search(**kwargs)
+        return cls.table().search(**kwargs)
 
     def delete(self):
-        self._table.delete(pk=self.pk)
+        self.table().delete(pk=self.pk)
 
     @classmethod
     def _serialize(self, val):
