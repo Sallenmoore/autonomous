@@ -1,6 +1,7 @@
 import json
 
 import tinydb
+from tinydb import where
 
 from autonomous import log
 
@@ -58,20 +59,16 @@ class Table:
         """
         matches = []
         for k, v in search_terms.items():
-            if v == None:
+            if v is None:
                 continue
-            query = tinydb.Query()[k]
-            if isinstance(v, str):
-                search_text = v.strip().split()
+            # log(k, v, type(v))
 
-                def test_contains(value):
-                    return any(s in value for s in search_text)
+            def test_contains(value):
+                if isinstance(value, (int, float, bool)):
+                    return v == value
+                return v in value
 
-                # breakpoint()
-                results = self._table.search(query.test(test_contains))
-            else:
-                results = self._table.search(query.search(v))
-
+            results = self._table.search(where(k).test(test_contains))
             matches += results
 
         # filtered_matches = []

@@ -1,57 +1,25 @@
 import uuid
 from datetime import datetime
 
+import pytest
+
 from autonomous import log
 from autonomous.model.automodel import AutoModel
 
 
-class MockORM:
-    def __init__(self, table="Model"):
-        self._table = table
-        self.db = {}
+@pytest.fixture(autouse=True)
+def run_before_and_after_tests():
+    """Fixture to execute asserts before and after a test is run"""
 
-    @property
-    def table(self):
-        return self._table
+    yield  # this is where the testing happens
 
-    def save(self, data):
-        if "pk" not in data or data["pk"] is None:
-            data["pk"] = uuid.uuid4().hex
-        self.db[data["pk"]] = data
-        # log(data)
-        return data["pk"]
-
-    def get(self, pk):
-        log(pk, self.db.get(pk))
-        return self.db.get(pk)
-
-    def all(self):
-        # log(self.db.values())
-        return self.db.values()
-
-    def search(self, **kwargs):
-        results = []
-        for key, value in kwargs.items():
-            for item in self.db.values():
-                if item[key] == value:
-                    results.append(item)
-        results = list(set(results))
-        # log(results)
-        return results
-
-    def delete(self, pk):
-        try:
-            del self.db[pk]
-        except KeyError:
-            return pk
-        else:
-            return None
+    Model.table().flush_table()
+    SubModel.table().flush_table()
 
 
 class SubModel(AutoModel):
     # set model default attributes
     attributes = {"name": "", "age": None, "date": None}
-    _table = MockORM("Submodel")
 
 
 class Model(AutoModel):
@@ -65,7 +33,6 @@ class Model(AutoModel):
         "autodict": {},
         "autoobj": None,
     }
-    _table = MockORM("Model")
 
 
 class TestAutomodel:
@@ -117,6 +84,25 @@ class TestAutomodel:
         assert new_am.name == "update"
         assert new_am.age == 99
 
+    def test_automodel_search(self):
+        am = Model(name="test", age=10, date=datetime.now())
+        am.save()
+        new_am = Model.search(name="test")
+        assert len(new_am) == 1
+        assert new_am[0].pk == am.pk
+        new_am = Model.search(age=10)
+        assert len(new_am) == 1
+        assert new_am[0].pk == am.pk
+
+        am = Model(name="tester", age=9, date=datetime.now())
+        am.save()
+        new_am = Model.search(age=9)
+        assert len(new_am) == 1
+        assert new_am[0].pk == am.pk
+
+        ams = Model.search(name="test")
+        assert len(ams) == 2
+
     def test_automodel_delete(self):
         am = Model(name="test", age=10, date=datetime.now())
         am.save()
@@ -129,7 +115,10 @@ class TestAutomodel:
     def test_automodel_deserialize(self):
         am = Model(name="test", age=10, date=datetime.now())
         am.save()
-        am_dict = {"_automodel": am.model_name(), "_pk": am.pk}
+        am_dict = {
+            "_automodel": am.model_name(),
+            "_pk": am.pk,
+        }
         result = Model._deserialize(am_dict)
         assert isinstance(result, Model)
         assert result.pk == am.pk

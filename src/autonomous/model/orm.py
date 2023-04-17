@@ -23,3 +23,6 @@ class ORM:
 
     def delete(self, pk):
         return self._table.delete(pk)
+
+    def flush_table(self):
+        return self._table.clear()
