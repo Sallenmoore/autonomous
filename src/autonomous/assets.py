@@ -6,6 +6,24 @@ from jsmin import jsmin
 from autonomous import log
 
 
+def search_files_with_extension(directory, extension, exclude=[]):
+    """Recursively search for files with given extension in a directory tree."""
+    matching_files = []
+    for root, dirs, files in os.walk(directory):
+        for e in exclude:
+            if e in root:
+                continue
+
+        for file in files:
+            for e in exclude:
+                if e in file:
+                    continue
+
+            if file.endswith(extension):
+                matching_files.append(os.path.join(root, file))
+    return matching_files
+
+
 def dartsass(path="static/style/main.scss", output="static/style/main.css", **kwargs):
     # print(f"==========================> dartsass  {path}, {output}, {kwargs}")
     subprocess.run(["sass", f"{path}:{output}"], capture_output=True)
@@ -20,11 +38,9 @@ def javascript(path="static/js", output="static/js/main.min.js", **kwargs):
         # log(fn)
         if os.path.isfile(fn) and f != os.path.basename(output):
             files.append(fn)
-    # log(files)
 
-    # Create Array
+    files = search_files_with_extension(path, ".js", exclude=[output, "tests/"])
     mainjs_content = []
-    # Get contents of files
     for entry in files:
         with open(entry, "r") as file:
             mainjs_content.append(file.read())
