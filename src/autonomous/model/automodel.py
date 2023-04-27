@@ -50,12 +50,14 @@ class AutoModel(ABC):
 
     @classmethod
     def get(cls, pk):
+        if isinstance(pk, str) and pk.isdigit():
+            pk = int(pk)
         result = cls.table().get(pk)
         return cls(**result) if result else None
 
     @classmethod
     def all(cls):
-        return [cls(o) for o in cls.table().all()]
+        return [cls(**o) for o in cls.table().all()]
 
     @classmethod
     def search(cls, **kwargs):
@@ -94,8 +96,6 @@ class AutoModel(ABC):
                     if model.model_name() == val["_automodel"]:
                         val = model.get(val["_pk"])
                         break
-                log(val, model)
-                # log(val)
             elif "_datetime" in val:
                 val = datetime.fromisoformat(val["_datetime"])
             else:

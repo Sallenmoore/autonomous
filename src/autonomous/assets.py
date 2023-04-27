@@ -29,42 +29,45 @@ def dartsass(path="static/style/main.scss", output="static/style/main.css", **kw
     subprocess.run(["sass", f"{path}:{output}"], capture_output=True)
 
 
-def javascript(path="static/js", output="static/js/main.min.js", **kwargs):
+def javascript(files="main", path="static/js", **kwargs):
     # Defining the path to the folder where the JS files are saved
     # Getting all the files from that folder
-    files = []
-    for f in os.listdir(path):
-        fn = os.path.join(path, f)
-        # log(fn)
-        if os.path.isfile(fn) and f != os.path.basename(output):
-            files.append(fn)
+    if isinstance(files, list):
+        for f in files:
+            javascript(files=f, path=path**kwargs)
+    else:
+        output = f"{path}/{files}.min.js"
 
-    files = search_files_with_extension(path, ".js", exclude=[output, "tests/"])
-    mainjs_content = []
-    for entry in files:
-        with open(entry, "r") as file:
-            mainjs_content.append(file.read())
+        libfiles = search_files_with_extension(
+            f"{path}/autojs", ".js", exclude=["tests/"]
+        )
+        lib_content = []
+        for entry in libfiles:
+            with open(entry, "r") as file:
+                lib_content.append(file.read())
 
-    # log(files, mainjs_content)
+        # log(files, mainjs_content)
 
-    # Create new master file
-    with open(output, "w") as mainjs:
-        # Add contents of files to master
-        for i in mainjs_content:
-            mainjs.write(f"{i}\n")
+        # Create new master file
+        with open(output, "w") as mainjs:
+            # Add contents of files to master
+            for i in lib_content:
+                mainjs.write(f"{i}\n")
+            js_file = open(f"{path}/{files}.js").read()
+            mainjs.write(f"{js_file}\n")
 
-    if kwargs.get("minified"):
-        with open(mainjs, "r+") as js_file:
-            minified = jsmin(js_file.read())
-            js_file.seek(0)
-            js_file.write(minified)
+            if kwargs.get("minified"):
+                with open(mainjs, "r+") as js_file:
+                    minified = jsmin(js_file.read())
+                    js_file.seek(0)
+                    js_file.write(minified)
 
 
 def build_assets(
     csspath="static/style/main.scss",
     cssoutput="static/style/main.css",
+    jsfiles="main",
     jspath="static/js",
-    jsoutput="static/js/main.min.js",
 ):
     dartsass(path=csspath, output=cssoutput)
-    javascript(path=jspath, output=jsoutput)
+    javascript(files=jsfiles, path=jspath)
