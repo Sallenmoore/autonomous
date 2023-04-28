@@ -7,7 +7,6 @@ class TestOpenAI:
     def test_init(self):
         oai = OpenAI()
 
-    @pytest.mark.skip
     def test_generate_image(self):
         oai = OpenAI()
         prompt = "The prettiest girl in the world named Natasha"

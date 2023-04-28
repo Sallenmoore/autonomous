@@ -5,7 +5,7 @@ export APP_NAME:=app
 export TESTING:=True
 export LOG_LEVEL:=INFO
 export REDIS_URL:=redis://localhost:10002
-export OPENAI_KEY:= ""
+export OPENAI_KEY:= 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
 
 all: test clean run start
 
