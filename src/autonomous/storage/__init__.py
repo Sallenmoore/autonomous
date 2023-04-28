@@ -1,0 +1,1 @@
+from .localstorage import Storage

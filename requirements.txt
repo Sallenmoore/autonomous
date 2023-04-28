@@ -14,9 +14,10 @@ Flask
 setuptools
 python-dotenv
 
-##### API #####
+##### Versioning and Storage #####
 PyGithub
 pygit2
+boto3
 
 ##### Database #####
 tinyDB
