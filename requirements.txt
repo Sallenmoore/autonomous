@@ -44,4 +44,4 @@ openai
 ##### Parsing #####
 
 dateparser
-#parse
+python-slugify

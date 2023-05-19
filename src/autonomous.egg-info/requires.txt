@@ -3,6 +3,7 @@ setuptools
 python-dotenv
 PyGithub
 pygit2
+boto3
 tinyDB
 jsmin
 requests

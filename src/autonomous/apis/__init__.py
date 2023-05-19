@@ -1,2 +1,2 @@
 from .openai import OpenAI
-from .opendnd import OpenDnD
+from .opendnd.opendnd import OpenDnD

@@ -1,11 +1,8 @@
 
 .PHONY: all package startdb create-network clean deepclean tests test testauto testapp
 
-export APP_NAME:=app
-export TESTING:=True
-export LOG_LEVEL:=INFO
-export REDIS_URL:=redis://localhost:10002
-export OPENAI_KEY:=0
+include .env
+export
 
 all: test clean run start
 

@@ -26,7 +26,7 @@ class Table:
         [summary]
         """
         # log(obj)
-        if not obj["pk"]:
+        if not obj.get("pk"):
             obj["pk"] = self._table.insert(obj)
         # log(obj, len(self._table))
         self._table.update(obj, doc_ids=[obj["pk"]])
@@ -52,6 +52,10 @@ class Table:
         else:
             return None
 
+    def find(self, **search_terms):
+        result = self.search(**search_terms)
+        return result[0] if result else None
+
     def search(self, **search_terms):
         """
         Returns an list of objects based on passed arguments
@@ -61,12 +65,11 @@ class Table:
         for k, v in search_terms.items():
             if v is None:
                 continue
-            # log(k, v, type(v))
 
             def test_contains(value):
-                if isinstance(value, (int, float, bool)):
-                    return v == value
-                return v in value
+                if isinstance(v, (str)):
+                    return v.lower() in value.lower()
+                return v == value
 
             results = self._table.search(where(k).test(test_contains))
             matches += results
