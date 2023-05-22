@@ -1,0 +1,2 @@
+recursive-include src/autonomous/apis/opendnd/imgs *.jpg
+recursive-include src/autonomous/apis/opendnd/db *.json
