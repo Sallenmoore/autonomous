@@ -50,7 +50,7 @@ class OpenDnD:
             except Exception as e:
                 log(e)
 
-        static_directory = "static/images/dnd_images/"
+        static_directory = "static/images/dnd"
         if not os.path.exists(static_directory):
             os.makedirs(static_directory)
         if not os.path.exists(f"{static_directory}/{os.path.basename(img_file)}"):
