@@ -226,7 +226,7 @@ class TestOpen5eapi:
         assert item["rarity"] == "rare"
 
 
-@pytest.mark.skip(reason="takes too long")
+# @pytest.mark.skip(reason="takes too long")
 class TestDnDObject:
     def test_db_update(self):
         dndobject.DnDMonster.update_db()
@@ -287,6 +287,7 @@ class TestDnDObject:
 
 class TestOpenDnD:
     def test_opendnd(self):
+        OpenDnD.update_db()
         objs = OpenDnD.searchitems(name="glamoured")
         for obj in objs:
             assert isinstance(obj, dndobject.DnDItem)

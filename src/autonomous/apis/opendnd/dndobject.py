@@ -65,9 +65,9 @@ class DnDMonster(DnDObject):
     size = ""
     subtype = ""
     alignment = ""
-    armor_class: 0
+    armor_class = 0
     armor_desc = ""
-    hit_points: 0
+    hit_points = 0
     hit_dice = ""
     speed = {"walk": 0}
     strength = 21
