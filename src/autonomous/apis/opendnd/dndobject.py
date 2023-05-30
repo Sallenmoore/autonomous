@@ -20,8 +20,11 @@ class DnDObject:
     def __repr__(self):
         return f"<{self.__dict__}>"
 
+    def serialize(self):
+        return {k: v for k, v in vars(self).items() if not k.startswith("_")}
+
     def save(self):
-        record = {k: v for k, v in vars(self).items() if not k.startswith("_")}
+        record = self.serialize()
         record["slug"] = slugify(record["name"])
         return self._db.save(record)
 

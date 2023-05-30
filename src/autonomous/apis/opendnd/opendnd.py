@@ -56,7 +56,7 @@ class OpenDnD:
         if not os.path.exists(f"{static_directory}/{os.path.basename(img_file)}"):
             shutil.copy(img_file, f"{static_directory}/{os.path.basename(img_file)}")
 
-        return img_file
+        return f"/{static_directory}/{os.path.basename(img_file)}"
 
     @classmethod
     def _process_results(cls, results, limit=0):
