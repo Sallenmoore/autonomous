@@ -77,15 +77,24 @@ class OpenDnD:
 
     @classmethod
     def monsters(cls, **kwargs):
-        return DnDMonster.all()
+        if "pk" in kwargs:
+            results = [DnDMonster.get(kwargs["pk"])]
+            return cls._process_results(results, limit=1)
+        return cls._process_results(DnDMonster.all())
 
     @classmethod
     def items(cls, **kwargs):
-        return DnDItem.all()
+        if "pk" in kwargs:
+            results = [DnDItem.get(kwargs["pk"])]
+            return cls._process_results(results, limit=1)
+        return cls._process_results(DnDItem.all())
 
     @classmethod
     def spells(cls, **kwargs):
-        return DnDSpell.all()
+        if "pk" in kwargs:
+            results = [DnDSpell.get(kwargs["pk"])]
+            return cls._process_results(results, limit=1)
+        return cls._process_results(DnDSpell.all())
 
     @classmethod
     def searchmonsters(cls, name=None, LIMIT=1, **key):

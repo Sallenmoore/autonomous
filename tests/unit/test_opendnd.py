@@ -78,7 +78,6 @@ def sample_data():
 
 @pytest.mark.skip(reason="takes too long")
 class TestOpen5eapi:
-    # @pytest.mark.skip(reason="takes too long")
     def test_dndmonster_build(self, sample_data):
         monster_data = sample_data["monster"]
         monster = open5eapi.DnDMonster._build(monster_data)
@@ -138,7 +137,6 @@ class TestOpen5eapi:
         assert monster["name"] == monster_data["name"]
         assert monster["type"] == monster_data["type"]
 
-    # @pytest.mark.skip(reason="takes too long")
     def test_dndspell_build(self, sample_data):
         data = sample_data["spell"]
         spell = open5eapi.DnDSpell._build(data)
@@ -147,7 +145,6 @@ class TestOpen5eapi:
         assert spell["description"] == data["desc"]
         assert spell["variations"] == data["higher_level"]
 
-    # @pytest.mark.skip(reason="takes too long")
     def test_dnditem_build(self, sample_data):
         data = sample_data["item"]
 
@@ -172,7 +169,6 @@ class TestOpen5eapi:
             == "This magical sword has a keen edge that seems to glide effortlessly through even the toughest armor."
         )
 
-    # @pytest.mark.skip(reason="takes too long")
     def test_api_all(self):
         # Test that all() returns a list of monsters
         monsters = open5eapi.DnDMonster.all()
@@ -182,7 +178,6 @@ class TestOpen5eapi:
         items = open5eapi.DnDItem.all()
         assert len(items) > 0
 
-    # @pytest.mark.skip(reason="takes too long")
     def test_api_search(self):
         # Test that all() returns a list of monsters
         monsters = open5eapi.DnDMonster.search("goblin")
@@ -192,7 +187,6 @@ class TestOpen5eapi:
         items = open5eapi.DnDItem.search("leather")
         assert len(items) > 0
 
-    # @pytest.mark.skip(reason="takes too long")
     def test_api_get(self):
         spell_url = "https://api.open5e.com/spells/magic-missile/"
         spell = open5eapi.DnDSpell.get(spell_url)
@@ -226,7 +220,7 @@ class TestOpen5eapi:
         assert item["rarity"] == "rare"
 
 
-# @pytest.mark.skip(reason="takes too long")
+@pytest.mark.skip(reason="takes too long")
 class TestDnDObject:
     def test_db_update(self):
         dndobject.DnDMonster.update_db()
@@ -286,8 +280,11 @@ class TestDnDObject:
 
 
 class TestOpenDnD:
-    def test_opendnd(self):
+    @pytest.mark.skip(reason="takes too long")
+    def test_opendnd_updatedb(self):
         OpenDnD.update_db()
+
+    def test_opendnd_search(self):
         objs = OpenDnD.searchitems(name="glamoured")
         for obj in objs:
             assert isinstance(obj, dndobject.DnDItem)
@@ -305,3 +302,26 @@ class TestOpenDnD:
             assert isinstance(obj, dndobject.DnDMonster)
             assert "goblin" in obj.name.lower()
             assert obj.image
+
+    def test_opendnd_get(self):
+        objs = OpenDnD.items()
+        for obj in objs:
+            assert isinstance(obj, dndobject.DnDItem)
+            alt_obj = OpenDnD.items(pk=obj.pk)[0]
+            assert obj.name == alt_obj.name
+            assert obj.pk == alt_obj.pk
+
+        objs = OpenDnD.spells()
+        for obj in objs:
+            assert isinstance(obj, dndobject.DnDSpell)
+            alt_obj = OpenDnD.spells(pk=obj.pk)[0]
+            assert obj.name == alt_obj.name
+            assert obj.pk == alt_obj.pk
+
+        objs = OpenDnD.monsters()
+        for obj in objs:
+            assert isinstance(obj, dndobject.DnDMonster)
+            alt_obj = OpenDnD.monsters(pk=obj.pk)[0]
+            assert obj.name == alt_obj.name
+            assert obj.pk == alt_obj.pk
+            assert obj.image == alt_obj.image
