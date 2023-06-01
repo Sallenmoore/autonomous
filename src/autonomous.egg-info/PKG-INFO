@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: autonomous
-Version: 0.0.87
+Version: 0.0.88
 Summary: Containerized application framework built on Flask with additional libraries and tools for rapid development of web applications.
 Author-email: Steven A Moore <samoore@binghamton.edu>
 License: MIT License
