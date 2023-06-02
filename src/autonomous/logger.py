@@ -25,7 +25,8 @@ class Logger:
 
     def __init__(self):
         self.logger = logging.getLogger("gunicorn.error")
-        self.logger.setLevel(log_levels[os.environ.get("LOG_LEVEL", self.logger.level)])
+        level = os.environ.get("LOG_LEVEL") or self.logger.level
+        self.logger.setLevel(log_levels[level])
 
     def set_level(self, level):
         self.logger.setLevel(log_levels[level])

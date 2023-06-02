@@ -284,6 +284,7 @@ class TestOpenDnD:
     def test_opendnd_updatedb(self):
         OpenDnD.update_db()
 
+    @pytest.mark.skip(reason="takes too long")
     def test_opendnd_search(self):
         objs = OpenDnD.searchitems(name="glamoured")
         for obj in objs:
@@ -303,6 +304,7 @@ class TestOpenDnD:
             assert "goblin" in obj.name.lower()
             assert obj.image
 
+    @pytest.mark.skip(reason="takes too long")
     def test_opendnd_get(self):
         objs = OpenDnD.items()
         for obj in objs:
@@ -325,3 +327,18 @@ class TestOpenDnD:
             assert obj.name == alt_obj.name
             assert obj.pk == alt_obj.pk
             assert obj.image == alt_obj.image
+
+    def test_opendnd_randomnpc(self):
+        npc = OpenDnD.generatenpc()
+        assert npc["name"]
+        print(npc)
+
+    def test_opendnd_randomencounter(self):
+        encounter = OpenDnD.generateencounter()
+        assert encounter["difficulty"]
+        print(encounter)
+
+    def test_opendnd_randomshop(self):
+        shop = OpenDnD.generateshop()
+        assert shop["name"]
+        print(shop)

@@ -38,7 +38,7 @@ test: clean
 	python -m pytest $(RUNTEST)
 
 testauto: clean 
-	python -m pytest
+	python -m pytest -s
 
 # docker-compose up --build -d
 testapp: clean
