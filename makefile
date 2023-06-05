@@ -38,6 +38,8 @@ test: clean
 	python -m pytest $(RUNTEST)
 
 testauto: clean 
+	pip install --no-cache-dir --upgrade pip wheel
+	pip install -r ./requirements.txt
 	python -m pytest -s
 
 # docker-compose up --build -d

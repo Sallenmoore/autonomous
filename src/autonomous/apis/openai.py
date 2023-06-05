@@ -17,25 +17,27 @@ class OpenAI:
         prompt,
         size="512x512",
         name="img-",
-        path="static/images",
+        path=None,
         n=1,
-        overwrite=False,
     ):
-        os.makedirs(path, exist_ok=True)
         try:
             response = openai.Image.create(
                 prompt=prompt, n=n, size=size, response_format="b64_json"
             )
+        except Exception as e:
+            log(e)
+            return ""
+        else:
             images = []
             for index, image_dict in enumerate(response["data"]):
                 image_data = b64decode(image_dict["b64_json"])
-                img_path = f"{path}/{name}.png"
-                with open(img_path, mode="wb") as png:
-                    png.write(image_data)
-                    images.append(img_path)
-        except Exception as e:
-            log(e)
-            images = ["https://dummyimage.com/400x400/6a4891/5c5f8c.png"]
+                if path:
+                    img_path = f"{path}/{name}.png"
+                    with open(img_path, mode="wb") as png:
+                        png.write(image_data)
+                        images.append(img_path)
+                else:
+                    images.append(image_data)
         return images
 
     def generate_text(self, text, prime_text):

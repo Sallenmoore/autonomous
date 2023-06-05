@@ -18,9 +18,8 @@ python-dotenv
 PyGithub
 pygit2
 boto3
-
-##### Database #####
 tinyDB
+cloudinary
 
 ##### Frontend #####
 

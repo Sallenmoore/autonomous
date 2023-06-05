@@ -76,7 +76,6 @@ def sample_data():
     }
 
 
-@pytest.mark.skip(reason="takes too long")
 class TestOpen5eapi:
     def test_dndmonster_build(self, sample_data):
         monster_data = sample_data["monster"]
@@ -279,12 +278,11 @@ class TestDnDObject:
             assert "goblin" in obj.name
 
 
+@pytest.mark.skip(reason="takes too long")
 class TestOpenDnD:
-    @pytest.mark.skip(reason="takes too long")
     def test_opendnd_updatedb(self):
         OpenDnD.update_db()
 
-    @pytest.mark.skip(reason="takes too long")
     def test_opendnd_search(self):
         objs = OpenDnD.searchitems(name="glamoured")
         for obj in objs:
@@ -304,7 +302,6 @@ class TestOpenDnD:
             assert "goblin" in obj.name.lower()
             assert obj.image
 
-    @pytest.mark.skip(reason="takes too long")
     def test_opendnd_get(self):
         objs = OpenDnD.items()
         for obj in objs:

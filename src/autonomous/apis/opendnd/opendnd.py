@@ -4,10 +4,12 @@ import json
 import random
 import sys
 from slugify import slugify
+
 from datetime import datetime
 from autonomous.logger import log
+from autonomous.storage.cloudinarystorage import CloudinaryStorage
 from .. import OpenAI
-from .dndobject import DnDMonster, DnDItem, DnDSpell
+from .dndobject import DnDMonster, DnDItem, DnDSpell, DnDPlayer, DnDNPC, DnDShop
 
 
 class OpenDnD:
@@ -18,6 +20,8 @@ class OpenDnD:
         _type_: _description_
     """
 
+    storage = CloudinaryStorage()
+
     imgpath = f"{os.path.dirname(sys.modules[__name__].__file__)}/imgs"
 
     @classmethod
@@ -26,8 +30,10 @@ class OpenDnD:
             items = os.listdir(cls.imgpath)
             random.shuffle(items)
             for i in items:
-                if fname in i:
-                    return f"{cls.imgpath}/{i}"
+                testname = i.split(".")[0] if "." in i else i
+                testname = testname.split("--")[0] if "--" in testname else testname
+                if fname.lower() == testname.lower():
+                    return f"{i}"
 
     @classmethod
     def get_image(cls, name):
@@ -39,9 +45,10 @@ class OpenDnD:
         """
         name = slugify(name)
         img_file = cls.has_image(name)
-        description = ["A portrait", "in action", "in a scene"]
+        description = random.choice(["A portrait", "in action", "in a scene"])
+        style = random.choice(["pixar style 3d", "sketch and watercolor"])
         if not img_file:
-            prompt = f"A full color illustration of a {name} from Dungeons and Dragons 5e in disney animated style - {random.choice(description)}"
+            prompt = f"A full color {style} portrait of a {name} from Dungeons and Dragons 5e - {description}"
             try:
                 resp = OpenAI().generate_image(
                     prompt,
@@ -52,7 +59,7 @@ class OpenDnD:
                 img_file = resp[0]
             except Exception as e:
                 log(e)
-        log(img_file)
+        # log(img_file)
         static_directory = "static/images/dnd"
         if not os.path.exists(static_directory):
             os.makedirs(static_directory)
@@ -81,6 +88,8 @@ class OpenDnD:
         if "pk" in kwargs:
             results = [DnDMonster.get(kwargs["pk"])]
             return cls._process_results(results)
+        elif kwargs:
+            return DnDMonster.search(**kwargs)
         return cls._process_results(DnDMonster.all())
 
     @classmethod
@@ -88,6 +97,8 @@ class OpenDnD:
         if "pk" in kwargs:
             results = [DnDItem.get(kwargs["pk"])]
             return cls._process_results(results)
+        elif kwargs:
+            return DnDItem.search(**kwargs)
         return cls._process_results(DnDItem.all())
 
     @classmethod
@@ -95,40 +106,50 @@ class OpenDnD:
         if "pk" in kwargs:
             results = [DnDSpell.get(kwargs["pk"])]
             return cls._process_results(results)
+        elif kwargs:
+            return DnDSpell.search(**kwargs)
         return cls._process_results(DnDSpell.all())
 
     @classmethod
-    def searchmonsters(cls, name=None, **key):
-        if name:
-            key["name"] = name
-
-        key = cls._process_search_terms(**key)
-        results = DnDMonster.search(**key)
-        return cls._process_results(results)
-
-    @classmethod
-    def searchitems(cls, name=None, **key):
-        if name:
-            key["name"] = name
-
-        key = cls._process_search_terms(**key)
-        results = DnDItem.search(**key)
-        return cls._process_results(results)
+    def players(cls, **kwargs):
+        if "pk" in kwargs:
+            results = [DnDPlayer.get(kwargs["pk"])]
+            return results
+        elif kwargs:
+            return DnDPlayer.search(**kwargs)
+        return DnDPlayer.all()
 
     @classmethod
-    def searchspells(cls, name=None, **key):
-        if name:
-            key["name"] = name
+    def shops(cls, **kwargs):
+        if "pk" in kwargs:
+            results = [DnDShop.get(kwargs["pk"])]
+            return results
+        elif kwargs:
+            return DnDShop.search(**kwargs)
+        return DnDShop.all()
 
-        key = cls._process_search_terms(**key)
-        results = DnDSpell.search(**key)
-        return cls._process_results(results)
+    @classmethod
+    def npcs(cls, **kwargs):
+        if "pk" in kwargs:
+            results = [DnDNPC.get(kwargs["pk"])]
+            return results
+        elif kwargs:
+            return DnDNPC.search(**kwargs)
+        return DnDNPC.all()
 
     @classmethod
     def updatedb(cls):
         DnDMonster.update_db()
         DnDSpell.update_db()
         DnDItem.update_db()
+
+    @classmethod
+    def generatenpc_image(cls, name=None, gender="gender-fluid", backstory=None):
+        prompt = f"A full color illustration of the following {gender} npc from Dungeons and Dragons 5e in a colored penciled animated style: {backstory}"
+        filename = f"{slugify(name)}--{datetime.now().toordinal()}"
+        resp = OpenAI().generate_image(prompt, name=filename, n=1)
+        img_pk = cls.storage.upload(resp[0], "dnd/npcs")
+        return img_pk
 
     @classmethod
     def generatenpc(cls, name=None, summary=None):
@@ -222,13 +243,9 @@ class OpenDnD:
         npc = OpenAI().generate_text(prompt, primer)
         npc = npc[npc.find("{") : npc.rfind("}") + 1]
         npc = json.loads(npc)
-        prompt = f"A full color illustration of the following {npc['gender']} npc from Dungeons and Dragons 5e in the Disney animated style: {random.choice(npc['backstory'])}"
-        filename = f"{slugify(npc['name'])}--{datetime.now().toordinal()}"
-        resp = OpenAI().generate_image(
-            prompt, name=filename, path="static/images/npcs", n=1
-        )
-        npc["image"] = resp[0]
-        log(npc)
+        npc["name"] = name or npc["name"].title()
+        npc["backstory"] = summary or npc["backstory"]
+        npc["image"] = cls.generatenpc_image()
         return npc
 
     @classmethod
@@ -262,7 +279,7 @@ class OpenDnD:
         encounter = OpenAI().generate_text(prompt, primer)
         encounter = encounter[encounter.find("{") : encounter.rfind("}") + 1]
         encounter = json.loads(encounter)
-        log(encounter)
+
         return encounter
 
     @classmethod
@@ -272,7 +289,6 @@ class OpenDnD:
         {
             "name": "string",
             "shoptype": "string",
-            "owner": "string",
             "inventory": {
                 "string":"price"
             }
@@ -283,8 +299,6 @@ class OpenDnD:
         shop = shop[shop.find("{") : shop.rfind("}") + 1]
         shop = json.loads(shop)
         shop["owner"] = cls.generatenpc(
-            name=shop["owner"],
-            summary=f"Owner of a {shop['shoptype']} shop named {shop['name']}",
+            summary=f"Owner of {shop['name']}, a {shop['shoptype']} shop."
         )
-        log(shop)
         return shop
