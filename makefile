@@ -40,7 +40,7 @@ test: clean
 testauto: clean 
 	pip install --no-cache-dir --upgrade pip wheel
 	pip install -r ./requirements.txt
-	python -m pytest -s
+	python -m pytest -s -v
 
 # docker-compose up --build -d
 testapp: clean

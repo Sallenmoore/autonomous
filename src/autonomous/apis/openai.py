@@ -16,42 +16,40 @@ class OpenAI:
         self,
         prompt,
         size="512x512",
-        name="img-",
-        path=None,
         n=1,
     ):
+        images = []
+
         try:
             response = openai.Image.create(
                 prompt=prompt, n=n, size=size, response_format="b64_json"
             )
         except Exception as e:
-            log(e)
-            return ""
+            log(f"{e}\n\n==== Error: fall back to lesser model ====")
+            images = ["https://picsum.photos/400/?blur"]
         else:
-            images = []
             for index, image_dict in enumerate(response["data"]):
                 image_data = b64decode(image_dict["b64_json"])
-                if path:
-                    img_path = f"{path}/{name}.png"
-                    with open(img_path, mode="wb") as png:
-                        png.write(image_data)
-                        images.append(img_path)
-                else:
-                    images.append(image_data)
+                images.append(image_data)
         return images
 
-    def generate_text(self, text, prime_text):
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {
-                    "role": "system",
-                    "content": prime_text,
-                },
-                {
-                    "role": "user",
-                    "content": text,
-                },
-            ],
-        )
+    def generate_text(self, text, primer_text):
+        messages = [
+            {
+                "role": "system",
+                "content": primer_text,
+            },
+            {
+                "role": "user",
+                "content": text,
+            },
+        ]
+        try:
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo", messages=messages
+            )
+        except Exception as e:
+            log(f"{e}\n\n==== Error: fall back to lesser model ====")
+            messages = f"{primer_text}\n{text}"
+            response = openai.Completion.create(model="davinci", prompt=messages)
         return response["choices"][0]["message"]["content"]

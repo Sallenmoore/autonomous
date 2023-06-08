@@ -7,7 +7,6 @@ def test_imports():
     """Test that all modules can be imported."""
     for module in (
         "autonomous.apis",
-        "autonomous.version_control",
         "autonomous.assets",
         "autonomous.model.automodel",
         "autonomous.db.autodb",

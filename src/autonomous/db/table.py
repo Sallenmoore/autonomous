@@ -67,7 +67,7 @@ class Table:
                 continue
 
             def test_contains(value):
-                if isinstance(v, (str)):
+                if isinstance(v, (str)) and isinstance(value, (str)):
                     return v.lower() in value.lower()
                 return v == value
 

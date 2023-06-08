@@ -28,13 +28,8 @@ class CloudinaryStorage(Storage):
         response = self.get_metadata(key)
         return response.get("url")
 
-    def save(self, file=None, folder=None):
-        kwargs = {}
-
-        if isinstance(file, str):
-            file = open(file, "rb")
-
-        if folder:
+    def save(self, file, **kwargs):
+        if folder := kwargs.get("folder"):
             try:
                 cloudinary.api.subfolders(f"{folder}")
             except cloudinary.exceptions.NotFound as e:
@@ -43,9 +38,13 @@ class CloudinaryStorage(Storage):
             finally:
                 kwargs["asset_folder"] = folder
 
-        response = cloudinary.uploader.upload(file, **kwargs)
-        file.close()
-        return response["asset_id"]
+        try:
+            response = cloudinary.uploader.upload(file, **kwargs)
+        except Exception as e:
+            log(f"Cloudinary Storage upload error: {e}")
+            return {"asset_id": None, "url": None, "raw": file}
+
+        return {"asset_id": response["asset_id"], "url": response["url"], "raw": None}
 
     def remove(self, key):
         response = self.get_metadata(key)

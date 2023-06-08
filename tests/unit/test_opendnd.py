@@ -1,7 +1,11 @@
 import pytest
+import random
 from autonomous.apis.opendnd import dndobject
+from autonomous.apis.opendnd.dndplayer import Player
 from autonomous.apis.opendnd import open5eapi
+from autonomous.apis.opendnd import dndbeyondapi
 from autonomous.apis import OpenDnD
+from autonomous import log
 
 
 @pytest.fixture
@@ -73,9 +77,230 @@ def sample_data():
             "properties": ["Finesse", "Versatile (1d8)"],
             "desc": "This magical sword has a keen edge that seems to glide effortlessly through even the toughest armor.",
         },
+        "shop": {
+            "name": "test",
+            "owner_id": None,
+            "description": "A Test Shop",
+            "inventory": [
+                {
+                    "name": "test item A",
+                    "description": "this is a test item A",
+                    "cost": 1,
+                },
+                {
+                    "name": "test item B",
+                    "description": "this is a test item B",
+                    "cost": 2,
+                },
+            ],
+            "location": "TEST",
+        },
+        "player": {
+            "name": "test",
+            "age": 0,
+            "decorations": {"avatarUrl": "test"},
+            "notes": {"desc": "this is a test", "backstory": "this is a test"},
+            "race": {"fullName": "test"},
+            "speed": {"weightSpeeds": {"normal": {"walk": 1}}},
+            "class_name": "test",
+            "age": 0,
+            "baseHitPoints": 0,
+            "bonusHitPoints": 0,
+            "removedHitPoints": 0,
+            "temporaryHitPoints": 0,
+            "currencies": {"test": 1},
+            "stats": [
+                {"id": 1, "name": None, "value": 12},
+                {"id": 2, "name": None, "value": 14},
+                {"id": 3, "name": None, "value": 17},
+                {"id": 4, "name": None, "value": 13},
+                {"id": 5, "name": None, "value": 14},
+                {"id": 6, "name": None, "value": 18},
+            ],
+            "bonusStats": [
+                {"id": 1, "name": None, "value": None},
+                {"id": 2, "name": None, "value": None},
+                {"id": 3, "name": None, "value": 1},
+                {"id": 4, "name": None, "value": None},
+                {"id": 5, "name": None, "value": None},
+                {"id": 6, "name": None, "value": None},
+            ],
+            "inventory": [
+                {
+                    "definition": {
+                        "name": "item a",
+                        "description": "item a description",
+                    },
+                    "equipped": True,
+                },
+                {
+                    "definition": {
+                        "name": "item b",
+                        "description": "item b description",
+                        "armorTypeId": 1,
+                        "armorClass": 1,
+                    },
+                    "equipped": True,
+                },
+            ],
+            "actions": {
+                "featureA": {
+                    "catA": {"name": "TestA", "snippet": "This is a smippet A"}
+                },
+                "featureB": {
+                    "catB": {"name": "TestB", "description": "This is a description B"}
+                },
+                "featureC": {
+                    "catC": {
+                        "name": "TestC",
+                        "snippet": "This is a snippet C",
+                        "description": "This is a description C",
+                    }
+                },
+            },
+            "options": {
+                "featureA": {
+                    "definition": {"name": "TestA", "snippet": "This is a smippet A"}
+                },
+                "featureB": {
+                    "definition": {
+                        "name": "TestB",
+                        "description": "This is a description B",
+                    }
+                },
+                "featureC": {
+                    "definition": {
+                        "name": "TestC",
+                        "snippet": "This is a snippet C",
+                        "description": "This is a description C",
+                    }
+                },
+            },
+            "spells": {
+                "spellA": {
+                    "definition": {"name": "TestA", "snippet": "This is a snippet A"}
+                },
+                "spellB": {
+                    "definition": {
+                        "name": "TestB",
+                        "description": "This is a description B",
+                    }
+                },
+                "spellC": {
+                    "definition": {
+                        "name": "TestC",
+                        "snippet": "This is a snippet C",
+                        "description": "This is a description C",
+                    }
+                },
+            },
+            "classSpells": {
+                "spells": [
+                    {"definition": {"name": "TestA", "snippet": "This is a snippet A"}},
+                    {
+                        "definition": {
+                            "name": "TestB",
+                            "description": "This is a description B",
+                        }
+                    },
+                    {
+                        "definition": {
+                            "name": "TestC",
+                            "snippet": "This is a snippet C",
+                            "description": "This is a description C",
+                        }
+                    },
+                ]
+            },
+            "modifiers": {
+                "testA": [
+                    {
+                        "fixedValue": 100,
+                        "type": "bonus",
+                        "subType": "armor-class",
+                    }
+                ],
+                "testB": [
+                    {
+                        "fixedValue": 99,
+                        "type": "bonus",
+                        "subType": "none",
+                    }
+                ],
+                "testC": [
+                    {
+                        "fixedValue": 98,
+                        "type": "none",
+                        "subType": "armor-class",
+                    }
+                ],
+                "testD": [
+                    {
+                        "type": "resistance",
+                        "subType": "Is resistant to D",
+                    }
+                ],
+                "testE": [
+                    {
+                        "type": "nothing",
+                        "subType": "IS nothing",
+                    }
+                ],
+            },
+        },
+        "npc": {
+            "name": "test",
+            "ac": 1,
+            "backstory": "This is a test",
+            "race": "test",
+            "class_name": "test",
+            "age": 1,
+            "hp": 1,
+            "inventory": [
+                {
+                    "name": "item a",
+                    "description": "item a description",
+                },
+                {
+                    "name": "item b",
+                    "description": "item b description",
+                },
+            ],
+            "strength": 1,
+            "dexterity": 2,
+            "constitution": 3,
+            "wisdom": 4,
+            "intelligence": 5,
+            "charisma": 6,
+        },
     }
 
 
+@pytest.fixture
+def pop_db(sample_data):
+    dndplayer = Player(**sample_data["player"])
+    dndplayer.save()
+    dndshop = dndobject.Shop(**sample_data["shop"])
+    dndshop.save()
+    log("dndshop", dndshop)
+    dndnpc = dndobject.NPC(**sample_data["npc"])
+    dndnpc.save()
+    data = {"player": dndplayer, "shop": dndshop, "npc": dndnpc}
+    yield data
+    for p in Player.all():
+        if p.name == sample_data["player"]["name"]:
+            p.delete()
+
+    for p in dndobject.NPC.all():
+        if p.name == sample_data["npc"]["name"]:
+            p.delete()
+
+    for p in dndobject.Shop.all():
+        if p.name == sample_data["shop"]["name"]:
+            p.delete()
+
+
+@pytest.mark.skip(reason="Takes too long to run")
 class TestOpen5eapi:
     def test_dndmonster_build(self, sample_data):
         monster_data = sample_data["monster"]
@@ -219,123 +444,291 @@ class TestOpen5eapi:
         assert item["rarity"] == "rare"
 
 
-@pytest.mark.skip(reason="takes too long")
+@pytest.mark.skip(reason="Takes too long to run")
+class TestDnDBeyondAPI:
+    def test_player_build(self, sample_data):
+        for dnd_id in [77709222, 68398459, 101495221, 70279502]:
+            player = dndbeyondapi.DnDBeyondAPI.getcharacter(dnd_id)
+
+            assert player["name"] is not None
+            assert player["dnd_id"] is not None
+            assert player["image"] is not None
+            assert player["ac"] is not None
+            assert player["desc"] is not None
+            assert player["race"] is not None
+            assert player["speed"] is not None
+            assert player["class_name"] is not None
+            assert player["hp"] is not None
+            assert player["age"] is not None
+            assert player["wealth"] is not None
+            assert player["str"] is not None
+            assert player["dex"] is not None
+            assert player["con"] is not None
+            assert player["int"] is not None
+            assert player["wis"] is not None
+            assert player["cha"] is not None
+            assert player["inventory"] is not None
+            assert player["features"] is not None
+            assert player["spells"] is not None
+            assert player["resistances"] is not None
+
+
 class TestDnDObject:
+    @pytest.mark.skip(reason="takes too long")
     def test_db_update(self):
-        dndobject.DnDMonster.update_db()
-        dndobject.DnDSpell.update_db()
-        dndobject.DnDItem.update_db()
+        dndobject.Monster.update_db()
+        dndobject.Spell.update_db()
+        dndobject.Item.update_db()
 
-    def test_dndobject_all(self):
-        objs = dndobject.DnDItem.all()
+    def test_dndobjectfromapi_all(self):
+        objs = random.sample(dndobject.Item.all(), 5)
         for obj in objs:
-            assert isinstance(obj, dndobject.DnDItem)
+            assert isinstance(obj, dndobject.Item)
             assert obj.name is not None
 
-        objs = dndobject.DnDSpell.all()
+        objs = random.sample(dndobject.Spell.all(), 5)
         for obj in objs:
-            assert isinstance(obj, dndobject.DnDSpell)
+            assert isinstance(obj, dndobject.Spell)
             assert obj.name is not None
 
-        objs = dndobject.DnDMonster.all()
+        objs = random.sample(dndobject.Monster.all(), 5)
         for obj in objs:
-            assert isinstance(obj, dndobject.DnDMonster)
+            assert isinstance(obj, dndobject.Monster)
             assert obj.name is not None
 
-    def test_dndobject_get(self):
-        objs = dndobject.DnDItem.all()
-        for obj in objs:
-            result = dndobject.DnDItem.get(obj.pk)
-            assert isinstance(obj, dndobject.DnDItem)
-            assert result.name is not None
+    @pytest.mark.skip(reason="costs money")
+    def test_dndobjectfromapi_get(self):
+        obj = random.choice(dndobject.Item.all())
+        obj.generate_image()
+        assert obj.image["url"]
+        assert obj.image["asset_id"]
+        assert obj.image["raw"] is None
+        result = dndobject.Item.get(obj.pk)
+        assert isinstance(obj, dndobject.Item)
+        assert result.name is not None
 
-        objs = dndobject.DnDSpell.all()
-        for obj in objs:
-            result = dndobject.DnDSpell.get(obj.pk)
-            assert isinstance(obj, dndobject.DnDSpell)
-            assert result.name is not None
+        obj = random.choice(dndobject.Spell.all())
+        obj.generate_image()
+        assert obj.image["url"]
+        assert obj.image["asset_id"]
+        assert obj.image["raw"] is None
+        result = dndobject.Spell.get(obj.pk)
+        assert isinstance(obj, dndobject.Spell)
+        assert result.name is not None
 
-        objs = dndobject.DnDMonster.all()
-        for obj in objs:
-            result = dndobject.DnDMonster.get(obj.pk)
-            assert isinstance(obj, dndobject.DnDMonster)
-            assert result.name is not None
+        obj = random.choice(dndobject.Monster.all())
+        obj.generate_image()
+        assert obj.image["url"]
+        assert obj.image["asset_id"]
+        assert obj.image["raw"] is None
+        result = dndobject.Monster.get(obj.pk)
+        assert isinstance(obj, dndobject.Monster)
+        assert result.name is not None
 
-    def test_dndobject_search(self):
-        objs = dndobject.DnDItem.search(name="glamoured")
+    def test_dndobjectfromapi_search(self):
+        objs = dndobject.Item.search(name="glamoured")
         for obj in objs:
-            assert isinstance(obj, dndobject.DnDItem)
-            assert "glamoured" in obj.name
+            assert isinstance(obj, dndobject.Item)
+            assert "glamoured" in obj.name.lower()
 
-        objs = dndobject.DnDSpell.search(name="fire")
+        objs = dndobject.Spell.search(name="fire")
         for obj in objs:
-            assert isinstance(obj, dndobject.DnDSpell)
-            assert "fire" in obj.name
+            assert isinstance(obj, dndobject.Spell)
+            assert "fire" in obj.name.lower()
 
-        objs = dndobject.DnDMonster.search(name="goblin")
+        objs = dndobject.Monster.search(name="goblin")
         for obj in objs:
-            assert isinstance(obj, dndobject.DnDMonster)
-            assert "goblin" in obj.name
+            assert isinstance(obj, dndobject.Monster)
+            assert "goblin" in obj.name.lower()
+
+    def test_dndplayer(self):
+        player = Player(dnd_id="77709222")
+
+        player.save()
+        assert not player.name
+        assert player.dnd_id == "77709222"
+
+        player.updateinfo()
+
+        assert player.name
+        assert player.dnd_id
+        assert player.image
+        assert player.ac
+        assert player.desc
+        assert player.race
+        assert player.speed
+        assert player.class_name
+        assert player.hp
+        assert player.age
+        assert player.wealth
+        assert player.str
+        assert player.dex
+        assert player.con
+        assert player.int
+        assert player.wis
+        assert player.cha
+        assert player.inventory
+        assert player.features
+        assert player.spells
+        assert player.resistances
+
+    @pytest.mark.skip(reason="costs money")
+    def test_dndnpc(self, pop_db):
+        npc = pop_db["npc"]
+        for npc in dndobject.NPC.all():
+            if npc.name == "test":
+                npc.generate_image()
+                assert npc.image["url"]
+                assert npc.image["asset_id"]
+                assert npc.image["raw"] is None
+                assert npc.ac == 1
+                assert npc.inventory[0]["name"] == "item a"
+
+    @pytest.mark.skip(reason="costs money")
+    def test_dndshop(self, pop_db):
+        shop = pop_db["shop"]
+        for shop in dndobject.Shop.all():
+            if shop.name == "test":
+                shop.generate_image()
+                assert shop.image["url"]
+                assert shop.image["asset_id"]
+                assert shop.image["raw"] is None
+                assert shop.location == "TEST"
+                assert len(shop.inventory) == 2
+                assert shop.inventory[0]["name"] == "test item A"
 
 
 @pytest.mark.skip(reason="takes too long")
 class TestOpenDnD:
-    def test_opendnd_updatedb(self):
-        OpenDnD.update_db()
-
-    def test_opendnd_search(self):
-        objs = OpenDnD.searchitems(name="glamoured")
+    def test_opendnd_search(self, pop_db):
+        objs = OpenDnD.items(name="glamoured")
         for obj in objs:
-            assert isinstance(obj, dndobject.DnDItem)
+            assert isinstance(obj, dndobject.Item)
             assert "glamoured" in obj.name.lower()
-            assert obj.image
 
-        objs = OpenDnD.searchspells(name="fire")
+        objs = OpenDnD.spells(name="fire")
         for obj in objs:
-            assert isinstance(obj, dndobject.DnDSpell)
+            assert isinstance(obj, dndobject.Spell)
             assert "fire" in obj.name.lower()
-            assert obj.image
 
-        objs = OpenDnD.searchmonsters(name="goblin")
+        objs = OpenDnD.monsters(name="goblin")
         for obj in objs:
-            assert isinstance(obj, dndobject.DnDMonster)
+            assert isinstance(obj, dndobject.Monster)
             assert "goblin" in obj.name.lower()
-            assert obj.image
 
-    def test_opendnd_get(self):
-        objs = OpenDnD.items()
+        objs = OpenDnD.players(name="test")
         for obj in objs:
-            assert isinstance(obj, dndobject.DnDItem)
+            assert isinstance(obj, Player)
+            assert "test" in obj.name
+
+        objs = OpenDnD.shops(name="test")
+        for obj in objs:
+            assert isinstance(obj, dndobject.Shop)
+            assert "test" in obj.name.lower()
+
+        objs = OpenDnD.npcs(name="test")
+        for obj in objs:
+            assert isinstance(obj, dndobject.NPC)
+            assert "test" in obj.name
+
+    def test_opendnd_get(self, pop_db):
+        objs = OpenDnD.items()
+        objs = random.sample(objs, 5)
+        for obj in objs:
+            assert isinstance(obj, dndobject.Item)
             alt_obj = OpenDnD.items(pk=obj.pk)[0]
             assert obj.name == alt_obj.name
             assert obj.pk == alt_obj.pk
 
         objs = OpenDnD.spells()
+        objs = random.sample(objs, 5)
         for obj in objs:
-            assert isinstance(obj, dndobject.DnDSpell)
+            assert isinstance(obj, dndobject.Spell)
             alt_obj = OpenDnD.spells(pk=obj.pk)[0]
             assert obj.name == alt_obj.name
             assert obj.pk == alt_obj.pk
 
         objs = OpenDnD.monsters()
+        objs = random.sample(objs, 5)
         for obj in objs:
-            assert isinstance(obj, dndobject.DnDMonster)
+            assert isinstance(obj, dndobject.Monster)
             alt_obj = OpenDnD.monsters(pk=obj.pk)[0]
             assert obj.name == alt_obj.name
             assert obj.pk == alt_obj.pk
             assert obj.image == alt_obj.image
 
+        objs = OpenDnD.players(pk=pop_db["player"].pk)
+        for obj in objs:
+            assert isinstance(obj, Player)
+            assert "test" in obj.name
+
+        objs = OpenDnD.shops(pk=pop_db["shop"].pk)
+        for obj in objs:
+            assert isinstance(obj, dndobject.Shop)
+            assert "test" in obj.name.lower()
+
+        objs = OpenDnD.npcs(pk=pop_db["npc"].pk)
+        for obj in objs:
+            assert isinstance(obj, dndobject.NPC)
+            assert "test" in obj.name
+
+    def test_opendnd_all(self, pop_db):
+        objs = OpenDnD.items()
+        assert len(objs) > 0
+
+        objs = OpenDnD.spells()
+        assert len(objs) > 0
+
+        objs = OpenDnD.monsters()
+        assert len(objs) > 0
+
+        objs = OpenDnD.players()
+        assert len(objs) > 0
+
+        objs = OpenDnD.shops()
+        assert len(objs) > 0
+
+        objs = OpenDnD.npcs()
+        assert len(objs) > 0
+
+    @pytest.mark.skip(reason="costs money")
     def test_opendnd_randomnpc(self):
         npc = OpenDnD.generatenpc()
-        assert npc["name"]
-        print(npc)
+        assert npc.name
 
+    @pytest.mark.skip(reason="costs money")
     def test_opendnd_randomencounter(self):
         encounter = OpenDnD.generateencounter()
         assert encounter["difficulty"]
-        print(encounter)
 
+    @pytest.mark.skip(reason="costs money")
     def test_opendnd_randomshop(self):
         shop = OpenDnD.generateshop()
-        assert shop["name"]
-        print(shop)
+        assert shop.name
+
+    @pytest.mark.skip(reason="costs money")
+    def test_opendnd_image_generate(self):
+        npc = OpenDnD.generatenpc()
+        npc.generate_image()
+        assert npc.image["asset_id"]
+        assert npc.image["url"]
+        assert not npc.image["raw"]
+        shop = OpenDnD.generateshop()
+        shop.generate_image()
+        assert shop.image["asset_id"]
+        assert shop.image["url"]
+        item = OpenDnD.items()[0]
+        item.generate_image()
+        assert item.image["asset_id"]
+        assert item.image["url"]
+        assert not item.image["raw"]
+        monster = OpenDnD.monsters()[0]
+        monster.generate_image()
+        assert monster.image["asset_id"]
+        assert monster.image["url"]
+        assert not item.image["raw"]
+        spell = OpenDnD.spells()[0]
+        spell.generate_image()
+        assert spell.image["asset_id"]
+        assert spell.image["url"]
+        assert not spell.image["raw"]
