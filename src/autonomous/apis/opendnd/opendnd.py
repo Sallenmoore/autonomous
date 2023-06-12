@@ -9,8 +9,10 @@ from datetime import datetime
 from autonomous.logger import log
 from autonomous.storage.cloudinarystorage import CloudinaryStorage
 from .. import OpenAI
-from .dndobject import Monster, Item, Spell, NPC, Shop
+from .dndobject import Monster, Item, Spell
 from .dndplayer import Player
+from .dndnpc import NPC
+from .dndshop import Shop
 
 
 class OpenDnD:
@@ -139,10 +141,12 @@ class OpenDnD:
             "name": string,
             "age": int,
             "gender": string,
+            "race": string,
             "personality": [string],
             "backstory": string,
             "class_name": string,
             "occupation": string,
+            "inventory": [string],
             "stats": {
                 "str": int,
                 "dex": int,
@@ -159,6 +163,7 @@ class OpenDnD:
         response = OpenAI().generate_text(prompt, primer)
         npc_json = response[response.find("{") : response.rfind("}") + 1]
         npc_data = json.loads(npc_json)
+        npc_data["desc"] = npc_data["backstory"]
         npc = NPC(**npc_data)
         return npc
 
@@ -225,7 +230,9 @@ class OpenDnD:
             summary=f"Owner of {shop['name']}, a {shop['shoptype']} shop."
         )
         shopowner.save()
-        shop["owner_id"] = shopowner.pk
+        shop["owner"] = shopowner
+        shop["desc"] = shop["description"]
+        del shop["description"]
         shop_obj = Shop(**shop)
         shop_obj.save()
         return shop_obj

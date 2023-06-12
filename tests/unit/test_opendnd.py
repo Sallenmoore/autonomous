@@ -2,6 +2,8 @@ import pytest
 import random
 from autonomous.apis.opendnd import dndobject
 from autonomous.apis.opendnd.dndplayer import Player
+from autonomous.apis.opendnd.dndnpc import NPC
+from autonomous.apis.opendnd.dndshop import Shop
 from autonomous.apis.opendnd import open5eapi
 from autonomous.apis.opendnd import dndbeyondapi
 from autonomous.apis import OpenDnD
@@ -250,12 +252,12 @@ def sample_data():
         },
         "npc": {
             "name": "test",
-            "ac": 1,
             "backstory": "This is a test",
             "race": "test",
             "class_name": "test",
             "age": 1,
             "hp": 1,
+            "desc": "This is a test",
             "inventory": [
                 {
                     "name": "item a",
@@ -280,10 +282,10 @@ def sample_data():
 def pop_db(sample_data):
     dndplayer = Player(**sample_data["player"])
     dndplayer.save()
-    dndshop = dndobject.Shop(**sample_data["shop"])
+    dndshop = Shop(**sample_data["shop"])
     dndshop.save()
     log("dndshop", dndshop)
-    dndnpc = dndobject.NPC(**sample_data["npc"])
+    dndnpc = NPC(**sample_data["npc"])
     dndnpc.save()
     data = {"player": dndplayer, "shop": dndshop, "npc": dndnpc}
     yield data
@@ -291,11 +293,11 @@ def pop_db(sample_data):
         if p.name == sample_data["player"]["name"]:
             p.delete()
 
-    for p in dndobject.NPC.all():
+    for p in NPC.all():
         if p.name == sample_data["npc"]["name"]:
             p.delete()
 
-    for p in dndobject.Shop.all():
+    for p in Shop.all():
         if p.name == sample_data["shop"]["name"]:
             p.delete()
 
@@ -572,22 +574,21 @@ class TestDnDObject:
         assert player.spells
         assert player.resistances
 
-    @pytest.mark.skip(reason="costs money")
+    # @pytest.mark.skip(reason="costs money")
     def test_dndnpc(self, pop_db):
         npc = pop_db["npc"]
-        for npc in dndobject.NPC.all():
+        for npc in NPC.all():
             if npc.name == "test":
                 npc.generate_image()
                 assert npc.image["url"]
                 assert npc.image["asset_id"]
                 assert npc.image["raw"] is None
-                assert npc.ac == 1
                 assert npc.inventory[0]["name"] == "item a"
 
-    @pytest.mark.skip(reason="costs money")
+    # @pytest.mark.skip(reason="costs money")
     def test_dndshop(self, pop_db):
         shop = pop_db["shop"]
-        for shop in dndobject.Shop.all():
+        for shop in Shop.all():
             if shop.name == "test":
                 shop.generate_image()
                 assert shop.image["url"]
@@ -598,7 +599,7 @@ class TestDnDObject:
                 assert shop.inventory[0]["name"] == "test item A"
 
 
-@pytest.mark.skip(reason="takes too long")
+# @pytest.mark.skip(reason="takes too long")
 class TestOpenDnD:
     def test_opendnd_search(self, pop_db):
         objs = OpenDnD.items(name="glamoured")
@@ -623,12 +624,12 @@ class TestOpenDnD:
 
         objs = OpenDnD.shops(name="test")
         for obj in objs:
-            assert isinstance(obj, dndobject.Shop)
+            assert isinstance(obj, Shop)
             assert "test" in obj.name.lower()
 
         objs = OpenDnD.npcs(name="test")
         for obj in objs:
-            assert isinstance(obj, dndobject.NPC)
+            assert isinstance(obj, NPC)
             assert "test" in obj.name
 
     def test_opendnd_get(self, pop_db):
@@ -664,12 +665,12 @@ class TestOpenDnD:
 
         objs = OpenDnD.shops(pk=pop_db["shop"].pk)
         for obj in objs:
-            assert isinstance(obj, dndobject.Shop)
+            assert isinstance(obj, Shop)
             assert "test" in obj.name.lower()
 
         objs = OpenDnD.npcs(pk=pop_db["npc"].pk)
         for obj in objs:
-            assert isinstance(obj, dndobject.NPC)
+            assert isinstance(obj, NPC)
             assert "test" in obj.name
 
     def test_opendnd_all(self, pop_db):
@@ -691,22 +692,22 @@ class TestOpenDnD:
         objs = OpenDnD.npcs()
         assert len(objs) > 0
 
-    @pytest.mark.skip(reason="costs money")
+    # @pytest.mark.skip(reason="costs money")
     def test_opendnd_randomnpc(self):
         npc = OpenDnD.generatenpc()
         assert npc.name
 
-    @pytest.mark.skip(reason="costs money")
+    # @pytest.mark.skip(reason="costs money")
     def test_opendnd_randomencounter(self):
         encounter = OpenDnD.generateencounter()
         assert encounter["difficulty"]
 
-    @pytest.mark.skip(reason="costs money")
+    # @pytest.mark.skip(reason="costs money")
     def test_opendnd_randomshop(self):
         shop = OpenDnD.generateshop()
         assert shop.name
 
-    @pytest.mark.skip(reason="costs money")
+    # @pytest.mark.skip(reason="costs money")
     def test_opendnd_image_generate(self):
         npc = OpenDnD.generatenpc()
         npc.generate_image()

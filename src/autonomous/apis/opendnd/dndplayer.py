@@ -14,7 +14,7 @@ class Player(AutoModel):
         "initiative": 0,
         # character traits
         "name": "",
-        "image": "",
+        "image": {},
         "ac": 0,
         "desc": "",
         "race": "",
@@ -36,23 +36,22 @@ class Player(AutoModel):
     }
 
     def updateinfo(self, **kwargs):
-        results = self.search(dnd_id=self.dnd_id)
-        if results:
-            self.pk = results[0].pk
+        assert self.dnd_id, "Player must have a dnd_id"
 
         data = DnDBeyondAPI.getcharacter(self.dnd_id)
-        self.__dict__.update(data)
-        log(self)
-        self.img()
-        self.save()
 
-    def img(self):
-        if isinstance(self.image, str) and not urlvalidator(self.image):
-            try:
-                self.image = CloudinaryStorage().geturl(self.image)
-            except Exception as e:
-                log(e)
-                return ""
-        elif isinstance(self.image, io.BufferedReader):
-            self.image = CloudinaryStorage().upload(self.image, folder="dnd/players")
-        return self.image
+        try:
+            results = self.table().search(dnd_id=self.dnd_id)[0]
+        except StopIteration:
+            log("Player not found. Assuming new player.")
+        else:
+            self.pk = results["pk"]
+
+        if data.get("image") and not self.image.get("url"):
+            self.image = CloudinaryStorage().save(self.image, folder="dnd/players")
+        else:
+            data["image"] = self.image
+
+        self.__dict__.update(data)
+        # log(self)
+        self.save()

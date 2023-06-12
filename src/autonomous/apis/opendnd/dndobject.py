@@ -43,7 +43,7 @@ class DnDObject:
     def save(self):
         if self.image.get("raw"):
             folder = f"dnd/{self.__class__.__name__.lower()}s"
-            self.image = CloudinaryStorage().save(self.image["raw"], folder=folder)
+            self.image = self._storage.save(self.image["raw"], folder=folder)
         self.slug = slugify(self.name)
         record = self.serialize()
         self.pk = self._db.save(record)
@@ -55,7 +55,7 @@ class DnDObject:
             n=1,
         )
         folder = f"dnd/{self.__class__.__name__.lower()}s"
-        self.image = CloudinaryStorage().save(resp[0], folder=folder)
+        self.image = self._storage.save(resp[0], folder=folder)
         self.save()
 
     def get_image_prompt(self):
@@ -202,43 +202,3 @@ class Item(DnDObject):
         description = self.desc or "An equipable item"
         style = random.choice(["pixar style 3d", "pencil sketch", "watercolor"])
         return f"A full color {style} of a {self.name} from Dungeons and Dragons 5e - {description}"
-
-
-class NPC(DnDObject):
-    _db = Table("npcs", path=f"{os.path.dirname(sys.modules[__name__].__file__)}/db")
-    dnd_id: None
-    ac = 0
-    race = ""
-    class_name = ""
-    ag = 0
-    hp = 0
-    inventory = []
-    st = 0
-    dex = 0
-    con = 0
-    wis = 0
-    int = 0
-    cha = 0
-
-    @classmethod
-    def get_image_prompt(self):
-        description = self.desc or "An npc character"
-        style = random.choice(["pixar style 3d", "pencil sketch", "watercolor"])
-        return f"A full color {style} of a {self.name} from Dungeons and Dragons 5e - {description}"
-
-
-class Shop(DnDObject):
-    _db = Table("shops", path=f"{os.path.dirname(sys.modules[__name__].__file__)}/db")
-    owner_id = None
-    inventory = {}
-    location = ""
-
-    @property
-    def owner(self):
-        return NPC.get(id=self.owner_id)
-
-    @classmethod
-    def get_image_prompt(self):
-        description = self.desc or "A simple shop with wooden counters and shelves."
-        style = random.choice(["pixar style 3d", "pencil sketch", "watercolor"])
-        return f"A full color {style} of a fantasy world merchant shop called {self.name} witht he following description: {description}"

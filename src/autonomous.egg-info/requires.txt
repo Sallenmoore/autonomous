@@ -5,9 +5,11 @@ PyGithub
 pygit2
 boto3
 tinyDB
+cloudinary
 jsmin
 requests
 gunicorn
 openai
+validators
 dateparser
 python-slugify

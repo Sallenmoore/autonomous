@@ -34,7 +34,7 @@ def javascript(files="main", path="static/js", **kwargs):
     # Getting all the files from that folder
     if isinstance(files, list):
         for f in files:
-            javascript(files=f, path=path**kwargs)
+            javascript(files=f, path=path, **kwargs)
     else:
         output = f"{path}/{files}.min.js"
 
