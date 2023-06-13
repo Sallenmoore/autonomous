@@ -25,11 +25,16 @@ class DnDBeyondAPI:
     def getcharacter(cls, dnd_id):
         url = f"{cls.api_url}/{dnd_id}"
         r = requests.get(url)
-        r.raise_for_status()
-        data = r.json()["data"]
-        character = cls._parseinfo(**data)
-        character["dnd_id"] = dnd_id
-        log(character["image"])
+        try:
+            r.raise_for_status()
+        except requests.exceptions.HTTPError:
+            log(f"Error getting character {dnd_id}")
+            character = None
+        else:
+            data = r.json()["data"]
+            character = cls._parseinfo(**data)
+            character["dnd_id"] = dnd_id
+            # log(character["image"])
         return character
 
     @classmethod
@@ -39,10 +44,13 @@ class DnDBeyondAPI:
         character["age"] = kwargs.get("age") or 0
 
         # breakpoint()
+        character["image"] = {
+            "asset_id": None,
+            "url": "",
+            "raw": None,
+        }
         if img := kwargs.get("decorations"):
-            character["image"] = img.get("avatarUrl") or ""
-        else:
-            character["image"] = ""
+            character["image"]["url"] = img.get("avatarUrl") or ""
 
         if kwargs.get("race"):
             character["race"] = kwargs.get("race")["fullName"]

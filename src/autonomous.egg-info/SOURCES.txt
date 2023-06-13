@@ -18,15 +18,15 @@ src/autonomous/apis/__init__.py
 src/autonomous/apis/openai.py
 src/autonomous/apis/opendnd/__init__.py
 src/autonomous/apis/opendnd/dndbeyondapi.py
+src/autonomous/apis/opendnd/dndnpc.py
 src/autonomous/apis/opendnd/dndobject.py
 src/autonomous/apis/opendnd/dndplayer.py
+src/autonomous/apis/opendnd/dndshop.py
 src/autonomous/apis/opendnd/open5eapi.py
 src/autonomous/apis/opendnd/opendnd.py
 src/autonomous/apis/opendnd/db/__init__.py
 src/autonomous/apis/opendnd/db/items.json
 src/autonomous/apis/opendnd/db/monsters.json
-src/autonomous/apis/opendnd/db/npcs.json
-src/autonomous/apis/opendnd/db/shops.json
 src/autonomous/apis/opendnd/db/spells.json
 src/autonomous/apis/version_control/GHCallbacks.py
 src/autonomous/apis/version_control/GHOrganization.py

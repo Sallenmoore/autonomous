@@ -9,6 +9,7 @@ from autonomous.storage.cloudinarystorage import CloudinaryStorage
 class Shop(AutoModel):
     attributes = {
         "name": "",
+        "image": {"url": "", "asset_id": 0, "raw": None},
         "shoptype": "",
         "owner": None,
         "inventory": {},

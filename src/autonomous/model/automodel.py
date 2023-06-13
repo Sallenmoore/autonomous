@@ -63,6 +63,10 @@ class AutoModel(ABC):
     def search(cls, **kwargs):
         return [cls(**attribs) for attribs in cls.table().search(**kwargs)]
 
+    @classmethod
+    def find(cls, **kwargs):
+        return cls.table().find(**kwargs)
+
     def delete(self):
         self.table().delete(pk=self.pk)
 

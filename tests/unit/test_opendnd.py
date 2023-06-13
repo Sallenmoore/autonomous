@@ -474,14 +474,26 @@ class TestDnDBeyondAPI:
             assert player["spells"] is not None
             assert player["resistances"] is not None
 
+        player = dndbeyondapi.DnDBeyondAPI.getcharacter(-1)
 
+        assert not player
+
+
+# @pytest.mark.skip(reason="takes too long")
 class TestDnDObject:
     @pytest.mark.skip(reason="takes too long")
-    def test_db_update(self):
+    def test_monster_db_update(self):
         dndobject.Monster.update_db()
+
+    @pytest.mark.skip(reason="takes too long")
+    def test_spell_db_update(self):
         dndobject.Spell.update_db()
+
+    @pytest.mark.skip(reason="takes too long")
+    def test_item_db_update(self):
         dndobject.Item.update_db()
 
+    @pytest.mark.skip(reason="takes too long")
     def test_dndobjectfromapi_all(self):
         objs = random.sample(dndobject.Item.all(), 5)
         for obj in objs:
@@ -527,11 +539,12 @@ class TestDnDObject:
         assert isinstance(obj, dndobject.Monster)
         assert result.name is not None
 
+    @pytest.mark.skip(reason="takes too long")
     def test_dndobjectfromapi_search(self):
-        objs = dndobject.Item.search(name="glamoured")
+        objs = dndobject.Item.search(name="resistance")
         for obj in objs:
             assert isinstance(obj, dndobject.Item)
-            assert "glamoured" in obj.name.lower()
+            assert "resistance" in obj.name.lower()
 
         objs = dndobject.Spell.search(name="fire")
         for obj in objs:
@@ -543,17 +556,14 @@ class TestDnDObject:
             assert isinstance(obj, dndobject.Monster)
             assert "goblin" in obj.name.lower()
 
+    # @pytest.mark.skip(reason="takes too long")
     def test_dndplayer(self):
         player = Player(dnd_id="77709222")
-
-        player.save()
-        assert not player.name
-        assert player.dnd_id == "77709222"
-
         player.updateinfo()
+        player.save()
 
+        assert player.dnd_id == "77709222"
         assert player.name
-        assert player.dnd_id
         assert player.image
         assert player.ac
         assert player.desc
@@ -574,7 +584,10 @@ class TestDnDObject:
         assert player.spells
         assert player.resistances
 
-    # @pytest.mark.skip(reason="costs money")
+        player = Player.find(dnd_id="-1")
+        assert not player
+
+    @pytest.mark.skip(reason="costs money")
     def test_dndnpc(self, pop_db):
         npc = pop_db["npc"]
         for npc in NPC.all():
@@ -585,7 +598,7 @@ class TestDnDObject:
                 assert npc.image["raw"] is None
                 assert npc.inventory[0]["name"] == "item a"
 
-    # @pytest.mark.skip(reason="costs money")
+    @pytest.mark.skip(reason="costs money")
     def test_dndshop(self, pop_db):
         shop = pop_db["shop"]
         for shop in Shop.all():
@@ -599,7 +612,7 @@ class TestDnDObject:
                 assert shop.inventory[0]["name"] == "test item A"
 
 
-# @pytest.mark.skip(reason="takes too long")
+@pytest.mark.skip(reason="takes too long")
 class TestOpenDnD:
     def test_opendnd_search(self, pop_db):
         objs = OpenDnD.items(name="glamoured")
@@ -692,22 +705,22 @@ class TestOpenDnD:
         objs = OpenDnD.npcs()
         assert len(objs) > 0
 
-    # @pytest.mark.skip(reason="costs money")
+    @pytest.mark.skip(reason="costs money")
     def test_opendnd_randomnpc(self):
         npc = OpenDnD.generatenpc()
         assert npc.name
 
-    # @pytest.mark.skip(reason="costs money")
+    @pytest.mark.skip(reason="costs money")
     def test_opendnd_randomencounter(self):
         encounter = OpenDnD.generateencounter()
         assert encounter["difficulty"]
 
-    # @pytest.mark.skip(reason="costs money")
+    @pytest.mark.skip(reason="costs money")
     def test_opendnd_randomshop(self):
         shop = OpenDnD.generateshop()
         assert shop.name
 
-    # @pytest.mark.skip(reason="costs money")
+    @pytest.mark.skip(reason="costs money")
     def test_opendnd_image_generate(self):
         npc = OpenDnD.generatenpc()
         npc.generate_image()

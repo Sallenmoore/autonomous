@@ -11,7 +11,7 @@ class DnDMonster(Open5e):
         obj = {}
         obj["name"] = data["name"]
         obj["type"] = data["type"]
-        obj["image"] = data.get("img_main")
+        obj["image"] = {"url": data.get("img_main"), "asset_id": 0, "raw": None}
 
         obj["size"] = data.get("size")
         obj["subtype"] = data.get("subtype")
@@ -85,8 +85,9 @@ class DnDSpell(Open5e):
         obj = {}
         obj["name"] = data["name"]
         obj["school"] = data["school"]
-        obj["description"] = data["desc"]
+        obj["desc"] = data["desc"]
         obj["variations"] = data.get("higher_level")
+        obj["image"] = {"url": "", "asset_id": 0, "raw": None}
 
         if data.get("range"):
             obj["range"] = data["range"]
@@ -133,7 +134,7 @@ class DnDItem(Open5e):
         obj = {}
         obj["name"] = data["name"]
         obj["type"] = data.get("category", data.get("type"))
-        obj["image"] = data.get("img_main")
+        obj["image"] = {"url": data.get("img_main"), "asset_id": 0, "raw": None}
         obj["rarity"] = data.get("rarity")
         obj["cost"] = data.get("cost")
         obj["category"] = data.get("category")

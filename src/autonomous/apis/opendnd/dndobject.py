@@ -6,9 +6,8 @@ from autonomous import log
 from slugify import slugify
 from validators.url import url as urlvalidator
 import os
-import io
 import sys
-import inspect
+import markdown
 import random
 import requests
 from enum import Enum
@@ -19,7 +18,7 @@ class DnDObject:
     _api = open5eapi
     _storage = CloudinaryStorage()
     name = ""
-    image = {"url": None, "asset_id": None, "raw": None}
+    image = {"url": "", "asset_id": 0, "raw": None}
     desc = ""
 
     def __init__(self, **kwargs):
@@ -42,7 +41,7 @@ class DnDObject:
 
     def save(self):
         if self.image.get("raw"):
-            folder = f"dnd/{self.__class__.__name__.lower()}s"
+            folder = f"dnd/{self.__class__.__name__.lower()}s/{self.slug}"
             self.image = self._storage.save(self.image["raw"], folder=folder)
         self.slug = slugify(self.name)
         record = self.serialize()
@@ -61,6 +60,12 @@ class DnDObject:
     def get_image_prompt(self):
         return f"A full color portrait of a {self.name} from Dungeons and Dragons 5e - {self.desc}"
 
+    def _api_update(self, api):
+        for record in api.all():
+            if record["slug"] == self.slug:
+                self.__dict__.update(record)
+                self.save()
+
     @classmethod
     def _update_db(cls, api):
         for updated_record in api.all():
@@ -71,8 +76,8 @@ class DnDObject:
             model = cls(**record)
             if not model.save():
                 raise Exception(f"Failed to save {model}")
-            else:
-                log(f"Saved {model.name}")
+            # else:
+            #     log(f"Saved {model.name}")
 
     @classmethod
     def all(cls):
@@ -157,7 +162,7 @@ class Spell(DnDObject):
     range = 0
     ritual = False
     duration: 0
-    contentration = False
+    concentration = False
     casting_time = ""
     level = 0
     school = ""
@@ -173,7 +178,13 @@ class Spell(DnDObject):
     @classmethod
     def get_image_prompt(self):
         description = self.desc or "A magical spell"
-        style = random.choice(["pixar style 3d", "pencil sketch", "watercolor"])
+        style = random.choice(
+            [
+                "The Rusted Pixel style digital",
+                "Albrecht Dürer style photorealistic pencil sketch",
+                "William Blake style watercolor",
+            ]
+        )
         return f"A full color {style} of a {self.name} from Dungeons and Dragons 5e - {description}"
 
 
@@ -182,8 +193,6 @@ class Item(DnDObject):
     name = ""
     rarity = ""
     cost = 0
-    image = None
-    description = ""
     attunement = False
     duration: 0
     damage_dice = ""
@@ -192,6 +201,11 @@ class Item(DnDObject):
     ac_string = ""
     strength_requirement = None
     properties = []
+    tables = []
+
+    def __init__(self, **kwargs):
+        kwargs["desc"] = markdown.markdown(kwargs.get("desc") or "")
+        super().__init__(**kwargs)
 
     @classmethod
     def update_db(cls):
@@ -200,5 +214,11 @@ class Item(DnDObject):
     @classmethod
     def get_image_prompt(self):
         description = self.desc or "An equipable item"
-        style = random.choice(["pixar style 3d", "pencil sketch", "watercolor"])
+        style = random.choice(
+            [
+                "The Rusted Pixel style digital",
+                "Albrecht Dürer style photorealistic pencil sketch",
+                "William Blake style watercolor",
+            ]
+        )
         return f"A full color {style} of a {self.name} from Dungeons and Dragons 5e - {description}"

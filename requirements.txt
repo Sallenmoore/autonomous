@@ -45,3 +45,4 @@ openai
 validators
 dateparser
 python-slugify
+markdown

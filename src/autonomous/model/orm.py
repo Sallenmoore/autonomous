@@ -21,6 +21,9 @@ class ORM:
     def search(self, **kwargs):
         return self._table.search(**kwargs)
 
+    def find(self, **kwargs):
+        return self._table.find(**kwargs)
+
     def delete(self, pk):
         return self._table.delete(pk)
 

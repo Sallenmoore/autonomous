@@ -9,6 +9,7 @@ class NPC(AutoModel):
     attributes = {
         "name": "",
         "gender": "",
+        "image": {"url": "", "asset_id": 0, "raw": None},
         "race": "",
         "desc": "",
         "personality": "",
