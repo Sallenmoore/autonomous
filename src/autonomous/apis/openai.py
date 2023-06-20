@@ -33,7 +33,7 @@ class OpenAI:
                 images.append(image_data)
         return images
 
-    def generate_text(self, text, primer_text):
+    def generate_text(self, text, primer_text, functions=[]):
         messages = [
             {
                 "role": "system",
@@ -46,10 +46,12 @@ class OpenAI:
         ]
         try:
             response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo", messages=messages
+                model="gpt-3.5-turbo-0613", messages=messages, functions=functions
             )
         except Exception as e:
             log(f"{e}\n\n==== Error: fall back to lesser model ====")
-            messages = f"{primer_text}\n{text}"
+            messages = (
+                f"{primer_text}\n{text}\n return json using schema: \n{functions[0]}"
+            )
             response = openai.Completion.create(model="davinci", prompt=messages)
-        return response["choices"][0]["message"]["content"]
+        return response["choices"][0]["message"]["content"].strip()

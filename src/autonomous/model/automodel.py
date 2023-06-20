@@ -12,6 +12,7 @@ from .orm import ORM
 
 class AutoModel(ABC):
     _table = None
+    _orm = ORM
     attributes = {}
 
     def __new__(cls, *args, **kwargs):
@@ -32,7 +33,7 @@ class AutoModel(ABC):
     @classmethod
     def table(cls):
         if not cls._table:
-            cls._table = ORM(table=cls.__name__)
+            cls._table = cls._orm(table=cls.__name__)
         return cls._table
 
     @classmethod

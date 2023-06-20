@@ -1,8 +1,4 @@
-import pytest
-import os
-from autonomous.storage.localstorage import LocalStorage
 from autonomous.storage.cloudinarystorage import CloudinaryStorage
-from autonomous.storage.s3storage import S3Storage
 from autonomous import log
 
 

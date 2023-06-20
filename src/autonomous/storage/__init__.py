@@ -1,1 +1,2 @@
-from .localstorage import Storage
+from .localstorage import LocalStorage
+from .cloudinarystorage import CloudinaryStorage
