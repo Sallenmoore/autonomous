@@ -1,6 +1,6 @@
 # Autonomous
 
-!!!!!!!!!!!!!!!!!!!! NOT YET STABLE !!!!!!!!!!!!!!!!!!!!!!!!
+:warning::warning::warning: WiP :warning::warning::warning:
 
 ![Tests](https://github.com/Sallenmoore/autonomous/actions/workflows/tests.yml/badge.svg)
 
@@ -15,18 +15,16 @@ The goal is to make it easy to create self-contained Python applications with mi
 - Fully containerized, service based Python application framework
 - All services are localized to a virtual intranet
 - Built-in Local NoSQL database and Model API
+- Cloud file storage with Cloudinary or S3
 - Auto-Generated Documentation Pages (Coming Soon!!!)
 
 ### Container Apps
 
-Autonomous App has minimally 2 container components:
+Autonomous App has minimally 1 container components:
 
-- **server**
-  - nginx proxy server listening on port 80
-  - static files and assets are served from here. This is also the main entry point for the application.
-- **test**
+- **app**
   - access documentation on port:TBD
-  - Test app for the library
+  - App
 
 ## Dependencies
 
@@ -44,9 +42,6 @@ Autonomous App has minimally 2 container components:
   - [requests](https://requests.readthedocs.io/en/latest/)
 - **Database**
   - [Local](https://tinydb.readthedocs.io/en/latest/)
-  - [MongoDB](#) - Coming Soon
-  - [Redis](#) - Coming Soon
-  - [Firestore](#) - Coming Soon
 - **Testing**
   - [pytest](/Dev/tools/pytest)
   - [coverage](https://coverage.readthedocs.io/en/6.4.1/cmd.html)
@@ -67,14 +62,13 @@ Autonomous App has minimally 2 container components:
 - Add type hints
 - Switch to less verbose html preprocessor
 - Add more database options
-- Improve database search
 - 100% testing coverage
 
 ### Issue Tracking
 
 - None
 
-## Commands
+## Processes
 
 ### Generate app
 
@@ -90,5 +84,5 @@ make tests
 
 1. Update version in `/src/autonomous/__init__.py`
 2. ```sh
-   make tests
+   make package
    ```
