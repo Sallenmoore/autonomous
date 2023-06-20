@@ -12,12 +12,10 @@ class Database:
         create an interface for your database
         """
         if not path.startswith("/"):
-            path = "/" + path
+            path = f"{pathlib.Path().resolve()}{path}"
         if not path.endswith("/"):
             path = path + "/"
-        self.db_path = (
-            f'{pathlib.Path().resolve()}{path}{os.environ.get("DB_NAME", "tables")}'
-        )
+        self.db_path = f'{path}{os.environ.get("DB_NAME", "tables")}'
         # log(self.db_path)
         os.path.isdir(self.db_path) or os.makedirs(self.db_path)
         self.tables = {}

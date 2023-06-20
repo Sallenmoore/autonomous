@@ -1,14 +1,14 @@
 # Autonomous
 
-:warning::warning::warning: WiP :warning::warning::warning:
+:warning: :warning: :warning: WiP :warning: :warning: :warning:
 
 ![Tests](https://github.com/Sallenmoore/autonomous/actions/workflows/tests.yml/badge.svg)
 
 A local, containerized, service based application library built on top of Flask. 
 The goal is to make it easy to create self-contained Python applications with minimal dependencies and built in libraries for many different kinds of tasks.
 
-- **pypi**: https://test.pypi.org/project/autonomous
-- **github**: https://github.com/Sallenmoore/autonomous
+- **[pypi](https://test.pypi.org/project/autonomous)**
+- **[github](https://github.com/Sallenmoore/autonomous)**
 
 ## Features
 
@@ -17,14 +17,6 @@ The goal is to make it easy to create self-contained Python applications with mi
 - Built-in Local NoSQL database and Model API
 - Cloud file storage with Cloudinary or S3
 - Auto-Generated Documentation Pages (Coming Soon!!!)
-
-### Container Apps
-
-Autonomous App has minimally 1 container components:
-
-- **app**
-  - access documentation on port:TBD
-  - App
 
 ## Dependencies
 
@@ -52,8 +44,6 @@ Autonomous App has minimally 1 container components:
 ---
 
 ## Developer Notes
-
-## {.tabset}
 
 ### TODO
 
@@ -83,6 +73,4 @@ make tests
 ### package
 
 1. Update version in `/src/autonomous/__init__.py`
-2. ```sh
-   make package
-   ```
+2. `make package`
