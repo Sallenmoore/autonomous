@@ -33,7 +33,7 @@ class OpenAI:
                 images.append(image_data)
         return images
 
-    def generate_text(self, text, primer_text, functions=[]):
+    def generate_text(self, text, primer_text="", functions=[]):
         messages = [
             {
                 "role": "system",
@@ -49,9 +49,13 @@ class OpenAI:
                 model="gpt-3.5-turbo-0613", messages=messages, functions=functions
             )
         except Exception as e:
-            log(f"{e}\n\n==== Error: fall back to lesser model ====")
+            log(f"{type(e)}:{e}\n\n==== Error: fall back to lesser model ====")
             messages = (
                 f"{primer_text}\n{text}\n return json using schema: \n{functions[0]}"
             )
             response = openai.Completion.create(model="davinci", prompt=messages)
-        return response["choices"][0]["message"]["content"].strip()
+            result = response["choices"][0]["message"]["content"]
+        else:
+            result = response["choices"][0]["message"]["function_call"]["arguments"]
+
+        return result

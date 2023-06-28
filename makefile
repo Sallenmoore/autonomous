@@ -28,18 +28,8 @@ clean:
 
 ###### TESTING #######
 	
-tests: testauto testapp
-
-# docker-compose up --build -d
-RUNTEST?='test_'
 test:
-	python -m pytest $(RUNTEST)
-
-testauto: 
 	pip install --no-cache-dir --upgrade pip wheel
 	pip install -r ./requirements.txt
 	python -m pytest -s -v
 
-# docker-compose up --build -d
-testapp: clean
-	cd src/autonomous/app_template; make tests
