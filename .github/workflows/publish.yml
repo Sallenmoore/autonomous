@@ -1,9 +1,6 @@
 name: Publish Auto distributions 📦 to PyPI
 
-on:
-  push:
-    tags:
-      - "releases"
+on: push
 
 jobs:
   build-n-publish:
