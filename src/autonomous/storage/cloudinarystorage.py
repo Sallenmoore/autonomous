@@ -21,7 +21,7 @@ class CloudinaryStorage(Storage):
 
     @classmethod
     def get_metadata(cls, asset_id):
-        log(cls.api_secret, cls.api_key, cls.cloud_name)
+        # log(cls.api_secret, cls.api_key, cls.cloud_name)
         return cloudinary.api.resource_by_asset_id(asset_id)
 
     def geturl(self, key):

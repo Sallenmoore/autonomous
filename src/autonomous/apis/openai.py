@@ -33,8 +33,9 @@ class OpenAI:
                 images.append(image_data)
         return images
 
-    def generate_text(self, text, primer_text="", functions=[]):
-        messages = [
+    def generate_text(self, text, primer_text="", functions=None):
+        json_data = {}
+        json_data["messages"] = [
             {
                 "role": "system",
                 "content": primer_text,
@@ -44,18 +45,27 @@ class OpenAI:
                 "content": text,
             },
         ]
+
+        if isinstance(functions, (list, tuple)):
+            json_data.update({"functions": functions})
+        elif functions is not None:
+            json_data.update({"function_call": {"name": functions["name"]}})
+            json_data.update({"functions": [functions]})
+        # breakpoint()
         try:
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo-0613", messages=messages, functions=functions
-            )
+            response = openai.ChatCompletion.create(model="gpt-4-0613", **json_data)
         except Exception as e:
             log(f"{type(e)}:{e}\n\n==== Error: fall back to lesser model ====")
-            messages = (
-                f"{primer_text}\n{text}\n return json using schema: \n{functions[0]}"
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo-0613", **json_data
             )
-            response = openai.Completion.create(model="davinci", prompt=messages)
-            result = response["choices"][0]["message"]["content"]
-        else:
+        # breakpoint()
+        try:
             result = response["choices"][0]["message"]["function_call"]["arguments"]
+        except KeyError:
+            result = response["choices"][0]["message"]["content"]
+        except Exception as e:
+            log(f"{type(e)}:{e}\n\n Unable to generate content ====")
+            return e
 
         return result

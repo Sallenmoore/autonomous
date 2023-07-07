@@ -24,8 +24,8 @@ class TestOpenAI:
         primer_text = "The following is a conversation with a comedian. The comedian is helpful, creative, clever, and very funny."
         prompt = "Write a joke about programming."
         funcobj = {
-            "name": "generate_joke",
-            "description": "Generate a joke about programming",
+            "name": "evaluate_joke",
+            "description": "Evaluate a joke for humor rating",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -43,9 +43,11 @@ class TestOpenAI:
         funcobj["parameters"]["required"] = list(
             funcobj["parameters"]["properties"].keys()
         )
-        log(funcobj)
-        result = OpenAI().generate_text(prompt, primer_text, functions=[funcobj])
-        log(result)
+        # log(funcobj)
+        result = OpenAI().generate_text(prompt, primer_text, functions=funcobj)
+        # log(result)
+
         joke = json.loads(result)
         assert joke["topic"]
         assert joke["text"]
+        open("tests/assets/testjoke.json", "w").write(result)

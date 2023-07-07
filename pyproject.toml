@@ -39,7 +39,10 @@ where = ["src"]
 include = ["autonomous*"]
 
 [tool.pytest.ini_options]
-addopts = "--cov=autonomous -rx -l -x -s --log-level=INFO --ignore=src --no-cov-on-fail --import-mode=importlib" #  -v  --cov-reset
+addopts = "--cov=autonomous -rx -l -x -s --log-level=INFO --ignore=src --no-cov-on-fail -v --import-mode=importlib" # --cov-reset
 testpaths = [
      "tests",
 ]
+
+[tool.isort]
+profile = "black"
