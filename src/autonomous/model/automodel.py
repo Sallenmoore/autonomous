@@ -32,18 +32,22 @@ class AutoModel(ABC):
 
     @classmethod
     def table(cls):
+        """The ORM table for this model"""
+
         if not cls._table:
             cls._table = cls._orm(table=cls.__name__)
         return cls._table
 
     @classmethod
     def model_name(cls):
+        """The fully qualified name of this model"""
         return f"{cls.__module__}.{cls.__name__}"
 
     def __repr__(self) -> str:
         return pprint.pformat(self.__dict__, indent=4, width=7, sort_dicts=True)
 
     def save(self):
+        """Save this model to the database"""
         result = self.serialize()
         record = {k: v for k, v in result.items() if k in self.attributes}
         self.pk = self.table().save(record)
@@ -51,6 +55,10 @@ class AutoModel(ABC):
 
     @classmethod
     def get(cls, pk):
+        """
+        Get a model by primary key
+        - args: pk (int)
+        """
         if isinstance(pk, str) and pk.isdigit():
             pk = int(pk)
         result = cls.table().get(pk)
@@ -58,17 +66,27 @@ class AutoModel(ABC):
 
     @classmethod
     def all(cls):
+        """Get all models of this type"""
         return [cls(**o) for o in cls.table().all()]
 
     @classmethod
     def search(cls, **kwargs):
+        """
+        Search for models containing the keyword values
+        - kwargs: keyword arguments to search for (dict)
+        """
         return [cls(**attribs) for attribs in cls.table().search(**kwargs)]
 
     @classmethod
     def find(cls, **kwargs):
+        """
+        Find the first model containing the keyword values and return it
+        - kwargs: keyword arguments to search for (dict)
+        """
         return cls.table().find(**kwargs)
 
     def delete(self):
+        """Delete this model from the database"""
         self.table().delete(pk=self.pk)
 
     @classmethod
@@ -91,6 +109,7 @@ class AutoModel(ABC):
         return val
 
     def serialize(self):
+        """Serialize this model to a dictionary"""
         return self._serialize(copy.deepcopy(self.__dict__))
 
     @classmethod
@@ -113,4 +132,8 @@ class AutoModel(ABC):
 
     @classmethod
     def deserialize(cls, vars):
+        """
+        Deserialize a dictionary to a model
+        - args: vars (dict)
+        """
         return cls(**vars)
