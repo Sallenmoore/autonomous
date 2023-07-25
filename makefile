@@ -8,8 +8,7 @@ all: test clean package
 
 CONTAINERS=$$(sudo docker ps -a -q)
 
-package:
-	rm -rf dist
+package: clean
 	python -m build
 	python -m pip install --upgrade twine
 	twine check dist/*
@@ -18,6 +17,7 @@ package:
 ###### CLEANING #######
 
 clean:
+	rm -rf dist
 	rm -rf .pytest_cache .coverage dist
 
 deepclean: clean

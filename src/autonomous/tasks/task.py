@@ -17,18 +17,45 @@ class TaskInterruptHandler:
 
 
 class Task(threading.Thread):
-    def __init__(self):
-        super().__init__()
+    """
+    Create a task to run in a seperate thread.
+
+    ### Usage
+
+    ```python
+    class MyTask(Task):
+        def startup(self):
+            '''optional: initialize resources for the task'''
+        def task(self):
+            '''implement the task'''
+        def shutdown(self):
+            '''optional: clean up resources for the task'''
+    ```
+    -----
+    ```
+    mytask = MyTask()
+    mytask.start()
+    print(Task.runningtasks[mytask.name])  # check status of task
+    mytask.join() # to wait for the task to complete
+    ```
+
+    """
+
+    runningtasks = {}
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self.handler = TaskInterruptHandler(self)
+        Task.runningtasks[self.name] = "initialized"
 
     def startup(self) -> None:
-        log("Task started: override `startup` method to intialize resouces for the task")
+        log("Task started: override `startup(self)` method to intialize resources for the task")
 
     def task(self) -> None:
-        log("Task executing: override `task` mwethod to implement the task")
+        log("Task executing: override `task` method to implement the task")
 
     def shutdown(self) -> None:
-        log("Task stopped: override `shutdown` method to clean up resources for the task")
+        log("Task complete: override `shutdown` method to clean up resources for the task")
 
     def run(self) -> None:
         """
@@ -36,11 +63,16 @@ class Task(threading.Thread):
         when start() method is called.
         :return: None
         """
+        Task.runningtasks[self.name] = "starting"
         self.startup()
         try:
+            Task.runningtasks[self.name] = "running"
             self.task()
         except Exception as e:
+            Task.runningtasks[self.name] = f"ERROR: {e}"
             log(f"Task raised an exception: {e}")
+            raise e
         else:
             log("Task was executed.")
         self.shutdown()
+        Task.runningtasks[self.name] = "complete"
