@@ -30,13 +30,18 @@ deepclean: clean
 
 ###### TESTING #######
 
+TESTING?=""
+
 testinit:
 	pip install -e .
 	pip install --no-cache-dir --upgrade pip wheel
 	pip install -r ./requirements.txt
 
 test: testinit
-	python -m pytest -k "test_tasks"
+	python -m pytest -k "test_$(TESTING)"
 
-tests: testinit
+testauto: testinit
 	python -m pytest
+
+tests: testauto
+	cd src/autonomous/app_template && make test

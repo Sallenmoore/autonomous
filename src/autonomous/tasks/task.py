@@ -9,7 +9,7 @@ def make_taskrunner(app):
                 return self.run(*args, **kwargs)
 
     celery_app = celery.Celery(
-        app.name,
+        "tasks",
         task_cls=AutoTask,
         backend=os.environ.get("CELERY_BACKEND", "rpc://user:bitnami@rabbitmq"),
         broker=os.environ.get("CELERY_BROKER_URL", "pyamqp://user:bitnami@rabbitmq"),
