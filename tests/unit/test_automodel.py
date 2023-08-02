@@ -7,7 +7,7 @@ from autonomous.model.automodel import AutoModel
 
 class MockORM:
     def __init__(self, table="Model"):
-        self._table = table
+        self.name = self._table = table
         self.db = {}
 
     @property
@@ -22,7 +22,7 @@ class MockORM:
         return data["pk"]
 
     def get(self, pk):
-        log(pk, self.db.get(pk))
+        # log(pk, self.db.get(pk))
         return self.db.get(pk)
 
     def all(self):
@@ -66,6 +66,17 @@ class Model(AutoModel):
         "autoobj": None,
     }
     _table = MockORM("Model")
+
+
+class RealModel(AutoModel):
+    # set model default attributes
+    attributes = {
+        "name": "",
+    }
+
+
+class ChildModel(RealModel):
+    pass
 
 
 class TestAutomodel:

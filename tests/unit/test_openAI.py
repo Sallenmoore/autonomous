@@ -4,6 +4,7 @@ from autonomous import log
 from autonomous.apis import OpenAI
 
 
+@pytest.mark.skip(reason="OpenAI API is not free")
 class TestOpenAI:
     def test_init(self):
         oai = OpenAI()
@@ -11,9 +12,7 @@ class TestOpenAI:
 
     def test_generate_image(self):
         oai = OpenAI()
-        prompt = (
-            "The random image that illustrates AI capabilities with image generation"
-        )
+        prompt = "The random image that illustrates AI capabilities with image generation"
         imgs = oai.generate_image(prompt, size="256x256", n=1)
         for img in imgs:
             assert isinstance(img, bytes)
@@ -40,9 +39,7 @@ class TestOpenAI:
                 },
             },
         }
-        funcobj["parameters"]["required"] = list(
-            funcobj["parameters"]["properties"].keys()
-        )
+        funcobj["parameters"]["required"] = list(funcobj["parameters"]["properties"].keys())
         # log(funcobj)
         result = OpenAI().generate_text(prompt, primer_text, functions=funcobj)
         # log(result)

@@ -4,6 +4,7 @@ from ..db import db as _database
 class ORM:
     def __init__(self, table):
         self._table = _database.get_table(table=table)
+        self.name = self._table.name
 
     @property
     def table(self):
