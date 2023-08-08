@@ -24,6 +24,16 @@ class CloudinaryStorage(Storage):
         # log(cls.api_secret, cls.api_key, cls.cloud_name)
         return cloudinary.api.resource_by_asset_id(asset_id)
 
+    def search(self, name, **kwargs):
+        query = name
+        if folder := kwargs.get("folder"):
+            query = f"{query} AND folder:{folder}"
+        return cloudinary.Search().expression(query).execute()
+
+    def update(self, key, **kwargs):
+        metadata = self.get_metadata(key)
+        return cloudinary.api.update(metadata["public_id"], **kwargs)
+
     def geturl(self, key):
         response = self.get_metadata(key)
         return response.get("url")
@@ -41,11 +51,11 @@ class CloudinaryStorage(Storage):
         try:
             response = cloudinary.uploader.upload(file, **kwargs)
         except Exception as e:
-            log(f"Cloudinary Storage upload error: {e}")
-            return {"asset_id": None, "url": None, "raw": file}
+            log(f"Cloudinary Storage upload error: {response}")
+            raise e
 
         return {"asset_id": response["asset_id"], "url": response["url"], "raw": None}
 
-    def remove(self, key):
-        response = self.get_metadata(key)
-        cloudinary.uploader.destroy(response["public_id"])
+    def remove(self, asset_id, **kwargs):
+        response = self.get_metadata(asset_id)
+        cloudinary.uploader.destroy(response["public_id"], **kwargs)
