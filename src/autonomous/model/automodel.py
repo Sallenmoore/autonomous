@@ -21,7 +21,8 @@ class AutoModel(ABC):
 
         # set default attributes
         cls.attributes["pk"] = None
-        log(f"Creating {cls.__name__}")
+        cls.attributes["last_updated"] = datetime.now()
+        # log(f"Creating {cls.__name__}")
         obj.pk = kwargs.pop("pk", None)
         result = cls.table().get(obj.pk) or {}
         for k, v in cls.attributes.items():
@@ -36,7 +37,7 @@ class AutoModel(ABC):
         """The ORM table for this model"""
         table_name = cls._table_name or cls.__name__
         if not cls._table or cls._table.name != table_name:
-            log(f"Creating table {table_name}")
+            # log(f"Creating table {table_name}")
             cls._table = cls._orm(table=table_name)
         return cls._table
 
@@ -50,6 +51,7 @@ class AutoModel(ABC):
 
     def save(self):
         """Save this model to the database"""
+        self.last_updated = datetime.now()
         result = self.serialize()
         record = {k: v for k, v in result.items() if k in self.attributes}
         self.pk = self.table().save(record)
