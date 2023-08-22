@@ -21,9 +21,7 @@ class OpenAI:
         images = []
 
         try:
-            response = openai.Image.create(
-                prompt=prompt, n=n, size=size, response_format="b64_json"
-            )
+            response = openai.Image.create(prompt=prompt, n=n, size=size, response_format="b64_json")
         except Exception as e:
             log(f"{e}\n\n==== Error: fall back to lesser model ====")
             images = ["https://picsum.photos/400/?blur"]
@@ -56,13 +54,34 @@ class OpenAI:
             response = openai.ChatCompletion.create(model="gpt-4-0613", **json_data)
         except Exception as e:
             log(f"{type(e)}:{e}\n\n==== Error: fall back to lesser model ====")
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo-0613", **json_data
-            )
+            response = openai.ChatCompletion.create(model="gpt-3.5-turbo-0613", **json_data)
         # breakpoint()
         try:
             result = response["choices"][0]["message"]["function_call"]["arguments"]
         except KeyError:
+            result = response["choices"][0]["message"]["content"]
+        except Exception as e:
+            log(f"{type(e)}:{e}\n\n Unable to generate content ====")
+            return e
+
+        return result
+
+    def summarize_text(self, text, primer=""):
+        message = [
+            {
+                "role": "system",
+                "content": f"You are a highly skilled AI trained in language comprehension and summarization.{primer}",
+            },
+            {"role": "user", "content": text},
+        ]
+        try:
+            response = openai.ChatCompletion.create(model="gpt-4", temperature=0, messages=message)
+        except Exception as e:
+            log(f"{type(e)}:{e}\n\n==== Error: fall back to lesser model ====")
+            response = openai.ChatCompletion.create(model="gpt-4", temperature=0, messages=message)
+        # breakpoint()
+
+        try:
             result = response["choices"][0]["message"]["content"]
         except Exception as e:
             log(f"{type(e)}:{e}\n\n Unable to generate content ====")

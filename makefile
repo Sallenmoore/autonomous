@@ -30,7 +30,7 @@ deepclean: clean
 
 ###### TESTING #######
 
-TESTING?=""
+TESTING=openAI
 
 testinit:
 	pip install -e .
