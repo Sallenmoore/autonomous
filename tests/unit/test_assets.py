@@ -1,4 +1,5 @@
 from autonomous import assets
+import pytest
 
 
 class TestAssets:

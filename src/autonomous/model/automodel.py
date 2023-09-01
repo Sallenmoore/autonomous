@@ -22,6 +22,7 @@ class AutoModel(ABC):
         # set default attributes
         cls.attributes["pk"] = None
         cls.attributes["last_updated"] = datetime.now()
+        cls.attributes["task_running"] = False
         # log(f"Creating {cls.__name__}")
         obj.pk = kwargs.pop("pk", None)
         result = cls.table().get(obj.pk) or {}

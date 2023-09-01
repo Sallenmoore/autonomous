@@ -4,7 +4,7 @@ from autonomous import log
 from autonomous.apis import OpenAI
 
 
-# @pytest.mark.skip(reason="OpenAI API is not free")
+@pytest.mark.skip(reason="OpenAI API is not free")
 class TestOpenAI:
     def test_init(self):
         oai = OpenAI()

@@ -1,1 +1,1 @@
-from .task import make_taskrunner
+from .autotask import AutoTasks

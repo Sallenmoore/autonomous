@@ -41,7 +41,9 @@ test: testinit
 	python -m pytest -k "test_$(TESTING)"
 
 testauto: testinit
-	python -m pytest
+	python -m pytest --full-trace
 
-tests: testauto
+testapp:
 	cd src/autonomous/app_template && make test
+
+tests: testauto testapp

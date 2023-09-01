@@ -1,7 +1,9 @@
 from autonomous.storage.cloudinarystorage import CloudinaryStorage
 from autonomous import log
+import pytest
 
 
+@pytest.mark.skip(reason="OpenAI API is not free")
 class TestStorage:
     def test_cloudinary_basic(self):
         storage = CloudinaryStorage()

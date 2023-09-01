@@ -14,12 +14,20 @@ Flask
 setuptools
 python-dotenv
 
-##### Versioning and Storage #####
+##### Storage #####
+
 PyGithub
 pygit2
+
 boto3
+
 tinyDB
+
 cloudinary
+
+redis
+rq
+rq-dashboard
 
 ##### Frontend #####
 
