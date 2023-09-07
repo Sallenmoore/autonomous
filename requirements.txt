@@ -26,8 +26,6 @@ tinyDB
 cloudinary
 
 redis
-rq
-rq-dashboard
 
 ##### Frontend #####
 
@@ -42,8 +40,8 @@ gunicorn
 
 
 ##### Async ##### 
-celery
-pyamqp
+rq
+rq-dashboard
 
 ##### AI #####
 

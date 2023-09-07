@@ -1,12 +1,8 @@
 from . import Storage
-import os
-import boto3
-from botocore.config import Config
-from botocore.exceptions import ClientError
 from autonomous import log
 
 
-class S3Storage(Storage):
+class RedisStorage(Storage):
     pass
     # def __init__(self):
     #     self.bucket = os.getenv("S3_BUCKET_NAME")

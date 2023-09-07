@@ -1,17 +1,27 @@
+from time import sleep
 from autonomous.tasks import AutoTasks
 from autonomous import log
 import pytest
-import requests
 import redis
+from rq import get_current_job
+import os
+import time
 
 
-def mytask(url):
-    resp = requests.get(url)
-    return len(resp.text.split())
+def mytask(a, b):
+    job = get_current_job()
+    print(f"\nCurrent job: {job.id}")
+    time.sleep(2)
+    return a + b
 
 
 def test_connection():
-    r = redis.StrictRedis(host="db.samoore.page", port=10003, username="admin", password="BellaEmmmaNatasha77")
+    r = redis.StrictRedis(
+        host=os.environ.get("REDIS_HOST", ""),
+        port=os.environ.get("REDIS_PORT", ""),
+        username=os.environ.get("REDIS_USERNAME", "default"),
+        password=os.environ.get("REDIS_PASSWORD", ""),
+    )
     log(r.get_connection_kwargs())
     assert r.ping()
     assert r.set("key1", "123")
@@ -21,30 +31,43 @@ def test_connection():
 class TestAutoTasks:
     def test_autotask_connection(self):
         tasks = AutoTasks()
-        assert tasks.queue
-        assert tasks._connection
+        tasks.clear()
         assert tasks._connection.ping()
-        log(tasks._connection.ping())
+        assert tasks.queue
+        assert tasks.queue.job_ids == []
 
     def test_autotask_add(self):
         tasks = AutoTasks()
-        id = tasks.task(mytask)
-        assert id
+        tasks.clear()
+        job = tasks.task(mytask, 5, 7)
+        assert job.id
 
     def test_autotask_get(self):
         tasks = AutoTasks()
-        id = tasks.task(mytask)
-        result = tasks.get_task(id)
+        tasks.clear()
+        job = tasks.task(mytask, 5, 7)
+        log(job.id)
+        result = tasks.get_task(job.id)
+        assert result
+
+    def test_autotask_status(self):
+        tasks = AutoTasks()
+        tasks.clear()
+        job = tasks.task(mytask, 5, 7)
+        result = job.status
         assert result
 
     def test_autotask_results(self):
         tasks = AutoTasks()
-        id = tasks.task(mytask)
-        result = tasks.get_result(id)
-        assert result
+        tasks.clear()
+        job = tasks.task(mytask, 5, 7)
+        time.sleep(10)
+        log(job.status)
+        assert job.return_value == 12
 
     def test_autotask_all(self):
         tasks = AutoTasks()
-        (tasks.task(mytask) for i in range(3))
-        result = tasks.get_all()
-        assert result
+        tasks.clear()
+        (tasks.task(mytask, 5, i) for i in range(3))
+        for t in tasks.get_tasks():
+            assert t.return_value or t.status == "running"

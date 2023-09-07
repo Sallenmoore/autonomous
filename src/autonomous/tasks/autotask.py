@@ -1,71 +1,76 @@
-from redis import Redis
-from rq import Queue
-from autonomous import log
 import os
+from redis import Redis
+from rq import Queue, Worker
+from rq.job import Job
+from autonomous import log
+from concurrent.futures import ProcessPoolExecutor
 
 
 class AutoTasks:
     _connection = None
     queue = None
+    workers = []
+    all_tasks = []
     config = {
         "host": os.environ.get("REDIS_HOST", ""),
         "port": os.environ.get("REDIS_PORT", ""),
         "password": os.environ.get("REDIS_PASSWORD", ""),
-        # "username": os.environ.get("REDIS_USERNAME", "root"),
-        # "db": os.environ.get("REDIS_DB", ""),
-        "decode_responses": os.environ.get("REDIS_DECODE", True),
+        "username": os.environ.get("REDIS_USERNAME", "default"),
+        "db": os.environ.get("REDIS_DB", ""),
     }
 
-    def __init__(self):
-        log(**AutoTasks.config)
+    class AutoTask:
+        def __init__(self, job):
+            self.job = job
+
+        @property
+        def id(self):
+            return self.job.id
+
+        @property
+        def status(self):
+            return self.job.get_status()
+
+        def result(self):
+            return self.job.latest_result()
+
+        @property
+        def return_value(self):
+            return self.job.return_value()
+
+    def __init__(self, queue="default", num_workers=3):
         if not AutoTasks._connection:
             AutoTasks._connection = Redis(**AutoTasks.config)
-        log(AutoTasks._connection)
-        if not AutoTasks.queue:
-            AutoTasks.queue = Queue(connection=self._connection)
-        log(AutoTasks.queue)
+        AutoTasks.queue = Queue(queue, connection=AutoTasks._connection)
 
     def task(self, job, *args, **kwargs):
-        task = self.queue.enqueue(job, *args, **kwargs)
-        return task.id
+        """
+        :param job: job function
+        :param args: job function args
+        :param kwargs: job function kwargs
+        args and kwargs: use these to explicitly pass arguments and keyword to the underlying job function. This is useful if your function happens to have conflicting argument names with RQ, for example description or ttl.
+        :return: job
+        """
+        job = AutoTasks.queue.enqueue(job, *args, **kwargs)
+        AutoTasks.all_tasks.append(self.AutoTask(job))
+        with ProcessPoolExecutor() as executor:
+            executor.submit(create_worker, AutoTasks.queue.name)
+            # log(result)
+        return self.AutoTask(job)
 
     # get job given its id
     def get_task(self, job_id):
-        try:
-            return self.queue.fetch_job(job_id)
-        except Exception as e:
-            return f"invalid:\t{e}"
+        # breakpoint()
+        job = AutoTasks.queue.fetch_job(job_id)
+        return self.AutoTask(job)
 
     # get job given its id
-    def get_status(self, job_id):
-        try:
-            return self.queue.fetch_job(job_id).get_status()
-        except Exception as e:
-            return f"invalid:\t{e}"
+    def get_tasks(self):
+        return AutoTasks.all_tasks
 
-    # get job given its id
-    def get_result(self, job_id):
-        try:
-            return self.queue.fetch_job(job_id).result
-        except Exception as e:
-            return f"invalid:\t{e}"
+    def clear(self):
+        AutoTasks.queue.empty()
 
-    # get all jobs
-    def get_all(self):
-        # init all_jobs list
-        all_jobs = list(
-            set(
-                [
-                    self.queue.started_job_registry.get_job_ids(),
-                    self.queue.job_ids.get_job_ids(),  # queued job ids
-                    self.queue.failed_job_registry.get_job_ids(),
-                    self.queue.deferred_job_registry.get_job_ids(),
-                    self.queue.finished_job_registry.get_job_ids(),
-                    self.queue.scheduled_job_registry.get_job_ids(),
-                ]
-            )
-        )
-        # iterate over job ids list and fetch jobs
-        for job_id in all_jobs:
-            all_jobs.append(self.get_task(job_id))
-        return all_jobs
+
+def create_worker(queue):
+    Worker([queue], connection=Redis(**AutoTasks.config)).work(burst=True)

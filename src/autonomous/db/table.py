@@ -5,7 +5,7 @@ from tinydb import where
 
 from autonomous import log
 
-from .storage import AutoStorage
+from .autostorage import AutoStorage
 
 
 class Table:
@@ -15,7 +15,7 @@ class Table:
         """
         self.path = path
         # breakpoint()
-        self._table = tinydb.TinyDB(f"{self.path}/{name}.json").table(name=name)
+        self._table = AutoStorage(f"{self.path}/{name}.json").table(name=name)
 
     @property
     def name(self):

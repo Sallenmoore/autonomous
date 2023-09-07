@@ -17,6 +17,21 @@ class AutoModel(ABC):
     attributes = {}
 
     def __new__(cls, *args, **kwargs):
+        """
+        Create a new instance of the AutoModel.
+
+        This method is responsible for creating a new instance of the AutoModel class.
+        It sets default attributes, populates the object from the database if a primary key is provided,
+        and handles additional keyword arguments.
+
+        Args:
+            cls: The class itself.
+            *args: Positional arguments.
+            **kwargs: Keyword arguments, including 'pk' for primary key.
+
+        Returns:
+            obj: The created AutoModel instance.
+        """
         obj = super().__new__(cls)
 
         # set default attributes
@@ -35,7 +50,12 @@ class AutoModel(ABC):
 
     @classmethod
     def table(cls):
-        """The ORM table for this model"""
+        """
+        Get the ORM table for this model.
+
+        Returns:
+            ORM: The ORM table for this model.
+        """
         table_name = cls._table_name or cls.__name__
         if not cls._table or cls._table.name != table_name:
             # log(f"Creating table {table_name}")
@@ -44,14 +64,30 @@ class AutoModel(ABC):
 
     @classmethod
     def model_name(cls):
-        """The fully qualified name of this model"""
+        """
+        Get the fully qualified name of this model.
+
+        Returns:
+            str: The fully qualified name of this model.
+        """
         return f"{cls.__module__}.{cls.__name__}"
 
     def __repr__(self) -> str:
+        """
+        Return a string representation of the AutoModel instance.
+
+        Returns:
+            str: A string representation of the AutoModel instance.
+        """
         return pprint.pformat(self.__dict__, indent=4, width=7, sort_dicts=True)
 
     def save(self):
-        """Save this model to the database"""
+        """
+        Save this model to the database.
+
+        Returns:
+            int: The primary key (pk) of the saved model.
+        """
         self.last_updated = datetime.now()
         result = self.serialize()
         record = {k: v for k, v in result.items() if k in self.attributes}
@@ -61,8 +97,13 @@ class AutoModel(ABC):
     @classmethod
     def get(cls, pk):
         """
-        Get a model by primary key
-        - args: pk (int)
+        Get a model by primary key.
+
+        Args:
+            pk (int): The primary key of the model to retrieve.
+
+        Returns:
+            AutoModel or None: The retrieved AutoModel instance, or None if not found.
         """
         if isinstance(pk, str) and pk.isdigit():
             pk = int(pk)
@@ -71,27 +112,44 @@ class AutoModel(ABC):
 
     @classmethod
     def all(cls):
-        """Get all models of this type"""
+        """
+        Get all models of this type.
+
+        Returns:
+            list: A list of AutoModel instances.
+        """
         return [cls(**o) for o in cls.table().all()]
 
     @classmethod
     def search(cls, **kwargs):
         """
-        Search for models containing the keyword values
-        - kwargs: keyword arguments to search for (dict)
+        Search for models containing the keyword values.
+
+        Args:
+            **kwargs: Keyword arguments to search for (dict).
+
+        Returns:
+            list: A list of AutoModel instances that match the search criteria.
         """
         return [cls(**attribs) for attribs in cls.table().search(**kwargs)]
 
     @classmethod
     def find(cls, **kwargs):
         """
-        Find the first model containing the keyword values and return it
-        - kwargs: keyword arguments to search for (dict)
+        Find the first model containing the keyword values and return it.
+
+        Args:
+            **kwargs: Keyword arguments to search for (dict).
+
+        Returns:
+            AutoModel or None: The first matching AutoModel instance, or None if not found.
         """
         return cls.table().find(**kwargs)
 
     def delete(self):
-        """Delete this model from the database"""
+        """
+        Delete this model from the database.
+        """
         self.table().delete(pk=self.pk)
 
     @classmethod
@@ -114,7 +172,12 @@ class AutoModel(ABC):
         return val
 
     def serialize(self):
-        """Serialize this model to a dictionary"""
+        """
+        Serialize this model to a dictionary.
+
+        Returns:
+            dict: A dictionary representation of the serialized model.
+        """
         return self._serialize(copy.deepcopy(self.__dict__))
 
     @classmethod
@@ -138,7 +201,12 @@ class AutoModel(ABC):
     @classmethod
     def deserialize(cls, vars):
         """
-        Deserialize a dictionary to a model
-        - args: vars (dict)
+        Deserialize a dictionary to a model.
+
+        Args:
+            vars (dict): The dictionary to deserialize.
+
+        Returns:
+            AutoModel: A deserialized AutoModel instance.
         """
         return cls(**vars)
