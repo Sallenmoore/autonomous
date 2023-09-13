@@ -7,11 +7,11 @@ from datetime import datetime
 
 from autonomous import log
 
-from .redisorm import RedisORM
+from .orm import ORM
 
 
 class AutoModel(ABC):
-    _orm = RedisORM
+    _orm = ORM
     attributes = {}
 
     def __new__(cls, *args, **kwargs):

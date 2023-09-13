@@ -25,7 +25,7 @@ def test_connection():
         "username": os.environ.get("REDIS_USERNAME"),
         "db": os.environ.get("REDIS_DB", ""),
     }
-    r = redis.StrictRedis(**config)
+    r = redis.Redis(**config)
     log(r.get_connection_kwargs())
     assert r.ping()
     assert r.set("key1", "123")

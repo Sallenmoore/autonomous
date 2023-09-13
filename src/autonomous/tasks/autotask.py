@@ -33,6 +33,18 @@ class AutoTasks:
         def status(self):
             return self.job.get_status()
 
+        @property
+        def running(self):
+            return self.status == "running"
+
+        @property
+        def finished(self):
+            return self.status == "finished"
+
+        @property
+        def failed(self):
+            return self.status == "failed"
+
         def result(self):
             return self.job.latest_result()
 
