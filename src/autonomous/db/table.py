@@ -99,7 +99,8 @@ class Table:
                 else:
                     log(f"invalid schema attribute: {attr}")
 
-            self.index = self._db.ft(self.index_name).create_index(
+            self.index = self._db.ft(self.index_name)
+            self.index.create_index(
                 schema,
                 definition=IndexDefinition(
                     prefix=[f"{self.name}:"], index_type=IndexType.JSON
