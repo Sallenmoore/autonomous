@@ -48,6 +48,7 @@ class TestDatabase:
         t = RecordTest()
         t.pk = self.db.save(t.__dict__)
         model = self.db.get(t.pk)
+        assert isinstance(model, dict)
         obj = RecordTest(**model)
         # log(obj)
         assert obj.pk == t.pk
@@ -59,6 +60,7 @@ class TestDatabase:
         t.pk = self.db.save(t.__dict__)
         t.name = "change"
         self.db.save(t.__dict__)
+        assert all(isinstance(model, dict) for model in self.db.search(name="change"))
         assert len(self.db.search(name="buh")) == 0
         assert len(self.db.search(name="change")) == 1
         assert len(self.db.search(name="xxx")) == 0
@@ -71,6 +73,7 @@ class TestDatabase:
         self.db.save(t.__dict__)
         model = self.db.get(t.pk)
         # log(type(model), model)
+        assert isinstance(model, dict)
         obj = RecordTest(**model)
         assert obj.pk == t.pk
         assert t.num == obj.num == 6

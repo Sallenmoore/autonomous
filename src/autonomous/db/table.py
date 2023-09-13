@@ -105,13 +105,14 @@ class Table:
                 definition=IndexDefinition(
                     prefix=[f"{self.name}:"], index_type=IndexType.JSON
                 ),
+                temporary=60 * 60 * 24 * 7,  # set indexes to expire in 1 week
             )
         log(search_terms, self.index_name, self.index.info())
         matches = []
         for k, v in search_terms.items():
             query = Query(f"@{k}:{v}")
             results = self._db.ft(self.index_name).search(query)
-            matches += results.docs
+            matches += [json.loads(d.json) for d in results.docs]
         return matches
 
     def get(self, pk):
