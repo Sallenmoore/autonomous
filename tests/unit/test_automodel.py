@@ -8,33 +8,29 @@ from autonomous.model.automodel import AutoModel
 
 
 class MockORM:
-    def __init__(self, table="Model"):
-        self.name = self._table = table
-        self.db = {}
-
-    @property
-    def table(self):
-        return self._table
+    def __init__(self, model):
+        self.name = model.__name__
+        self.table = {}
 
     def save(self, data):
         if "pk" not in data or data["pk"] is None:
             data["pk"] = uuid.uuid4().hex
-        self.db[data["pk"]] = data
+        self.table[data["pk"]] = data
         # log(data)
         return data["pk"]
 
     def get(self, pk):
         # log(pk, self.db.get(pk))
-        return self.db.get(pk)
+        return self.table.get(pk)
 
     def all(self):
         # log(self.db.values())
-        return self.db.values()
+        return self.table.values()
 
     def search(self, **kwargs):
         results = []
         for key, value in kwargs.items():
-            for item in self.db.values():
+            for item in self.table.values():
                 if item[key] == value:
                     results.append(item)
         results = list(set(results))
@@ -43,7 +39,7 @@ class MockORM:
 
     def delete(self, pk):
         try:
-            del self.db[pk]
+            del self.table[pk]
         except KeyError:
             return pk
         else:
@@ -53,7 +49,7 @@ class MockORM:
 class SubModel(AutoModel):
     # set model default attributes
     attributes = {"name": "", "age": None, "date": None}
-    _table = MockORM("Submodel")
+    _orm = MockORM
 
 
 class Model(AutoModel):
@@ -67,7 +63,7 @@ class Model(AutoModel):
         "autodict": {},
         "autoobj": None,
     }
-    _table = MockORM("Model")
+    _orm = MockORM
 
 
 class RealModel(AutoModel):
