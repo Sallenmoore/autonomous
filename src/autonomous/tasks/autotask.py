@@ -1,9 +1,11 @@
 import os
+from concurrent.futures import ProcessPoolExecutor
+
 from redis import Redis
 from rq import Queue, Worker
 from rq.job import Job
+
 from autonomous import log
-from concurrent.futures import ProcessPoolExecutor
 
 
 class AutoTasks:
@@ -14,8 +16,8 @@ class AutoTasks:
     config = {
         "host": os.environ.get("REDIS_HOST", ""),
         "port": os.environ.get("REDIS_PORT", ""),
-        "password": os.environ.get("REDIS_PASSWORD", ""),
-        "username": os.environ.get("REDIS_USERNAME", "default"),
+        "password": os.environ.get("REDIS_PASSWORD"),
+        "username": os.environ.get("REDIS_USERNAME"),
         "db": os.environ.get("REDIS_DB", ""),
     }
 
@@ -40,7 +42,20 @@ class AutoTasks:
 
     def __init__(self, queue="default", num_workers=3):
         if not AutoTasks._connection:
-            AutoTasks._connection = Redis(**AutoTasks.config)
+            options = {}
+
+            if AutoTasks.config.get("username"):
+                options["username"] = AutoTasks.config.get("username")
+            if AutoTasks.config.get("username"):
+                options["password"] = AutoTasks.config.get("password")
+            if AutoTasks.config.get("db"):
+                options["db"] = AutoTasks.config.get("db")
+
+            AutoTasks._connection = Redis(
+                host=AutoTasks.config.get("host"),
+                port=AutoTasks.config.get("port"),
+                **options,
+            )
         AutoTasks.queue = Queue(queue, connection=AutoTasks._connection)
 
     def task(self, job, *args, **kwargs):

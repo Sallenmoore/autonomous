@@ -1,6 +1,7 @@
 import uuid
-import pytest
 from datetime import datetime
+
+import pytest
 
 from autonomous import log
 from autonomous.model.automodel import AutoModel
@@ -80,7 +81,7 @@ class ChildModel(RealModel):
     pass
 
 
-@pytest.mark.skip(reason="dumb test")
+# @pytest.mark.skip(reason="dumb test")
 class TestAutomodel:
     def test_automodel_create(self):
         am = Model(name="test", age=10, date=datetime.now())

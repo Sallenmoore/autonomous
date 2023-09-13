@@ -2,7 +2,7 @@ import sys
 import pytest
 
 
-@pytest.mark.skip(reason="dumb")
+# @pytest.mark.skip(reason="dumb")
 def test_imports():
     for p in sys.path:
         print(p)

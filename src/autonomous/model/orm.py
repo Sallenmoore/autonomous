@@ -1,32 +1,32 @@
-from ..db import db as _database
+from ..db.autodb import Database
 
 
 class ORM:
-    def __init__(self, table):
-        self._table = _database.get_table(table=table)
-        self.name = self._table.name
+    _database = Database()
 
-    @property
-    def table(self):
-        return self._table
+    def __init__(self, model):
+        # breakpoint()
+        table_name = model._table_name or model.__name__
+        self.table = self._database.get_table(table=table_name, schema=model.attributes)
+        self.name = self.table.name
 
     def save(self, data):
-        return self._table.save(data)
+        return self.table.save(data)
 
     def get(self, pk):
-        return self._table.get(pk)
+        return self.table.get(pk)
 
     def all(self):
-        return self._table.all()
+        return self.table.all()
 
     def search(self, **kwargs):
-        return self._table.search(**kwargs)
+        return self.table.search(**kwargs)
 
     def find(self, **kwargs):
-        return self._table.find(**kwargs)
+        return self.table.find(**kwargs)
 
     def delete(self, pk):
-        return self._table.delete(pk)
+        return self.table.delete(pk)
 
     def flush_table(self):
-        return self._table.clear()
+        return self.table.clear()

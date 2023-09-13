@@ -7,13 +7,11 @@ from datetime import datetime
 
 from autonomous import log
 
-from .orm import ORM
+from .redisorm import RedisORM
 
 
 class AutoModel(ABC):
-    _table = None
-    _table_name = ""
-    _orm = ORM
+    _orm = RedisORM
     attributes = {}
 
     def __new__(cls, *args, **kwargs):
@@ -35,32 +33,19 @@ class AutoModel(ABC):
         obj = super().__new__(cls)
 
         # set default attributes
+        cls._table_name = ""
+        cls.table = cls._orm(cls)
         cls.attributes["pk"] = None
         cls.attributes["last_updated"] = datetime.now()
-        cls.attributes["task_running"] = False
         # log(f"Creating {cls.__name__}")
         obj.pk = kwargs.pop("pk", None)
-        result = cls.table().get(obj.pk) or {}
+        result = cls.table.get(obj.pk) or {}
         for k, v in cls.attributes.items():
             setattr(obj, k, result.get(k, v))
         obj.__dict__ |= kwargs
         # log(obj, kwargs)
         cls._deserialize(obj.__dict__)
         return obj
-
-    @classmethod
-    def table(cls):
-        """
-        Get the ORM table for this model.
-
-        Returns:
-            ORM: The ORM table for this model.
-        """
-        table_name = cls._table_name or cls.__name__
-        if not cls._table or cls._table.name != table_name:
-            # log(f"Creating table {table_name}")
-            cls._table = cls._orm(table=table_name)
-        return cls._table
 
     @classmethod
     def model_name(cls):
@@ -91,7 +76,7 @@ class AutoModel(ABC):
         self.last_updated = datetime.now()
         result = self.serialize()
         record = {k: v for k, v in result.items() if k in self.attributes}
-        self.pk = self.table().save(record)
+        self.pk = self.table.save(record)
         return self.pk
 
     @classmethod
@@ -107,7 +92,8 @@ class AutoModel(ABC):
         """
         if isinstance(pk, str) and pk.isdigit():
             pk = int(pk)
-        result = cls.table().get(pk)
+
+        result = cls.table.get(pk)
         return cls(**result) if result else None
 
     @classmethod
@@ -118,7 +104,7 @@ class AutoModel(ABC):
         Returns:
             list: A list of AutoModel instances.
         """
-        return [cls(**o) for o in cls.table().all()]
+        return [cls(**o) for o in cls.table.all()]
 
     @classmethod
     def search(cls, **kwargs):
@@ -131,7 +117,7 @@ class AutoModel(ABC):
         Returns:
             list: A list of AutoModel instances that match the search criteria.
         """
-        return [cls(**attribs) for attribs in cls.table().search(**kwargs)]
+        return [cls(**attribs) for attribs in cls.table.search(**kwargs)]
 
     @classmethod
     def find(cls, **kwargs):
@@ -144,13 +130,13 @@ class AutoModel(ABC):
         Returns:
             AutoModel or None: The first matching AutoModel instance, or None if not found.
         """
-        return cls.table().find(**kwargs)
+        return cls.table.find(**kwargs)
 
     def delete(self):
         """
         Delete this model from the database.
         """
-        self.table().delete(pk=self.pk)
+        self.table.delete(pk=self.pk)
 
     @classmethod
     def _serialize(self, val):

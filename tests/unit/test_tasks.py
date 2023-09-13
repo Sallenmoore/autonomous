@@ -1,11 +1,12 @@
-from time import sleep
-from autonomous.tasks import AutoTasks
-from autonomous import log
+import os
+import time
+
 import pytest
 import redis
 from rq import get_current_job
-import os
-import time
+
+from autonomous import log
+from autonomous.tasks import AutoTasks
 
 
 def mytask(a, b):
@@ -15,19 +16,23 @@ def mytask(a, b):
     return a + b
 
 
+# @pytest.mark.skip(reason="dumb")
 def test_connection():
-    r = redis.StrictRedis(
-        host=os.environ.get("REDIS_HOST", ""),
-        port=os.environ.get("REDIS_PORT", ""),
-        username=os.environ.get("REDIS_USERNAME", "default"),
-        password=os.environ.get("REDIS_PASSWORD", ""),
-    )
+    config = {
+        "host": os.environ.get("REDIS_HOST", ""),
+        "port": os.environ.get("REDIS_PORT", ""),
+        "password": os.environ.get("REDIS_PASSWORD"),
+        "username": os.environ.get("REDIS_USERNAME"),
+        "db": os.environ.get("REDIS_DB", ""),
+    }
+    r = redis.StrictRedis(**config)
     log(r.get_connection_kwargs())
     assert r.ping()
     assert r.set("key1", "123")
     assert r.get("key1")
 
 
+# @pytest.mark.skip(reason="OpenAI API is not free")
 class TestAutoTasks:
     def test_autotask_connection(self):
         tasks = AutoTasks()

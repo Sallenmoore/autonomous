@@ -1,11 +1,12 @@
-from autonomous import log
-from .basestorage import Storage
-import cloudinary.uploader
-import cloudinary.api
 import os
 
+import cloudinary.api
+import cloudinary.uploader
 
-class CloudinaryStorage(Storage):
+from autonomous import log
+
+
+class CloudinaryStorage:
     cloud_name = os.getenv("CLOUD_NAME")
     api_key = os.getenv("CLOUDINARY_KEY")
     api_secret = os.getenv("CLOUDINARY_SECRET")

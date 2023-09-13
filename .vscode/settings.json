@@ -5,12 +5,13 @@
   "python.formatting.provider": "none",
   "python.linting.mypyEnabled": false,
   "python.linting.enabled": true,
-  "python.linting.flake8Enabled": true,
+  "python.linting.flake8Enabled": false,
   "[python]": {
     "editor.defaultFormatter": "ms-python.black-formatter"
   },
   "isort.check": true,
   "isort.severity": {
     "E": "Warning"
-  }
+  },
+  "python.linting.pylintEnabled": true
 }

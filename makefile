@@ -30,12 +30,13 @@ deepclean: clean
 
 ###### TESTING #######
 
-TESTING=openAI
+TESTING=test
 
 testinit:
 	pip install -e .
 	pip install --no-cache-dir --upgrade pip wheel
 	pip install -r ./requirements.txt
+	cd src/autonomous/app_template && make debug
 
 test: testinit
 	python -m pytest -k "test_$(TESTING)"
