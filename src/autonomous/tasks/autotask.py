@@ -8,6 +8,38 @@ from rq.job import Job
 from autonomous import log
 
 
+class AutoTask:
+    def __init__(self, job):
+        self.job = job
+
+    @property
+    def id(self):
+        return self.job.id
+
+    @property
+    def status(self):
+        return self.job.get_status()
+
+    @property
+    def running(self):
+        return self.status == "running"
+
+    @property
+    def finished(self):
+        return self.status == "finished"
+
+    @property
+    def failed(self):
+        return self.status == "failed"
+
+    def result(self):
+        return self.job.latest_result()
+
+    @property
+    def return_value(self):
+        return self.job.return_value()
+
+
 class AutoTasks:
     _connection = None
     queue = None
@@ -20,37 +52,6 @@ class AutoTasks:
         "username": os.environ.get("REDIS_USERNAME"),
         "db": os.environ.get("REDIS_DB", ""),
     }
-
-    class AutoTask:
-        def __init__(self, job):
-            self.job = job
-
-        @property
-        def id(self):
-            return self.job.id
-
-        @property
-        def status(self):
-            return self.job.get_status()
-
-        @property
-        def running(self):
-            return self.status == "running"
-
-        @property
-        def finished(self):
-            return self.status == "finished"
-
-        @property
-        def failed(self):
-            return self.status == "failed"
-
-        def result(self):
-            return self.job.latest_result()
-
-        @property
-        def return_value(self):
-            return self.job.return_value()
 
     def __init__(self, queue="default", num_workers=3):
         if not AutoTasks._connection:
@@ -70,7 +71,7 @@ class AutoTasks:
             )
         AutoTasks.queue = Queue(queue, connection=AutoTasks._connection)
 
-    def task(self, job, *args, **kwargs):
+    def task(self, func, *args, **kwargs):
         """
         :param job: job function
         :param args: job function args
@@ -78,12 +79,19 @@ class AutoTasks:
         args and kwargs: use these to explicitly pass arguments and keyword to the underlying job function. This is useful if your function happens to have conflicting argument names with RQ, for example description or ttl.
         :return: job
         """
-        job = AutoTasks.queue.enqueue(job, *args, **kwargs)
-        AutoTasks.all_tasks.append(self.AutoTask(job))
+        print("task 1", func)
+        job = AutoTasks.queue.enqueue(func, *args, **kwargs)
+        print("task 2", job.id)
+        AutoTasks.all_tasks.append(AutoTask(job))
+        print("task 3", job.id)
         with ProcessPoolExecutor() as executor:
-            executor.submit(create_worker, AutoTasks.queue.name)
-            # log(result)
-        return self.AutoTask(job)
+            print("task 4", job.id)
+            worker = Worker(
+                [AutoTasks.queue.name], connection=Redis(**AutoTasks.config)
+            )
+            executor.submit(worker.work, burst=True)
+        print("task 5", job.id)
+        return AutoTask(job)
 
     # get job given its id
     def get_task(self, job_id):
@@ -99,5 +107,7 @@ class AutoTasks:
         AutoTasks.queue.empty()
 
 
-def create_worker(queue):
-    Worker([queue], connection=Redis(**AutoTasks.config)).work(burst=True)
+# if __name__ == "__main__":
+#     autotasks = AutoTasks()
+#     for _ in range(autotasks.workers):
+#         create_worker(autotasks.queue.name)

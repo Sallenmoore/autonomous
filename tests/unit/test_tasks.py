@@ -9,6 +9,14 @@ from autonomous import log
 from autonomous.tasks import AutoTasks
 
 
+def mylongtask():
+    job = get_current_job()
+    print(f"\nCurrent job 1: {job.id}")
+    time.sleep(10)
+    print(f"\nCurrent job 2: {job.id}")
+    return job.id
+
+
 def mytask(a, b):
     job = get_current_job()
     print(f"\nCurrent job: {job.id}")
@@ -40,6 +48,15 @@ class TestAutoTasks:
         assert tasks._connection.ping()
         assert tasks.queue
         assert tasks.queue.job_ids == []
+
+    def test_autotask_concurrency(self):
+        tasks = AutoTasks()
+        tasks.clear()
+        job = tasks.task(mylongtask)
+        log(job.id)
+        job = tasks.task(mylongtask)
+        log(job.id)
+        assert job.id
 
     def test_autotask_add(self):
         tasks = AutoTasks()

@@ -84,7 +84,7 @@ class Table:
         try:
             self.index.info()
         except Exception as e:
-            log(e)
+            # log(e)
             schema = []
             for attr, data_type in search_terms.items():
                 if attr in self.schema:
@@ -107,7 +107,7 @@ class Table:
                 ),
                 temporary=60 * 60 * 24 * 7,  # set indexes to expire in 1 week
             )
-        log(search_terms, self.index_name, self.index.info())
+        # log(search_terms, self.index_name, self.index.info())
         matches = []
         for k, v in search_terms.items():
             query = Query(f"@{k}:{v}")
@@ -123,7 +123,7 @@ class Table:
             obj = self._db.json().get(f"{self.name}:{pk}", Path.root_path())
         except Exception as e:
             obj = None
-            log(f"no object found with pk:{pk}")
+            # log(f"no object found with pk:{pk}")
         return obj
 
     def all(self):
@@ -136,7 +136,7 @@ class Table:
         :rtype: _type_
         """
         keys = self._db.keys(f"{self.name}:*")
-        log(keys)
+        # log(keys)
         return self._db.json().mget(keys, Path.root_path()) if keys else []
 
     def __str__(self):
