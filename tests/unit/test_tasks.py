@@ -84,7 +84,9 @@ class TestAutoTasks:
         tasks.clear()
         job = tasks.task(mytask, 5, 7)
         time.sleep(10)
-        log(job.status)
+        while job.status not in ["finished", "failed"]:
+            time.sleep(1)
+            print(job.status)
         assert job.return_value == 12
 
     def test_autotask_all(self):

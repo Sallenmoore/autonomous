@@ -30,7 +30,7 @@ deepclean: clean
 
 ###### TESTING #######
 
-TESTING=autotask_concurrency
+TESTING=tasks
 
 testinit:
 	pip install -e .

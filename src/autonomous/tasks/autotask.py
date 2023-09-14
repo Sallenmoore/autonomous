@@ -1,5 +1,6 @@
+import importlib
 import os
-from concurrent.futures import ProcessPoolExecutor
+import subprocess
 
 from redis import Redis
 from rq import Queue, Worker
@@ -22,22 +23,26 @@ class AutoTask:
 
     @property
     def running(self):
-        return self.status == "running"
+        return self.job.status == "running"
 
     @property
     def finished(self):
-        return self.status == "finished"
+        result = self.job.status == "finished"
+        return result
 
     @property
     def failed(self):
-        return self.status == "failed"
+        result = self.job.status == "failed"
+        return result
 
     def result(self):
-        return self.job.latest_result()
+        result = self.job.latest_result()
+        return result
 
     @property
     def return_value(self):
-        return self.job.return_value()
+        result = self.job.return_value()
+        return result
 
 
 class AutoTasks:
@@ -50,7 +55,7 @@ class AutoTasks:
         "port": os.environ.get("REDIS_PORT", ""),
         "password": os.environ.get("REDIS_PASSWORD"),
         "username": os.environ.get("REDIS_USERNAME"),
-        "db": os.environ.get("REDIS_DB", ""),
+        "db": os.environ.get("REDIS_DB", 0),
     }
 
     def __init__(self, queue="default", num_workers=3):
@@ -79,32 +84,47 @@ class AutoTasks:
         args and kwargs: use these to explicitly pass arguments and keyword to the underlying job function. This is useful if your function happens to have conflicting argument names with RQ, for example description or ttl.
         :return: job
         """
-        print("task 1", func)
         job = AutoTasks.queue.enqueue(func, *args, **kwargs)
-        print("task 2", job.id)
-        AutoTasks.all_tasks.append(AutoTask(job))
-        print("task 3", job.id)
-        with ProcessPoolExecutor() as executor:
-            print("task 4", job.id)
-            worker = Worker(
-                [AutoTasks.queue.name], connection=Redis(**AutoTasks.config)
-            )
-            executor.submit(worker.work, burst=True)
-        print("task 5", job.id)
-        return AutoTask(job)
+        self.create_worker(func)
+        new_task = AutoTask(job)
+        AutoTasks.all_tasks.append(new_task)
+        return new_task
+
+    def create_worker(self, func):
+        # Get the module containing the target_function
+        module = func.__module__
+
+        # Get the file path of the module
+        module_path = importlib.import_module(module).__file__
+
+        # Set the PYTHONPATH environment variable
+        pythonpath = os.path.dirname(module_path)
+        env = os.environ.copy()
+        env["PYTHONPATH"] = pythonpath
+
+        rq_user_pass = f"{self.config['username']}:{self.config['password']}"
+        rq_url = f"{self.config['host']}:{self.config['port']}"
+        rq_db = self.config["db"]
+        rq_worker_command = (
+            f"rq worker --url redis://{rq_user_pass}@{rq_url}/{rq_db} --burst"
+        )
+
+        worker = subprocess.Popen(rq_worker_command, shell=True, env=env)
+        self.workers.append(worker)
 
     # get job given its id
     def get_task(self, job_id):
         # breakpoint()
-        job = AutoTasks.queue.fetch_job(job_id)
-        return self.AutoTask(job)
+        task = AutoTasks.queue.fetch_job(job_id)
+        return AutoTask(task)
 
     # get job given its id
     def get_tasks(self):
-        return AutoTasks.all_tasks
+        return [AutoTask(w) for w in Worker.all(queue=AutoTasks.queue)]
 
     def clear(self):
         AutoTasks.queue.empty()
+        AutoTasks.all_tasks = []
 
 
 # if __name__ == "__main__":
