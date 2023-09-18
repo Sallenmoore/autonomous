@@ -1,7 +1,8 @@
 import inspect
 import logging
 import os
-import pprint
+
+from icecream import ic
 
 # class LogFilter(logging.Filter):
 #     def filter(self, record):
@@ -27,19 +28,28 @@ class Logger:
         self.logger = logging.getLogger("gunicorn.error")
         level = os.environ.get("LOG_LEVEL") or self.logger.level
         self.logger.setLevel(log_levels[level])
+        prefix = f"{os.environ.get('APP_NAME ', 'APP')}| "
+        ic.configureOutput(prefix=prefix)
+        self.enabled = True
 
     def set_level(self, level):
         self.logger.setLevel(log_levels[level])
 
+    def enable(self, enable=True):
+        self.enabled = enable
+
     def __call__(self, *args, **kwargs):
-        caller = inspect.stack()[1]
-        fn = caller.filename.split("/")[-1]
-        msg = f"\n{'='*40}\n{fn}:{caller.function}()::{caller.lineno}\n\n"
-        if kwargs:
-            args = list(args)
-            args += [{k: v} for k, v in kwargs.items()]
-        msg += "\n\n=====\n\n".join([pprint.pformat(a, indent=4) for a in args])
-        self.logger.log(self.logger.level, f"{msg}\n")
+        if self.enabled:
+            caller = inspect.stack()[1]
+            fn = caller.filename.split("/")[-1]
+            msg = f"\n\n{'='*20}\t{fn}:{caller.function}()::{caller.lineno}\t{'='*20}\n"
+            if args:
+                msg += "\n========\n"
+                msg += ic.format(args)
+            if kwargs:
+                msg += "\n========\n"
+                msg += ic.format(kwargs)
+            self.logger.log(self.logger.level, f"{msg}\n")
 
 
 log = Logger()

@@ -6,8 +6,9 @@
 
 Flask 
 
-##### Configuration and Documentation #####
+##### Debugging, Logging, and Documentation #####
 
+icecream
 
 ##### System #####
 
@@ -18,10 +19,6 @@ python-dotenv
 
 PyGithub
 pygit2
-
-boto3
-
-tinyDB
 
 cloudinary
 
