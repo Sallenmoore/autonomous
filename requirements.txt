@@ -35,6 +35,7 @@ gunicorn
 
 ##### Security #####
 
+Authlib
 
 ##### Async ##### 
 rq

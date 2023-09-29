@@ -18,8 +18,8 @@ class WikiJS:
 
     @classmethod
     def make_request(cls, query, obj_vars=None):
-        log(query)
-        log(**obj_vars)
+        # log(query)
+        # log(**obj_vars)
 
         variables = json.dumps(obj_vars)
 

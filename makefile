@@ -30,7 +30,7 @@ deepclean: clean
 
 ###### TESTING #######
 
-TESTING=wikijs
+TESTING=auth
 
 testinit:
 	pip install -e .
