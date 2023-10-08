@@ -19,7 +19,10 @@ class AutoTask:
 
     @property
     def status(self):
-        return self.job.get_status()
+        status = self.job.get_status()
+        if status in ["running", "queued", "started"]:
+            return "running"
+        return status
 
     @property
     def running(self):

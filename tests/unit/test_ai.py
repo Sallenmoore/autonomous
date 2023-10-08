@@ -3,7 +3,7 @@ import json
 import pytest
 
 from autonomous import log
-from autonomous.apis import OpenAI
+from autonomous.ai import OpenAI
 
 
 # @pytest.mark.skip(reason="OpenAI API is not free")
@@ -63,3 +63,13 @@ class TestOpenAI:
         # log(result)
         assert result
         open("tests/assets/summary.txt", "w").write(result)
+
+
+# class TestAutoTeam:
+
+#     def test_create_team(self):
+
+#         aiteam = autoteam.AutoTeam()
+#         for agent in aiteam_config["agents"]:
+#             aiteam.create_assistant(agent["name"], agent["role"])
+#         aiteam.build(aiteam_config["prompt"])

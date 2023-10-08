@@ -16,6 +16,11 @@ class TestWikiJS:
             "tags": ["devtest"],
         }
 
+    def test_create_page(self):
+        result = WikiJS.create_page(**self._get_page_data())
+        log(result)
+        assert result
+
     def test_pull_tagged(self):
         results = WikiJS.pull_tagged(["fishing"])
         log(results)
@@ -34,27 +39,15 @@ class TestWikiJS:
             assert page
 
     def test_find_by_path(self):
-        result = WikiJS.find_by_path("test/test")
+        data = self._get_page_data()
+        WikiJS.create_page(**data)
+        result = WikiJS.find_by_path(data["path"])
         log(result)
         assert result
 
         result = WikiJS.find_by_path("test/sdagffssfsrgha")
         log(result)
         assert not result
-
-    def test_create_page(self):
-        markdown = """
-        # Test
-        this is a test page
-
-        ## Subheading
-
-        - let's make sure everything works
-        """
-
-        result = WikiJS.create_page(**self._get_page_data())
-        log(result)
-        assert result
 
     def test_update_page(self):
         page = WikiJS.create_page(**self._get_page_data())

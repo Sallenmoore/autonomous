@@ -135,7 +135,8 @@ class AutoModel(ABC):
         Returns:
             AutoModel or None: The first matching AutoModel instance, or None if not found.
         """
-        return cls.table().find(**kwargs)
+        attribs = cls.table().find(**kwargs)
+        return cls(**attribs) if attribs else None
 
     def delete(self):
         """

@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from autonomous import log
 from autonomous.db.autodb import Database
 
 
@@ -46,8 +47,8 @@ class TestDatabase:
     def test_db_read(self):
         self.db.clear()
         t = RecordTest()
-        t.pk = self.db.save(t.__dict__)
-        model = self.db.get(t.pk)
+        pk = self.db.save(t.__dict__)
+        model = self.db.get(pk)
         assert isinstance(model, dict)
         obj = RecordTest(**model)
         # log(obj)
@@ -72,7 +73,7 @@ class TestDatabase:
         t.num = 6
         self.db.save(t.__dict__)
         model = self.db.get(t.pk)
-        # log(type(model), model)
+        log(type(model), model)
         assert isinstance(model, dict)
         obj = RecordTest(**model)
         assert obj.pk == t.pk

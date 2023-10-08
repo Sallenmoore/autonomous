@@ -30,7 +30,7 @@ deepclean: clean
 
 ###### TESTING #######
 
-TESTING=auth
+TESTING=db
 
 testinit:
 	pip install -e .

@@ -43,6 +43,7 @@ rq-dashboard
 
 ##### AI #####
 
+pyautogen
 openai
 
 ##### Parsing #####
