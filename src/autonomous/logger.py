@@ -27,7 +27,7 @@ class Logger:
     def __init__(self):
         self.logger = logging.getLogger("gunicorn.error")
         level = os.environ.get("LOG_LEVEL") or self.logger.level
-        self.logger.setLevel(log_levels[level])
+        self.logger.setLevel(log_levels.get(level, "DEBUG"))
         prefix = f"{os.environ.get('APP_NAME ', 'APP')}| "
         ic.configureOutput(prefix=prefix)
         self.enabled = True
