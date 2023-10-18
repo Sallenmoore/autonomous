@@ -18,8 +18,8 @@ class WikiJS:
 
     @classmethod
     def make_request(cls, query, obj_vars=None):
-        # log(query)
-        # log(**obj_vars)
+        log(query)
+        log(**obj_vars)
 
         variables = json.dumps(obj_vars)
 
@@ -30,6 +30,9 @@ class WikiJS:
         )
         if response.status_code != 200:
             raise Exception(response.text)
+
+        log(response.text)
+
         return response
 
     @classmethod

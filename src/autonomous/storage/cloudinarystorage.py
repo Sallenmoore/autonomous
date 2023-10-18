@@ -44,7 +44,7 @@ class CloudinaryStorage:
             try:
                 cloudinary.api.subfolders(f"{folder}")
             except cloudinary.exceptions.NotFound as e:
-                log(f"{e} -- Creating folder {folder}")
+                # log(f"{e} -- Creating folder {folder}")
                 cloudinary.api.create_folder(folder)
             finally:
                 kwargs["asset_folder"] = folder

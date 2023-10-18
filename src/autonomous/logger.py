@@ -43,11 +43,10 @@ class Logger:
             caller = inspect.stack()[1]
             fn = caller.filename.split("/")[-1]
             msg = f"\n\n{'='*20}\t{fn}:{caller.function}()::{caller.lineno}\t{'='*20}\n"
+            msg += "\n========\n"
             if args:
-                msg += "\n========\n"
                 msg += ic.format(args)
             if kwargs:
-                msg += "\n========\n"
                 msg += ic.format(kwargs)
             self.logger.log(self.logger.level, f"{msg}\n")
 

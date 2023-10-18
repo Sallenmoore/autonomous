@@ -1,6 +1,3 @@
-from dataclasses import dataclass
-
-
 class WikiJSPage:
     def __init__(self, **kwargs):
         self.title: str = kwargs.get("title")
