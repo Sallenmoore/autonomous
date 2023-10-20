@@ -42,7 +42,7 @@ class AutoTeam:
             .rstrip()
             .endswith("TERMINATE"),
             code_execution_config={
-                "work_dir": "coding",
+                "work_dir": "tmp",
                 "use_docker": False,  # set to True or image name like "python:3" to use docker
             },
         )
@@ -74,7 +74,9 @@ class AutoTeam:
         # the assistant receives a message from the user_proxy, which contains the task description
 
         groupchat = autogen.GroupChat(
-            agents=list(self.agents.values()), messages=[], max_round=self.max_round
+            agents=list(self.agents.values()),
+            messages=[message],
+            max_round=self.max_round,
         )
         self.manager = autogen.GroupChatManager(
             groupchat=groupchat,

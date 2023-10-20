@@ -17,13 +17,11 @@ package: clean
 ###### CLEANING #######
 
 clean:
-	rm -rf dist
 	rm -rf .pytest_cache .coverage dist
-
-deepclean: clean
 	sudo docker ps -a
 	-sudo docker kill $(CONTAINERS)
-	sudo docker ps -a
+
+deepclean: clean
 	-sudo docker container prune -f
 	-sudo docker image prune -f
 	-sudo docker system prune -a -f --volumes
@@ -32,15 +30,16 @@ deepclean: clean
 
 TESTING=db
 
-testinit:
-	pip install -e .
+testinit: clean
 	pip install --no-cache-dir --upgrade pip wheel
-	pip install -r ./requirements.txt
+	pip install --upgrade -r ./requirements.txt
+	pip install --upgrade -r ./requirements_dev.txt
+	pip install -e .
 
-test: testinit
+test:
 	python -m pytest -k "test_$(TESTING)" -s
 
-testauto: testinit
+testauto:
 	python -m pytest
 
 testapp:

@@ -125,8 +125,10 @@ class WikiJS:
         """
 
         res = cls.make_request(query, obj_vars)
-        # log(res.json())
-        return WikiJSPage(**(res.json()["data"]["pages"]["create"]["page"]))
+        results = res.json()["data"]["pages"]["create"]["page"]
+        print(f"results: {results}")
+        result = WikiJSPage(**results)
+        return result
 
     @classmethod
     def update_page(cls, id, **kwargs):
@@ -174,8 +176,10 @@ class WikiJS:
         """
 
         res = cls.make_request(query, obj_vars)
-        # log(res.json())
-        return WikiJSPage(**(res.json()["data"]["pages"]["update"]["page"]))
+        log(res)
+        print(f"res {res.json()}")
+        result = WikiJSPage(**(res.json()["data"]["pages"]["update"]["page"]))
+        return result
 
     @classmethod
     def find_by_title(cls, title):

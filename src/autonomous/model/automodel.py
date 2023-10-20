@@ -10,6 +10,50 @@ from autonomous import log
 from .orm import ORM
 
 
+class DelayedModel:
+    def __init__(self, model, pk):
+        self._delayed_model = model
+        self._delayed_pk = pk
+        self._delayed_obj = None
+
+    def _create_instance(self):
+        if self._delayed_obj is None:
+            self._delayed_obj = self._delayed_model.get(self._delayed_pk)
+
+    def __getattribute__(self, name):
+        if name in [
+            "_delayed_model",
+            "_delayed_pk",
+            "_delayed_obj",
+            "_create_instance",
+        ]:
+            return object.__getattribute__(self, name)
+        self._create_instance()
+        return getattr(self._delayed_obj, name)
+
+    def __getattr__(self, attr):
+        self._create_instance()
+        return getattr(self._delayed_obj, attr)
+
+    def __setattr__(self, name, value):
+        if name in ["_delayed_model", "_delayed_pk", "_delayed_obj"]:
+            object.__setattr__(self, name, value)
+        else:
+            self._create_instance()
+            setattr(self._delayed_obj, name, value)
+
+    def __delattr__(self, name):
+        if name in ["_delayed_model", "_delayed_pk", "_delayed_obj"]:
+            object.__delattr__(self, name)
+        else:
+            if not self._delayed_obj:
+                self._delayed_obj = self._delayed_model.get(self._delayed_pk)
+            delattr(self._delayed_obj, name)
+
+    def __repr__(self):
+        return f"<DelayedModel {self._delayed_model.__name__} {self._delayed_pk}>"
+
+
 class AutoModel(ABC):
     attributes = {}
     _table_name = ""
@@ -36,14 +80,26 @@ class AutoModel(ABC):
         # set default attributes
         cls.attributes["pk"] = None
         cls.attributes["last_updated"] = datetime.now()
-        # log(f"Creating {cls.__name__}")
+
+        # Get model data from database
         obj.pk = kwargs.pop("pk", None)
         result = cls.table().get(obj.pk) or {}
+
+        # set object attributes
         for k, v in cls.attributes.items():
+            # set attribute from db or set to default value
             setattr(obj, k, result.get(k, v))
+
+        # update model with keyword arguments
         obj.__dict__ |= kwargs
+
         # log(obj, kwargs)
-        cls._deserialize(obj.__dict__)
+        data = copy.deepcopy(obj.__dict__)
+        data.pop("_automodel", None)
+        obj.__dict__ |= cls._deserialize(data)
+
+        obj.last_updated = datetime.now()
+
         return obj
 
     @classmethod
@@ -144,20 +200,26 @@ class AutoModel(ABC):
         """
         self.table().delete(pk=self.pk)
 
+    serialized_tracker = []
+
     @classmethod
-    def _serialize(self, val):
+    def _serialize(cls, val):
         if isinstance(val, list):
-            for i, v in enumerate(val):
-                val[i] = self._serialize(v)
+            new_list = []
+            for v in val:
+                obj = cls._serialize(v)
+                new_list.append(obj)
+            val = new_list
         elif isinstance(val, dict):
+            new_dict = {}
             for k, v in val.items():
-                val[k] = self._serialize(v)
+                new_dict[k] = cls._serialize(v)
+            val = new_dict
         elif isinstance(val, datetime):
             val = {"_datetime": val.isoformat()}
-        elif issubclass(val.__class__, AutoModel):
-            val.save()
+        elif issubclass(val.__class__, (AutoModel, DelayedModel)):
             val = {
-                "_pk": val.pk,
+                "pk": val.pk,
                 "_automodel": val.model_name(),
             }
 
@@ -170,16 +232,17 @@ class AutoModel(ABC):
         Returns:
             dict: A dictionary representation of the serialized model.
         """
-        return self._serialize(copy.deepcopy(self.__dict__))
+
+        result = self._serialize(self.__dict__)
+        return result | {
+            "_automodel": self.model_name(),
+        }
 
     @classmethod
     def _deserialize(cls, val):
         if isinstance(val, dict):
             if "_automodel" in val:
-                for model in AutoModel.__subclasses__():
-                    if model.model_name() == val["_automodel"]:
-                        val = model.get(val["_pk"])
-                        break
+                val = DelayedModel(cls, val["pk"])
             elif "_datetime" in val:
                 val = datetime.fromisoformat(val["_datetime"])
             else:
@@ -201,4 +264,7 @@ class AutoModel(ABC):
         Returns:
             AutoModel: A deserialized AutoModel instance.
         """
+        if "_automodel" not in vars:
+            raise ValueError("Cannot only deserialize automodel objects")
+
         return cls(**vars)

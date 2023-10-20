@@ -52,7 +52,7 @@ class CloudinaryStorage:
         try:
             response = cloudinary.uploader.upload(file, **kwargs)
         except Exception as e:
-            log(f"Cloudinary Storage upload error: {response}")
+            log(f"Cloudinary Storage upload error")
             raise e
 
         return {"asset_id": response["asset_id"], "url": response["url"], "raw": None}

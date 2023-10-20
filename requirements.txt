@@ -51,4 +51,4 @@ openai
 validators
 dateparser
 python-slugify
-markdown
+pypandoc_binary
