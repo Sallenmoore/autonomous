@@ -81,7 +81,8 @@ class ObjMD:
     model = {
         "title": "test",
         "description": "test",
-        "tags": ["test"],
+        "listitems": ["test"],
+        "nesteditems": ["test", [1, 2, 3]],
         "content": {"test": "test"},
         "nested": {
             "test": {
@@ -99,20 +100,6 @@ class ObjMD:
         return copy.deepcopy(self.model)
 
 
-class TestMarkdownParser:
-    """
-    Parses a record into Markdown
-    """
-
-    model = ObjMD()
-
-    def test_parse(self):
-        result = MarkdownParser(self.model.serialize()).parse()
-        log(result)
-        assert "##" in result
-        assert "-" in result
-
-
 class TestPage:
     """
     Creates a Page object that can be converted to amrkdown and pushed to a wiki
@@ -125,6 +112,12 @@ class TestPage:
     """
 
     model = ObjMD()
+
+    def test_parse(self):
+        result = MarkdownParser(self.model.serialize()).parse()
+        log(result)
+        assert "##" in result
+        assert "-" in result
 
     def test_convert(self):
         """

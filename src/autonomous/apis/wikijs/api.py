@@ -18,8 +18,8 @@ class WikiJS:
 
     @classmethod
     def make_request(cls, query, obj_vars=None):
-        log(query)
-        log(**obj_vars)
+        # log(query)
+        # log(**obj_vars)
 
         variables = json.dumps(obj_vars)
 
@@ -31,7 +31,7 @@ class WikiJS:
         if response.status_code != 200:
             raise Exception(response.text)
 
-        log(response.text)
+        # log(response.text)
 
         return response
 
@@ -126,7 +126,9 @@ class WikiJS:
 
         res = cls.make_request(query, obj_vars)
         results = res.json()["data"]["pages"]["create"]["page"]
-        print(f"results: {results}")
+        if not results:
+            log(f"results: {res.json()['data']['pages']['create']['responseResult']}")
+            return
         result = WikiJSPage(**results)
         return result
 
@@ -176,9 +178,11 @@ class WikiJS:
         """
 
         res = cls.make_request(query, obj_vars)
-        log(res)
-        print(f"res {res.json()}")
-        result = WikiJSPage(**(res.json()["data"]["pages"]["update"]["page"]))
+        results = res.json()["data"]["pages"]["update"]["page"]
+        if not results:
+            log(f"results: {res.json()['data']['pages']['create']['responseResult']}")
+            return
+        result = WikiJSPage(**results)
         return result
 
     @classmethod

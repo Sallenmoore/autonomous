@@ -28,7 +28,7 @@ deepclean: clean
 
 ###### TESTING #######
 
-TESTING=db
+
 
 testinit: clean
 	pip install --no-cache-dir --upgrade pip wheel
@@ -36,8 +36,9 @@ testinit: clean
 	pip install --upgrade -r ./requirements_dev.txt
 	pip install -e .
 
+TESTING="TestPage"
 test:
-	python -m pytest -k "test_$(TESTING)" -s
+	python -m pytest -k "$(TESTING)" -s
 
 testauto:
 	python -m pytest
