@@ -1,0 +1,21 @@
+{
+    "seed": 42,
+    "max_round": 20,
+    "temperature": 0,
+    "input_mode": "NEVER",
+    "max_reply": 10,
+    "agents": [
+        {
+            "name": "GraphicDesigner",
+            "role": "Create an interesting image that correspond with the scene description created by the other agent"
+        },
+        {
+            "name": "Plotter",
+            "role": "Develop and describe an intense scene between characters created by the character agent that suggest an much larger plot"
+        },
+        {
+            "name": "Characterizer",
+            "role": "Create 3 characters with backstories, descriptions, and personalities that can be used by the other agents to create a scene"
+        }
+    ]
+}

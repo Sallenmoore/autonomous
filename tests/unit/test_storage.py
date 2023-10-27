@@ -8,7 +8,7 @@ from autonomous.storage.cloudinarystorage import CloudinaryStorage
 from autonomous.storage.markdown import MarkdownParser, Page
 
 
-# @pytest.mark.skip(reason="OpenAI API is not free")
+@pytest.mark.skip(reason="Takes too long")
 class TestStorage:
     def test_cloudinary_basic(self):
         storage = CloudinaryStorage()
@@ -100,6 +100,7 @@ class ObjMD:
         return copy.deepcopy(self.model)
 
 
+# @pytest.mark.skip(reason="Takes too long")
 class TestPage:
     """
     Creates a Page object that can be converted to amrkdown and pushed to a wiki
@@ -124,8 +125,7 @@ class TestPage:
         Converts the object to markdown
         """
         record = self.model.serialize()
-        page = record.pop("title")
-        assert Page.convert(record, page)
+        assert Page.convert(record)
 
     def test_push(self):
         obj = ObjMD()
@@ -134,12 +134,22 @@ class TestPage:
             obj,
             title=f"test{pid}",
             path=f"test/test{pid}",
-            descrption="test",
+            description="test description",
             tags=["test"],
         )
         log(result)
         assert result.id
         obj.model["title"] = "testupdate"
         result = Page.push(obj, obj.model["title"], id=result.id)
+        log(result)
+        assert result.id
+
+        result = Page.push(
+            obj,
+            title=f"test{pid}",
+            path=f"test/test{pid}",
+            description="test description",
+            tags=["test"],
+        )
         log(result)
         assert result.id

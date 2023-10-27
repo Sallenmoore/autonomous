@@ -86,6 +86,15 @@ class WikiJS:
 
     @classmethod
     def create_page(cls, title, content, description, tags, path):
+        if page := cls.find_by_path(path):
+            return cls.update_page(
+                page.id,
+                title=title,
+                content=content,
+                description=description,
+                tags=tags,
+            )
+
         obj_vars = {
             "title": title,
             "content": content,
@@ -128,7 +137,7 @@ class WikiJS:
         results = res.json()["data"]["pages"]["create"]["page"]
         if not results:
             log(f"results: {res.json()['data']['pages']['create']['responseResult']}")
-            return
+            return res.json()["data"]["pages"]["create"]["responseResult"]
         result = WikiJSPage(**results)
         return result
 
@@ -234,14 +243,10 @@ class WikiJS:
                 }
             }
             """
-        log(query, path)
         response = cls.make_request(query, {"path": path})
         log(response.json())
-        result = response.json()["data"]["pages"]["singleByPath"]
-
-        if result:
-            return result["id"]
-        return None
+        results = response.json()["data"]["pages"]["singleByPath"]
+        return WikiJSPage(**results) if results else None
 
     @classmethod
     def remove_page(cls, id):

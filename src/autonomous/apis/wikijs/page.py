@@ -1,3 +1,6 @@
+import json
+
+
 class WikiJSPage:
     def __init__(self, **kwargs):
         self.title: str = kwargs.get("title")
@@ -11,3 +14,6 @@ class WikiJSPage:
         for t in kwargs.get("tags", []):
             if title := t.get("title"):
                 self.tags.append(title)
+
+    def __repr__(self):
+        return json.dumps(self.__dict__, indent=4)

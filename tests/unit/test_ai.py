@@ -4,6 +4,7 @@ import pytest
 
 from autonomous import log
 from autonomous.ai import OpenAI
+from autonomous.ai import AutoTeam
 
 
 @pytest.mark.skip(reason="OpenAI API is not free")
@@ -65,11 +66,11 @@ class TestOpenAI:
         open("tests/assets/summary.txt", "w").write(result)
 
 
-# class TestAutoTeam:
-
-#     def test_create_team(self):
-
-#         aiteam = autoteam.AutoTeam()
-#         for agent in aiteam_config["agents"]:
-#             aiteam.create_assistant(agent["name"], agent["role"])
-#         aiteam.build(aiteam_config["prompt"])
+@pytest.mark.skip(reason="OpenAI API is not free")
+class TestAutoTeam:
+    def test_create_team(self):
+        aiteam = AutoTeam()
+        aiteam.generate("The first paragraph of the start of an epic sci-fi story")
+        log(aiteam.solution)
+        aiteam = AutoTeam()
+        aiteam.build("The first scene of the start of an epic sci-fi story")

@@ -26,14 +26,16 @@ class AutoTeam:
     ]
 
     def __init__(self, config_path=None):
-        with open(config_path, "r") as f:
-            aiteam_config = json.load(f)
+        aiteam_config = {}
+        if config_path:
+            with open(config_path, "r") as f:
+                aiteam_config = json.load(f)
         self.seed = aiteam_config.get("seed", 42)
         self.max_round = aiteam_config.get("max_round", 20)
         self.temperature = aiteam_config.get("temperature", 0)
         self.input_mode = aiteam_config.get("input_mode", "NEVER")
         self.max_reply = aiteam_config.get("max_reply", 10)
-
+        self.agents = {}
         self.proxy = autogen.UserProxyAgent(
             name="user_proxy",
             human_input_mode=self.input_mode,
@@ -47,15 +49,26 @@ class AutoTeam:
             },
         )
 
-        self.agents = {}
-        for agent in aiteam_config.get(
+        agents = aiteam_config.get(
             "agents",
-            {
-                "name": "Assistant",
-                "role": "You are a helpful, encouraging, and genial AI Assistant.",
-            },
-        ):
+            [
+                {
+                    "name": "Assistant",
+                    "role": "You are a helpful, encouraging, and genial AI Assistant.",
+                }
+            ],
+        )
+        for agent in agents:
             self.create_assistant(agent["name"], agent["role"])
+
+    @property
+    def solution(self):
+        self.proxy.send(
+            "summarize the solution in an easy-to-understand way", self.manager
+        )
+        # return the last message the proxy received
+        last_message = self.proxy.last_message()
+        return last_message["content"] if last_message.get("content") else None
 
     def create_assistant(self, name, system_message):
         assistant = autogen.AssistantAgent(
@@ -87,10 +100,3 @@ class AutoTeam:
             },
         )
         self.proxy.initiate_chat(self.manager, message=message)
-
-    def solution(self, message):
-        self.proxy.send(
-            "summarize the solution in an easy-to-understand way", self.manager
-        )
-        # return the last message the proxy received
-        return self.proxy.last_message()["content"]

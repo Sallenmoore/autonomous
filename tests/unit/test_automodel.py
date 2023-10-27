@@ -227,3 +227,6 @@ class TestAutomodel:
 
         am_ser = am.serialize()
         assert am_ser["auto"]["pk"] == subam.pk
+        obj = Model.deserialize(am_ser)
+        assert obj.pk == am.pk
+        assert obj.auto.pk == subam.pk

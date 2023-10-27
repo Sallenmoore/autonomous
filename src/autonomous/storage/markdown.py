@@ -94,26 +94,39 @@ class Page:
     parser = MarkdownParser
 
     @classmethod
-    def convert(cls, record, title):
+    def convert(cls, record):
         """
         Converts the object to markdown
         """
-        page = {title: record}
-        return cls.parser(page).parse()
+        parser = cls.parser(record)
+        return parser.parse()
 
     @classmethod
     def push(cls, record, title, id=None, **kwargs):
         if hasattr(record, "serialize"):
             record = record.serialize()
-        content = cls.convert(record, title)
+            record = {title: record}
+        elif hasattr(record, "__dict__"):
+            record = record.__dict__
+
+        if not isinstance(record, dict):
+            raise TypeError(
+                "Record must be a dict, have a __dict__ attribute, or have a serialize() method that converts it to a dictionary"
+            )
+
+        content = cls.convert(record)
 
         if id:
-            return cls.wiki_api.update_page(id, content=content, **kwargs)
+            page = cls.wiki_api.update_page(id, content=content, **kwargs)
         else:
-            return cls.wiki_api.create_page(
+            page = cls.wiki_api.create_page(
                 title,
                 content,
                 path=kwargs["path"],
                 description=kwargs.get("description", title),
                 tags=kwargs.get("tags", []),
             )
+        if hasattr(page, "id"):
+            return page
+        else:
+            raise ValueError(f"Page not created. Response: {page}")

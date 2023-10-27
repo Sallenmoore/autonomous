@@ -1,6 +1,7 @@
 # opt : Optional[str]  # for optional attributes
 # default : Optional[str] = "value"  # for default values
 import copy
+import importlib
 import pprint
 from abc import ABC
 from datetime import datetime
@@ -12,7 +13,9 @@ from .orm import ORM
 
 class DelayedModel:
     def __init__(self, model, pk):
-        self._delayed_model = model
+        module_name, class_name = model.rsplit(".", 1)
+        module = importlib.import_module(module_name)
+        self._delayed_model = getattr(module, class_name)
         self._delayed_pk = pk
         self._delayed_obj = None
 
@@ -46,8 +49,7 @@ class DelayedModel:
         if name in ["_delayed_model", "_delayed_pk", "_delayed_obj"]:
             object.__delattr__(self, name)
         else:
-            if not self._delayed_obj:
-                self._delayed_obj = self._delayed_model.get(self._delayed_pk)
+            self._create_instance()
             delattr(self._delayed_obj, name)
 
     def __repr__(self):
@@ -59,6 +61,8 @@ class AutoModel(ABC):
     _table_name = ""
     _table = None
     _orm = ORM
+
+    __save_memo = []
 
     def __new__(cls, *args, **kwargs):
         """
@@ -134,10 +138,18 @@ class AutoModel(ABC):
         Returns:
             int: The primary key (pk) of the saved model.
         """
+        self.__class__.__save_memo.append(self.pk)
+        for attr in self.attributes:
+            val = getattr(self, attr)
+            if (
+                issubclass(val.__class__, (AutoModel, DelayedModel))
+                and val.pk not in self.__save_memo
+            ):
+                val.save()
         self.last_updated = datetime.now()
-        result = self.serialize()
-        record = {k: v for k, v in result.items() if k in self.attributes}
+        record = self.serialize()
         self.pk = self.table().save(record)
+        self.__class__.__save_memo = []
         return self.pk
 
     @classmethod
@@ -232,8 +244,8 @@ class AutoModel(ABC):
         Returns:
             dict: A dictionary representation of the serialized model.
         """
-
-        result = self._serialize(self.__dict__)
+        record = {k: v for k, v in self.__dict__.items() if k in self.attributes}
+        result = self._serialize(record)
         return result | {
             "_automodel": self.model_name(),
         }
@@ -242,7 +254,7 @@ class AutoModel(ABC):
     def _deserialize(cls, val):
         if isinstance(val, dict):
             if "_automodel" in val:
-                val = DelayedModel(cls, val["pk"])
+                val = DelayedModel(val.get("_automodel"), val.get("pk"))
             elif "_datetime" in val:
                 val = datetime.fromisoformat(val["_datetime"])
             else:
