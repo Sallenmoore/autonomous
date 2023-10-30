@@ -1,13 +1,17 @@
 import uuid
+from datetime import datetime
 from functools import wraps
 import requests
 from flask import redirect, session, current_app, request, url_for
 from authlib.integrations.requests_client import OAuth2Auth, OAuth2Session
 
 from autonomous import log
+from autonomous.auth.user import AutoUser
 
 
 class AutoAuth:
+    current_user = None
+
     def __init__(
         self,
         client_id,
@@ -26,7 +30,6 @@ class AutoAuth:
         self.client_secret = client_secret
         self.issuer = issuer
         self.redirect_uri = redirect_uri
-        log(token_endpoint)
         self.token_endpoint = token_endpoint
         self.session = OAuth2Session(
             self.client_id,
@@ -51,7 +54,6 @@ class AutoAuth:
         Handles the authentication response from the OpenID provider.
         The response should be a dictionary containing the OpenID provider's response.
         """
-        log(self.token_endpoint, response)
         token = self.session.fetch_token(
             authorization_response=response,
             state=state,
@@ -59,7 +61,6 @@ class AutoAuth:
         # log(token)
 
         userinfo = requests.get(self.req_uri, auth=OAuth2Auth(token))
-        log(userinfo.text)
         return userinfo.json(), token
 
     def auth_required(func):
@@ -81,15 +82,17 @@ class AutoAuth:
         @wraps(func)
         def decorated_view(*args, **kwargs):
             if current_app:  # with current_app.app_context():
-                log(session)
-                if (
-                    session["user"] is None
-                    or session["user"]["state"] != "authenticated"
+                log(AutoAuth.current_user, session.get("user"))
+                if AutoAuth.current_user or (
+                    session.get("user") and session["user"]["state"] == "authenticated"
                 ):
-                    log(current_app)
-                    return redirect(url_for("auth.login"))
-                else:
-                    log(current_app)
+                    AutoAuth.current_user = AutoAuth.current_user or AutoUser(
+                        pk=session["user"]["pk"]
+                    )
+                    AutoAuth.current_user.last_login = datetime.now()
+                    AutoAuth.current_user.save()
                     return func(*args, **kwargs)
+                else:
+                    return redirect(url_for("auth.login"))
 
         return decorated_view
