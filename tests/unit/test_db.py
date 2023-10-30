@@ -7,13 +7,22 @@ from autonomous import log
 from autonomous.db.autodb import Database
 
 
+class SubRecordTest:
+    attributes = {"pk": None, "name": "buh"}
+
+    def __init__(self, **kwargs):
+        self.pk = None
+        self.__dict__.update(kwargs)
+
+
 class RecordTest:
-    attributes = {"pk": None, "num": 5, "name": "buh"}
+    attributes = {"pk": None, "num": 5, "name": "buh", "sub": None}
 
     def __init__(self, **kwargs):
         self.pk = None
         self.num = 5
         self.name = "buh"
+        self.sub = None
         self.__dict__.update(kwargs)
 
 
@@ -65,6 +74,14 @@ class TestDatabase:
         assert len(self.db.search(name="buh")) == 0
         assert len(self.db.search(name="change")) == 1
         assert len(self.db.search(name="xxx")) == 0
+        sub = SubRecordTest()
+        sub.pk = self.db.save(sub.__dict__)
+        t.sub = sub.__dict__
+        self.db.save(t.__dict__)
+        result = self.db.search(pk=sub.pk, _nested_path="sub")
+        assert len(result) == 1
+        result = self.db.search(pk=000, _nested_path="sub")
+        assert len(result) == 0
 
     def test_db_update(self):
         self.db.clear()

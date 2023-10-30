@@ -171,12 +171,17 @@ class Table:
         matches = []
         for k, v in search_terms.items():
             v = escape_value(v)
+            # TODO: figure out how to search nested fields
+            if path := search_terms.get("_nested_path"):
+                k = f"{path}.{k}"
             query = Query(f"@{k}:{v}")
             results = self.index.search(query)
             matches += [json.loads(d.json) for d in results.docs]
-        for i, obj in enumerate(matches):
-            matches[i] = {k: deescape_value(v) for k, v in obj.items()}
-        return matches
+        results = {}
+        for obj in matches:
+            if obj["pk"] not in results:
+                results[obj["pk"]] = {k: deescape_value(v) for k, v in obj.items()}
+        return results.values()
 
     def get(self, pk):
         """

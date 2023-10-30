@@ -1,7 +1,7 @@
-import json
 import uuid
-
+from functools import wraps
 import requests
+from flask import redirect, session, current_app, request, url_for
 from authlib.integrations.requests_client import OAuth2Auth, OAuth2Session
 
 from autonomous import log
@@ -61,3 +61,35 @@ class AutoAuth:
         userinfo = requests.get(self.req_uri, auth=OAuth2Auth(token))
         log(userinfo.text)
         return userinfo.json(), token
+
+    def auth_required(func):
+        """
+        If you decorate a view with this, it will ensure that the current user is
+        logged in and authenticated before calling the actual view. For
+        example:
+
+            @app.route('/post')
+            @auth_required
+            def post():
+                pass
+
+        - params:
+          - func: The view function to decorate.
+            - type: function
+        """
+
+        @wraps(func)
+        def decorated_view(*args, **kwargs):
+            if current_app:  # with current_app.app_context():
+                log(session)
+                if (
+                    session["user"] is None
+                    or session["user"]["state"] != "authenticated"
+                ):
+                    log(current_app)
+                    return redirect(url_for("auth.login"))
+                else:
+                    log(current_app)
+                    return func(*args, **kwargs)
+
+        return decorated_view

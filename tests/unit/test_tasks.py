@@ -24,6 +24,13 @@ def mytask(a, b):
     return a + b
 
 
+def myfailedtask(a, b):
+    job = get_current_job()
+    print(f"\nCurrent job: {job.id}")
+    time.sleep(2)
+    return int(a) + str(b)
+
+
 # @pytest.mark.skip(reason="dumb")
 def test_connection():
     config = {
@@ -95,3 +102,13 @@ class TestAutoTasks:
         (tasks.task(mytask, 5, i) for i in range(3))
         for t in tasks.get_tasks():
             assert t.return_value or t.status == "running"
+
+    def test_autotask_fail(self):
+        tasks = AutoTasks()
+        tasks.clear()
+        task = tasks.task(myfailedtask, 5, 5)
+        while task.status == "running":
+            time.sleep(1)
+        assert task.status == "failed"
+        assert task.result["error"]
+        print(task.result["error"])

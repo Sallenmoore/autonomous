@@ -26,26 +26,36 @@ class AutoTask:
 
     @property
     def running(self):
-        return self.job.status == "running"
+        return self.status == "running"
 
     @property
     def finished(self):
-        result = self.job.status == "finished"
+        result = self.status == "finished"
         return result
 
     @property
     def failed(self):
-        result = self.job.status == "failed"
-        return result
-
-    def result(self):
-        result = self.job.latest_result()
+        result = self.status == "failed"
         return result
 
     @property
+    def result(self):
+        result = self.job.latest_result()
+        result_dict = {}
+        if not result:
+            result_dict = {"return_value": None, "error": "No job/results found"}
+        elif result.type in [result.Type.FAILED, result.Type.STOPPED]:
+            result_dict = {
+                "return_value": result.return_value,
+                "error": result.exc_string,
+            }
+        else:
+            result_dict = {"return_value": result.return_value, "error": None}
+        return result_dict
+
+    @property
     def return_value(self):
-        result = self.job.return_value()
-        return result
+        return self.result.get("return_value")
 
 
 class AutoTasks:
@@ -114,6 +124,7 @@ class AutoTasks:
 
         worker = subprocess.Popen(rq_worker_command, shell=True, env=env)
         self.workers.append(worker)
+        return worker
 
     # get job given its id
     def get_task(self, job_id):
