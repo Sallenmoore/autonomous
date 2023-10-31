@@ -24,12 +24,14 @@ class TestAuth:
         assert status
 
     def test_user(self):
-        AutoModel.table().flush_table()
+        AutoUser.table().flush_table()
         user_info = {
             "name": "test",
             "email": "test@test.com",
             "token": "testtoken",
         }
         user = AutoUser.authenticate(user_info)
+        assert user.save()
         user2 = AutoUser.authenticate(user_info)
+        assert user.pk == user2.save()
         assert user.pk == user2.pk

@@ -1,9 +1,10 @@
 import uuid
 from datetime import datetime
 from functools import wraps
+
 import requests
-from flask import redirect, session, current_app, request, url_for
 from authlib.integrations.requests_client import OAuth2Auth, OAuth2Session
+from flask import current_app, redirect, request, session, url_for
 
 from autonomous import log
 from autonomous.auth.user import AutoUser
@@ -82,15 +83,12 @@ class AutoAuth:
         @wraps(func)
         def decorated_view(*args, **kwargs):
             if current_app:  # with current_app.app_context():
-                log(AutoAuth.current_user, session.get("user"))
-                if AutoAuth.current_user or (
-                    session.get("user") and session["user"]["state"] == "authenticated"
-                ):
-                    AutoAuth.current_user = AutoAuth.current_user or AutoUser(
-                        pk=session["user"]["pk"]
-                    )
+                # log(AutoAuth.current_user, session.get("user"))
+                if session.get("user") and session["user"]["state"] == "authenticated":
+                    AutoAuth.current_user = AutoUser(**session.get("user"))
                     AutoAuth.current_user.last_login = datetime.now()
                     AutoAuth.current_user.save()
+                    session["user"] = AutoAuth.current_user.serialize()
                     return func(*args, **kwargs)
                 else:
                     return redirect(url_for("auth.login"))

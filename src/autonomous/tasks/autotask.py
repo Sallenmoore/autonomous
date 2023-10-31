@@ -48,9 +48,14 @@ class AutoTask:
             result_dict = {
                 "return_value": result.return_value,
                 "error": result.exc_string,
+                "status": self.status,
             }
         else:
-            result_dict = {"return_value": result.return_value, "error": None}
+            result_dict = {
+                "return_value": result.return_value,
+                "error": None,
+                "status": self.status,
+            }
         return result_dict
 
     @property

@@ -181,7 +181,7 @@ class Table:
         for obj in matches:
             if obj["pk"] not in results:
                 results[obj["pk"]] = {k: deescape_value(v) for k, v in obj.items()}
-        return results.values()
+        return list(results.values())
 
     def get(self, pk):
         """
