@@ -24,7 +24,7 @@ class TestAuth:
         assert status
 
     def test_user(self):
-        # AutoUser.table().flush_table()
+        AutoUser.flush_table()
         user_info = {
             "name": "test",
             "email": "test@test.com",
@@ -32,9 +32,10 @@ class TestAuth:
         }
         user = AutoUser.authenticate(user_info)
         user2 = AutoUser.authenticate(user_info)
-        assert user.pk == user2.save()
+        result = user2.save()
         assert user.pk == user2.pk
+        assert user.pk == result.pk
         user.state = "unauthenticated"
-        pk = user.save()
+        result = user.save()
         user = AutoUser.authenticate(user_info)
-        assert pk == user.pk == user2.pk
+        assert result.pk == user.pk == user2.pk

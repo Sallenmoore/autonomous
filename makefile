@@ -34,7 +34,7 @@ testinit: clean
 	pip install --upgrade -r ./requirements_dev.txt
 	pip install -e .
 
-TESTING=TestAuth
+TESTING=TestAutomodel
 test:
 	python -m pytest -k "$(TESTING)" -s
 
@@ -42,6 +42,6 @@ testauto:
 	python -m pytest
 
 testapp:
-	cd src/autonomous/app_template && make test
+	cd src/autonomous/app_template && make tests
 
 tests: testauto testapp

@@ -11,7 +11,6 @@ def test_imports():
         "autonomous.apis",
         "autonomous.assets",
         "autonomous.model.automodel",
-        "autonomous.db.autodb",
         "autonomous.logger",
     ):
         __import__(module)

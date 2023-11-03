@@ -4,7 +4,6 @@ import subprocess
 
 from redis import Redis
 from rq import Queue, Worker
-from rq.job import Job
 
 from autonomous import log
 

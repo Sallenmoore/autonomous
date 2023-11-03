@@ -4,8 +4,7 @@
 from datetime import datetime
 
 from autonomous import log
-from autonomous.model.autoattribute import AutoAttribute
-from autonomous.model.automodel import AutoModel
+from autonomous.model.automodel import AutoModel, AutoField
 
 
 class AutoUser(AutoModel):
@@ -13,13 +12,11 @@ class AutoUser(AutoModel):
     This class represents a user who can authenticate using OpenID.
     """
 
-    attributes = {
-        "name": AutoAttribute("TEXT", required=True),
-        "email": AutoAttribute("TAG", required=True),
-        "last_login": datetime.now(),
-        "state": "unauthenticated",
-        "provider": None,
-    }
+    name: str = AutoField(index=True)
+    email: str = AutoField(index=True)
+    last_login: datetime = datetime.now()
+    state: str = "unauthenticated"
+    provider: str = ""
 
     @classmethod
     def authenticate(cls, user_info, token=None):
@@ -28,7 +25,7 @@ class AutoUser(AutoModel):
         Returns a redirect URL which should be used to redirect the user to the OpenID provider for authentication.
         """
         # print(user_info)
-        user = AutoUser.find(email=user_info.get("email"))
+        user = AutoUser.find(AutoUser.email == user_info.get("email"))
         print(user, user_info)
         if not user:
             print("Creating new user...")
