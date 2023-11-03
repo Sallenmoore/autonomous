@@ -13,7 +13,9 @@ from redis.commands.json.path import Path
 from redis.commands.search.field import NumericField, TagField, TextField
 from redis.commands.search.indexDefinition import IndexDefinition, IndexType
 from redis.commands.search.query import Query
-
+from redis_om import HashModel
+from typing import Optional
+from pydantic import EmailStr
 from autonomous import log
 from autonomous.model.autoattribute import AutoAttribute
 

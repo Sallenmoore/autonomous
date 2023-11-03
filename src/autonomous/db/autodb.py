@@ -36,7 +36,7 @@ class Database:
         """
         create an interface for your database
         """
-        #log(self.username, self.password)
+        # log(self.username, self.password)
         options = {}
 
         if Database.username:

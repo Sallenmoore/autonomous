@@ -23,6 +23,8 @@ pygit2
 cloudinary
 
 redis
+redis-om
+pydantic
 
 ##### Frontend #####
 
@@ -48,7 +50,6 @@ openai
 
 ##### Parsing #####
 
-validators
 dateparser
 python-slugify
 pypandoc_binary

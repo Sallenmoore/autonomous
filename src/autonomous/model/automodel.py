@@ -8,8 +8,8 @@ from datetime import datetime
 
 from autonomous import log
 
-from .orm import ORM
 from .autoattribute import AutoAttribute
+from .orm import ORM
 
 
 class DelayedModel:
