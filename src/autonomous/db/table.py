@@ -9,13 +9,13 @@ _extended_summary_
 import json
 import uuid
 
-from autonomous.model.autoattribute import AutoAttribute
 from redis.commands.json.path import Path
 from redis.commands.search.field import NumericField, TagField, TextField
 from redis.commands.search.indexDefinition import IndexDefinition, IndexType
 from redis.commands.search.query import Query
 
 from autonomous import log
+from autonomous.model.autoattribute import AutoAttribute
 
 MAXIMUM_TAG_LENGTH = 129
 replacements = [
@@ -228,8 +228,7 @@ class Table:
             elif ruleset and ruleset.type == "TEXT":
                 query_str = f"@{k}:({v})"
 
-            # breakpoint()
-            # pass
+            log(query_str)
 
             query = Query(query_str)
             results = self._index.search(query)

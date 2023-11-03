@@ -74,6 +74,15 @@ class TestDatabase:
         assert len(self.db.search(name="buh")) == 0
         assert len(self.db.search(name="change")) == 1
         assert len(self.db.search(name="xxx")) == 0
+        t.name = "stevenallenmoore@gmail.com"
+        self.db.save(t.__dict__)
+        result = self.db.search(name="stevenallenmoore@gmail.com")
+        assert result[0]["name"] == "stevenallenmoore@gmail.com"
+
+        t.name = "ste--vena/ll\enm#oor e@gmail.com"
+        self.db.save(t.__dict__)
+        result = self.db.search(name="ste--vena/ll\enm#oor e@gmail.com")
+        assert result[0]["name"] == "ste--vena/ll\enm#oor e@gmail.com"
 
     def test_db_update(self):
         self.db.clear()

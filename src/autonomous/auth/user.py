@@ -4,8 +4,8 @@
 from datetime import datetime
 
 from autonomous import log
-from autonomous.model.automodel import AutoModel
 from autonomous.model.autoattribute import AutoAttribute
+from autonomous.model.automodel import AutoModel
 
 
 class AutoUser(AutoModel):
@@ -15,7 +15,7 @@ class AutoUser(AutoModel):
 
     attributes = {
         "name": AutoAttribute("TEXT", required=True),
-        "email": "",
+        "email": AutoAttribute("TAG", required=True),
         "last_login": datetime.now(),
         "state": "unauthenticated",
         "provider": None,
@@ -29,7 +29,7 @@ class AutoUser(AutoModel):
         """
         # print(user_info)
         user = AutoUser.find(email=user_info.get("email"))
-        print(user)
+        print(user, user_info)
         if not user:
             print("Creating new user...")
             user = AutoUser(**user_info)
@@ -40,7 +40,7 @@ class AutoUser(AutoModel):
         user.last_login = datetime.now()
         user.state = "authenticated"
         user.save()
-        print(user.pk)
+        log(user.pk)
         return user
 
     @property
