@@ -8,8 +8,8 @@ from autonomous.model.automodel import AutoModel
 
 
 class MockORM:
-    def __init__(self, model):
-        self.name = model.__name__
+    def __init__(self, name, attributes):
+        self.name = name
         self.table = {}
 
     def save(self, data):

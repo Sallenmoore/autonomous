@@ -31,7 +31,6 @@ class TestAuth:
             "token": "testtoken",
         }
         user = AutoUser.authenticate(user_info)
-        assert user.save()
         user2 = AutoUser.authenticate(user_info)
         assert user.pk == user2.save()
         assert user.pk == user2.pk

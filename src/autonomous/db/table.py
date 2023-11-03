@@ -9,13 +9,15 @@ _extended_summary_
 import json
 import uuid
 
+from autonomous.model.autoattribute import AutoAttribute
 from redis.commands.json.path import Path
-from redis.commands.search.field import NumericField, TextField
+from redis.commands.search.field import NumericField, TagField, TextField
 from redis.commands.search.indexDefinition import IndexDefinition, IndexType
 from redis.commands.search.query import Query
 
 from autonomous import log
 
+MAXIMUM_TAG_LENGTH = 129
 replacements = [
     ",",
     ".",
@@ -43,31 +45,8 @@ replacements = [
     "+",
     "=",
     "~",
+    " ",
 ]
-
-
-def escape_value(value):
-    """
-    [summary]
-    """
-    if isinstance(value, str):
-        for v in replacements:
-            idx = value.find(v)
-            if idx == 0:
-                value = value.replace(v, f"\\{v}")
-            if idx > 0 and value[idx - 1] != "\\":
-                value = value.replace(v, f"\\{v}")
-    return value
-
-
-def deescape_value(value):
-    """
-    [summary]
-    """
-    if isinstance(value, str):
-        for v in replacements:
-            value = value.replace(f"\\{v}", v)
-    return value
 
 
 class Table:
@@ -83,40 +62,99 @@ class Table:
         """
         self._db = db
         self.name = name
-        self.schema = attributes
-        self.index_name = f"idx:{self.name}"
+        # log(attributes)
+        self._rules = {}
 
-    @property
-    def index(self):
+        for k, v in attributes.items():
+            if isinstance(v, AutoAttribute):
+                self._rules[k] = v
+            elif isinstance(v, str):
+                self._rules[k] = AutoAttribute("TAG", default=v)
+            elif isinstance(v, (int, float)):
+                self._rules[k] = AutoAttribute("NUMERIC", default=v)
+            else:
+                self._rules[k] = None
+        self._index = self._get_index(f"idx:{name}")
+
+    def _get_index(self, name):
         """
         [summary]
         """
         try:
-            self._db.ft(self.index_name).info()
+            self._db.ft(name).info()
         except Exception as e:
             # log(e)
-            schema = []
-            for attr, data_type in self.schema.items():
-                if attr in self.schema:
-                    if isinstance(data_type, str):
-                        schema.append(
-                            TextField(f"$.{attr}", as_name=attr, sortable=True)
+            indexed_attrs = []
+            for k, options in self._rules.items():
+                if options:
+                    if options.type == "TEXT":
+                        indexed_attrs.append(
+                            TextField(f"$.{k}", as_name=k, sortable=True)
                         )
-                    elif isinstance(data_type, (int, float)):
-                        schema.append(
-                            NumericField(f"$.{attr}", as_name=attr, sortable=True)
+                    elif options.type == "TAG":
+                        indexed_attrs.append(
+                            TagField(f"$.{k}", as_name=k, sortable=True)
                         )
-                else:
-                    log(f"invalid index attribute: {attr}")
-
-            self._db.ft(self.index_name).create_index(
-                schema,
+                    elif options.type == "NUMERIC":
+                        indexed_attrs.append(
+                            NumericField(f"$.{k}", as_name=k, sortable=True)
+                        )
+            self._db.ft(name).create_index(
+                indexed_attrs,
                 definition=IndexDefinition(
                     prefix=[f"{self.name}:"], index_type=IndexType.JSON
                 ),
                 temporary=60 * 60 * 24 * 7,  # set indexes to expire in 1 week
             )
-        return self._db.ft(self.index_name)
+        return self._db.ft(name)
+
+    def _validate(self, k, v, decode=False, encode=False):
+        """
+        [summary]
+        """
+        # log(k, v, self._rules)
+
+        # breakpoint()
+        # pass
+        # log(k, v)
+        if rule := self._rules[k]:
+            if rule.type in ["TEXT", "TAG"]:
+                if decode:
+                    for r in replacements:
+                        v = v.replace(f"\\{r}", r)
+                elif encode:
+                    if isinstance(v, str):
+                        for r in replacements:
+                            idx = v.find(r)
+                            if idx == 0:
+                                v = v.replace(r, f"\\{r}")
+                            if idx > 0 and v[idx - 1] != "\\":
+                                v = v.replace(r, f"\\{r}")
+
+                if rule.type == "TAG":
+                    try:
+                        assert len(v) < MAXIMUM_TAG_LENGTH
+                    except:
+                        raise Exception(
+                            f"Invalid attribute value. Must be a less than 128 characters or use a 'TEXT' option, AutoAttribute('TEXT', default=''): {k}:{v}"
+                        )
+            elif rule.type == "NUMERIC":
+                if v:
+                    try:
+                        float(v)
+                    except:
+                        raise Exception(
+                            f"Invalid attribute value. Must be a number: {k}:{v}"
+                        )
+
+            if rule.required:
+                try:
+                    assert v is not None
+                except:
+                    raise Exception(
+                        f"Invalid attribute value. Must not be 'None': {k}:{v}"
+                    )
+        return v
 
     def save(self, obj):
         """
@@ -124,10 +162,14 @@ class Table:
         """
         # log(obj)
         obj["pk"] = obj.get("pk") or str(uuid.uuid4())
-        obj = {k: escape_value(v) for k, v in obj.items()}
-        # log(obj, self.count())
+        for k, v in obj.items():
+            if rule := self._rules.get(k):
+                if rule.type == "TEXT":
+                    obj[k] = self._validate(k, v, encode=True)
+                else:
+                    obj[k] = self._validate(k, v)
         self._db.json().set(f"{self.name}:{obj['pk']}", Path.root_path(), obj)
-        obj = {k: deescape_value(v) for k, v in obj.items()}
+        obj = {k: self._validate(k, v, decode=True) for k, v in obj.items()}
         return obj["pk"]
 
     def count(self):
@@ -146,8 +188,7 @@ class Table:
         """
         [summary]
         """
-        pk = escape_value(pk)
-        self._db.json().delete(f"{self.name}:{pk}", Path.root_path())
+        return self._db.json().delete(f"{self.name}:{pk}", Path.root_path())
 
     def find(self, **search_terms):
         """
@@ -169,32 +210,50 @@ class Table:
 
         # log(search_terms, self.index_name, self.index.info())
         matches = []
+
         for k, v in search_terms.items():
-            v = escape_value(v)
+            try:
+                v = self._validate(k, v, encode=True)
+            except KeyError as e:
+                log(f"Can only search indexed fields: {k}")
+                raise e
             # TODO: figure out how to search nested fields
-            if path := search_terms.get("_nested_path"):
-                k = f"{path}.{k}"
-            query = Query(f"@{k}:{v}")
-            results = self.index.search(query)
+            # if path := search_terms.get("_nested_path"):
+            #     k = f"{path}.{k}"
+
+            query_str = f"@{k}:{v}"
+            ruleset = self._rules[k]
+            if ruleset and ruleset.type == "TAG":
+                query_str = f"@{k}:{{{v}}}"
+            elif ruleset and ruleset.type == "TEXT":
+                query_str = f"@{k}:({v})"
+
+            # breakpoint()
+            # pass
+
+            query = Query(query_str)
+            results = self._index.search(query)
+            log(results)
             matches += [json.loads(d.json) for d in results.docs]
-        results = {}
-        for obj in matches:
-            if obj["pk"] not in results:
-                results[obj["pk"]] = {k: deescape_value(v) for k, v in obj.items()}
+
+        results = {
+            obj["pk"]: {k: self._validate(k, v, decode=True) for k, v in obj.items()}
+            for obj in matches
+        }
+
         return list(results.values())
 
     def get(self, pk):
         """
         [summary]
         """
-        pk = escape_value(pk)
         try:
             obj = self._db.json().get(f"{self.name}:{pk}", Path.root_path())
         except Exception as e:
             obj = None
             # log(f"no object found with pk:{pk}")
         if obj:
-            obj = {k: deescape_value(v) for k, v in obj.items()}
+            obj = {k: self._validate(k, v, decode=True) for k, v in obj.items()}
         return obj
 
     def all(self):
@@ -210,7 +269,7 @@ class Table:
         # log(keys)
         objs = self._db.json().mget(keys, Path.root_path()) if keys else []
         for i, obj in enumerate(objs):
-            objs[i] = {k: deescape_value(v) for k, v in obj.items()}
+            objs[i] = {k: self._validate(k, v, decode=True) for k, v in obj.items()}
         return objs
 
     def __str__(self):

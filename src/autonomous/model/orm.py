@@ -1,14 +1,12 @@
-from ..db.autodb import Database
+from autonomous.db.autodb import Database
 
 
 class ORM:
     _database = Database()
 
-    def __init__(self, model):
-        # breakpoint()
-        table_name = model._table_name or model.__name__
-        self.table = self._database.get_table(table=table_name, schema=model.attributes)
-        self.name = self.table.name
+    def __init__(self, name, attributes):
+        self.table = self._database.get_table(table=name, schema=attributes)
+        self.name = name
 
     def save(self, data):
         return self.table.save(data)

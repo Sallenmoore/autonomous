@@ -9,6 +9,7 @@ from datetime import datetime
 from autonomous import log
 
 from .orm import ORM
+from .autoattribute import AutoAttribute
 
 
 class DelayedModel:
@@ -82,17 +83,17 @@ class AutoModel(ABC):
         """
         obj = super().__new__(cls)
         # set default attributes
-        cls.attributes["pk"] = None
-        cls.attributes["last_updated"] = datetime.now()
-
         # Get model data from database
-        obj.pk = kwargs.pop("pk", None)
-        result = cls.table().get(obj.pk) or {}
-
+        result = cls.table().get(kwargs.get("pk")) or {}
         # set object attributes
         for k, v in cls.attributes.items():
             # set attribute from db or set to default value
-            setattr(obj, k, result.get(k, v))
+            if isinstance(v, tuple):
+                setattr(obj, k, result.get(k, v[0]))
+            elif isinstance(v, AutoAttribute):
+                setattr(obj, k, result.get(k, v.default))
+            else:
+                setattr(obj, k, result.get(k, v))
 
         # update model with keyword arguments
         obj.__dict__ |= kwargs
@@ -108,8 +109,14 @@ class AutoModel(ABC):
 
     @classmethod
     def table(cls):
+        # breakpoint()
         if not cls._table or cls._table.name != cls.__name__:
-            cls._table = cls._orm(cls)
+            cls.attributes["pk"] = AutoAttribute("TAG", primary_key=True)
+            cls.attributes["last_updated"] = datetime.now()
+            cls.attributes["_automodel"] = AutoAttribute(
+                "TAG", default=cls.model_name()
+            )
+            cls._table = cls._orm(cls._table_name or cls.__name__, cls.attributes)
         return cls._table
 
     @classmethod
