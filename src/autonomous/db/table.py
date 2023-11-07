@@ -50,16 +50,8 @@ replacements = [
 
 
 class Table:
-    """
-     _summary_
-
-    _extended_summary_
-    """
 
     def __init__(self, name, attributes, db):
-        """
-        [summary]
-        """
         self._db = db
         self.name = name
         # log(attributes)
@@ -77,9 +69,6 @@ class Table:
         self._index = self._get_index(f"idx:{name}")
 
     def _get_index(self, name):
-        """
-        [summary]
-        """
         try:
             self._db.ft(name).info()
         except Exception as e:
@@ -109,14 +98,7 @@ class Table:
         return self._db.ft(name)
 
     def _validate(self, k, v, decode=False, encode=False):
-        """
-        [summary]
-        """
         # log(k, v, self._rules)
-
-        # breakpoint()
-        # pass
-        # log(k, v)
         if rule := self._rules[k]:
             if rule.type in ["TEXT", "TAG"]:
                 if decode:
@@ -134,7 +116,7 @@ class Table:
                 if rule.type == "TAG":
                     try:
                         assert len(v) < MAXIMUM_TAG_LENGTH
-                    except:
+                    except AssertionError:
                         raise Exception(
                             f"Invalid attribute value. Must be a less than 128 characters or use a 'TEXT' option, AutoAttribute('TEXT', default=''): {k}:{v}"
                         )
@@ -142,7 +124,7 @@ class Table:
                 if v:
                     try:
                         float(v)
-                    except:
+                    except TypeError:
                         raise Exception(
                             f"Invalid attribute value. Must be a number: {k}:{v}"
                         )
@@ -150,16 +132,13 @@ class Table:
             if rule.required:
                 try:
                     assert v is not None
-                except:
+                except AssertionError:
                     raise Exception(
                         f"Invalid attribute value. Must not be 'None': {k}:{v}"
                     )
         return v
 
     def save(self, obj):
-        """
-        [summary]
-        """
         # log(obj)
         obj["pk"] = obj.get("pk") or str(uuid.uuid4())
         for k, v in obj.items():
@@ -173,64 +152,38 @@ class Table:
         return obj["pk"]
 
     def count(self):
-        """
-        count _summary_
-
-        _extended_summary_
-
-        :return: _description_
-        :rtype: _type_
-        """
         result = len(self._db.keys(f"{self.name}:*"))
         return result or 0
 
     def delete(self, pk):
-        """
-        [summary]
-        """
         return self._db.json().delete(f"{self.name}:{pk}", Path.root_path())
 
     def find(self, **search_terms):
-        """
-        find _summary_
-
-        _extended_summary_
-
-        :return: _description_
-        :rtype: _type_
-        """
         result = self.search(**search_terms)
         return result[0] if result else None
 
     def search(self, **search_terms):
-        """
-        Returns an list of objects based on passed arguments
-        as key/value pairs
-        """
-
         # log(search_terms, self.index_name, self.index.info())
         matches = []
 
         for k, v in search_terms.items():
             try:
                 v = self._validate(k, v, encode=True)
-            except KeyError as e:
-                log(f"Can only search indexed fields: {k}")
-                raise e
-            # TODO: figure out how to search nested fields
-            # if path := search_terms.get("_nested_path"):
-            #     k = f"{path}.{k}"
+            except KeyError:
+                raise Exception(f"Can only search indexed fields: {k}:{v}")
 
             query_str = f"@{k}:{v}"
             ruleset = self._rules[k]
             if ruleset and ruleset.type == "TAG":
-                query_str = f"@{k}:{{{v}}}"
+                query_str = "@"+str(k)+":{"+ str(v) +"}"
             elif ruleset and ruleset.type == "TEXT":
                 query_str = f"@{k}:({v})"
 
             log(query_str)
 
             query = Query(query_str)
+            # breakpoint()
+            
             results = self._index.search(query)
             log(results)
             matches += [json.loads(d.json) for d in results.docs]
@@ -243,9 +196,6 @@ class Table:
         return list(results.values())
 
     def get(self, pk):
-        """
-        [summary]
-        """
         try:
             obj = self._db.json().get(f"{self.name}:{pk}", Path.root_path())
         except Exception as e:
@@ -256,14 +206,6 @@ class Table:
         return obj
 
     def all(self):
-        """
-        all _summary_
-
-        _extended_summary_
-
-        :return: _description_
-        :rtype: _type_
-        """
         keys = self._db.keys(f"{self.name}:*")
         # log(keys)
         objs = self._db.json().mget(keys, Path.root_path()) if keys else []
@@ -275,11 +217,6 @@ class Table:
         return json.dumps(self.all(), indent=4)
 
     def clear(self):
-        """
-        clear _summary_
-
-        _extended_summary_
-        """
         # breakpoint()
         keys = self._db.keys(f"{self.name}:*")
         return self._db.delete(*keys) if keys else None
