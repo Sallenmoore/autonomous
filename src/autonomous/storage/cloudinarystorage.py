@@ -25,10 +25,12 @@ class CloudinaryStorage:
         # log(cls.api_secret, cls.api_key, cls.cloud_name)
         return cloudinary.api.resource_by_asset_id(asset_id)
 
-    def search(self, name, **kwargs):
-        query = name
+    def search(self, **kwargs):
+        query = ""
+        if name := kwargs.get("name"):
+            query = f"{name}"
         if folder := kwargs.get("folder"):
-            query = f"{query} AND folder:{folder}"
+            query += f" AND folder:{folder}" if query else f"folder:{folder}"
         return cloudinary.Search().expression(query).execute()
 
     def update(self, key, **kwargs):

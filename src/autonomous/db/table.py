@@ -17,7 +17,7 @@ from redis.commands.search.query import Query
 from autonomous import log
 from autonomous.model.autoattribute import AutoAttribute
 
-MAXIMUM_TAG_LENGTH = 129
+MAXIMUM_TAG_LENGTH = 1025
 replacements = [
     ",",
     ".",
@@ -118,7 +118,7 @@ class Table:
                         assert len(v) < MAXIMUM_TAG_LENGTH
                     except AssertionError:
                         raise Exception(
-                            f"Invalid attribute value. Must be a less than 128 characters or use a 'TEXT' option, AutoAttribute('TEXT', default=''): {k}:{v}"
+                            f"Invalid attribute value. Must be a less than 1024 characters or use a 'TEXT' option, AutoAttribute('TEXT', default=''): {k}:{v}"
                         )
             elif rule.type == "NUMERIC":
                 if v:
@@ -179,13 +179,13 @@ class Table:
             elif ruleset and ruleset.type == "TEXT":
                 query_str = f"@{k}:({v})"
 
-            log(query_str)
+            # log(query_str)
 
             query = Query(query_str)
             # breakpoint()
             
             results = self._index.search(query)
-            log(results)
+            # log(results)
             matches += [json.loads(d.json) for d in results.docs]
 
         results = {

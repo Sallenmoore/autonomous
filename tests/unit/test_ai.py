@@ -7,7 +7,7 @@ from autonomous.ai import OpenAI
 from autonomous.ai import AutoTeam
 
 
-@pytest.mark.skip(reason="OpenAI API is not free")
+#@pytest.mark.skip(reason="OpenAI API is not free")
 class TestOpenAI:
     def test_init(self):
         oai = OpenAI()
@@ -18,7 +18,7 @@ class TestOpenAI:
         prompt = (
             "A beautiful pasture that seems directly out of a William Wordsworth poem."
         )
-        imgs = oai.generate_image(prompt, size="256x256", n=1)
+        imgs = oai.generate_image(prompt, n=1)
         for img in imgs:
             assert isinstance(img, bytes)
             with open("tests/assets/testimg.png", "wb") as fptr:
@@ -48,7 +48,7 @@ class TestOpenAI:
             funcobj["parameters"]["properties"].keys()
         )
         # log(funcobj)
-        result = OpenAI().generate_text(prompt, primer_text, functions=funcobj)
+        result = OpenAI().generate_json(prompt, primer_text, functions=funcobj)
         # log(result)
 
         joke = json.loads(result)
