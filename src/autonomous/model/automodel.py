@@ -45,7 +45,7 @@ class DelayedModel:
     #     return getattr(self._instance(), name)
 
     def __getattribute__(self, name):
-        log(name)
+        # log(name)
         if name in [
             "_delayed_model",
             "_delayed_pk",
@@ -176,22 +176,25 @@ class AutoModel(ABC):
             for v in obj.values():
                 cls._subobj_save(v)
         elif issubclass(obj.__class__, (AutoModel, DelayedModel)):
-            assert obj.save()
+            assert obj._save()
 
-    def save(self):
+    def _save(self):
         """
         Save this model to the database.
 
         Returns:
             int: The primary key (pk) of the saved model.
         """
-        if not self.pk or self.pk not in self.__class__.__save_memo:
-            log(self.pk, self.__class__.__save_memo, self.__class__.__name__)
-
+        log(self.pk, AutoModel.__save_memo, self.__class__.__name__)
+        if (
+            not self.pk
+            or f"{self.__class__.__name__}-{self.pk}" not in AutoModel.__save_memo
+        ):
             record = self.serialize()
+
             # log(type(record), record)
             self.pk = self.table().save(record)
-            self.__class__.__save_memo.append(self.pk)
+            AutoModel.__save_memo.append(f"{self.__class__.__name__}-{self.pk}")
 
             for k in self.attributes:
                 subobj = getattr(self, k)
@@ -201,8 +204,18 @@ class AutoModel(ABC):
             record = self.serialize()
             # log(type(record), record)
             self.pk = self.table().save(record)
-            self.__class__.__save_memo = []
         return self.pk
+
+    def save(self):
+        """
+        Save this model to the database.
+
+        Returns:
+            int: The primary key (pk) of the saved model.
+        """
+        pk = self._save()
+        self.__class__.__save_memo = []
+        return pk
 
     @classmethod
     def get(cls, pk):
