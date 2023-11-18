@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import autogen
-
+from .openai import OpenAIAgent
 
 class AutoTeam:
     config_list = [
@@ -54,7 +54,7 @@ class AutoTeam:
             [
                 {
                     "name": "Assistant",
-                    "role": "You are a helpful, encouraging, and genial AI Assistant.",
+                    "role": "You are a helpful, encouraging, and genial AI Assistant ready to help with any task.",
                 }
             ],
         )
@@ -100,3 +100,15 @@ class AutoTeam:
             },
         )
         self.proxy.initiate_chat(self.manager, message=message)
+
+    def generate_image(self,prompt,**kwargs):
+        return OpenAIAgent().generate_image(prompt,**kwargs)
+
+    def generate_json(self, text, functions, primer_text="",):
+        return OpenAIAgent().generate_json(text, functions, primer_text)
+        
+    def generate_text(self, text, primer_text=""):
+        return OpenAIAgent().generate_text(text, primer_text)
+    
+    def summarize_text(self, text, primer=""):
+        return OpenAIAgent().summarize_text(text, primer)

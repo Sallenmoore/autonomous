@@ -54,10 +54,10 @@ class CloudinaryStorage:
         try:
             response = cloudinary.uploader.upload(file, **kwargs)
         except Exception as e:
-            log(f"Cloudinary Storage upload error")
+            log("Cloudinary Storage upload error")
             raise e
-
-        return {"asset_id": response["asset_id"], "url": response["url"], "raw": None}
+        #log(response)
+        return {"asset_id": response["asset_id"], "url": response["url"]}
 
     def remove(self, asset_id, **kwargs):
         response = self.get_metadata(asset_id)

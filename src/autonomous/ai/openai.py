@@ -1,15 +1,14 @@
 import os
 from base64 import b64decode
 
-import openai
-from openai import OpenAI as API
+from openai import OpenAI
 
 from autonomous import log
 
 
-class OpenAI:
+class OpenAIAgent:
     def __init__(self):
-        self.client = API(api_key=os.environ.get("OPENAI_KEY"),)
+        self.client = OpenAI(api_key=os.environ.get("OPENAI_KEY"),)
 
     def generate_image(
         self,
@@ -28,7 +27,6 @@ class OpenAI:
             for index, image_dict in enumerate(response.data):
                 image_data = b64decode(image_dict.b64_json)
                 image = image_data
-                
         return image
 
     def generate_json(self, text, functions, primer_text="",):

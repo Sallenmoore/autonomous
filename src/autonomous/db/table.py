@@ -147,7 +147,11 @@ class Table:
                     obj[k] = self._validate(k, v, encode=True)
                 else:
                     obj[k] = self._validate(k, v)
-        self._db.json().set(f"{self.name}:{obj['pk']}", Path.root_path(), obj)
+        try:
+            json_db = self._db.json()
+            json_db.set(f"{self.name}:{obj['pk']}", Path.root_path(), obj)
+        except Exception as e:
+            raise e
         obj = {k: self._validate(k, v, decode=True) for k, v in obj.items()}
         return obj["pk"]
 
@@ -198,11 +202,14 @@ class Table:
     def get(self, pk):
         try:
             obj = self._db.json().get(f"{self.name}:{pk}", Path.root_path())
+            assert obj
         except Exception as e:
             obj = None
-            # log(f"no object found with pk:{pk}")
-        if obj:
-            obj = {k: self._validate(k, v, decode=True) for k, v in obj.items()}
+        else:
+            for k in obj:
+                for r in replacements:
+                    if isinstance(obj[k], str):
+                        obj[k] = obj[k].replace(f"\\{r}", r) 
         return obj
 
     def all(self):

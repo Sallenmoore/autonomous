@@ -1,60 +1,83 @@
 # opt : Optional[str]  # for optional attributes
 # default : Optional[str] = "value"  # for default values
-import copy
 import importlib
-import pprint
+import json
 from abc import ABC
 from datetime import datetime
 
 from autonomous import log
 
-from .orm import ORM
 from .autoattribute import AutoAttribute
+from .orm import ORM
 
 
 class DelayedModel:
     def __init__(self, model, pk):
+        # log(model, pk)
+        assert model
+        assert pk
         module_name, class_name = model.rsplit(".", 1)
         module = importlib.import_module(module_name)
-        self._delayed_model = getattr(module, class_name)
-        self._delayed_pk = pk
-        self._delayed_obj = None
+        model = getattr(module, class_name)
+        object.__setattr__(self, "_delayed_model", model)
+        object.__setattr__(self, "_delayed_pk", pk)
+        object.__setattr__(self, "_delayed_obj", None)
 
-    def _create_instance(self):
-        if self._delayed_obj is None:
-            self._delayed_obj = self._delayed_model.get(self._delayed_pk)
+    def _instance(self):
+        if not object.__getattribute__(self, "_delayed_obj"):
+            _pk = object.__getattribute__(self, "_delayed_pk")
+            _model = object.__getattribute__(self, "_delayed_model")
+
+            _obj = _model.get(_pk)
+
+            try:
+                assert _obj
+            except AssertionError as e:
+                msg = f"{e}\n\nModel relationship error. Most likely failed to clean up dangling reference.\nModel: {_model}\npk: {_pk}\nResult: {_obj}"
+                log(msg)
+                raise Exception(msg)
+            else:
+                object.__setattr__(self, "_delayed_obj", _obj)
+
+        return object.__getattribute__(self, "_delayed_obj")
+
+    # def __getattr__(self, name):
+    #     return getattr(self._instance(), name)
 
     def __getattribute__(self, name):
+        log(name)
         if name in [
             "_delayed_model",
             "_delayed_pk",
             "_delayed_obj",
-            "_create_instance",
+            "_instance",
         ]:
             return object.__getattribute__(self, name)
-        self._create_instance()
-        return getattr(self._delayed_obj, name)
-
-    def __getattr__(self, attr):
-        self._create_instance()
-        return getattr(self._delayed_obj, attr)
+        return object.__getattribute__(self._instance(), name)
 
     def __setattr__(self, name, value):
-        if name in ["_delayed_model", "_delayed_pk", "_delayed_obj"]:
+        if name.startswith("_delayed"):
             object.__setattr__(self, name, value)
         else:
-            self._create_instance()
-            setattr(self._delayed_obj, name, value)
+            setattr(self._instance(), name, value)
 
     def __delattr__(self, name):
-        if name in ["_delayed_model", "_delayed_pk", "_delayed_obj"]:
-            object.__delattr__(self, name)
-        else:
-            self._create_instance()
-            delattr(self._delayed_obj, name)
+        delattr(self._instance(), name)
+
+    def __nonzero__(self):
+        return bool(self._instance())
+
+    def __str__(self):
+        return str(self._instance())
 
     def __repr__(self):
-        return f"<DelayedModel {self._delayed_model.__name__} {self._delayed_pk}>"
+        result = repr(self._delayed_obj)
+        msg = f"<<DelayedModel {self._delayed_model.__name__}:{self._delayed_pk}>>\n"
+        msg += f"{result}\n\n"
+        return msg
+
+    def __hash__(self):
+        return hash(self._instance())
 
 
 class AutoModel(ABC):
@@ -99,12 +122,27 @@ class AutoModel(ABC):
         obj.__dict__ |= kwargs
 
         # log(obj, kwargs)
-        data = copy.deepcopy(obj.__dict__)
-        data.pop("_automodel", None)
-        obj.__dict__ |= cls._deserialize(data)
+        _automodel = obj.__dict__.pop("_automodel", None)
+        obj.__dict__ |= cls._deserialize(obj.__dict__)
+        obj.__dict__["_automodel"] = _automodel
 
         obj.last_updated = datetime.now()
 
+        return obj
+
+    def __repr__(self) -> str:
+        """
+        Return a string representation of the AutoModel instance.
+
+        Returns:
+            str: A string representation of the AutoModel instance.
+        """
+        return f"{self.__dict__}"
+
+    def __getattribute__(self, name):
+        obj = super().__getattribute__(name)
+        if isinstance(obj, DelayedModel):
+            return obj._instance()
         return obj
 
     @classmethod
@@ -129,14 +167,16 @@ class AutoModel(ABC):
         """
         return f"{cls.__module__}.{cls.__name__}"
 
-    def __repr__(self) -> str:
-        """
-        Return a string representation of the AutoModel instance.
-
-        Returns:
-            str: A string representation of the AutoModel instance.
-        """
-        return pprint.pformat(self.__dict__, indent=4, width=7, sort_dicts=True)
+    @classmethod
+    def _subobj_save(cls, obj):
+        if isinstance(obj, list):
+            for v in obj:
+                cls._subobj_save(v)
+        elif isinstance(obj, dict):
+            for v in obj.values():
+                cls._subobj_save(v)
+        elif issubclass(obj.__class__, (AutoModel, DelayedModel)):
+            assert obj.save()
 
     def save(self):
         """
@@ -145,18 +185,23 @@ class AutoModel(ABC):
         Returns:
             int: The primary key (pk) of the saved model.
         """
-        self.__class__.__save_memo.append(self.pk)
-        for attr in self.attributes:
-            val = getattr(self, attr)
-            if (
-                issubclass(val.__class__, (AutoModel, DelayedModel))
-                and val.pk not in self.__save_memo
-            ):
-                val.save()
-        self.last_updated = datetime.now()
-        record = self.serialize()
-        self.pk = self.table().save(record)
-        self.__class__.__save_memo = []
+        if not self.pk or self.pk not in self.__class__.__save_memo:
+            log(self.pk, self.__class__.__save_memo, self.__class__.__name__)
+
+            record = self.serialize()
+            # log(type(record), record)
+            self.pk = self.table().save(record)
+            self.__class__.__save_memo.append(self.pk)
+
+            for k in self.attributes:
+                subobj = getattr(self, k)
+                self._subobj_save(subobj)
+
+            self.last_updated = datetime.now()
+            record = self.serialize()
+            # log(type(record), record)
+            self.pk = self.table().save(record)
+            self.__class__.__save_memo = []
         return self.pk
 
     @classmethod
@@ -217,7 +262,7 @@ class AutoModel(ABC):
         """
         Delete this model from the database.
         """
-        self.table().delete(pk=self.pk)
+        return self.table().delete(pk=self.pk)
 
     serialized_tracker = []
 
@@ -236,7 +281,7 @@ class AutoModel(ABC):
             val = new_dict
         elif isinstance(val, datetime):
             val = {"_datetime": val.isoformat()}
-        elif issubclass(val.__class__, (AutoModel, DelayedModel)):
+        elif issubclass(val.__class__, (AutoModel, DelayedModel)) and val.pk:
             val = {
                 "pk": val.pk,
                 "_automodel": val.model_name(),
@@ -260,8 +305,13 @@ class AutoModel(ABC):
     @classmethod
     def _deserialize(cls, val):
         if isinstance(val, dict):
-            if "_automodel" in val:
-                val = DelayedModel(val.get("_automodel"), val.get("pk"))
+            if val.get("_automodel"):
+                if val.get("pk"):
+                    # log(val.get('pk'))
+                    assert len(val.get("pk"))
+                    val = DelayedModel(val["_automodel"], val["pk"])
+                else:
+                    val = None
             elif "_datetime" in val:
                 val = datetime.fromisoformat(val["_datetime"])
             else:

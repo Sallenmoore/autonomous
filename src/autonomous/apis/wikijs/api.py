@@ -10,7 +10,7 @@ from .page import WikiJSPage
 
 
 class WikiJS:
-    endpoint = os.environ.get("WIKIJS_URL")
+    endpoint = f"{os.environ.get('WIKIJS_BASE_URL')}/{os.environ.get('WIKIJS_API_PATH', 'graphql')}"
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {os.environ.get('WIKIJS_TOKEN')}",
@@ -133,12 +133,13 @@ class WikiJS:
         }
         """
 
-        res = cls.make_request(query, obj_vars)
-        results = res.json()["data"]["pages"]["create"]["page"]
-        if not results:
-            log(f"results: {res.json()['data']['pages']['create']['responseResult']}")
-            return res.json()["data"]["pages"]["create"]["responseResult"]
-        result = WikiJSPage(**results)
+        response = cls.make_request(query, obj_vars)
+        results = response.json()
+        page = results["data"]["pages"]["create"]["page"]
+        if not page:
+            log(f"results: {response.json()['data']['pages']['create']['responseResult']}")
+            return response.json()["data"]["pages"]["create"]["responseResult"]
+        result = WikiJSPage(**page)
         return result
 
     @classmethod
@@ -244,7 +245,7 @@ class WikiJS:
             }
             """
         response = cls.make_request(query, {"path": path})
-        log(response.json())
+        #log(response.json())
         results = response.json()["data"]["pages"]["singleByPath"]
         return WikiJSPage(**results) if results else None
 

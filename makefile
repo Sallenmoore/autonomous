@@ -34,9 +34,9 @@ testinit: clean
 	pip install --upgrade -r ./requirements_dev.txt
 	pip install -e .
 
-TESTING=TestAuth
+TESTING=TestAutoModel
 test:
-	python -m pytest -k "$(TESTING)" -s
+	python -m pytest -k "$(TESTING)" -s 
 
 testauto:
 	python -m pytest

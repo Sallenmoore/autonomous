@@ -41,21 +41,15 @@ class AutoTask:
     @property
     def result(self):
         result = self.job.latest_result()
-        result_dict = {}
-        if not result:
-            result_dict = {"return_value": None, "error": "No job/results found"}
-        elif result.type in [result.Type.FAILED, result.Type.STOPPED]:
-            result_dict = {
-                "return_value": result.return_value,
-                "error": result.exc_string,
-                "status": self.status,
-            }
-        else:
-            result_dict = {
-                "return_value": result.return_value,
-                "error": None,
-                "status": self.status,
-            }
+        result_dict = {
+            "id": self.id,
+            "return_value": result.return_value if result else None,
+            "status": self.status,
+            "error": result.exc_string
+            if result and result.type in [result.Type.FAILED, result.Type.STOPPED]
+            else None,
+        }
+
         return result_dict
 
     @property
@@ -99,10 +93,16 @@ class AutoTasks:
         :param job: job function
         :param args: job function args
         :param kwargs: job function kwargs
-        args and kwargs: use these to explicitly pass arguments and keyword to the underlying job function. This is useful if your function happens to have conflicting argument names with RQ, for example description or ttl.
+        args and kwargs: use these to explicitly pass arguments and keyword to the underlying job function.
+        _task_<option>:pass options to the task object
         :return: job
         """
-        job = AutoTasks.queue.enqueue(func, *args, **kwargs)
+        job = AutoTasks.queue.enqueue(
+            func,
+            job_timeout=kwargs.get("_task_job_timeout", 3600),
+            args=args,
+            kwargs=kwargs,
+        )
         self.create_worker(func)
         new_task = AutoTask(job)
         AutoTasks.all_tasks.append(new_task)

@@ -1,4 +1,5 @@
 import json
+import os
 
 
 class WikiJSPage:
@@ -15,5 +16,9 @@ class WikiJSPage:
             if title := t.get("title"):
                 self.tags.append(title)
 
+    @property
+    def url(self):
+        return f"{os.environ.get('WIKIJS_BASE_URL')}/{self.path}"
+    
     def __repr__(self):
         return json.dumps(self.__dict__, indent=4)

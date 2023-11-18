@@ -31,10 +31,12 @@ class TestAuth:
             "token": "testtoken",
         }
         user = AutoUser.authenticate(user_info)
+        breakpoint()
         user2 = AutoUser.authenticate(user_info)
-        assert user.pk == user2.save()
         assert user.pk == user2.pk
         user.state = "unauthenticated"
+        assert not user.is_authenticated
         pk = user.save()
         user = AutoUser.authenticate(user_info)
         assert pk == user.pk == user2.pk
+        assert user.is_authenticated

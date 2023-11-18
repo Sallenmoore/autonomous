@@ -49,10 +49,11 @@ class MarkdownParser:
                 self.listdepth -= 1
             else:
                 self.addListItem(value)
+        self.markdown += "\n"
 
     def addHeader(self, value):
-        if self.headerdepth > 6:
-            self.headerdepth = 6
+        if self.headerdepth > 5:
+            self.headerdepth = 5
         elif self.headerdepth > 1:
             self.markdown += "\n"
         self.listdepth = 0
@@ -65,7 +66,7 @@ class MarkdownParser:
 
     def addValue(self, value):
         self.markdown += f"{value}"
-        self.markdown += "\n"
+        self.markdown += "\n\n"
 
     def addLabeledValue(self, key, value):
         self.headerdepth += 1
