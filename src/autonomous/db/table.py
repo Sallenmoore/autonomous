@@ -99,7 +99,7 @@ class Table:
 
     def _validate(self, k, v, decode=False, encode=False):
         # log(k, v, self._rules)
-        if rule := self._rules[k]:
+        if rule := self._rules.get(k):
             if rule.type in ["TEXT", "TAG"]:
                 if decode:
                     for r in replacements:
