@@ -7,32 +7,31 @@ from autonomous import log
 
 
 class OpenAIAgent:
-    def __init__(self):
-        self.client = OpenAI(api_key=os.environ.get("OPENAI_KEY"),)
+    client = None
 
-    def generate_image(
-        self,
-        prompt,
-        **kwargs
-    ):
+    def __init__(self, **kwargs):
+        self.client = OpenAI(api_key=os.environ.get("OPENAI_KEY"))
+
+    def generate(self, prompt, primer_text="", **kwargs):
+        return self.generate_text(self, prompt, primer_text)
+
+    def generate_image(self, prompt, **kwargs):
         image = None
-
         try:
             response = self.client.images.generate(
-                 model="dall-e-3", prompt=prompt, response_format="b64_json", **kwargs
+                model="dall-e-3", prompt=prompt, response_format="b64_json", **kwargs
             )
+            image_dict = response.data[0]
         except Exception as e:
             log(f"==== Error: Unable to create image ====\n\n{e}")
         else:
-            for index, image_dict in enumerate(response.data):
-                image_data = b64decode(image_dict.b64_json)
-                image = image_data
+            image = b64decode(image_dict.b64_json)
         return image
 
-    def generate_json(self, text, functions, primer_text="",):
+    def generate_json(self, text, functions, primer_text=""):
         json_data = {
-            #"response_format":{ "type": "json_object" },
-            "messages":[
+            # "response_format":{ "type": "json_object" },
+            "messages": [
                 {
                     "role": "system",
                     "content": f"{primer_text}. Your output must be a JSON object.",
@@ -50,8 +49,7 @@ class OpenAIAgent:
             json_data.update({"function_call": {"name": functions["name"]}})
             json_data.update({"functions": [functions]})
 
-        
-        #try:
+        # try:
         response = self.client.chat.completions.create(model="gpt-4", **json_data)
         # except Exception as e:
         #     log(f"{type(e)}:{e}\n\n==== Error: fall back to lesser model ====")
@@ -68,8 +66,8 @@ class OpenAIAgent:
         return result
 
     def generate_text(self, text, primer_text=""):
-        json_data= {"messages" :
-            [
+        json_data = {
+            "messages": [
                 {
                     "role": "system",
                     "content": primer_text,
@@ -80,7 +78,7 @@ class OpenAIAgent:
                 },
             ]
         }
-        
+
         try:
             response = self.client.chat.completions.create(model="gpt-4", **json_data)
         except Exception as e:

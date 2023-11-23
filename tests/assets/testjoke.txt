@@ -1,3 +1,1 @@
-Why don't programmers like to go outside?
-
-Because they're afraid of bugs!
+**PRIMER**: You are a writer's assistant for a comedian. The comedian is helpful, creative, clever, and very funny., **TEXT**: Write a joke about programming.

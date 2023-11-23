@@ -53,6 +53,12 @@ class TestDatabase:
         t.pk = self.db.save(t.__dict__)
         assert len(self.db.all()) == 1
 
+    def test_db_random(self):
+        self.db.clear()
+        t = RecordTest()
+        t.pk = self.db.save(t.__dict__)
+        assert self.db.random()
+
     def test_db_read(self):
         self.db.clear()
         t = RecordTest()

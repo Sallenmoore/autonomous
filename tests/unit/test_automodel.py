@@ -1,8 +1,8 @@
+import random
 import uuid
 from datetime import datetime
 
 import pytest
-
 from autonomous import log
 from autonomous.model.automodel import AutoModel
 
@@ -22,6 +22,10 @@ class MockORM:
     def get(self, pk):
         # log(pk, self.db.get(pk))
         return self.table.get(pk)
+
+    def random(self):
+        key = random.choice(list(self.table.keys()))
+        return self.table[key]
 
     def all(self):
         # log(self.db.values())
@@ -113,6 +117,14 @@ class TestAutomodel:
         assert not new_am
         new_am = Model.get(-1)
         assert not new_am
+
+    def test_automodel_random(self):
+        am = Model(name="test", age=10, date=datetime.now())
+        am.save()
+        new_am = Model.random()
+        assert new_am.pk
+        assert new_am.name
+        assert new_am.age
 
     def test_automodel_update(self):
         am = Model(name="test", age=10, date=datetime.now())

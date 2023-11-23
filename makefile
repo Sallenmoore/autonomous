@@ -34,7 +34,7 @@ testinit: clean
 	pip install --upgrade -r ./requirements_dev.txt
 	pip install -e .
 
-TESTING=TestAutoModel
+TESTING=TestMockAI
 test:
 	python -m pytest -k "$(TESTING)" -s 
 

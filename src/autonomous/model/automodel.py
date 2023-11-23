@@ -176,7 +176,9 @@ class AutoModel(ABC):
             for v in obj.values():
                 cls._subobj_save(v)
         elif issubclass(obj.__class__, (AutoModel, DelayedModel)):
-            assert obj._save()
+            if f"{obj.__class__.__name__}-{obj.pk}" not in AutoModel.__save_memo:
+                AutoModel.__save_memo.append(f"{obj.__class__.__name__}-{obj.pk}")
+                assert obj._save()
 
     def _save(self):
         """
@@ -185,25 +187,16 @@ class AutoModel(ABC):
         Returns:
             int: The primary key (pk) of the saved model.
         """
-        log(self.pk, AutoModel.__save_memo, self.__class__.__name__)
-        if (
-            not self.pk
-            or f"{self.__class__.__name__}-{self.pk}" not in AutoModel.__save_memo
-        ):
-            record = self.serialize()
+        # log(self.pk, AutoModel.__save_memo, self.__class__.__name__)
 
-            # log(type(record), record)
-            self.pk = self.table().save(record)
-            AutoModel.__save_memo.append(f"{self.__class__.__name__}-{self.pk}")
+        # for k in self.attributes:
+        #     subobj = getattr(self, k)
+        #     self._subobj_save(subobj)
 
-            for k in self.attributes:
-                subobj = getattr(self, k)
-                self._subobj_save(subobj)
-
-            self.last_updated = datetime.now()
-            record = self.serialize()
-            # log(type(record), record)
-            self.pk = self.table().save(record)
+        self.last_updated = datetime.now()
+        record = self.serialize()
+        # log(type(record), record)
+        self.pk = self.table().save(record)
         return self.pk
 
     def save(self):
@@ -214,7 +207,6 @@ class AutoModel(ABC):
             int: The primary key (pk) of the saved model.
         """
         pk = self._save()
-        self.__class__.__save_memo = []
         return pk
 
     @classmethod
@@ -232,6 +224,20 @@ class AutoModel(ABC):
             pk = int(pk)
 
         result = cls.table().get(pk)
+        return cls(**result) if result else None
+
+    @classmethod
+    def random(cls):
+        """
+        Get a model by primary key.
+
+        Args:
+            pk (int): The primary key of the model to retrieve.
+
+        Returns:
+            AutoModel or None: The retrieved AutoModel instance, or None if not found.
+        """
+        result = cls.table().random()
         return cls(**result) if result else None
 
     @classmethod

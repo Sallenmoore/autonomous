@@ -7,6 +7,7 @@ _extended_summary_
 :rtype: _type_
 """
 import json
+import random
 import uuid
 
 from redis.commands.json.path import Path
@@ -50,7 +51,6 @@ replacements = [
 
 
 class Table:
-
     def __init__(self, name, attributes, db):
         self._db = db
         self.name = name
@@ -103,15 +103,15 @@ class Table:
             if rule.type in ["TEXT", "TAG"]:
                 if decode:
                     for r in replacements:
-                        v = v.replace(f"\\{r}", r)
+                        v = v.replace(f"\\{r}", r) if v else ""
                 elif encode:
                     if isinstance(v, str):
                         for r in replacements:
                             idx = v.find(r)
                             if idx == 0:
-                                v = v.replace(r, f"\\{r}")
+                                v = v.replace(r, f"\\{r}") if v else ""
                             if idx > 0 and v[idx - 1] != "\\":
-                                v = v.replace(r, f"\\{r}")
+                                v = v.replace(r, f"\\{r}") if v else ""
 
                 if rule.type == "TAG":
                     try:
@@ -120,6 +120,9 @@ class Table:
                         raise Exception(
                             f"Invalid attribute value. Must be a less than 1024 characters or use a 'TEXT' option, AutoAttribute('TEXT', default=''): {k}:{v}"
                         )
+                    except TypeError as e:
+                        v = ""
+                        log(f"{e}", f"{k}:{v}")
             elif rule.type == "NUMERIC":
                 if v:
                     try:
@@ -179,7 +182,7 @@ class Table:
             query_str = f"@{k}:{v}"
             ruleset = self._rules[k]
             if ruleset and ruleset.type == "TAG":
-                query_str = "@"+str(k)+":{"+ str(v) +"}"
+                query_str = "@" + str(k) + ":{" + str(v) + "}"
             elif ruleset and ruleset.type == "TEXT":
                 query_str = f"@{k}:({v})"
 
@@ -187,7 +190,7 @@ class Table:
 
             query = Query(query_str)
             # breakpoint()
-            
+
             results = self._index.search(query)
             # log(results)
             matches += [json.loads(d.json) for d in results.docs]
@@ -209,7 +212,7 @@ class Table:
             for k in obj:
                 for r in replacements:
                     if isinstance(obj[k], str):
-                        obj[k] = obj[k].replace(f"\\{r}", r) 
+                        obj[k] = obj[k].replace(f"\\{r}", r)
         return obj
 
     def all(self):
@@ -222,6 +225,11 @@ class Table:
 
     def __str__(self):
         return json.dumps(self.all(), indent=4)
+
+    def random(self):
+        keys = self._db.keys(f"{self.name}:*")
+        key = random.choice(keys).split(":")[-1]
+        return self.get(key)
 
     def clear(self):
         # breakpoint()

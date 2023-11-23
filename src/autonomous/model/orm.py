@@ -23,6 +23,9 @@ class ORM:
     def find(self, **kwargs):
         return self.table.find(**kwargs)
 
+    def random(self):
+        return self.table.random()
+
     def delete(self, pk):
         return self.table.delete(pk)
 
