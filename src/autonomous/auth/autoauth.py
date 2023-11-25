@@ -11,7 +11,8 @@ from autonomous.auth.user import AutoUser
 
 
 class AutoAuth:
-    current_user = None
+    user = None
+    user_class = AutoUser
 
     def __init__(
         self,
@@ -41,6 +42,15 @@ class AutoAuth:
             state=self.state,
         )
 
+    @classmethod
+    def current_user(cls):
+        """
+        Returns the current user.
+        """
+        if session.get("user") and not cls.user:
+            cls.user = AutoAuth.user_class(**session["user"])
+        return cls.user
+
     def authenticate(self):
         """
         Initiates the authentication process.
@@ -64,7 +74,8 @@ class AutoAuth:
         userinfo = requests.get(self.req_uri, auth=OAuth2Auth(token))
         return userinfo.json(), token
 
-    def auth_required(func):
+    @classmethod
+    def auth_required(cls, guest=False):
         """
         If you decorate a view with this, it will ensure that the current user is
         logged in and authenticated before calling the actual view. For
@@ -80,17 +91,35 @@ class AutoAuth:
             - type: function
         """
 
-        @wraps(func)
-        def decorated_view(*args, **kwargs):
-            if current_app:  # with current_app.app_context():
-                # log(AutoAuth.current_user, session.get("user"))
-                if session.get("user") and session["user"]["state"] == "authenticated":
-                    AutoAuth.current_user = AutoUser(**session.get("user"))
-                    AutoAuth.current_user.last_login = datetime.now()
-                    AutoAuth.current_user.save()
-                    session["user"] = AutoAuth.current_user.serialize()
-                    return func(*args, **kwargs)
-                else:
-                    return redirect(url_for("auth.login"))
+        def wrap(func):
+            # @wraps(func)
+            def decorated_view(*args, **kwargs):
+                if current_app:
+                    # log(cls.user, session.get("user"))
+                    if (
+                        session.get("user")
+                        and session["user"]["state"] == "authenticated"
+                    ):
+                        cls.user = cls.user_class(**session.get("user"))
+                        cls.user.last_login = datetime.now()
+                        cls.user.save()
+                        session["user"] = cls.user.serialize()
+                        return func(*args, **kwargs)
+                    elif guest:
+                        cls.user = cls.user_class.find(
+                            email="guest@world.stevenamoore.dev"
+                        )
+                        if not cls.user:
+                            cls.user = cls.user_class(
+                                name="Guest",
+                                email="guest@world.stevenamoore.dev",
+                                state="guest",
+                            )
+                        session["user"] = cls.user.serialize()
+                        return func(*args, **kwargs)
+                    else:
+                        return redirect(url_for("auth.login"))
 
-        return decorated_view
+            return decorated_view
+
+        return wrap

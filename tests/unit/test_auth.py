@@ -1,8 +1,8 @@
 import urllib.request
 
 import pytest
-
-from autonomous import AutoModel, log
+from autonomous import log
+from autonomous.auth import AutoAuth, auth_required
 from autonomous.auth.github import GithubAuth
 from autonomous.auth.google import GoogleAuth
 from autonomous.auth.user import AutoUser
@@ -31,7 +31,7 @@ class TestAuth:
             "token": "testtoken",
         }
         user = AutoUser.authenticate(user_info)
-        breakpoint()
+        # breakpoint()
         user2 = AutoUser.authenticate(user_info)
         assert user.pk == user2.pk
         user.state = "unauthenticated"
@@ -40,3 +40,27 @@ class TestAuth:
         user = AutoUser.authenticate(user_info)
         assert pk == user.pk == user2.pk
         assert user.is_authenticated
+
+    def test_auth_required(self):
+        user_info = {
+            "name": "test",
+            "email": "test@test.com",
+            "token": "testtoken",
+        }
+        AutoUser.authenticate(user_info)
+
+        @auth_required()
+        def print_user():
+            user = AutoAuth.current_user()
+            assert user.is_authenticated
+            print(user)
+
+        print_user()
+
+        @auth_required(guest=True)
+        def print_guest():
+            user = AutoAuth.current_user()
+            assert user.is_guest
+            print(user)
+
+        print_guest()

@@ -203,10 +203,13 @@ class Table:
         return list(results.values())
 
     def get(self, pk):
+        if not pk or pk == "None":
+            return None
         try:
             obj = self._db.json().get(f"{self.name}:{pk}", Path.root_path())
             assert obj
         except Exception as e:
+            log(e)
             obj = None
         else:
             for k in obj:

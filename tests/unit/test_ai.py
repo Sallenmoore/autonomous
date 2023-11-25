@@ -4,9 +4,11 @@ import pytest
 from autonomous import log
 from autonomous.ai import AutoTeam
 from autonomous.ai.agents.mockai import MockAIAgent
-from autonomous.ai.agents.local import LocalAIAgent
+
+# from autonomous.ai.agents.local import LocalAIAgent
 from autonomous.ai.agents.openai import OpenAIAgent
-from autonomous.ai.agents.autogen import AutoGenAgent
+
+# from autonomous.ai.agents.autogen import AutoGenAgent
 
 
 funcobj = {

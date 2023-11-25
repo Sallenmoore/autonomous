@@ -1,18 +1,19 @@
-from .agents.autogen import AutoGenAgent
-from .agents.local import LocalAIAgent
-from .agents.openai import OpenAIAgent
+# from .agents.autogen import AutoGenAgent
+# from .agents.local import LocalAIAgent
 from .agents.mockai import MockAIAgent
+from .agents.openai import OpenAIAgent
 
 
 class AutoTeam:
     def __init__(self, model=None):
-        if model == "autogen":
-            self.proxy = AutoGenAgent()
-        elif model == "local":
-            self.proxy = LocalAIAgent()
-        elif model == "openai":
+        self.proxy = None
+        # if model == "autogen":
+        #     self.proxy = AutoGenAgent()
+        # if model == "local":
+        #     self.proxy = LocalAIAgent()
+        if model == "openai":
             self.proxy = OpenAIAgent()
-        else:
+        if not self.proxy:
             self.proxy = MockAIAgent()
 
     def generate_image(self, prompt, **kwargs):

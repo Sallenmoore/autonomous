@@ -41,7 +41,7 @@ class AutoUser(AutoModel):
         user.last_login = datetime.now()
         user.state = "authenticated"
         user.save()
-        log(user.pk)
+        # log(user.pk)
         return user
 
     @property
@@ -50,3 +50,10 @@ class AutoUser(AutoModel):
         Returns True if the user is authenticated, False otherwise.
         """
         return self.state == "authenticated"
+
+    @property
+    def is_guest(self):
+        """
+        Returns True if the user is a guest, False otherwise.
+        """
+        return self.state == "guest"
