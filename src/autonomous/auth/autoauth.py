@@ -92,7 +92,7 @@ class AutoAuth:
         """
 
         def wrap(func):
-            # @wraps(func)
+            @wraps(func)
             def decorated_view(*args, **kwargs):
                 if current_app:
                     # log(cls.user, session.get("user"))

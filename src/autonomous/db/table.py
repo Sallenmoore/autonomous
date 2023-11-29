@@ -163,7 +163,11 @@ class Table:
         return result or 0
 
     def delete(self, pk):
-        return self._db.json().delete(f"{self.name}:{pk}", Path.root_path())
+        try:
+            return self._db.json().delete(f"{self.name}:{pk}", Path.root_path())
+        except Exception as e:
+            log(e)
+            return None
 
     def find(self, **search_terms):
         result = self.search(**search_terms)
