@@ -28,7 +28,8 @@ class DelayedModel:
             _pk = object.__getattribute__(self, "_delayed_pk")
             _model = object.__getattribute__(self, "_delayed_model")
             # log(_pk, _model)
-            _obj = _model.get(_pk)
+            # breakpoint()
+            _obj = _model(pk=_pk)
             # log(_obj)
             try:
                 assert _obj
@@ -72,8 +73,7 @@ class DelayedModel:
 
     def __repr__(self):
         result = repr(self._delayed_obj)
-        msg = f"<<DelayedModel {self._delayed_model.__name__}:{self._delayed_pk}>>\n"
-        msg += f"{result}\n\n"
+        msg = f"\n<<DelayedModel {self._delayed_model.__name__}:{self._delayed_pk}>>:\t{result}"
         return msg
 
     def __hash__(self):
@@ -130,6 +130,14 @@ class AutoModel(ABC):
 
         return obj
 
+    @property
+    def _save_memo(self):
+        return AutoModel.__save_memo
+
+    @_save_memo.setter
+    def _save_memo(self, value):
+        AutoModel.__save_memo = value
+
     def __repr__(self) -> str:
         """
         Return a string representation of the AutoModel instance.
@@ -167,38 +175,22 @@ class AutoModel(ABC):
         """
         return f"{cls.__module__}.{cls.__name__}"
 
-    # @classmethod
-    # def _subobj_save(cls, obj):
-    #     if isinstance(obj, list):
-    #         for v in obj:
-    #             cls._subobj_save(v)
-    #     elif isinstance(obj, dict):
-    #         for v in obj.values():
-    #             cls._subobj_save(v)
-    #     elif issubclass(obj.__class__, (AutoModel, DelayedModel)):
-    #         if f"{obj.__class__.__name__}-{obj.pk}" not in AutoModel.__save_memo:
-    #             AutoModel.__save_memo.append(f"{obj.__class__.__name__}-{obj.pk}")
-    #             assert obj._save()
-
-    def _save(self):
-        """
-        Save this model to the database.
-
-        Returns:
-            int: The primary key (pk) of the saved model.
-        """
-        log(self.pk, AutoModel.__save_memo, self.__class__.__name__)
-
-        # for k in self.attributes:
-        #     subobj = getattr(self, k)
-        #     self._subobj_save(subobj)
-        if f"{self.__class__.__name__}-{self.pk}" not in AutoModel.__save_memo:
-            AutoModel.__save_memo.append(f"{self.__class__.__name__}-{self.pk}")
-            self.last_updated = datetime.now()
-            record = self.serialize()
-            # log(type(record), record)
-            self.pk = self.table().save(record)
-        return self.pk
+    ## TODO: Save all sub objects
+    ## FIXME: This is causing a circular reference or no saving at all
+    def _subobj_save(self, obj):
+        if isinstance(obj, list):
+            for v in obj:
+                if self._subobj_save(v) is None:
+                    obj.remove(v)
+        elif isinstance(obj, dict):
+            for k, v in obj.items():
+                if self._subobj_save(v) is None:
+                    obj[k] = None
+        elif issubclass(obj.__class__, (AutoModel, DelayedModel)):
+            key = f"{obj.__class__.__name__}-{obj.pk}"
+            if key not in self._save_memo:
+                self._save_memo.append(key)
+                obj.save()
 
     def save(self):
         """
@@ -207,8 +199,13 @@ class AutoModel(ABC):
         Returns:
             int: The primary key (pk) of the saved model.
         """
-        pk = self._save()
-        return pk
+        for attr in self.attributes:
+            self._subobj_save(getattr(self, attr))
+        self.last_updated = datetime.now()
+        record = self.serialize()
+        # log(type(record), record)
+        self.pk = self.table().save(record)
+        return self.pk
 
     @classmethod
     def get(cls, pk):
@@ -221,9 +218,7 @@ class AutoModel(ABC):
         Returns:
             AutoModel or None: The retrieved AutoModel instance, or None if not found.
         """
-        if isinstance(pk, str) and pk.isdigit():
-            pk = int(pk)
-
+        # breakpoint()
         result = cls.table().get(pk)
         return cls(**result) if result else None
 
@@ -278,10 +273,24 @@ class AutoModel(ABC):
         attribs = cls.table().find(**kwargs)
         return cls(**attribs) if attribs else None
 
-    def delete(self):
+    def _subobj_delete(self, obj):
+        if isinstance(obj, list):
+            for v in obj:
+                self._subobj_delete(v)
+        elif isinstance(obj, dict):
+            for v in obj.values():
+                self._subobj_delete(v)
+        elif issubclass(obj.__class__, (AutoModel, DelayedModel)):
+            obj.delete()
+
+    def delete(self, sub_objects=True):
         """
         Delete this model from the database.
         """
+        if sub_objects:
+            for k in self.attributes:
+                if attr := getattr(self, k):
+                    self._subobj_delete(attr)
         return self.table().delete(pk=self.pk)
 
     serialized_tracker = []
@@ -301,11 +310,17 @@ class AutoModel(ABC):
             val = new_dict
         elif isinstance(val, datetime):
             val = {"_datetime": val.isoformat()}
-        elif issubclass(val.__class__, (AutoModel, DelayedModel)) and val.pk:
-            val = {
-                "pk": val.pk,
-                "_automodel": val.model_name(),
-            }
+        elif issubclass(val.__class__, (AutoModel, DelayedModel)):
+            if val.pk:
+                val = {
+                    "pk": val.pk,
+                    "_automodel": val.model_name(),
+                }
+            else:
+                log(
+                    val.__class__.__name__,
+                    "The above object was not been saved. You must save subobjects if you want them to persist.",
+                )
 
         return val
 

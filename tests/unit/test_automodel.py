@@ -13,10 +13,10 @@ class MockORM:
         self.table = {}
 
     def save(self, data):
-        if "pk" not in data or data["pk"] is None:
+        if data.get("pk") is None:
             data["pk"] = uuid.uuid4().hex
         self.table[data["pk"]] = data
-        # log(data)
+        log(data)
         return data["pk"]
 
     def get(self, pk):
@@ -96,7 +96,9 @@ class TestAutomodel:
 
     def test_automodel_save(self):
         am = Model(name="test", age=10, date=datetime.now())
-        am.save()
+        # breakpoint()
+        pk = am.save()
+        assert pk
         assert am.name == "test"
         assert am.age == 10
         assert am.date <= datetime.now()

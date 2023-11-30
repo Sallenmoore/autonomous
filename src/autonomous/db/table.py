@@ -153,7 +153,11 @@ class Table:
         try:
             json_db = self._db.json()
             json_db.set(f"{self.name}:{obj['pk']}", Path.root_path(), obj)
+        except TypeError as e:
+            log(e)
+            raise e
         except Exception as e:
+            # log(obj)
             raise e
         obj = {k: self._validate(k, v, decode=True) for k, v in obj.items()}
         return obj["pk"]
