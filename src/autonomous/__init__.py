@@ -1,4 +1,4 @@
-__version__ = "0.1.75"
+__version__ = "0.1.76"
 
 from .logger import log
 from .model.automodel import AutoModel
