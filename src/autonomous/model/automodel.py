@@ -167,18 +167,18 @@ class AutoModel(ABC):
         """
         return f"{cls.__module__}.{cls.__name__}"
 
-    @classmethod
-    def _subobj_save(cls, obj):
-        if isinstance(obj, list):
-            for v in obj:
-                cls._subobj_save(v)
-        elif isinstance(obj, dict):
-            for v in obj.values():
-                cls._subobj_save(v)
-        elif issubclass(obj.__class__, (AutoModel, DelayedModel)):
-            if f"{obj.__class__.__name__}-{obj.pk}" not in AutoModel.__save_memo:
-                AutoModel.__save_memo.append(f"{obj.__class__.__name__}-{obj.pk}")
-                assert obj._save()
+    # @classmethod
+    # def _subobj_save(cls, obj):
+    #     if isinstance(obj, list):
+    #         for v in obj:
+    #             cls._subobj_save(v)
+    #     elif isinstance(obj, dict):
+    #         for v in obj.values():
+    #             cls._subobj_save(v)
+    #     elif issubclass(obj.__class__, (AutoModel, DelayedModel)):
+    #         if f"{obj.__class__.__name__}-{obj.pk}" not in AutoModel.__save_memo:
+    #             AutoModel.__save_memo.append(f"{obj.__class__.__name__}-{obj.pk}")
+    #             assert obj._save()
 
     def _save(self):
         """
@@ -187,16 +187,17 @@ class AutoModel(ABC):
         Returns:
             int: The primary key (pk) of the saved model.
         """
-        # log(self.pk, AutoModel.__save_memo, self.__class__.__name__)
+        log(self.pk, AutoModel.__save_memo, self.__class__.__name__)
 
         # for k in self.attributes:
         #     subobj = getattr(self, k)
         #     self._subobj_save(subobj)
-
-        self.last_updated = datetime.now()
-        record = self.serialize()
-        # log(type(record), record)
-        self.pk = self.table().save(record)
+        if f"{self.__class__.__name__}-{self.pk}" not in AutoModel.__save_memo:
+            AutoModel.__save_memo.append(f"{self.__class__.__name__}-{self.pk}")
+            self.last_updated = datetime.now()
+            record = self.serialize()
+            # log(type(record), record)
+            self.pk = self.table().save(record)
         return self.pk
 
     def save(self):
