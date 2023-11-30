@@ -207,20 +207,17 @@ class Table:
         return list(results.values())
 
     def get(self, pk):
+        # log(pk)
         if not pk or pk == "None":
             return None
-        try:
-            obj = self._db.json().get(f"{self.name}:{pk}", Path.root_path())
-            assert obj
-        except Exception as e:
-            log(e)
-            obj = None
-        else:
+
+        if obj := self._db.json().get(f"{self.name}:{pk}", Path.root_path()):
             for k in obj:
                 for r in replacements:
                     if isinstance(obj[k], str):
                         obj[k] = obj[k].replace(f"\\{r}", r)
-        return obj
+            return obj
+        return None
 
     def all(self):
         keys = self._db.keys(f"{self.name}:*")

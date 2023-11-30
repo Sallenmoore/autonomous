@@ -27,9 +27,9 @@ class DelayedModel:
         if not object.__getattribute__(self, "_delayed_obj"):
             _pk = object.__getattribute__(self, "_delayed_pk")
             _model = object.__getattribute__(self, "_delayed_model")
-
+            # log(_pk, _model)
             _obj = _model.get(_pk)
-
+            # log(_obj)
             try:
                 assert _obj
             except AssertionError as e:
