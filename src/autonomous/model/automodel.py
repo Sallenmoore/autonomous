@@ -27,10 +27,10 @@ class DelayedModel:
         if not object.__getattribute__(self, "_delayed_obj"):
             _pk = object.__getattribute__(self, "_delayed_pk")
             _model = object.__getattribute__(self, "_delayed_model")
-            # log(_pk, _model)
+            log(_pk, _model)
             # breakpoint()
             _obj = _model(pk=_pk)
-            # log(_obj)
+            log(_obj)
             try:
                 assert _obj
             except AssertionError as e:
@@ -177,20 +177,20 @@ class AutoModel(ABC):
 
     ## TODO: Save all sub objects
     ## FIXME: This is causing a circular reference or no saving at all
-    def _subobj_save(self, obj):
-        if isinstance(obj, list):
-            for v in obj:
-                if self._subobj_save(v) is None:
-                    obj.remove(v)
-        elif isinstance(obj, dict):
-            for k, v in obj.items():
-                if self._subobj_save(v) is None:
-                    obj[k] = None
-        elif issubclass(obj.__class__, (AutoModel, DelayedModel)):
-            key = f"{obj.__class__.__name__}-{obj.pk}"
-            if key not in self._save_memo:
-                self._save_memo.append(key)
-                obj.save()
+    # def _subobj_save(self, obj):
+    #     if isinstance(obj, list):
+    #         for v in obj:
+    #             if self._subobj_save(v) is None:
+    #                 obj.remove(v)
+    #     elif isinstance(obj, dict):
+    #         for k, v in obj.items():
+    #             if self._subobj_save(v) is None:
+    #                 obj[k] = None
+    #     elif issubclass(obj.__class__, (AutoModel, DelayedModel)):
+    #         key = f"{obj.__class__.__name__}-{obj.pk}"
+    #         if key not in self._save_memo:
+    #             self._save_memo.append(key)
+    #             obj.save()
 
     def save(self):
         """
@@ -199,8 +199,9 @@ class AutoModel(ABC):
         Returns:
             int: The primary key (pk) of the saved model.
         """
-        for attr in self.attributes:
-            self._subobj_save(getattr(self, attr))
+        # FIXME: STILL NOT WORKING
+        # for attr in self.attributes:
+        #     self._subobj_save(getattr(self, attr))
         self.last_updated = datetime.now()
         record = self.serialize()
         # log(type(record), record)
