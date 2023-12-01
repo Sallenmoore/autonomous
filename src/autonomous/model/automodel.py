@@ -2,6 +2,7 @@
 # default : Optional[str] = "value"  # for default values
 import importlib
 import json
+import uuid
 from abc import ABC
 from datetime import datetime
 
@@ -27,10 +28,10 @@ class DelayedModel:
         if not object.__getattribute__(self, "_delayed_obj"):
             _pk = object.__getattribute__(self, "_delayed_pk")
             _model = object.__getattribute__(self, "_delayed_model")
-            log(_pk, _model)
+            # log(_pk, _model)
             # breakpoint()
             _obj = _model(pk=_pk)
-            log(_obj)
+            # log(_obj)
             try:
                 assert _obj
             except AssertionError as e:
@@ -86,7 +87,7 @@ class AutoModel(ABC):
     _table = None
     _orm = ORM
 
-    __save_memo = []
+    _save_memo = {}
 
     def __new__(cls, *args, **kwargs):
         """
@@ -105,9 +106,10 @@ class AutoModel(ABC):
             obj: The created AutoModel instance.
         """
         obj = super().__new__(cls)
+        pk = kwargs.get("pk", args[0] if args else None)
         # set default attributes
         # Get model data from database
-        result = cls.table().get(kwargs.get("pk")) or {}
+        result = cls.table().get(pk) or {}
         # set object attributes
         for k, v in cls.attributes.items():
             # set attribute from db or set to default value
@@ -130,13 +132,11 @@ class AutoModel(ABC):
 
         return obj
 
-    @property
-    def _save_memo(self):
-        return AutoModel.__save_memo
-
-    @_save_memo.setter
-    def _save_memo(self, value):
-        AutoModel.__save_memo = value
+    def __getattribute__(self, name):
+        obj = super().__getattribute__(name)
+        if isinstance(obj, DelayedModel):
+            return obj._instance()
+        return obj
 
     def __repr__(self) -> str:
         """
@@ -147,11 +147,11 @@ class AutoModel(ABC):
         """
         return f"{self.__dict__}"
 
-    def __getattribute__(self, name):
-        obj = super().__getattribute__(name)
-        if isinstance(obj, DelayedModel):
-            return obj._instance()
-        return obj
+    def __eq__(self, other):
+        return self.pk == other.pk
+
+    def get_save_key(self):
+        return f"{self.__class__.__name__}-{self.pk}"
 
     @classmethod
     def table(cls):
@@ -176,21 +176,51 @@ class AutoModel(ABC):
         return f"{cls.__module__}.{cls.__name__}"
 
     ## TODO: Save all sub objects
-    ## FIXME: This is causing a circular reference or no saving at all
-    # def _subobj_save(self, obj):
+    ## FIXME: This is causing issues
+    # def _subobj_save(self, obj, key):
     #     if isinstance(obj, list):
     #         for v in obj:
-    #             if self._subobj_save(v) is None:
+    #             if self._subobj_save(v, key) is None:
     #                 obj.remove(v)
     #     elif isinstance(obj, dict):
     #         for k, v in obj.items():
-    #             if self._subobj_save(v) is None:
+    #             if self._subobj_save(v, key) is None:
     #                 obj[k] = None
     #     elif issubclass(obj.__class__, (AutoModel, DelayedModel)):
-    #         key = f"{obj.__class__.__name__}-{obj.pk}"
-    #         if key not in self._save_memo:
-    #             self._save_memo.append(key)
-    #             obj.save()
+    #         if not obj.pk:
+    #             obj.pk = str(uuid.uuid4())
+    #         if obj.pk not in self._save_memo[key]:
+    #             obj._save(key)
+
+    def _save(self, key):
+        """
+        Save this model to the database.
+
+        Returns:
+            int: The primary key (pk) of the saved model.
+
+        ALGO:
+        - add self.pk to save_memo is self.pk
+        - save object not in save memo or without pk into database
+        """
+
+        assert self.pk  # sanity check
+        assert key and key in AutoModel._save_memo  # sanity check
+
+        local_key = self.get_save_key()
+
+        if key == local_key:
+            log(f"Saving root object {key}")
+        else:
+            log(f"Saving child object {local_key} for root {key}")
+
+        if local_key not in AutoModel._save_memo[key]:
+            AutoModel._save_memo[key].append(local_key)
+            self.pk = self.table().save(self.serialize())
+        # FIXME: STILL NOT WORKING
+        # for attr in self.attributes:
+        #     self._subobj_save(getattr(self, attr), key)
+        return self.pk
 
     def save(self):
         """
@@ -199,14 +229,14 @@ class AutoModel(ABC):
         Returns:
             int: The primary key (pk) of the saved model.
         """
-        # FIXME: STILL NOT WORKING
-        # for attr in self.attributes:
-        #     self._subobj_save(getattr(self, attr))
-        self.last_updated = datetime.now()
-        record = self.serialize()
-        # log(type(record), record)
-        self.pk = self.table().save(record)
-        return self.pk
+        if not self.pk:
+            self.pk = str(uuid.uuid4())
+        key = self.get_save_key()
+        AutoModel._save_memo[key] = []
+        result = self._save(key)
+        assert result == self.pk
+        AutoModel._save_memo.pop(key)
+        return result
 
     @classmethod
     def get(cls, pk):

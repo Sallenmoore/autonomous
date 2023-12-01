@@ -237,10 +237,24 @@ class TestAutomodel:
         subam.auto = am
         am.auto = subam
         am.save()
+        am.auto == subam
         subam.save()
+        subam.auto == am
 
         am_ser = am.serialize()
         assert am_ser["auto"]["pk"] == subam.pk
         obj = Model.deserialize(am_ser)
         assert obj.pk == am.pk
         assert obj.auto.pk == subam.pk
+
+        am.auto = am
+        am.save()
+        assert am.auto == am
+        name = am.auto.name
+        assert name == "test"
+        am.auto.name = "updated"
+        am.auto.save()
+        assert am.auto.name == "updated"
+        assert am.name == "updated"
+        am_ser = am.serialize()
+        assert am_ser["auto"]["pk"] == am.pk
