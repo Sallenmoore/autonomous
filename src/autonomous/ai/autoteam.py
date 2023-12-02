@@ -8,18 +8,21 @@ from .agents.openai import OpenAIAgent
 
 class AutoTeam:
     def __init__(self, model=None):
-        model = model or os.getenv("AI_AGENT", "openai")
-        self.proxy = None
-        # if model == "autogen":
-        #     self.proxy = AutoGenAgent()
-        # if model == "local":
-        #     self.proxy = LocalAIAgent()
-        if model == "openai":
-            self.proxy = OpenAIAgent()
-        elif model == "mockai":
-            self.proxy = MockAIAgent()
+        if model:
+            self.proxy = model()
         else:
-            raise Exception("Invalid model")
+            model = os.getenv("AI_AGENT", "openai")
+            self.proxy = None
+            # if model == "autogen":
+            #     self.proxy = AutoGenAgent()
+            # if model == "local":
+            #     self.proxy = LocalAIAgent()
+            if model == "openai":
+                self.proxy = OpenAIAgent()
+            elif model == "mockai":
+                self.proxy = MockAIAgent()
+            else:
+                raise Exception("Invalid model")
 
     def generate_image(self, prompt, **kwargs):
         return self.proxy.generate_image(prompt, **kwargs)

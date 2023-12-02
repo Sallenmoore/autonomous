@@ -5,12 +5,12 @@ import pytest
 class TestAssets:
     csspath_dir = "src/autonomous/app_template/app/static/style/sass/main.scss"
     cssoutput_dir = "src/autonomous/app_template/app/static/style/main.css"
-    js_files = "main"
+    js_file = "main"
     jspath_dir = "src/autonomous/app_template/app/static/js"
     jsoutput_dir = "src/autonomous/app_template/app/static/js/main.min.js"
 
     def test_js_assets(self):
-        assets.javascript(path=TestAssets.jspath_dir, files=TestAssets.js_files)
+        assets.javascript(path=TestAssets.jspath_dir, file=TestAssets.js_file)
 
     def test_css_assets(self):
         path_dir = "src/autonomous/app_template/app/static/style/sass/main.scss"
@@ -22,5 +22,5 @@ class TestAssets:
             csspath=TestAssets.csspath_dir,
             cssoutput=TestAssets.cssoutput_dir,
             jspath=TestAssets.jspath_dir,
-            jsfiles=TestAssets.js_files,
+            jsfile=TestAssets.js_file,
         )
