@@ -314,7 +314,7 @@ class AutoModel(ABC):
         elif issubclass(obj.__class__, (AutoModel, DelayedModel)):
             obj.delete()
 
-    def delete(self, sub_objects=True):
+    def delete(self, sub_objects=False):
         """
         Delete this model from the database.
         """
