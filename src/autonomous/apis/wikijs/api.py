@@ -137,7 +137,7 @@ class WikiJS:
         results = response.json()
         page = results["data"]["pages"]["create"]["page"]
         if not page:
-            log(f"results: {response.json()['data']['pages']['create']['responseResult']}")
+            # log(f"results: {response.json()['data']['pages']['create']['responseResult']}")
             return response.json()["data"]["pages"]["create"]["responseResult"]
         result = WikiJSPage(**page)
         return result
@@ -190,7 +190,7 @@ class WikiJS:
         res = cls.make_request(query, obj_vars)
         results = res.json()["data"]["pages"]["update"]["page"]
         if not results:
-            log(f"results: {res.json()['data']['pages']['create']['responseResult']}")
+            # log(f"results: {res.json()['data']['pages']['create']['responseResult']}")
             return
         result = WikiJSPage(**results)
         return result
@@ -245,7 +245,7 @@ class WikiJS:
             }
             """
         response = cls.make_request(query, {"path": path})
-        #log(response.json())
+        # log(response.json())
         results = response.json()["data"]["pages"]["singleByPath"]
         return WikiJSPage(**results) if results else None
 

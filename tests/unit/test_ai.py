@@ -101,7 +101,7 @@ class TestMockAI:
             "A beautiful pasture that seems directly out of a William Wordsworth poem."
         )
         img = oai.generate_image(prompt)
-        log(type(img))
+        # log(type(img))
         assert isinstance(img, bytes)
         with open("tests/assets/testimg.png", "wb") as fptr:
             fptr.write(img)

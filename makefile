@@ -34,7 +34,7 @@ testinit: clean
 	pip install --upgrade -r ./requirements_dev.txt
 	pip install -e .
 
-TESTING=TestAutomodel.test_automodel_get
+TESTING=TestStorage
 test:
 	python -m pytest -k "$(TESTING)" -s 
 

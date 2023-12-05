@@ -2,13 +2,11 @@ import copy
 import uuid
 
 import pytest
-
 from autonomous import log
 from autonomous.storage.cloudinarystorage import CloudinaryStorage
 from autonomous.storage.markdown import MarkdownParser, Page
 
 
-@pytest.mark.skip(reason="Takes too long")
 class TestStorage:
     def test_cloudinary_basic(self):
         storage = CloudinaryStorage()
@@ -18,7 +16,6 @@ class TestStorage:
         log(asset_id_1)
         assert asset_id_1["asset_id"]
         assert asset_id_1["url"]
-        assert not asset_id_1["raw"]
 
     def test_cloudinary_bytemode(self):
         storage = CloudinaryStorage()
@@ -28,7 +25,6 @@ class TestStorage:
         assert asset_id_2
         assert asset_id_2["asset_id"]
         assert asset_id_2["url"]
-        assert not asset_id_2["raw"]
 
     def test_cloudinary_folders(self):
         storage = CloudinaryStorage()
@@ -38,7 +34,6 @@ class TestStorage:
         assert asset_id_3
         assert asset_id_3["asset_id"]
         assert asset_id_3["url"]
-        assert not asset_id_3["raw"]
 
     def test_cloudinary_options(self):
         storage = CloudinaryStorage()
@@ -48,7 +43,6 @@ class TestStorage:
         assert asset_id_3
         assert asset_id_3["asset_id"]
         assert asset_id_3["url"]
-        assert not asset_id_3["raw"]
 
     def test_cloudinary_read(self):
         storage = CloudinaryStorage()
@@ -60,7 +54,7 @@ class TestStorage:
     def test_cloudinary_search(self):
         storage = CloudinaryStorage()
         storage.save("tests/assets/testimg.png", display_name="testimg")
-        results = storage.search("testimg", display_name="testimg")
+        results = storage.search(folder="test", display_name="testimg")
         log(results)
         assert results
 
@@ -75,6 +69,14 @@ class TestStorage:
         storage = CloudinaryStorage()
         asset_id_1 = storage.save("tests/assets/testimg.png")
         storage.remove(asset_id=asset_id_1["asset_id"])
+
+    def test_cloudinary_move(self):
+        storage = CloudinaryStorage()
+        filedata = open("tests/assets/testimg.png", "rb")
+        asset = storage.save(filedata, folder="test/subtest")
+        asset = storage.move(asset["asset_id"], folder="test/subtest2")
+        print(asset)
+        assert asset["folder"] == "test/subtest2"
 
 
 class ObjMD:

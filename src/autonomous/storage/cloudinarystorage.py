@@ -56,9 +56,18 @@ class CloudinaryStorage:
         except Exception as e:
             log("Cloudinary Storage upload error")
             raise e
-        #log(response)
+        # log(response)
         return {"asset_id": response["asset_id"], "url": response["url"]}
+
+    def move(self, key, folder):
+        metadata = self.get_metadata(key)
+        new_id = f"{folder}/{metadata['public_id'].split('/')[-1]}"
+        asset = cloudinary.uploader.rename(
+            metadata["public_id"],
+            new_id,
+        )
+        return {"asset_id": asset["asset_id"], "url": asset["url"]}
 
     def remove(self, asset_id, **kwargs):
         response = self.get_metadata(asset_id)
-        cloudinary.uploader.destroy(response["public_id"], **kwargs)
+        return cloudinary.uploader.destroy(response["public_id"], **kwargs)

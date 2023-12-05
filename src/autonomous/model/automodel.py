@@ -36,7 +36,7 @@ class DelayedModel:
                 assert _obj
             except AssertionError as e:
                 msg = f"{e}\n\nModel relationship error. Most likely failed to clean up dangling reference.\nModel: {_model}\npk: {_pk}\nResult: {_obj}"
-                log(msg)
+                #log(msg)
                 raise Exception(msg)
             else:
                 object.__setattr__(self, "_delayed_obj", _obj)
@@ -209,10 +209,10 @@ class AutoModel(ABC):
 
         local_key = self.get_save_key()
 
-        if key == local_key:
-            log(f"Saving root object {key}")
-        else:
-            log(f"Saving child object {local_key} for root {key}")
+        # if key == local_key:
+        #     log(f"Saving root object {key}")
+        # else:
+        #     log(f"Saving child object {local_key} for root {key}")
 
         if local_key not in AutoModel._save_memo[key]:
             AutoModel._save_memo[key].append(local_key)
