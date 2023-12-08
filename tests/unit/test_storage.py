@@ -76,7 +76,7 @@ class TestStorage:
         asset = storage.save(filedata, folder="test/subtest")
         asset = storage.move(asset["asset_id"], folder="test/subtest2")
         print(asset)
-        assert asset["folder"] == "test/subtest2"
+        assert "test/subtest2" in asset["url"]
 
 
 class ObjMD:

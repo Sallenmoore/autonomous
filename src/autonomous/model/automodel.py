@@ -1,5 +1,6 @@
 # opt : Optional[str]  # for optional attributes
 # default : Optional[str] = "value"  # for default values
+import copy
 import importlib
 import json
 import uuid
@@ -36,7 +37,7 @@ class DelayedModel:
                 assert _obj
             except AssertionError as e:
                 msg = f"{e}\n\nModel relationship error. Most likely failed to clean up dangling reference.\nModel: {_model}\npk: {_pk}\nResult: {_obj}"
-                #log(msg)
+                # log(msg)
                 raise Exception(msg)
             else:
                 object.__setattr__(self, "_delayed_obj", _obj)
@@ -112,13 +113,10 @@ class AutoModel(ABC):
         result = cls.table().get(pk) or {}
         # set object attributes
         for k, v in cls.attributes.items():
-            # set attribute from db or set to default value
-            if isinstance(v, tuple):
-                setattr(obj, k, result.get(k, v[0]))
-            elif isinstance(v, AutoAttribute):
-                setattr(obj, k, result.get(k, v.default))
-            else:
-                setattr(obj, k, result.get(k, v))
+            if isinstance(v, AutoAttribute):
+                v = v.default
+            v = copy.deepcopy(v)
+            setattr(obj, k, result.get(k, v))
 
         # update model with keyword arguments
         obj.__dict__ |= kwargs
