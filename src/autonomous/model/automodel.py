@@ -31,7 +31,7 @@ class DelayedModel:
             _model = object.__getattribute__(self, "_delayed_model")
             # log(_pk, _model)
             # breakpoint()
-            _obj = _model(pk=_pk)
+            _obj = _model.get(_pk)
             # log(_obj)
             try:
                 assert _obj
@@ -350,6 +350,7 @@ class AutoModel(ABC):
                     val.__class__.__name__,
                     "The above object was not been saved. You must save subobjects if you want them to persist.",
                 )
+                val = None
 
         return val
 
