@@ -11,7 +11,6 @@ from autonomous.auth.user import AutoUser
 
 
 class AutoAuth:
-    user = None
     user_class = AutoUser
 
     def __init__(
@@ -47,11 +46,9 @@ class AutoAuth:
         """
         Returns the current user.
         """
-        return (
-            cls.user_class.get(session["user"].get("pk"))
-            if session.get("user")
-            else None
-        )
+        if session.get("user") and session["user"]["state"] == "authenticated":
+            return cls.user_class.get(session["user"].get("pk"))
+        return None
 
     def authenticate(self):
         """
@@ -97,32 +94,25 @@ class AutoAuth:
             @wraps(func)
             def decorated_view(*args, **kwargs):
                 if current_app:
-                    # log(cls.user, session.get("user"))
-                    if (
-                        session.get("user")
-                        and session["user"]["state"] == "authenticated"
-                    ):
-                        cls.user = cls.user_class.get(session["user"].get("pk"))
-
-                        if not cls.user:
-                            return redirect(url_for("auth.login"))
-
-                        cls.user.last_login = datetime.now()
-                        cls.user.save()
-                        session["user"] = cls.user.serialize()
-                        return func(*args, **kwargs)
-                    elif guest:
-                        cls.user = cls.user_class.find(email="guest@world.dev")
-                        if not cls.user:
-                            cls.user = cls.user_class(
-                                name="Guest",
-                                email="guest@world.dev",
-                                state="guest",
-                            )
-                        session["user"] = cls.user.serialize()
-                        return func(*args, **kwargs)
-                    else:
+                    log(session.get("user"))
+                    if not cls.current_user():
                         return redirect(url_for("auth.login"))
+                    elif guest:
+                        user = cls.user_class.find(
+                            email="guest@world.dev"
+                        ) or cls.user_class(
+                            name="Guest",
+                            email="guest@app.dev",
+                            state="guest",
+                        )
+                        session["user"] = user.serialize()
+                    else:
+                        log(cls.current_user(), session.get("user"))
+                        user = cls.current_user()
+                        user.last_login = datetime.now()
+                        user.save()
+                        session["user"] = user.serialize()
+                    return func(*args, **kwargs)
 
             return decorated_view
 
