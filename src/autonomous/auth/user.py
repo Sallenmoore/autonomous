@@ -29,21 +29,23 @@ class AutoUser(AutoModel):
         Initiates the authentication process.
         Returns a redirect URL which should be used to redirect the user to the OpenID provider for authentication.
         """
+        email = user_info["email"].strip()
+        name = user_info["name"].strip()
         log(cls, user_info)
-        user = cls.find(email=user_info["email"])
+        user = cls.find(email=email)
         log(user)
         if not user:
             # FIXME: attempting a lookup hack because something is fucked up
             for u in cls.all():
-                if u.email == user_info["email"]:
+                if u.email == email:
                     user = u
         if not user:
             log("Creating new user...")
-            user = cls(**user_info)
+            user = cls(name=name, email=email)
 
         # parse user_info into a user object
-        user.name = user_info["name"]
-        user.email = user_info["email"]
+        user.name = name
+        user.email = email
         user.last_login = datetime.now()
         user.state = "authenticated"
         user.save()

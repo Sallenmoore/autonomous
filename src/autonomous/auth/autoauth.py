@@ -95,8 +95,12 @@ class AutoAuth:
             def decorated_view(*args, **kwargs):
                 if current_app:
                     log(session.get("user"))
-                    if not cls.current_user():
-                        return redirect(url_for("auth.login"))
+                    if user := cls.current_user():
+                        log(cls.current_user(), session.get("user"))
+                        user = cls.current_user()
+                        user.last_login = datetime.now()
+                        user.save()
+                        session["user"] = user.serialize()
                     elif guest:
                         user = cls.user_class.find(
                             email="guest@world.dev"
@@ -107,11 +111,7 @@ class AutoAuth:
                         )
                         session["user"] = user.serialize()
                     else:
-                        log(cls.current_user(), session.get("user"))
-                        user = cls.current_user()
-                        user.last_login = datetime.now()
-                        user.save()
-                        session["user"] = user.serialize()
+                        return redirect(url_for("auth.login"))
                     return func(*args, **kwargs)
 
             return decorated_view
