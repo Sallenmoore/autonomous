@@ -47,7 +47,7 @@ class AutoAuth:
         """
         Returns the current user.
         """
-        if session.get("user") and not cls.user:
+        if session.get("user"):
             cls.user = AutoAuth.user_class.get(session["user"].get("pk"))
         return cls.user
 
