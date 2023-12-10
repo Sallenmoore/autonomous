@@ -47,9 +47,11 @@ class AutoAuth:
         """
         Returns the current user.
         """
-        if session.get("user"):
-            cls.user = AutoAuth.user_class.get(session["user"].get("pk"))
-        return cls.user
+        return (
+            cls.user_class.get(session["user"].get("pk"))
+            if session.get("user")
+            else None
+        )
 
     def authenticate(self):
         """
@@ -100,19 +102,21 @@ class AutoAuth:
                         session.get("user")
                         and session["user"]["state"] == "authenticated"
                     ):
-                        cls.user = cls.user_class(**session.get("user"))
+                        cls.user = cls.user_class.get(session["user"].get("pk"))
+
+                        if not cls.user:
+                            return redirect(url_for("auth.login"))
+
                         cls.user.last_login = datetime.now()
                         cls.user.save()
                         session["user"] = cls.user.serialize()
                         return func(*args, **kwargs)
                     elif guest:
-                        cls.user = cls.user_class.find(
-                            email="guest@world.stevenamoore.dev"
-                        )
+                        cls.user = cls.user_class.find(email="guest@world.dev")
                         if not cls.user:
                             cls.user = cls.user_class(
                                 name="Guest",
-                                email="guest@world.stevenamoore.dev",
+                                email="guest@world.dev",
                                 state="guest",
                             )
                         session["user"] = cls.user.serialize()
