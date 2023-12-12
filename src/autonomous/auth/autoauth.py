@@ -94,9 +94,9 @@ class AutoAuth:
             @wraps(func)
             def decorated_view(*args, **kwargs):
                 if current_app:
-                    log(session.get("user"))
+                    # log(session.get("user"))
                     if user := cls.current_user():
-                        log(cls.current_user(), session.get("user"))
+                        # log(cls.current_user(), session.get("user"))
                         user = cls.current_user()
                         user.last_login = datetime.now()
                         user.save()

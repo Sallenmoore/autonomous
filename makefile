@@ -34,7 +34,7 @@ testinit: clean
 	pip install --upgrade -r ./requirements_dev.txt
 	pip install -e .
 
-TESTING=TestAuth
+TESTING=TestLocalStorage
 test:
 	python -m pytest -k "$(TESTING)" -s 
 

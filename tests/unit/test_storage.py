@@ -4,20 +4,21 @@ import uuid
 import pytest
 from autonomous import log
 from autonomous.storage.cloudinarystorage import CloudinaryStorage
+from autonomous.storage.localstorage import LocalStorage
 from autonomous.storage.markdown import MarkdownParser, Page
+from urllib.parse import urlparse
 
 
-class TestStorage:
+def is_url(s):
+    try:
+        result = urlparse(s)
+        return all([result.scheme, result.netloc])
+    except ValueError:
+        return False
+
+
+class TestCloudinaryStorage:
     def test_cloudinary_basic(self):
-        storage = CloudinaryStorage()
-        asset_id_1 = storage.save(
-            "tests/assets/testimg.png",
-        )
-        log(asset_id_1)
-        assert asset_id_1["asset_id"]
-        assert asset_id_1["url"]
-
-    def test_cloudinary_bytemode(self):
         storage = CloudinaryStorage()
         filedata = open("tests/assets/testimg.png", "rb")
         asset_id_2 = storage.save(filedata)
@@ -72,6 +73,57 @@ class TestStorage:
 
     def test_cloudinary_move(self):
         storage = CloudinaryStorage()
+        filedata = open("tests/assets/testimg.png", "rb")
+        asset = storage.save(filedata, folder="test/subtest")
+        asset = storage.move(asset["asset_id"], folder="test/subtest2")
+        print(asset)
+        assert "test/subtest2" in asset["url"]
+
+
+class TestLocalStorage:
+    def test_localstorage_basic(self):
+        storage = LocalStorage()
+        filedata = open("tests/assets/testimg.png", "rb")
+        asset_id_2 = storage.save(filedata)
+        log(asset_id_2)
+        assert asset_id_2
+        assert asset_id_2["asset_id"]
+        assert asset_id_2["url"]
+
+    def test_localstorage_folders(self):
+        storage = LocalStorage()
+        filedata = open("tests/assets/testimg.png", "rb")
+        asset_id_3 = storage.save(filedata, folder="test/subtest")
+        log(asset_id_3)
+        assert asset_id_3
+        assert asset_id_3["asset_id"]
+        assert asset_id_3["url"]
+
+    def test_localstorage_read(self):
+        storage = LocalStorage()
+        filedata = open("tests/assets/testimg.png", "rb")
+        asset_id_1 = storage.save(filedata, folder="tests/assets")
+        url = storage.geturl(asset_id_1["asset_id"])
+        log(asset_id_1, url)
+        assert all([urlparse(url).scheme, urlparse(url).netloc])
+
+    def test_localstorage_search(self):
+        storage = LocalStorage()
+        filedata = open("tests/assets/testimg.png", "rb")
+        storage.save(filedata, folder="tests/assets")
+        results = storage.search(folder="tests/assets")
+        log(results)
+        assert results
+
+    def test_localstorage_delete(self):
+        storage = LocalStorage()
+        filedata = open("tests/assets/testimg.png", "rb")
+        asset = storage.save(filedata, folder="tests/assets")
+        storage.remove(asset_id=asset["asset_id"])
+        assert not storage.get(asset["asset_id"])
+
+    def test_localstorage_move(self):
+        storage = LocalStorage()
         filedata = open("tests/assets/testimg.png", "rb")
         asset = storage.save(filedata, folder="test/subtest")
         asset = storage.move(asset["asset_id"], folder="test/subtest2")
