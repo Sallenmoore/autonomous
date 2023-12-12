@@ -13,8 +13,11 @@ class LocalStorage:
             return {"asset_id": asset_id, "url": self.geturl(asset_id)}
         return None
 
-    def _get_key(self, folder="", ext=""):
-        return f"{folder}{'/' if folder else ''}{uuid.uuid4()}.{ext.strip('.')}"
+    def _get_key(self, folder="", ext="", filename=None):
+        if filename:
+            return f"{folder}{'/' if folder else ''}{filename}"
+        else:
+            return f"{folder}{'/' if folder else ''}{uuid.uuid4()}.{ext.strip('.')}"
 
     def geturl(self, asset_id):
         return f"{self.base_url}/{asset_id}"
@@ -27,7 +30,8 @@ class LocalStorage:
         if folder := kwargs.get("folder"):
             for f in os.listdir(f"{self.base_path}/{folder}"):
                 if os.path.isfile(os.path.join(f"{self.base_path}/{folder}", f)):
-                    files.append(f"{self.base_url}/{folder}/{f}")
+                    asset_id = self._get_key(folder=folder, filename=f)
+                    files.append(self.get(asset_id))
         elif asset_id := kwargs.get("asset_id"):
             if os.path.isfile(self.get_path(asset_id)):
                 files.append(self.get(asset_id))

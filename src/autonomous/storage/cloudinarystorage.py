@@ -45,7 +45,7 @@ class CloudinaryStorage:
         if folder := kwargs.get("folder"):
             try:
                 cloudinary.api.subfolders(f"{folder}")
-            except cloudinary.exceptions.NotFound as e:
+            except cloudinary.exceptions.NotFound:
                 # log(f"{e} -- Creating folder {folder}")
                 cloudinary.api.create_folder(folder)
             finally:
