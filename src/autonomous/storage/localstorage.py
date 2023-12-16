@@ -38,12 +38,11 @@ class LocalStorage:
         return files
 
     def save(self, file, file_type, folder=""):
-        (_,) = os.path.splitext(file.name)
         os.makedirs(f"{self.base_path}{'/' if folder else ''}{folder}", exist_ok=True)
         asset_id = self._get_key(folder, file_type)
 
         with open(self.get_path(asset_id), "wb") as asset:
-            asset.write(file.read())
+            asset.write(file)
         return {"asset_id": asset_id, "url": self.geturl(asset_id)}
 
     def move(self, asset_id, folder):

@@ -48,7 +48,7 @@ class AutoAuth:
         """
         if session.get("user") and session["user"]["state"] == "authenticated":
             return cls.user_class.get(session["user"].get("pk"))
-        return None
+        return cls.user_class.get_guest()
 
     def authenticate(self):
         """
@@ -93,26 +93,16 @@ class AutoAuth:
         def wrap(func):
             @wraps(func)
             def decorated_view(*args, **kwargs):
-                if current_app:
-                    # log(session.get("user"))
-                    if user := cls.current_user():
-                        # log(cls.current_user(), session.get("user"))
-                        user = cls.current_user()
-                        user.last_login = datetime.now()
-                        user.save()
-                        session["user"] = user.serialize()
-                    elif guest:
-                        user = cls.user_class.find(
-                            email="guest@world.dev"
-                        ) or cls.user_class(
-                            name="Guest",
-                            email="guest@app.dev",
-                            state="guest",
-                        )
-                        session["user"] = user.serialize()
-                    else:
-                        return redirect(url_for("auth.login"))
-                    return func(*args, **kwargs)
+                # log(session.get("user"))
+                user = cls.current_user()
+                if user.state == "authenticated":
+                    user.last_login = datetime.now()
+                    user.save()
+                session["user"] = user.serialize()
+
+                if not guest and user.is_guest:
+                    return redirect(url_for("auth.login"))
+                return func(*args, **kwargs)
 
             return decorated_view
 

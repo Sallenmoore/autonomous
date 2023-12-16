@@ -59,6 +59,13 @@ class AutoUser(AutoModel):
         """
         return self.state == "authenticated"
 
+    @classmethod
+    def get_guest(cls):
+        """
+        Returns a guest user.
+        """
+        return cls(name="Guest", email="guest@mail.com", state="guest", role="guest")
+
     @property
     def is_guest(self):
         """
