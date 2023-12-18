@@ -4,7 +4,7 @@ import uuid
 
 
 class LocalStorage:
-    def __init__(self, path="static/images"):
+    def __init__(self, path="static"):
         self.base_path = path
         self.base_url = f"{os.getenv('APP_BASE_URL')}/{self.base_path}"
 

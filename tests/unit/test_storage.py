@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 import pytest
 from autonomous import log
 from autonomous.storage.cloudinarystorage import CloudinaryStorage
+from autonomous.storage.imagestorage import ImageStorage
 from autonomous.storage.localstorage import LocalStorage
 from autonomous.storage.markdown import MarkdownParser, Page
 
@@ -210,3 +211,67 @@ class TestPage:
         )
         log(result)
         assert result.id
+
+
+class TestImageStorage:
+    def test_imagestorage_basic(self):
+        storage = ImageStorage()
+        filedata = open("tests/assets/testimg.png", "rb").read()
+        asset_id = storage.save(
+            filedata,
+            image_type="png",
+        )
+        assert asset_id
+
+    def test_imagestorage_folders(self):
+        storage = ImageStorage()
+        filedata = open("tests/assets/testimg.png", "rb").read()
+        asset_id = storage.save(filedata, image_type="png", folder="test/subtest")
+        log(asset_id)
+        assert "test.subtest" in asset_id
+
+        storage = ImageStorage("base_folder")
+        filedata = open("tests/assets/testimg.png", "rb").read()
+        asset_id = storage.save(filedata, image_type="png", folder="test/subtest")
+        log(asset_id)
+        assert "base_folder" in storage.base_path
+        assert "base_folder" in storage.get_url(asset_id, full_url=True)
+
+    def test_imagestorage_read(self):
+        storage = ImageStorage()
+        filedata = open("tests/assets/testimg.png", "rb").read()
+        asset_id = storage.save(filedata, image_type="png", folder="tests/assets")
+        url = storage.get_url(asset_id, full_url=True)
+        assert all([urlparse(url).scheme, urlparse(url).netloc])
+
+    def test_imagestorage_search(self):
+        storage = ImageStorage()
+        filedata = open("tests/assets/testimg.png", "rb").read()
+        storage.save(filedata, image_type="png", folder="tests/assets")
+        results = storage.search(folder="tests/assets")
+        log(results)
+        assert all("tests.assets" in r for r in results)
+
+    def test_imagestorage_delete(self):
+        storage = ImageStorage()
+        filedata = open("tests/assets/testimg.png", "rb").read()
+        asset_id = storage.save(filedata, image_type="png", folder="tests/assets")
+        storage.remove(asset_id=asset_id)
+        assert not storage.get_url(asset_id)
+
+    def test_imagestorage_sizing(self):
+        storage = ImageStorage()
+        filedata = open("tests/assets/testimg.png", "rb").read()
+        asset = storage.save(filedata, image_type="png", folder="test/sizes")
+        asset_thumbnail = storage.get_url(asset, size="thumbnail")
+        assert "thumbnail" in asset_thumbnail
+        asset_small = storage.get_url(asset, size="small")
+        assert "small" in asset_small
+        asset_medium = storage.get_url(asset, size="medium")
+        assert "medium" in asset_medium
+        asset_large = storage.get_url(asset, size="large")
+        assert "large" in asset_large
+        asset_50 = storage.get_url(asset, size="50")
+        assert "50" in asset_50
+        asset_2000 = storage.get_url(asset, size="2000")
+        assert "2000" in asset_2000

@@ -21,7 +21,7 @@ PyGithub
 pygit2
 
 cloudinary
-
+pillow
 redis
 
 ##### Frontend #####
