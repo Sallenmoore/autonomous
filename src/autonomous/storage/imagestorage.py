@@ -26,14 +26,8 @@ class ImageStorage:
         file_path = f"{self.get_path(asset_id)}/orig.{img_type}"
         with Image.open(file_path) as img:
             max_size = self._sizes.get(max_size) or int(max_size)
-            # Calculate new dimensions while maintaining aspect ratio
-            width, height = img.size
-            new_width = new_height = max_size
-            if width > height:
-                new_height = int((max_size / width) * height)
-            else:
-                new_width = int((max_size / height) * width)
-            resized_img = img.resize((new_width, new_height), Image.LANCZOS)
+            resized_img = img.copy()
+            resized_img.thumbnail((max_size, max_size))
             img_byte_arr = io.BytesIO()
             resized_img.save(img_byte_arr, format="WEBP")
             return img_byte_arr.getvalue()
