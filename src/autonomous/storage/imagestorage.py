@@ -44,7 +44,7 @@ class ImageStorage:
         if not os.path.exists(original_path):
             log(f"Original image not found: {original_path}")
             return ""
-        file_path = f"{self.get_path(asset_id)}/{size}.{self.get_img_type(asset_id)}"
+        file_path = f"{original_path}/{size}.{self.get_img_type(asset_id)}"
         if not os.path.exists(file_path):
             # If the file doesn't exist, create it
             result = self._resize_image(asset_id, size)
@@ -58,9 +58,9 @@ class ImageStorage:
         )
 
     def get_path(self, asset_id):
-        asset_id_path, ext = asset_id.rsplit(".", maxsplit=1)
+        asset_id_path = asset_id.rsplit(".", maxsplit=2)[0]
         asset_path = asset_id_path.replace(".", "/")
-        return os.path.join(self.base_path, f"{asset_path}.{ext}")
+        return os.path.join(self.base_path, f"{asset_path}")
 
     def get_img_type(self, asset_id):
         return asset_id.rsplit(".", maxsplit=1)[-1]
