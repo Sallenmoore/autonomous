@@ -236,8 +236,13 @@ class Table:
 
     def random(self):
         keys = self._db.keys(f"{self.name}:*")
-        key = random.choice(keys).split(":")[-1]
-        return self.get(key)
+        try:
+            key = random.choice(keys).split(":")[-1]
+        except Exception as e:
+            # log(e, f"Table '{self.name}' is empty.")
+            return None
+        else:
+            return self.get(key)
 
     def clear(self):
         # breakpoint()

@@ -15,11 +15,10 @@ class ImageStorage:
         self.base_path = path
 
     @classmethod
-    def _create_key(cls, folder="", image_type="webp"):
-        if folder:
-            return f"{folder.replace('/', '.')}.{uuid.uuid4()}.{image_type}"
-        else:
-            return f"{uuid.uuid4()}.{image_type}"
+    def _create_key(cls, folder="", image_name="orig.webp", pkey=None):
+        pkey = f"{pkey or uuid.uuid4()}"
+        folder = f"{folder.replace('/', '.')}."
+        return f"{folder}{pkey}.{image_name}"
 
     def _resize_image(self, asset_id, max_size):
         img_type = self.get_img_type(asset_id)
@@ -33,7 +32,7 @@ class ImageStorage:
             return img_byte_arr.getvalue()
 
     def save(self, file, image_type="webp", folder=""):
-        asset_id = self._create_key(folder, image_type)
+        asset_id = self._create_key(folder, image_name=f"orig.{image_type}")
         os.makedirs(self.get_path(asset_id), exist_ok=True)
         file_path = f"{self.get_path(asset_id)}/orig.{image_type}"
         with open(file_path, "wb") as asset:
@@ -41,11 +40,10 @@ class ImageStorage:
         return asset_id
 
     def get_url(self, asset_id, size="orig", full_url=False):
-        original_path = f"{self.get_path(asset_id)}/orig.{self.get_img_type(asset_id)}"
+        original_path = f"{self.get_path(asset_id)}"
         if not os.path.exists(original_path):
             log(f"Original image not found: {original_path}")
             return ""
-
         file_path = f"{self.get_path(asset_id)}/{size}.{self.get_img_type(asset_id)}"
         if not os.path.exists(file_path):
             # If the file doesn't exist, create it
@@ -60,18 +58,27 @@ class ImageStorage:
         )
 
     def get_path(self, asset_id):
-        img_path, _ = asset_id.rsplit(".", maxsplit=1)
-        asset_path = img_path.replace(".", "/")
-        return os.path.join(self.base_path, asset_path)
+        asset_id_path, ext = asset_id.rsplit(".", maxsplit=1)
+        asset_path = asset_id_path.replace(".", "/")
+        return os.path.join(self.base_path, f"{asset_path}.{ext}")
 
     def get_img_type(self, asset_id):
         return asset_id.rsplit(".", maxsplit=1)[-1]
 
-    def search(self, folder=None, **kwargs):
+    def search(self, folder=None, size="orig", **kwargs):
         imgs = []
         if folder:
             for f in os.listdir(f"{self.base_path}/{folder}"):
-                imgs.append(self._create_key(f"{folder}/{f}"))
+                for img in os.listdir(f"{self.base_path}/{folder}/{f}"):
+                    if size in img:
+                        img_key = self._create_key(
+                            f"{folder}",
+                            image_name=f"{size}.{self.get_img_type(img)}",
+                            pkey=f,
+                        )
+                        # log(img_key)
+                        imgs.append(img_key)
+
         return imgs
 
     def remove(self, asset_id):
