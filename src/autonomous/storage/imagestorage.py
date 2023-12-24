@@ -15,10 +15,11 @@ class ImageStorage:
         self.base_path = path
 
     @classmethod
-    def _create_key(cls, folder="", image_name="orig.webp", pkey=None):
-        pkey = f"{pkey or uuid.uuid4()}"
-        folder = f"{folder.replace('/', '.')}."
-        return f"{folder}{pkey}.{image_name}"
+    def _get_key(cls, folder="", image_name="orig.webp", pkey=None):
+        if folder and not folder.endswith("/"):
+            folder = f"{folder}/"
+        folder = f"{folder.replace('/', '.')}{pkey or uuid.uuid4()}."
+        return f"{folder}.{image_name}"
 
     def _resize_image(self, asset_id, max_size):
         img_type = self.get_img_type(asset_id)
@@ -32,7 +33,7 @@ class ImageStorage:
             return img_byte_arr.getvalue()
 
     def save(self, file, image_type="webp", folder=""):
-        asset_id = self._create_key(folder, image_name=f"orig.{image_type}")
+        asset_id = self._get_key(folder, image_name=f"orig.{image_type}")
         os.makedirs(self.get_path(asset_id), exist_ok=True)
         file_path = f"{self.get_path(asset_id)}/orig.{image_type}"
         with open(file_path, "wb") as asset:
@@ -71,7 +72,7 @@ class ImageStorage:
             for f in os.listdir(f"{self.base_path}/{folder}"):
                 for img in os.listdir(f"{self.base_path}/{folder}/{f}"):
                     if size in img:
-                        img_key = self._create_key(
+                        img_key = self._get_key(
                             f"{folder}",
                             image_name=f"{size}.{self.get_img_type(img)}",
                             pkey=f,

@@ -118,18 +118,18 @@ class Table:
                         assert len(v) < MAXIMUM_TAG_LENGTH
                     except AssertionError:
                         raise Exception(
-                            f"Invalid attribute value. Must be a less than 1024 characters or use a 'TEXT' option, AutoAttribute('TEXT', default=''): {k}:{v}"
+                            f"VALIDATION ERROR: Invalid attribute value. Must be a less than 1024 characters or use a 'TEXT' option, AutoAttribute('TEXT', default=''): {k}:{v}"
                         )
                     except TypeError as e:
                         v = ""
-                        log(f"{e}", f"{k}:{v}")
+                        log(f"VALIDATION ERROR: {e}", f"{k}:{v}")
             elif rule.type == "NUMERIC":
                 if v:
                     try:
                         float(v)
                     except TypeError:
                         raise Exception(
-                            f"Invalid attribute value. Must be a number: {k}:{v}"
+                            f"VALIDATION ERROR: Invalid attribute value. Must be a number: {k}:{v}"
                         )
 
             if rule.required:
@@ -137,27 +137,30 @@ class Table:
                     assert v is not None
                 except AssertionError:
                     raise Exception(
-                        f"Invalid attribute value. Must not be 'None': {k}:{v}"
+                        f"VALIDATION ERROR: Invalid attribute value. Must not be 'None': {k}:{v}"
                     )
         return v
 
     def save(self, obj):
-        # log(obj)
         obj["pk"] = obj.get("pk") or str(uuid.uuid4())
         for k, v in obj.items():
             if rule := self._rules.get(k):
-                if rule.type == "TEXT":
-                    obj[k] = self._validate(k, v, encode=True)
-                else:
-                    obj[k] = self._validate(k, v)
+                try:
+                    if rule.type == "TEXT":
+                        obj[k] = self._validate(k, v, encode=True)
+                    else:
+                        obj[k] = self._validate(k, v)
+                except Exception as e:
+                    log(e)
+                    raise e
         try:
             json_db = self._db.json()
             json_db.set(f"{self.name}:{obj['pk']}", Path.root_path(), obj)
         except TypeError as e:
-            log(e)
+            log(obj)
             raise e
         except Exception as e:
-            # log(obj)
+            log(obj)
             raise e
         obj = {k: self._validate(k, v, decode=True) for k, v in obj.items()}
         return obj["pk"]
