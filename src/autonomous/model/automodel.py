@@ -8,6 +8,7 @@ from abc import ABC
 from datetime import datetime
 
 from autonomous import log
+from autonomous.errors import DanglingReferenceError
 
 from .autoattribute import AutoAttribute
 from .orm import ORM
@@ -26,19 +27,13 @@ class DelayedModel:
         object.__setattr__(self, "_delayed_obj", None)
 
     def _instance(self):
+        #### DO NOT TO ANY LOGGING IN THIS METHOD; IT CAUSES INFINITE RECURSION ####
         if not object.__getattribute__(self, "_delayed_obj"):
             _pk = object.__getattribute__(self, "_delayed_pk")
             _model = object.__getattribute__(self, "_delayed_model")
-            # log(_pk, _model)
-            # breakpoint()
             _obj = _model.get(_pk)
-            # log(_obj)
-            try:
-                assert _obj
-            except AssertionError as e:
-                msg = f"{e}\n\nModel relationship error. Most likely failed to clean up dangling reference.\nModel: {_model}\npk: {_pk}\nResult: {_obj}"
-                # log(msg)
-                raise Exception(msg)
+            if not _pk or not _model or _obj is None:
+                raise DanglingReferenceError(_model, _pk, _obj)
             else:
                 object.__setattr__(self, "_delayed_obj", _obj)
 
@@ -74,7 +69,7 @@ class DelayedModel:
         return str(self._instance())
 
     def __repr__(self):
-        result = repr(self._delayed_obj)
+        result = repr(self._instance())
         msg = f"\n<<DelayedModel {self._delayed_model.__name__}:{self._delayed_pk}>>:\t{result}"
         return msg
 
@@ -133,7 +128,8 @@ class AutoModel(ABC):
     def __getattribute__(self, name):
         obj = super().__getattribute__(name)
         if isinstance(obj, DelayedModel):
-            return obj._instance()
+            self.__dict__[name] = obj._instance()
+            return self.__dict__[name]
         return obj
 
     def __repr__(self) -> str:
@@ -214,7 +210,9 @@ class AutoModel(ABC):
 
         if local_key not in AutoModel._save_memo[key]:
             AutoModel._save_memo[key].append(local_key)
-            self.pk = self.table().save(self.serialize())
+            serialized_obj = self.serialize()
+            # log(serialized_obj)
+            self.pk = self.table().save(serialized_obj)
         # FIXME: STILL NOT WORKING
         # for attr in self.attributes:
         #     self._subobj_save(getattr(self, attr), key)
@@ -326,6 +324,7 @@ class AutoModel(ABC):
 
     @classmethod
     def _serialize(cls, val):
+        # log(val, type(val))
         if isinstance(val, list):
             new_list = []
             for v in val:
@@ -341,17 +340,20 @@ class AutoModel(ABC):
             val = {"_datetime": val.isoformat()}
         elif issubclass(val.__class__, (AutoModel, DelayedModel)):
             if val.pk:
-                val = {
+                new_val = {
                     "pk": val.pk,
                     "_automodel": val.model_name(),
                 }
+                # log(new_val)
+                # breakpoint()
             else:
                 log(
                     val.__class__.__name__,
                     "The above object was not been saved. You must save subobjects if you want them to persist.",
                 )
-                val = None
-
+                new_val = None
+            val = new_val
+        # log(val, type(val))
         return val
 
     def serialize(self):
@@ -372,10 +374,11 @@ class AutoModel(ABC):
         if isinstance(val, dict):
             if val.get("_automodel"):
                 if val.get("pk"):
-                    # log(val.get('pk'))
+                    # log(val.get("pk"))
                     assert len(val.get("pk"))
                     val = DelayedModel(val["_automodel"], val["pk"])
                 else:
+                    # log(val.get("pk"))
                     val = None
             elif "_datetime" in val:
                 val = datetime.fromisoformat(val["_datetime"])

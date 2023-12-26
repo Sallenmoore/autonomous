@@ -15,15 +15,15 @@ class ImageStorage:
         self.base_path = path
 
     @classmethod
-    def _get_key(cls, folder="", image_name="orig.webp", pkey=None):
+    def _get_key(cls, folder="", pkey=None):
         if folder and not folder.endswith("/"):
             folder = f"{folder}/"
         folder = f"{folder.replace('/', '.')}{pkey or uuid.uuid4()}."
-        return f"{folder}.{image_name}"
+        return f"{folder}"
 
     def _resize_image(self, asset_id, max_size):
-        img_type = self.get_img_type(asset_id)
-        file_path = f"{self.get_path(asset_id)}/orig.{img_type}"
+        log("Resizing image", asset_id, max_size)
+        file_path = f"{self.get_path(asset_id)}/orig.webp"
         with Image.open(file_path) as img:
             max_size = self._sizes.get(max_size) or int(max_size)
             resized_img = img.copy()
@@ -32,20 +32,31 @@ class ImageStorage:
             resized_img.save(img_byte_arr, format="WEBP")
             return img_byte_arr.getvalue()
 
-    def save(self, file, image_type="webp", folder=""):
-        asset_id = self._get_key(folder, image_name=f"orig.{image_type}")
+    def _convert_image(self, raw):
+        with Image.open(io.BytesIO(raw)) as img:
+            img = img.copy()
+            img_byte_arr = io.BytesIO()
+            img.save(img_byte_arr, format="WEBP")
+            return img_byte_arr.getvalue()
+
+    def save(self, file, folder=""):
+        asset_id = self._get_key(folder)
         os.makedirs(self.get_path(asset_id), exist_ok=True)
-        file_path = f"{self.get_path(asset_id)}/orig.{image_type}"
+        file_path = f"{self.get_path(asset_id)}/orig.webp"
         with open(file_path, "wb") as asset:
+            file = self._convert_image(file)
             asset.write(file)
         return asset_id
 
     def get_url(self, asset_id, size="orig", full_url=False):
+        if not asset_id:
+            return ""
         original_path = f"{self.get_path(asset_id)}"
+        log(f"Getting image: {asset_id} - {size}", original_path)
         if not os.path.exists(original_path):
             log(f"Original image not found: {original_path}")
             return ""
-        file_path = f"{original_path}/{size}.{self.get_img_type(asset_id)}"
+        file_path = f"{original_path}/{size}.webp"
         if not os.path.exists(file_path):
             # If the file doesn't exist, create it
             result = self._resize_image(asset_id, size)
@@ -59,26 +70,23 @@ class ImageStorage:
         )
 
     def get_path(self, asset_id):
-        asset_id_path = asset_id.rsplit(".", maxsplit=2)[0]
-        asset_path = asset_id_path.replace(".", "/")
-        return os.path.join(self.base_path, f"{asset_path}")
+        if asset_id:
+            asset_path = asset_id.replace(".", "/")
+            return os.path.join(self.base_path, f"{asset_path}")
+        else:
+            return self.base_path
 
-    def get_img_type(self, asset_id):
-        return asset_id.rsplit(".", maxsplit=1)[-1]
-
-    def search(self, folder=None, size="orig", **kwargs):
+    def search(self, folder="", size="orig", **kwargs):
         imgs = []
-        if folder:
-            for f in os.listdir(f"{self.base_path}/{folder}"):
-                for img in os.listdir(f"{self.base_path}/{folder}/{f}"):
-                    if size in img:
-                        img_key = self._get_key(
-                            f"{folder}",
-                            image_name=f"{size}.{self.get_img_type(img)}",
-                            pkey=f,
-                        )
-                        # log(img_key)
-                        imgs.append(img_key)
+        for f in os.listdir(f"{self.base_path}/{folder}"):
+            for img in os.listdir(f"{self.base_path}/{folder}/{f}"):
+                if size in img:
+                    img_key = self._get_key(
+                        f"{folder}",
+                        pkey=f,
+                    )
+                    # log(img_key)
+                    imgs.append(img_key)
 
         return imgs
 

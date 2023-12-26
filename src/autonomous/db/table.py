@@ -142,6 +142,7 @@ class Table:
         return v
 
     def save(self, obj):
+        # log("here")
         obj["pk"] = obj.get("pk") or str(uuid.uuid4())
         for k, v in obj.items():
             if rule := self._rules.get(k):
@@ -157,10 +158,10 @@ class Table:
             json_db = self._db.json()
             json_db.set(f"{self.name}:{obj['pk']}", Path.root_path(), obj)
         except TypeError as e:
-            log(obj)
+            # log(obj, "type error")
             raise e
         except Exception as e:
-            log(obj)
+            # log(obj, "other error")
             raise e
         obj = {k: self._validate(k, v, decode=True) for k, v in obj.items()}
         return obj["pk"]
