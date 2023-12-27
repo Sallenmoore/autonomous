@@ -220,6 +220,7 @@ class Table:
             return None
 
         if obj := self._db.json().get(f"{self.name}:{pk}", Path.root_path()):
+            # log(obj)
             for k in obj:
                 for r in replacements:
                     if isinstance(obj[k], str):

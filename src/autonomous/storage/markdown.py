@@ -1,4 +1,4 @@
-from autonomous.apis import WikiJS
+from autonomous.storage import WikiJS
 
 
 class MarkdownParser:

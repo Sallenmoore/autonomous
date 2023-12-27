@@ -19,29 +19,20 @@ package: clean
 clean:
 	rm -rf .pytest_cache .coverage dist
 	sudo docker ps -a
-	-sudo docker kill $(CONTAINERS)
-
-deepclean: clean
-	-sudo docker container prune -f
-	-sudo docker image prune -f
-	-sudo docker system prune -a -f --volumes
+	cd ../ && sudo docker compose down --remove-orphans
 
 ###### TESTING #######
 
-testinit: clean
+inittests: clean
 	pip install --no-cache-dir --upgrade pip wheel
 	pip install --upgrade -r ./requirements.txt
 	pip install --upgrade -r ./requirements_dev.txt
 	pip install -e .
+	python -m pytest
 
 TESTING=TestImageStorage
 test:
 	python -m pytest -k "$(TESTING)" -s 
 
-testauto:
+tests:
 	python -m pytest
-
-testapp:
-	cd src/autonomous/app_template && make test
-
-tests: testauto testapp

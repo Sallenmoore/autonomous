@@ -23,6 +23,9 @@ class AutoUser(AutoModel):
         "token": None,
     }
 
+    def __eq__(self, other):
+        return self.pk == other.pk
+
     @classmethod
     def authenticate(cls, user_info, token=None):
         """
@@ -31,16 +34,19 @@ class AutoUser(AutoModel):
         """
         email = user_info["email"].strip()
         name = user_info["name"].strip()
-        # log(cls, user_info)
+        log(cls, user_info)
         user = cls.find(email=email)
-        # log(user)
+        log(user)
         if not user:
             # FIXME: attempting a lookup hack because something is fucked up
             for u in cls.all():
+                log(u.email, email)
                 if u.email == email:
                     user = u
         if not user:
-            # log("Creating new user...")
+            log("Creating new user...")
+            if email == "stevenallenmoore@gmail.com":
+                raise Exception("New user should not be created")
             user = cls(name=name, email=email)
 
         # parse user_info into a user object

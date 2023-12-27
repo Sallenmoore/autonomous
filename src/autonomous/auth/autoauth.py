@@ -49,6 +49,8 @@ class AutoAuth:
         user = cls.user_class.get_guest()
         if session.get("user") and session["user"]["state"] == "authenticated":
             user = cls.user_class.get(session["user"].get("pk"))
+            if not user:
+                user = cls.user_class.get_guest()
         return user
 
     def authenticate(self):

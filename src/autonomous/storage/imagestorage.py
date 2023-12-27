@@ -52,7 +52,7 @@ class ImageStorage:
         if not asset_id:
             return ""
         original_path = f"{self.get_path(asset_id)}"
-        log(f"Getting image: {asset_id} - {size}", original_path)
+        # log(f"Getting image: {asset_id}.{size}", original_path)
         if not os.path.exists(original_path):
             log(f"Original image not found: {original_path}")
             return ""
