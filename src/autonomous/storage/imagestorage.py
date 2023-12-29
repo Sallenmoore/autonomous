@@ -22,7 +22,7 @@ class ImageStorage:
         return f"{folder}"
 
     def _resize_image(self, asset_id, max_size):
-        log("Resizing image", asset_id, max_size)
+        # log("Resizing image", asset_id, max_size)
         file_path = f"{self.get_path(asset_id)}/orig.webp"
         with Image.open(file_path) as img:
             max_size = self._sizes.get(max_size) or int(max_size)
