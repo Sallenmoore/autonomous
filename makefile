@@ -6,8 +6,6 @@ export
 
 all: test clean package
 
-CONTAINERS=$$(sudo docker ps -a -q)
-
 package: clean
 	python -m build
 	python -m pip install --upgrade twine
@@ -17,9 +15,7 @@ package: clean
 ###### CLEANING #######
 
 clean:
-	rm -rf .pytest_cache .coverage dist
-	sudo docker ps -a
-	cd ../ && sudo docker compose down --remove-orphans
+	rm -rf .pytest_cache .coverage dist build *.egg-info static
 
 ###### TESTING #######
 

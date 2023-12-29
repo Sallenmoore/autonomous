@@ -1,9 +1,0 @@
-[submodule "src/autonomous/app_template"]
-	path = src/autonomous/app_template
-	url = git@github.com:Sallenmoore/autoapp.git
-[submodule "src/autonomous/app_template/app/static/style/autostyle"]
-	path = src/autonomous/app_template/app/static/style/autostyle
-	url = git@github.com:Sallenmoore/autostyle.git
-[submodule "src/autonomous/app_template/app/static/js/autojs"]
-	path = src/autonomous/app_template/app/static/js/autojs
-	url = git@github.com:Sallenmoore/autojs.git
