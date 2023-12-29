@@ -28,10 +28,11 @@ inittests: clean
 	pip install --upgrade -r ./requirements.txt
 	pip install --upgrade -r ./requirements_dev.txt
 	pip install -e .
-	python -m pytest
+	cd tests/assets && docker compose up -d
 
-TESTING=TestImageStorage
+TESTING=TestDatabase
 test:
+	cd tests/assets && docker compose up -d
 	python -m pytest -k "$(TESTING)" -s 
 
 tests:

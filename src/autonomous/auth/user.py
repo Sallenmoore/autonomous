@@ -34,13 +34,10 @@ class AutoUser(AutoModel):
         """
         email = user_info["email"].strip()
         name = user_info["name"].strip()
-        log(cls, user_info)
         user = cls.find(email=email)
-        log(user)
         if not user:
             # FIXME: attempting a lookup hack because something is fucked up
             for u in cls.all():
-                log(u.email, email)
                 if u.email == email:
                     user = u
         if not user:

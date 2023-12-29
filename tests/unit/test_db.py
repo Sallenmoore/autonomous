@@ -27,7 +27,10 @@ class RecordTest:
 
 
 class TestDatabase:
-    db = Database().get_table("RecordTest", RecordTest.attributes)
+    db = Database(
+        host="localhost",
+        port="10001",
+    ).get_table("RecordTest", RecordTest.attributes)
 
     def test_db_create(self):
         t = RecordTest()
@@ -66,7 +69,6 @@ class TestDatabase:
         model = self.db.get(pk)
         assert isinstance(model, dict)
         obj = RecordTest(**model)
-        # log(obj)
         assert obj.pk == t.pk
         assert obj.num == t.num
 
@@ -76,12 +78,15 @@ class TestDatabase:
         t.pk = self.db.save(t.__dict__)
         t.name = "change"
         self.db.save(t.__dict__)
+        # log(self.db.explain(name="change"))
         assert all(isinstance(model, dict) for model in self.db.search(name="change"))
         assert len(self.db.search(name="buh")) == 0
         assert len(self.db.search(name="change")) == 1
         assert len(self.db.search(name="xxx")) == 0
         t.name = "stevenallenmoore@gmail.com"
         self.db.save(t.__dict__)
+        print(self.db.all())
+        # breakpoint()
         result = self.db.search(name="stevenallenmoore@gmail.com")
         assert result[0]["name"] == "stevenallenmoore@gmail.com"
 
@@ -89,6 +94,18 @@ class TestDatabase:
         self.db.save(t.__dict__)
         result = self.db.search(name="ste--venallenm#oor e@gmail.com")
         assert result[0]["name"] == "ste--venallenm#oor e@gmail.com"
+
+    @pytest.mark.skip(reason="not implemented")
+    def test_subattribute_search(self):
+        t = RecordTest()
+        sub = SubRecordTest()
+        sub.pk = self.db.save(sub.__dict__)
+        t.sub = sub.__dict__
+        self.db.save(t.__dict__)
+        result = self.db.search(pk=sub.pk)
+        assert len(result) == 1
+        result = self.db.search(pk=000)
+        assert len(result) == 0
 
     def test_db_update(self):
         self.db.clear()
@@ -108,15 +125,3 @@ class TestDatabase:
         t = RecordTest()
         self.db.save(t.__dict__)
         assert self.db.delete(t.pk) == 1
-
-    @pytest.mark.skip(reason="not implemented")
-    def test_subattribute_search(self):
-        t = RecordTest()
-        sub = SubRecordTest()
-        sub.pk = self.db.save(sub.__dict__)
-        t.sub = sub.__dict__
-        self.db.save(t.__dict__)
-        result = self.db.search(pk=sub.pk)
-        assert len(result) == 1
-        result = self.db.search(pk=000)
-        assert len(result) == 0

@@ -8,6 +8,7 @@ _extended_summary_
 """
 import json
 import random
+import re
 import uuid
 
 from redis.commands.json.path import Path
@@ -62,21 +63,25 @@ class Table:
                 self._rules[k] = v
             elif isinstance(v, str):
                 self._rules[k] = AutoAttribute("TAG", default=v)
+                # self._rules[k] = AutoAttribute("TEXT", default=v)
             elif isinstance(v, (int, float)):
                 self._rules[k] = AutoAttribute("NUMERIC", default=v)
             else:
                 self._rules[k] = None
         self._index = self._get_index(f"idx:{name}")
 
+    def __str__(self):
+        return json.dumps(self.all(), indent=4)
+
     def _get_index(self, name):
         try:
             self._db.ft(name).info()
-        except Exception as e:
+        except Exception:
             # log(e)
             indexed_attrs = []
             for k, options in self._rules.items():
                 if options:
-                    if options.type == "TEXT":
+                    if options.type == "TEXT" or options.type == "TAG":
                         indexed_attrs.append(
                             TextField(f"$.{k}", as_name=k, sortable=True)
                         )
@@ -97,32 +102,34 @@ class Table:
             )
         return self._db.ft(name)
 
-    def _validate(self, k, v, decode=False, encode=False):
+    def _encode(self, k, v):
+        for r in replacements:
+            idx = v.find(r)
+            if idx == 0:
+                v = v.replace(r, f"\\{r}") if v else ""
+            if idx > 0 and v[idx - 1] != f"\\":
+                v = v.replace(r, f"\\{r}") if v else ""
+        return v
+
+    def _decode(self, v):
+        for r in replacements:
+            if isinstance(v, str):
+                v = v.replace(f"\\{r}", r)
+        return v
+
+    def _validate(self, k, v):
         # log(k, v, self._rules)
         if rule := self._rules.get(k):
-            if rule.type in ["TEXT", "TAG"]:
-                if decode:
-                    for r in replacements:
-                        v = v.replace(f"\\{r}", r) if v else ""
-                elif encode:
-                    if isinstance(v, str):
-                        for r in replacements:
-                            idx = v.find(r)
-                            if idx == 0:
-                                v = v.replace(r, f"\\{r}") if v else ""
-                            if idx > 0 and v[idx - 1] != "\\":
-                                v = v.replace(r, f"\\{r}") if v else ""
-
-                if rule.type == "TAG":
-                    try:
-                        assert len(v) < MAXIMUM_TAG_LENGTH
-                    except AssertionError:
-                        raise Exception(
-                            f"VALIDATION ERROR: Invalid attribute value. Must be a less than 1024 characters or use a 'TEXT' option, AutoAttribute('TEXT', default=''): {k}:{v}"
-                        )
-                    except TypeError as e:
-                        v = ""
-                        log(f"VALIDATION ERROR: {e}", f"{k}:{v}")
+            if rule.type == "TAG":
+                try:
+                    assert len(v) < MAXIMUM_TAG_LENGTH
+                except AssertionError:
+                    raise Exception(
+                        f"VALIDATION ERROR: Invalid attribute value. Must be a less than 1024 characters or use a 'TEXT' option, AutoAttribute('TEXT', default=''): {k}:{v}"
+                    )
+                except TypeError as e:
+                    v = ""
+                    log(f"VALIDATION ERROR: {e}", f"{k}:{v}")
             elif rule.type == "NUMERIC":
                 if v:
                     try:
@@ -137,23 +144,20 @@ class Table:
                     assert v is not None
                 except AssertionError:
                     raise Exception(
-                        f"VALIDATION ERROR: Invalid attribute value. Must not be 'None': {k}:{v}"
+                        f"VALIDATION ERROR: Attribute Required. Must not be 'None': {k}:{v}"
                     )
-        return v
 
     def save(self, obj):
-        # log("here")
         obj["pk"] = obj.get("pk") or str(uuid.uuid4())
         for k, v in obj.items():
-            if rule := self._rules.get(k):
-                try:
-                    if rule.type == "TEXT":
-                        obj[k] = self._validate(k, v, encode=True)
-                    else:
-                        obj[k] = self._validate(k, v)
-                except Exception as e:
-                    log(e)
-                    raise e
+            try:
+                self._validate(k, v)
+                rule = self._rules.get(k)
+                if rule and rule.type in ["TEXT"]:
+                    obj[k] = self._encode(k, v)
+            except Exception as e:
+                log(e)
+                raise e
         try:
             json_db = self._db.json()
             json_db.set(f"{self.name}:{obj['pk']}", Path.root_path(), obj)
@@ -163,7 +167,8 @@ class Table:
         except Exception as e:
             # log(obj, "other error")
             raise e
-        obj = {k: self._validate(k, v, decode=True) for k, v in obj.items()}
+        obj = {k: self._decode(v) for k, v in obj.items()}
+        # log(obj)
         return obj["pk"]
 
     def count(self):
@@ -182,37 +187,42 @@ class Table:
         return result[0] if result else None
 
     def search(self, **search_terms):
-        # log(search_terms, self.index_name, self.index.info())
+        log(search_terms)
         matches = []
 
         for k, v in search_terms.items():
-            try:
-                v = self._validate(k, v, encode=True)
-            except KeyError:
+            # keys = self._db.keys(f"{self.name}:*")
+            # values = self._db.json().mget(keys, f"{Path.root_path()}{k}")
+            # log(Path.root_path(), values)
+            # for val in keys or []:
+            #     if val == v:
+            #         matches.append(
+            #             self._db.json().get(f"{self.name}:*", Path.root_path())
+            #         )
+            if ruleset := self._rules[k]:
+                v = self._encode(k, v)
+                if ruleset.type == "TAG":
+                    query_str = f"@{k}:{{'{v}'}}"
+                elif ruleset.type == "TEXT":
+                    query_str = f"@{k}:( {v} )"
+            else:
                 raise Exception(f"Can only search indexed fields: {k}:{v}")
 
-            query_str = f"@{k}:{v}"
-            ruleset = self._rules[k]
-            if ruleset and ruleset.type == "TAG":
-                query_str = "@" + str(k) + ":{" + str(v) + "}"
-            elif ruleset and ruleset.type == "TEXT":
-                query_str = f"@{k}:({v})"
-
-            # log(query_str)
+            log(query_str)
 
             query = Query(query_str)
             # breakpoint()
-
-            results = self._index.search(query)
-            # log(results)
-            matches += [json.loads(d.json) for d in results.docs]
-
+            log(self._index.explain(query))
+            response = self._index.search(query)
+            log(response)
+            matches += [json.loads(d.json) for d in response.docs]
+        log(matches)
         results = {
-            obj["pk"]: {k: self._validate(k, v, decode=True) for k, v in obj.items()}
-            for obj in matches
+            obj["pk"]: {k: self._decode(v) for k, v in obj.items()} for obj in matches
         }
-
-        return list(results.values())
+        results = list(results.values())
+        log(results)
+        return results
 
     def get(self, pk):
         # log(pk)
@@ -220,11 +230,10 @@ class Table:
             return None
 
         if obj := self._db.json().get(f"{self.name}:{pk}", Path.root_path()):
-            # log(obj)
-            for k in obj:
+            for k, v in obj.items():
                 for r in replacements:
-                    if isinstance(obj[k], str):
-                        obj[k] = obj[k].replace(f"\\{r}", r)
+                    if isinstance(v, str):
+                        obj[k] = self._decode(v)
             return obj
         return None
 
@@ -233,11 +242,8 @@ class Table:
         # log(keys)
         objs = self._db.json().mget(keys, Path.root_path()) if keys else []
         for i, obj in enumerate(objs):
-            objs[i] = {k: self._validate(k, v, decode=True) for k, v in obj.items()}
+            objs[i] = {k: self._decode(v) for k, v in obj.items()}
         return objs
-
-    def __str__(self):
-        return json.dumps(self.all(), indent=4)
 
     def random(self):
         keys = self._db.keys(f"{self.name}:*")

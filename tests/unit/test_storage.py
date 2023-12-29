@@ -1,13 +1,9 @@
-import copy
-import uuid
 from urllib.parse import urlparse
 
-import pytest
 from autonomous import log
 from autonomous.storage.cloudinarystorage import CloudinaryStorage
 from autonomous.storage.imagestorage import ImageStorage
 from autonomous.storage.localstorage import LocalStorage
-from autonomous.storage.markdown import MarkdownParser, Page
 
 
 def is_url(s):
@@ -135,104 +131,23 @@ class TestLocalStorage:
         assert "test/subtest2" in asset["url"]
 
 
-class ObjMD:
-    model = {
-        "title": "test",
-        "description": "test",
-        "listitems": ["test"],
-        "nesteditems": ["test", [1, 2, 3]],
-        "content": {"test": "test"},
-        "nested": {
-            "test": {
-                "test": [
-                    "test",
-                    "test",
-                    {"test": "test", "test2": "test"},
-                    [1, 2, 3, {"test": "test"}],
-                ]
-            }
-        },
-    }
-
-    def serialize(self):
-        return copy.deepcopy(self.model)
-
-
-# @pytest.mark.skip(reason="Takes too long")
-class TestPage:
-    """
-    Creates a Page object that can be converted to amrkdown and pushed to a wiki
-    Object must be:
-        - a dict
-        - a class with a __dict__ attribute
-        - a class with a serialize() method
-    The default wiki is the built in WIkiJS container. Overwrite with your own wiki API by setting the `wiki_api` class attribute.
-    Inherit from autonomous.wiki.Wiki abstract class for the required interface.
-    """
-
-    model = ObjMD()
-
-    def test_parse(self):
-        result = MarkdownParser(self.model.serialize()).parse()
-        log(result)
-        assert "##" in result
-        assert "-" in result
-
-    def test_convert(self):
-        """
-        Converts the object to markdown
-        """
-        record = self.model.serialize()
-        assert Page.convert(record)
-
-    def test_push(self):
-        obj = ObjMD()
-        pid = uuid.uuid4()
-        result = Page.push(
-            obj,
-            title=f"test{pid}",
-            path=f"test/test{pid}",
-            description="test description",
-            tags=["test"],
-        )
-        log(result)
-        assert result.id
-        obj.model["title"] = "testupdate"
-        result = Page.push(obj, obj.model["title"], id=result.id)
-        log(result)
-        assert result.id
-
-        result = Page.push(
-            obj,
-            title=f"test{pid}",
-            path=f"test/test{pid}",
-            description="test description",
-            tags=["test"],
-        )
-        log(result)
-        assert result.id
-
-
 class TestImageStorage:
     def test_imagestorage_basic(self):
         storage = ImageStorage()
         filedata = open("tests/assets/testimg.png", "rb").read()
-        asset_id = storage.save(
-            filedata,
-            image_type="png",
-        )
+        asset_id = storage.save(filedata)
         assert asset_id
 
     def test_imagestorage_folders(self):
         storage = ImageStorage()
         filedata = open("tests/assets/testimg.png", "rb").read()
-        asset_id = storage.save(filedata, image_type="png", folder="test/subtest")
+        asset_id = storage.save(filedata, folder="test/subtest")
         log(asset_id)
         assert "test.subtest" in asset_id
 
         storage = ImageStorage("base_folder")
         filedata = open("tests/assets/testimg.png", "rb").read()
-        asset_id = storage.save(filedata, image_type="png", folder="test/subtest")
+        asset_id = storage.save(filedata, folder="test/subtest")
         log(asset_id)
         assert "base_folder" in storage.base_path
         assert "base_folder" in storage.get_url(asset_id, full_url=True)
@@ -240,14 +155,14 @@ class TestImageStorage:
     def test_imagestorage_read(self):
         storage = ImageStorage()
         filedata = open("tests/assets/testimg.png", "rb").read()
-        asset_id = storage.save(filedata, image_type="png", folder="tests/assets")
+        asset_id = storage.save(filedata, folder="tests/assets")
         url = storage.get_url(asset_id, full_url=True)
         assert all([urlparse(url).scheme, urlparse(url).netloc])
 
     def test_imagestorage_search(self):
         storage = ImageStorage()
         filedata = open("tests/assets/testimg.png", "rb").read()
-        storage.save(filedata, image_type="png", folder="tests/assets")
+        storage.save(filedata, folder="tests/assets")
         results = storage.search(folder="tests/assets")
         log(results)
         assert all("tests.assets" in r for r in results)
@@ -255,14 +170,14 @@ class TestImageStorage:
     def test_imagestorage_delete(self):
         storage = ImageStorage()
         filedata = open("tests/assets/testimg.png", "rb").read()
-        asset_id = storage.save(filedata, image_type="png", folder="tests/assets")
+        asset_id = storage.save(filedata, folder="tests/assets")
         storage.remove(asset_id=asset_id)
         assert not storage.get_url(asset_id)
 
     def test_imagestorage_sizing(self):
         storage = ImageStorage()
         filedata = open("tests/assets/testimg.png", "rb").read()
-        asset = storage.save(filedata, image_type="png", folder="test/sizes")
+        asset = storage.save(filedata, folder="test/sizes")
         asset_thumbnail = storage.get_url(asset, size="thumbnail")
         assert "thumbnail" in asset_thumbnail
         asset_small = storage.get_url(asset, size="small")
