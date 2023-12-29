@@ -49,7 +49,7 @@ class ImageStorage:
         return asset_id
 
     def get_url(self, asset_id, size="orig", full_url=False):
-        log(f"Getting image: {asset_id}.{size}")
+        # log(f"Getting image: {asset_id}.{size}")
         if not asset_id:
             return ""
         original_path = f"{self.get_path(asset_id)}"
