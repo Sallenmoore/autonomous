@@ -49,6 +49,7 @@ class ImageStorage:
         return asset_id
 
     def get_url(self, asset_id, size="orig", full_url=False):
+        log(f"Getting image: {asset_id}.{size}")
         if not asset_id:
             return ""
         original_path = f"{self.get_path(asset_id)}"
@@ -57,21 +58,24 @@ class ImageStorage:
             log(f"Original image not found: {original_path}")
             return ""
         file_path = f"{original_path}/{size}.webp"
-        if not os.path.exists(file_path):
+        if size != "orig" and not os.path.exists(file_path):
             # If the file doesn't exist, create it
             result = self._resize_image(asset_id, size)
             with open(file_path, "wb") as asset:
                 asset.write(result)
-
-        return (
+        result_url = (
             f"/{file_path}"
             if not full_url
             else f"{os.environ.get('APP_BASE_URL', '')}/{file_path}"
         )
+        log(f"Returning image url: {result_url}")
+        return result_url
 
     def get_path(self, asset_id):
         if asset_id:
             asset_path = asset_id.replace(".", "/")
+            if asset_path.endswith("/"):
+                asset_path = asset_path[:-1]
             return os.path.join(self.base_path, f"{asset_path}")
         else:
             return self.base_path
