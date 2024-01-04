@@ -41,9 +41,7 @@ class AutoUser(AutoModel):
                 if u.email == email:
                     user = u
         if not user:
-            log("Creating new user...")
-            if email == "stevenallenmoore@gmail.com":
-                raise Exception("New user should not be created")
+            log(f"Creating new user for {email}")
             user = cls(name=name, email=email)
 
         # parse user_info into a user object

@@ -187,7 +187,7 @@ class Table:
         return result[0] if result else None
 
     def search(self, **search_terms):
-        log(search_terms)
+        # log(search_terms)
         matches = []
 
         for k, v in search_terms.items():
@@ -208,20 +208,20 @@ class Table:
             else:
                 raise Exception(f"Can only search indexed fields: {k}:{v}")
 
-            log(query_str)
+            # log(query_str)
 
             query = Query(query_str)
             # breakpoint()
-            log(self._index.explain(query))
+            # log(self._index.explain(query))
             response = self._index.search(query)
-            log(response)
+            # log(response)
             matches += [json.loads(d.json) for d in response.docs]
-        log(matches)
+        # log(matches)
         results = {
             obj["pk"]: {k: self._decode(v) for k, v in obj.items()} for obj in matches
         }
         results = list(results.values())
-        log(results)
+        # log(results)
         return results
 
     def get(self, pk):
