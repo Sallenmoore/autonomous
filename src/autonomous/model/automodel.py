@@ -128,7 +128,11 @@ class AutoModel(ABC):
     def __getattribute__(self, name):
         obj = super().__getattribute__(name)
         if isinstance(obj, DelayedModel):
-            self.__dict__[name] = obj._instance()
+            try:
+                self.__dict__[name] = obj._instance()
+            except DanglingReferenceError as e:
+                log(self.__dict__[name], e)
+                raise e
             return self.__dict__[name]
         return obj
 
