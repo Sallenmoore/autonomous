@@ -55,10 +55,10 @@ class ImageStorage:
         original_path = f"{self.get_path(asset_id)}"
         # log(f"Getting image: {asset_id}.{size}", original_path)
         if not os.path.exists(original_path):
-            log(f"Original image not found: {original_path}")
+            # log(f"Original image not found: {original_path}")
             return ""
         file_path = f"{original_path}/{size}.webp"
-        #log(file_path)
+        # log(file_path)
         if size != "orig" and not os.path.exists(file_path):
             # If the file doesn't exist, create it
             result = self._resize_image(asset_id, size)
@@ -69,7 +69,7 @@ class ImageStorage:
             if not full_url
             else f"{os.environ.get('APP_BASE_URL', '')}/{file_path}"
         )
-        #log(f"Returning image url: {result_url}")
+        # log(f"Returning image url: {result_url}")
         return result_url
 
     def get_path(self, asset_id):
@@ -83,16 +83,16 @@ class ImageStorage:
 
     def search(self, folder="", **kwargs):
         imgs = []
-        #log(f"{self.base_path}")
+        # log(f"{self.base_path}")
         for f in os.listdir(f"{self.base_path}/{folder}"):
-            #log(f"{self.base_path}/{folder}/{f}")
+            # log(f"{self.base_path}/{folder}/{f}")
             for img in os.listdir(f"{self.base_path}/{folder}/{f}"):
                 img_key = self._get_key(
                     f"{folder}",
                     pkey=f,
                 )
                 imgs.append(img_key)
-        #log(imgs)
+        # log(imgs)
         return imgs
 
     def remove(self, asset_id):
