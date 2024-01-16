@@ -48,6 +48,3 @@ pythonpath = [
     "src/autonomous",
 ]
 log_auto_indent = true
-
-[tool.isort]
-profile = "black"
