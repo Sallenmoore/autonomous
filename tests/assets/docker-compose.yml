@@ -1,9 +1,0 @@
-version: "3"
-
-services:
-  testdb:
-    image: redis/redis-stack-server:latest
-    container_name: testdb
-    restart: unless-stopped
-    ports:
-      - "10001:6379"

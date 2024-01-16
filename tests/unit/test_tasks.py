@@ -13,8 +13,8 @@ def mylongtask():
     job = get_current_job()
     print(f"\nCurrent job 1: {job.id}")
     time.sleep(10)
-    print(f"\nCurrent job 2: {job.id}")
-    return job.id
+    # print(f"\nCurrent job 2: {job.id}")
+    return  # job.id
 
 
 def mytask(a, b):
@@ -83,14 +83,13 @@ class TestAutoTasks:
         tasks = AutoTasks()
         tasks.clear()
         job = tasks.task(mytask, 5, 7)
-        result = job.status
-        assert result
+        time.sleep(2)
+        assert job.status == "finished"
 
     def test_autotask_results(self):
         tasks = AutoTasks()
         tasks.clear()
         job = tasks.task(mytask, 5, 7)
-        time.sleep(10)
         while job.status not in ["finished", "failed"]:
             time.sleep(1)
             print(job.status)
