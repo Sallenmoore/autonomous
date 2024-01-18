@@ -43,20 +43,20 @@ class TestDatabasePerformance:
             t.pk = None
             self.db.save(t.__dict__)
         time = timeit.timeit(lambda: self.db.search(name="change"), number=10)
-        print(time)
+        print(f"\nsearch 'name' time: {time}")
         time = timeit.timeit(lambda: self.db.fastsearch(name="change"), number=10)
-        print(time)
+        print(f"\nfastsearch 'name' time: {time}")
         time = timeit.timeit(
             lambda: self.db.search(name="stevenallenmoore@gmail.com"), number=10
         )
-        print(time)
+        print(f"\nsearch 'escape_char' time: {time}")
         time = timeit.timeit(
             lambda: self.db.fastsearch(name="stevenallenmoore@gmail.com"), number=10
         )
-        print(time)
+        print(f"\nfastsearch 'escape_char' time: {time}")
         time = timeit.timeit(lambda: self.db.search(name="g723578,/@$#%$"), number=10)
-        print(time)
+        print(f"\nsearch 'not found' time: {time}")
         time = timeit.timeit(
             lambda: self.db.fastsearch(name="g723578,/@$#%$"), number=10
         )
-        print(time)
+        print(f"\nfastsearch 'not found' time: {time}")

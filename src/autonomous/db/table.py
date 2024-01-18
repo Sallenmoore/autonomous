@@ -31,21 +31,21 @@ class AutoEscaper:
     # Characters that RediSearch requires us to escape during queries.
     # Source: https://redis.io/docs/stack/search/reference/escaping/#the-rules-of-text-field-tokenization
 
-    escaped_chars = r"[,.<>{}\[\]\\\"\':;!@#$%^&*()\-+=~\/ ]"
+    escaped_chars = r"[\\,.<>{}\[\]\"\':;!@#$%^&*()\-+=~\/ ]"
 
     @classmethod
     def encode(cls, value: str) -> str:
-        # log(value)
-        for char in cls.escaped_chars:
-            value = value.replace(char, f"\\{char}")
-        # log(value)
-        return value
+        escaped_value = ""
+        for char in value:
+            escaped_value += f"\{char}" if char in cls.escaped_chars else char
+        # breakpoint()
+        return escaped_value
 
     @classmethod
     def decode(cls, value: str) -> str:
         # log(value)
         for char in cls.escaped_chars:
-            value = value.replace(f"\\{char}", char)
+            value = value.replace(f"\{char}", char)
         # log(value)
         return value
 

@@ -26,7 +26,7 @@ inittests: clean
 	pip install -e .
 	cd tests/assets && docker compose up -d
 
-TESTING=TestAutoTask
+TESTING=test_unit_db
 test:
 	python -m pytest -k "$(TESTING)" -s 
 

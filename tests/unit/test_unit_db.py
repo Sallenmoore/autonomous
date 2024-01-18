@@ -5,6 +5,7 @@ import pytest
 
 from autonomous import log
 from autonomous.db.autodb import Database
+from autonomous.db.table import AutoEscaper
 
 
 class SubRecordTest:
@@ -32,6 +33,43 @@ class TestDatabase:
         port="10001",
         decode_responses=True,
     ).get_table("RecordTest", RecordTest.attributes)
+
+    def test_encode_no_escaped_chars(self):
+        assert AutoEscaper.encode("HelloWorld") == "HelloWorld"
+
+    def test_encode_with_escaped_chars(self):
+        value_str = "stevenallenmoore@gmail"
+        encoded_str = AutoEscaper.encode(value_str)
+        assert encoded_str == "stevenallenmoore\\@gmail"
+        value_str = "stevenallenmoore.gmail"
+        encoded_str = AutoEscaper.encode(value_str)
+        assert encoded_str == "stevenallenmoore\\.gmail"
+
+    def test_encode_with_multiple_escaped_chars(self):
+        # Assuming that 'a' and 'b' are in cls.escaped_chars
+        assert AutoEscaper.encode(".@") == "\\.\\@"
+        value_str = "steven--allen;moo/re@gmai\l.com"
+        encoded_str = AutoEscaper.encode(value_str)
+        assert encoded_str == "steven\\-\\-allen\\;moo\\/re\\@gmai\\\l\\.com"
+
+    def test_decode_no_escaped_chars(self):
+        assert AutoEscaper.decode("Hello, World!") == "Hello, World!"
+
+    def test_decode_with_escaped_chars(self):
+        value_str = "stevenallenmoore\\@gmail"
+        encoded_str = AutoEscaper.decode(value_str)
+        assert encoded_str == "stevenallenmoore@gmail"
+        value_str = "stevenallenmoore\\.gmail"
+        encoded_str = AutoEscaper.decode(value_str)
+        assert encoded_str == "stevenallenmoore.gmail"
+
+    def test_decode_with_multiple_escaped_chars(self):
+        # Assuming that 'a' and 'b' are in cls.escaped_chars
+        assert AutoEscaper.decode("\\.\\@") == ".@"
+        # Assuming that 'a' and 'b' are in cls.escaped_chars
+        value_str = "steven\\-\\-allen\\;moo\\/re\\@gmai\\\l\\.com"
+        decoded_str = AutoEscaper.decode(value_str)
+        assert decoded_str == "steven--allen;moo/re@gmai\l.com"
 
     def test_db_create(self):
         t = RecordTest()
