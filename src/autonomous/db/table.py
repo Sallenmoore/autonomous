@@ -106,12 +106,10 @@ class Table:
         # log(keys)
         try:
             key = random.choice(keys)
-            log(key)
         except Exception as e:
             # log(e, f"Table '{self.name}' is empty.")
             return None
         else:
-            log(key)
             result = self.get(key["_id"])
             # log(result)
             return result

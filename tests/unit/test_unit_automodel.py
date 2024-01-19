@@ -159,10 +159,8 @@ class TestAutomodel:
         am.save()
         pm.save()
 
-        am_dict = {"_automodel": am.model_name(), "_id": am.pk}
-        pm_dict = {"_automodel": pm.model_name(), "_id": pm.pk}
-
-        result = Model.deserialize(am_dict)
+        am_dict = {"_automodel": pm.model_name(), "_id": am.pk}
+        result = Model(**am_dict)
 
         assert isinstance(result, Model)
         assert result.pk == am.pk
@@ -170,11 +168,12 @@ class TestAutomodel:
         assert result.age == am.age
         assert result.date == am.date
 
-        result = Model._deserialize(pm_dict)
+        pm_dict = {"_automodel": pm.model_name(), "_id": pm.pk}
+        result = Model(**pm_dict)
         log(result)
-        am_dict["autolist"] = [1, result, 3]
-        log(am_dict["autolist"])
-        result = Model.deserialize(am_dict)
+        pm_dict["autolist"] = [1, result, 3]
+        log(pm_dict["autolist"])
+        result = Model(**pm_dict)
         assert result.autolist[0] == 1
         assert result.autolist[2] == 3
         assert isinstance(result.autolist[1], Model)
@@ -182,8 +181,9 @@ class TestAutomodel:
         assert result.autolist[1].name == pm.name
         assert result.autolist[1].age == pm.age
 
+        pm_dict = {"__extended_json_type__": "AutoModel", "value": pm_dict}
         am_dict["autodict"] = {"a": 1, "b": pm_dict}
-        result = Model.deserialize(am_dict)
+        result = Model(**am_dict)
         assert result.autodict["a"] == 1
         assert isinstance(result.autodict["b"], Model)
         assert result.autodict["b"].pk == pm.pk
@@ -191,7 +191,7 @@ class TestAutomodel:
         assert result.autodict["b"].age == pm.age
 
         am_dict["autodict"] = {"a": 1, "b": [pm_dict]}
-        result = Model.deserialize(am_dict)
+        result = Model(**am_dict)
         assert result.autodict["a"] == 1
         assert isinstance(result.autodict["b"][0], Model)
         assert result.autodict["b"][0].pk == pm.pk
@@ -199,7 +199,7 @@ class TestAutomodel:
         assert result.autodict["b"][0].age == pm.age
 
         am_dict["autodict"] = {"a": 1, "b": {"c": pm_dict}}
-        result = Model.deserialize(am_dict)
+        result = Model(**am_dict)
         assert result.autodict["a"] == 1
         assert isinstance(result.autodict["b"]["c"], Model)
         assert result.autodict["b"]["c"].pk == pm.pk
@@ -221,8 +221,8 @@ class TestAutomodel:
         for i, a in enumerate(result["autolist"]):
             log(a, type(a))
             assert isinstance(a, dict)
-            assert testlist[i].model_name() == a["_automodel"]
-            assert testlist[i].pk == a["_id"]
+            assert testlist[i].model_name() == a["value"]["_automodel"]
+            assert testlist[i].pk == a["value"]["_id"]
 
         am.autodict = {a.pk: a for a in testlist}
         testdict = am.autodict.copy()
@@ -230,33 +230,33 @@ class TestAutomodel:
         # breakpoint()
         for k, a in result["autodict"].items():
             assert isinstance(a, dict)
-            assert testdict[k].model_name() == a["_automodel"]
-            assert testdict[k].pk == a["_id"]
+            assert testdict[k].model_name() == a["value"]["_automodel"]
+            assert testdict[k].pk == a["value"]["_id"]
 
     def test_automodel_circular_reference(self):
-        am = Model(name="test", age=10, date=datetime.now())
-        subam = Model(name="test", age=10, date=datetime.now())
+        am = Model(name="testam", age=10, date=datetime.now())
+        am.save()
+        subam = Model(name="testsub", age=10, date=datetime.now())
+        subam.save()
         subam.auto = am
         am.auto = subam
-        am.save()
-        am.auto == subam
-        subam.save()
-        subam.auto == am
+
+        assert am.auto == subam
+        assert subam.auto == am
 
         am_ser = am.serialize()
-        assert am_ser["auto"]["_id"] == subam.pk
-        obj = Model.deserialize(am_ser)
+        assert am_ser["auto"]["value"]["_id"] == subam.pk
+        obj = Model(**am_ser)
         assert obj.pk == am.pk
         assert obj.auto.pk == subam.pk
 
         am.auto = am
         am.save()
         assert am.auto == am
-        name = am.auto.name
-        assert name == "test"
+        assert am.auto.name == "testam"
         am.auto.name = "updated"
         am.auto.save()
         assert am.auto.name == "updated"
         assert am.name == "updated"
         am_ser = am.serialize()
-        assert am_ser["auto"]["_id"] == am.pk
+        assert am_ser["auto"]["value"]["_id"] == am.pk

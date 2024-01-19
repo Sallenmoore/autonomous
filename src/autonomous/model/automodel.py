@@ -2,6 +2,7 @@
 # default : Optional[str] = "value"  # for default values
 import copy
 import importlib
+import json
 from abc import ABC
 from datetime import datetime
 
@@ -11,7 +12,7 @@ from autonomous import log
 from autonomous.errors import DanglingReferenceError
 
 from .autoattribute import AutoAttribute
-from .orm import ORM
+from .orm import ORM, AutoDecoder, AutoEncoder
 
 
 class DelayedModel:
@@ -102,10 +103,12 @@ class AutoModel(ABC):
             obj: The created AutoModel instance.
         """
         obj = super().__new__(cls)
-        pk = kwargs.get("_id", kwargs.get("pk", args[0] if args else None))
+        obj.pk = kwargs.pop("_id", None) or kwargs.pop("pk", None)
+
         # set default attributes
         # Get model data from database
-        result = cls.table().get(pk) or {}
+        result = cls.table().get(obj.pk) or {}
+
         # set object attributes
         for k, v in cls.attributes.items():
             if isinstance(v, AutoAttribute):
@@ -113,14 +116,10 @@ class AutoModel(ABC):
             v = copy.deepcopy(v)
             setattr(obj, k, result.get(k, v))
 
-        # update model with keyword arguments
         obj.__dict__ |= kwargs
-
-        # log(obj, kwargs)
-        _automodel = obj.__dict__.pop("_automodel", None)
-        obj.__dict__ |= cls._deserialize(obj.__dict__)
-        obj.__dict__["_automodel"] = _automodel
-
+        # breakpoint()
+        obj.__dict__ = AutoDecoder.decode(obj.__dict__)
+        obj._automodel = obj.model_name()
         obj.last_updated = datetime.now()
 
         return obj
@@ -143,7 +142,7 @@ class AutoModel(ABC):
         Returns:
             str: A string representation of the AutoModel instance.
         """
-        return f"{self.__dict__}"
+        return json.dumps(self.serialize(), indent=4)
 
     def __eq__(self, other):
         return self.pk == other.pk
@@ -182,20 +181,21 @@ class AutoModel(ABC):
             int: The primary key of this model.
         """
         pk = self.__dict__.get("_id")
-        if isinstance(pk, str):
-            self._id = ObjectId(pk)
         return pk
 
     @pk.setter
-    def pk(self, obj):
+    def pk(self, _id):
         """
         Get the primary key of this model.
 
         Returns:
             int: The primary key of this model.
         """
+        obj = AutoDecoder.decode(_id)
         if obj is None or isinstance(obj, ObjectId):
             self._id = obj
+        elif isinstance(obj, str):
+            self._id = ObjectId(obj)
         else:
             raise ValueError("Primary key must be an ObjectId")
 
@@ -218,7 +218,7 @@ class AutoModel(ABC):
 
         if local_key not in AutoModel._save_memo[key]:
             AutoModel._save_memo[key].append(local_key)
-            serialized_obj = self.serialize()
+            serialized_obj = self.serialize(preserve_id=True)
             self.pk = self.table().save(serialized_obj)
         return self.pk
 
@@ -289,6 +289,12 @@ class AutoModel(ABC):
         Returns:
             list: A list of AutoModel instances that match the search criteria.
         """
+        for k, v in kwargs.items():
+            if isinstance(v, AutoModel):
+                kwargs[k] = {
+                    "_id": v.pk,
+                    "_automodel": v.model_name(),
+                }
         return [cls(**attribs) for attribs in cls.table().search(**kwargs)]
 
     @classmethod
@@ -305,108 +311,25 @@ class AutoModel(ABC):
         attribs = cls.table().find(**kwargs)
         return cls(**attribs) if attribs else None
 
-    # def _subobj_delete(self, obj):
-    #     if isinstance(obj, list):
-    #         for v in obj:
-    #             self._subobj_delete(v)
-    #     elif isinstance(obj, dict):
-    #         for v in obj.values():
-    #             self._subobj_delete(v)
-    #     elif issubclass(obj.__class__, (AutoModel, DelayedModel)):
-    #         obj.delete()
-
     def delete(self):
         """
         Delete this model from the database.
         """
-        # if sub_objects:
-        #     for k in self.attributes:
-        #         if attr := getattr(self, k):
-        #             self._subobj_delete(attr)
         return self.table().delete(self.pk)
 
-    serialized_tracker = []
-
-    @classmethod
-    def _serialize(cls, val):
-        # log(val, type(val))
-        if isinstance(val, list):
-            new_list = []
-            for v in val:
-                obj = cls._serialize(v)
-                new_list.append(obj)
-            val = new_list
-        elif isinstance(val, dict):
-            new_dict = {}
-            for k, v in val.items():
-                new_dict[k] = cls._serialize(v)
-            val = new_dict
-        elif isinstance(val, datetime):
-            val = {"_datetime": val.isoformat()}
-        elif issubclass(val.__class__, (AutoModel, DelayedModel)):
-            if val.pk:
-                new_val = {
-                    "_id": val.pk,
-                    "_automodel": val.model_name(),
-                }
-                # log(new_val)
-                # breakpoint()
-            else:
-                log(
-                    val.__class__.__name__,
-                    "The above object was not been saved. You must save subobjects if you want them to persist.",
-                )
-                new_val = None
-            val = new_val
-        # log(val, type(val))
-        return val
-
-    def serialize(self):
+    def serialize(self, preserve_id=False):
         """
         Serialize this model to a dictionary.
 
         Returns:
             dict: A dictionary representation of the serialized model.
         """
-        record = {k: v for k, v in self.__dict__.items() if k in self.attributes}
-        result = self._serialize(record)
-        return result | {
-            "_automodel": self.model_name(),
+        vars = {
+            k: copy.deepcopy(v)
+            for k, v in self.__dict__.items()
+            if k in self.attributes
         }
-
-    @classmethod
-    def _deserialize(cls, val):
-        if isinstance(val, dict):
-            if val.get("_automodel"):
-                if val.get("_id"):
-                    # log(val.get("pk"))
-                    assert val.get("_id")
-                    val = DelayedModel(val["_automodel"], val["_id"])
-                else:
-                    # log(val.get("pk"))
-                    val = None
-            elif "_datetime" in val:
-                val = datetime.fromisoformat(val["_datetime"])
-            else:
-                for k, v in val.items():
-                    val[k] = cls._deserialize(v)
-        elif isinstance(val, list):
-            for i, v in enumerate(val):
-                val[i] = cls._deserialize(v)
-        return val
-
-    @classmethod
-    def deserialize(cls, vars):
-        """
-        Deserialize a dictionary to a model.
-
-        Args:
-            vars (dict): The dictionary to deserialize.
-
-        Returns:
-            AutoModel: A deserialized AutoModel instance.
-        """
-        if "_automodel" not in vars:
-            raise ValueError("Cannot only deserialize automodel objects")
-
-        return cls(**vars)
+        json_vars = AutoEncoder.encode(vars)
+        if preserve_id:
+            json_vars["_id"] = self.pk
+        return json_vars
