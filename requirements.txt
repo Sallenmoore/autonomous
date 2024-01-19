@@ -22,7 +22,7 @@ pygit2
 
 cloudinary
 pillow
-redis
+pymongo
 
 ##### Frontend #####
 
@@ -38,8 +38,7 @@ gunicorn
 Authlib
 
 ##### Async ##### 
-rq
-rq-dashboard
+TODO
 
 ##### AI #####
 

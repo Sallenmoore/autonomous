@@ -7,8 +7,9 @@ _extended_summary_
 :rtype: _type_
 """
 import os
+import urllib.parse
 
-import redis
+import pymongo
 
 from autonomous import log
 
@@ -27,40 +28,28 @@ class Database:
 
     def __init__(
         self,
-        host=os.getenv("REDIS_HOST", "redis"),
-        port=os.getenv("REDIS_PORT", 6379),
-        password=os.getenv("REDIS_PASSWORD"),
-        username=os.getenv("REDIS_USERNAME"),
-        db=os.getenv("REDIS_DB"),
-        decode_responses=os.getenv("REDIS_DECODE"),
+        host=os.getenv("DB_HOST", "db"),
+        port=os.getenv("DB_PORT", 27017),
+        password=os.getenv("DB_PASSWORD"),
+        username=os.getenv("DB_USERNAME"),
+        db=os.getenv("DB_DB"),
     ):
         """
         create an interface for your database
         """
         # log(self.username, self.password)
-        options = {}
-
-        if username:
-            options["username"] = username
-        if password:
-            options["password"] = password
-        if decode_responses:
-            options["decode_responses"] = decode_responses
-
-        self.db = redis.Redis(
-            host=host,
-            port=port,
-            db=db,
-            **options,
-        )
+        username = urllib.parse.quote_plus(str(username))
+        password = urllib.parse.quote_plus(str(password))
+        log(f"mongodb://{username}:{password}@{host}", port=int(port))
+        self.db = pymongo.MongoClient(
+            f"mongodb://{username}:{password}@{host}", port=int(port)
+        )[db]
         self.tables = {}
 
     def get_table(self, table="default", schema=None):
         """
         opens the table from the file, which clears any changed data
         """
-        if not self.db.exists(table):
-            self.db.json().set(table, "$", {})
-
-        self.tables[table] = Table(table, attributes=schema, db=self.db)
+        if not self.tables.get(table):
+            self.tables[table] = Table(table, schema, self.db)
         return self.tables[table]

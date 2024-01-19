@@ -63,8 +63,8 @@ class AutoTasks:
     workers = []
     all_tasks = []
     config = {
-        "host": os.environ.get("REDIS_HOST", ""),
-        "port": os.environ.get("REDIS_PORT", ""),
+        "host": os.environ.get("REDIS_HOST"),
+        "port": os.environ.get("REDIS_PORT"),
         "password": os.environ.get("REDIS_PASSWORD"),
         "username": os.environ.get("REDIS_USERNAME"),
         "db": os.environ.get("REDIS_DB", 0),

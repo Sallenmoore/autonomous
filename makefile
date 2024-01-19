@@ -24,11 +24,11 @@ inittests: clean
 	pip install --upgrade -r ./requirements.txt
 	pip install --upgrade -r ./requirements_dev.txt
 	pip install -e .
-	cd tests/assets && docker compose up -d
+	cd /root/dev/testdb && docker compose up -d
 
-TESTING=test_unit_db
-test:
+TESTING=test_unit_auth
+test: inittests
 	python -m pytest -k "$(TESTING)" -s 
 
-tests:
+tests: inittests
 	python -m pytest

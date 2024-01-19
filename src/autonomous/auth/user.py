@@ -15,7 +15,7 @@ class AutoUser(AutoModel):
 
     attributes = {
         "name": AutoAttribute("TEXT", required=True),
-        "email": AutoAttribute("TAG", required=True),
+        "email": AutoAttribute("TEXT", required=True),
         "last_login": datetime.now(),
         "state": "unauthenticated",
         "provider": None,
@@ -35,11 +35,6 @@ class AutoUser(AutoModel):
         email = user_info["email"].strip()
         name = user_info["name"].strip()
         user = cls.find(email=email)
-        # if not user:
-        #     # FIXME: attempting a lookup hack because something is fucked up
-        #     for u in cls.all():
-        #         if u.email == email:
-        #             user = u
         if not user:
             log(f"Creating new user for {email}")
             user = cls(name=name, email=email)
@@ -50,7 +45,6 @@ class AutoUser(AutoModel):
         user.last_login = datetime.now()
         user.state = "authenticated"
         user.save()
-        # log(user.pk)
         return user
 
     @property

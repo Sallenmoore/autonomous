@@ -27,7 +27,7 @@ class ORM:
         return self.table.random()
 
     def delete(self, pk):
-        return self.table.delete(pk)
+        return self.table.delete(_id=pk)
 
     def flush_table(self):
         return self.table.clear()

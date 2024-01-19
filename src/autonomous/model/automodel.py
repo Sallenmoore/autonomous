@@ -2,10 +2,10 @@
 # default : Optional[str] = "value"  # for default values
 import copy
 import importlib
-import json
-import uuid
 from abc import ABC
 from datetime import datetime
+
+from bson.objectid import ObjectId
 
 from autonomous import log
 from autonomous.errors import DanglingReferenceError
@@ -102,7 +102,7 @@ class AutoModel(ABC):
             obj: The created AutoModel instance.
         """
         obj = super().__new__(cls)
-        pk = kwargs.get("pk", args[0] if args else None)
+        pk = kwargs.get("_id", kwargs.get("pk", args[0] if args else None))
         # set default attributes
         # Get model data from database
         result = cls.table().get(pk) or {}
@@ -155,10 +155,10 @@ class AutoModel(ABC):
     def table(cls):
         # breakpoint()
         if not cls._table or cls._table.name != cls.__name__:
-            cls.attributes["pk"] = AutoAttribute("TAG", primary_key=True)
+            cls.attributes["_id"] = None
             cls.attributes["last_updated"] = datetime.now()
             cls.attributes["_automodel"] = AutoAttribute(
-                "TAG", default=cls.model_name()
+                "TEXT", default=cls.model_name()
             )
             cls._table = cls._orm(cls._table_name or cls.__name__, cls.attributes)
         return cls._table
@@ -173,22 +173,31 @@ class AutoModel(ABC):
         """
         return f"{cls.__module__}.{cls.__name__}"
 
-    ## TODO: Save all sub objects
-    ## FIXME: This is causing issues
-    # def _subobj_save(self, obj, key):
-    #     if isinstance(obj, list):
-    #         for v in obj:
-    #             if self._subobj_save(v, key) is None:
-    #                 obj.remove(v)
-    #     elif isinstance(obj, dict):
-    #         for k, v in obj.items():
-    #             if self._subobj_save(v, key) is None:
-    #                 obj[k] = None
-    #     elif issubclass(obj.__class__, (AutoModel, DelayedModel)):
-    #         if not obj.pk:
-    #             obj.pk = str(uuid.uuid4())
-    #         if obj.pk not in self._save_memo[key]:
-    #             obj._save(key)
+    @property
+    def pk(self):
+        """
+        Get the primary key of this model.
+
+        Returns:
+            int: The primary key of this model.
+        """
+        pk = self.__dict__.get("_id")
+        if isinstance(pk, str):
+            self._id = ObjectId(pk)
+        return pk
+
+    @pk.setter
+    def pk(self, obj):
+        """
+        Get the primary key of this model.
+
+        Returns:
+            int: The primary key of this model.
+        """
+        if obj is None or isinstance(obj, ObjectId):
+            self._id = obj
+        else:
+            raise ValueError("Primary key must be an ObjectId")
 
     def _save(self, key):
         """
@@ -207,19 +216,10 @@ class AutoModel(ABC):
 
         local_key = self.get_save_key()
 
-        # if key == local_key:
-        #     log(f"Saving root object {key}")
-        # else:
-        #     log(f"Saving child object {local_key} for root {key}")
-
         if local_key not in AutoModel._save_memo[key]:
             AutoModel._save_memo[key].append(local_key)
             serialized_obj = self.serialize()
-            # log(serialized_obj)
             self.pk = self.table().save(serialized_obj)
-        # FIXME: STILL NOT WORKING
-        # for attr in self.attributes:
-        #     self._subobj_save(getattr(self, attr), key)
         return self.pk
 
     def save(self):
@@ -229,8 +229,9 @@ class AutoModel(ABC):
         Returns:
             int: The primary key (pk) of the saved model.
         """
+        # breakpoint()
         if not self.pk:
-            self.pk = str(uuid.uuid4())
+            self.pk = ObjectId()
         key = self.get_save_key()
         AutoModel._save_memo[key] = []
         result = self._save(key)
@@ -304,25 +305,25 @@ class AutoModel(ABC):
         attribs = cls.table().find(**kwargs)
         return cls(**attribs) if attribs else None
 
-    def _subobj_delete(self, obj):
-        if isinstance(obj, list):
-            for v in obj:
-                self._subobj_delete(v)
-        elif isinstance(obj, dict):
-            for v in obj.values():
-                self._subobj_delete(v)
-        elif issubclass(obj.__class__, (AutoModel, DelayedModel)):
-            obj.delete()
+    # def _subobj_delete(self, obj):
+    #     if isinstance(obj, list):
+    #         for v in obj:
+    #             self._subobj_delete(v)
+    #     elif isinstance(obj, dict):
+    #         for v in obj.values():
+    #             self._subobj_delete(v)
+    #     elif issubclass(obj.__class__, (AutoModel, DelayedModel)):
+    #         obj.delete()
 
-    def delete(self, sub_objects=False):
+    def delete(self):
         """
         Delete this model from the database.
         """
-        if sub_objects:
-            for k in self.attributes:
-                if attr := getattr(self, k):
-                    self._subobj_delete(attr)
-        return self.table().delete(pk=self.pk)
+        # if sub_objects:
+        #     for k in self.attributes:
+        #         if attr := getattr(self, k):
+        #             self._subobj_delete(attr)
+        return self.table().delete(self.pk)
 
     serialized_tracker = []
 
@@ -345,7 +346,7 @@ class AutoModel(ABC):
         elif issubclass(val.__class__, (AutoModel, DelayedModel)):
             if val.pk:
                 new_val = {
-                    "pk": val.pk,
+                    "_id": val.pk,
                     "_automodel": val.model_name(),
                 }
                 # log(new_val)
@@ -377,10 +378,10 @@ class AutoModel(ABC):
     def _deserialize(cls, val):
         if isinstance(val, dict):
             if val.get("_automodel"):
-                if val.get("pk"):
+                if val.get("_id"):
                     # log(val.get("pk"))
-                    assert len(val.get("pk"))
-                    val = DelayedModel(val["_automodel"], val["pk"])
+                    assert val.get("_id")
+                    val = DelayedModel(val["_automodel"], val["_id"])
                 else:
                     # log(val.get("pk"))
                     val = None

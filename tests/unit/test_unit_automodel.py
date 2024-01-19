@@ -2,7 +2,9 @@ import random
 import uuid
 from datetime import datetime
 
+import bson
 import pytest
+
 from autonomous import log
 from autonomous.model.automodel import AutoModel
 
@@ -13,15 +15,15 @@ class MockORM:
         self.table = {}
 
     def save(self, data):
-        if data.get("pk") is None:
-            data["pk"] = uuid.uuid4().hex
-        self.table[data["pk"]] = data
+        if data.get("_id") is None:
+            data["_id"] = bson.ObjectId()
+        self.table[data["_id"]] = data
         log(data)
-        return data["pk"]
+        return data["_id"]
 
-    def get(self, pk):
-        # log(pk, self.db.get(pk))
-        return self.table.get(pk)
+    def get(self, _id):
+        # log(_id, self.db.get(_id))
+        return self.table.get(_id)
 
     def random(self):
         key = random.choice(list(self.table.keys()))
@@ -41,11 +43,11 @@ class MockORM:
         # log(results)
         return results
 
-    def delete(self, pk):
+    def delete(self, _id):
         try:
-            del self.table[pk]
+            del self.table[_id]
         except KeyError:
-            return pk
+            return _id
         else:
             return None
 
@@ -157,8 +159,8 @@ class TestAutomodel:
         am.save()
         pm.save()
 
-        am_dict = {"_automodel": am.model_name(), "pk": am.pk}
-        pm_dict = {"_automodel": pm.model_name(), "pk": pm.pk}
+        am_dict = {"_automodel": am.model_name(), "_id": am.pk}
+        pm_dict = {"_automodel": pm.model_name(), "_id": pm.pk}
 
         result = Model.deserialize(am_dict)
 
@@ -220,7 +222,7 @@ class TestAutomodel:
             log(a, type(a))
             assert isinstance(a, dict)
             assert testlist[i].model_name() == a["_automodel"]
-            assert testlist[i].pk == a["pk"]
+            assert testlist[i].pk == a["_id"]
 
         am.autodict = {a.pk: a for a in testlist}
         testdict = am.autodict.copy()
@@ -229,7 +231,7 @@ class TestAutomodel:
         for k, a in result["autodict"].items():
             assert isinstance(a, dict)
             assert testdict[k].model_name() == a["_automodel"]
-            assert testdict[k].pk == a["pk"]
+            assert testdict[k].pk == a["_id"]
 
     def test_automodel_circular_reference(self):
         am = Model(name="test", age=10, date=datetime.now())
@@ -242,7 +244,7 @@ class TestAutomodel:
         subam.auto == am
 
         am_ser = am.serialize()
-        assert am_ser["auto"]["pk"] == subam.pk
+        assert am_ser["auto"]["_id"] == subam.pk
         obj = Model.deserialize(am_ser)
         assert obj.pk == am.pk
         assert obj.auto.pk == subam.pk
@@ -257,4 +259,4 @@ class TestAutomodel:
         assert am.auto.name == "updated"
         assert am.name == "updated"
         am_ser = am.serialize()
-        assert am_ser["auto"]["pk"] == am.pk
+        assert am_ser["auto"]["_id"] == am.pk

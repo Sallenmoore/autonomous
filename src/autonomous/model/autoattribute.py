@@ -3,7 +3,6 @@ class AutoAttribute:
         self, type, default=None, required=False, unique=False, primary_key=False
     ):
         if type in [
-            "TAG",
             "TEXT",
             "NUMERIC",
         ]:
