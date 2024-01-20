@@ -6,8 +6,6 @@ import json
 from abc import ABC
 from datetime import datetime
 
-from bson.objectid import ObjectId
-
 from autonomous import log
 from autonomous.errors import DanglingReferenceError
 
@@ -135,6 +133,9 @@ class AutoModel(ABC):
             return self.__dict__[name]
         return obj
 
+    def __str__(self) -> str:
+        return self.__repr__()
+
     def __repr__(self) -> str:
         """
         Return a string representation of the AutoModel instance.
@@ -180,8 +181,7 @@ class AutoModel(ABC):
         Returns:
             int: The primary key of this model.
         """
-        pk = self.__dict__.get("_id")
-        return pk
+        return self._id
 
     @pk.setter
     def pk(self, _id):
@@ -191,15 +191,9 @@ class AutoModel(ABC):
         Returns:
             int: The primary key of this model.
         """
-        obj = AutoDecoder.decode(_id)
-        if obj is None or isinstance(obj, ObjectId):
-            self._id = obj
-        elif isinstance(obj, str):
-            self._id = ObjectId(obj)
-        else:
-            raise ValueError("Primary key must be an ObjectId")
+        self._id = str(_id)
 
-    def _save(self, key):
+    def _save(self):  # , key):
         """
         Save this model to the database.
 
@@ -211,15 +205,15 @@ class AutoModel(ABC):
         - save object not in save memo or without pk into database
         """
 
-        assert self.pk  # sanity check
-        assert key and key in AutoModel._save_memo  # sanity check
+        # assert self.pk  # sanity check
+        # assert key and key in AutoModel._save_memo  # sanity check
 
-        local_key = self.get_save_key()
+        # local_key = self.get_save_key()
 
-        if local_key not in AutoModel._save_memo[key]:
-            AutoModel._save_memo[key].append(local_key)
-            serialized_obj = self.serialize(preserve_id=True)
-            self.pk = self.table().save(serialized_obj)
+        # if local_key not in AutoModel._save_memo[key]:
+        #     AutoModel._save_memo[key].append(local_key)
+        serialized_obj = self.serialize()
+        self.pk = self.table().save(serialized_obj)
         return self.pk
 
     def save(self):
@@ -230,13 +224,11 @@ class AutoModel(ABC):
             int: The primary key (pk) of the saved model.
         """
         # breakpoint()
-        if not self.pk:
-            self.pk = ObjectId()
-        key = self.get_save_key()
-        AutoModel._save_memo[key] = []
-        result = self._save(key)
+        # key = self.get_save_key()
+        # AutoModel._save_memo[key] = []
+        result = self._save()  # key)
         assert result == self.pk
-        AutoModel._save_memo.pop(key)
+        # AutoModel._save_memo.pop(key)
         return result
 
     @classmethod
@@ -250,8 +242,8 @@ class AutoModel(ABC):
         Returns:
             AutoModel or None: The retrieved AutoModel instance, or None if not found.
         """
-        # breakpoint()
-        result = cls.table().get(pk)
+        table = cls.table()
+        result = table.get(pk)
         return cls(**result) if result else None
 
     @classmethod
@@ -317,19 +309,14 @@ class AutoModel(ABC):
         """
         return self.table().delete(self.pk)
 
-    def serialize(self, preserve_id=False):
+    def serialize(self):
         """
         Serialize this model to a dictionary.
 
         Returns:
             dict: A dictionary representation of the serialized model.
         """
-        vars = {
-            k: copy.deepcopy(v)
-            for k, v in self.__dict__.items()
-            if k in self.attributes
-        }
+        vars = {k: v for k, v in self.__dict__.items() if k in self.attributes}
         json_vars = AutoEncoder.encode(vars)
-        if preserve_id:
-            json_vars["_id"] = self.pk
+        log(json_vars)
         return json_vars

@@ -8,7 +8,7 @@ from autonomous.db.autodb import Database
 
 
 class SubRecordTest:
-    attributes = {"pk": None, "name": "buh"}
+    attributes = {"_id": None, "name": "buh"}
 
     def __init__(self, **kwargs):
         self._id = None
@@ -16,7 +16,7 @@ class SubRecordTest:
 
 
 class RecordTest:
-    attributes = {"pk": None, "num": 5, "name": "buh", "sub": None}
+    attributes = {"_id": None, "num": 5, "name": "buh", "sub": None}
 
     def __init__(self, **kwargs):
         self._id = None
@@ -65,8 +65,8 @@ class TestDatabase:
     def test_db_read(self):
         self.db.clear()
         t = RecordTest()
-        pk = self.db.save(t.__dict__)
-        model = self.db.get(pk)
+        t._id = self.db.save(t.__dict__)
+        model = self.db.get(t._id)
         assert isinstance(model, dict)
         obj = RecordTest(**model)
         assert obj._id == t._id
@@ -75,9 +75,9 @@ class TestDatabase:
     def test_db_update(self):
         self.db.clear()
         t = RecordTest()
-        self.db.save(t.__dict__)
+        t._id = self.db.save(t.__dict__)
         t.num = 6
-        self.db.save(t.__dict__)
+        t._id = self.db.save(t.__dict__)
         model = self.db.get(t._id)
         log(type(model), model)
         assert isinstance(model, dict)
@@ -88,7 +88,7 @@ class TestDatabase:
     def test_db_delete(self):
         self.db.clear()
         t = RecordTest()
-        self.db.save(t.__dict__)
+        t._id = self.db.save(t.__dict__)
         assert self.db.delete(t._id) == 1
 
     def test_db_search(self):
@@ -117,6 +117,7 @@ class TestDatabase:
     @pytest.mark.skip(reason="not implemented")
     def test_subattribute_search(self):
         t = RecordTest()
+        t._id = self.db.save(t.__dict__)
         sub = SubRecordTest()
         sub._id = self.db.save(sub.__dict__)
         t.sub = sub.__dict__

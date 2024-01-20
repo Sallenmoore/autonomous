@@ -1,7 +1,4 @@
-import json
 from datetime import datetime
-
-from bson.objectid import ObjectId
 
 from autonomous import log
 from autonomous.db.autodb import Database
@@ -50,7 +47,7 @@ class AutoEncoder:
             for i, v in enumerate(objs):
                 objs[i] = cls.encode(v)
         else:
-            objs = encoder.default(objs)
+            return encoder.default(objs)
         return objs
 
     def default(self, o):
@@ -58,7 +55,9 @@ class AutoEncoder:
             name = "AutoModel"
         else:
             name = type(o).__name__
+
         encoder_name = f"encode_{name}"
+
         try:
             encoder = getattr(self, encoder_name)
         except AttributeError:
@@ -67,9 +66,6 @@ class AutoEncoder:
             encoded = {"__extended_json_type__": name, "value": encoder(o)}
 
         return encoded
-
-    def encode_ObjectId(self, o):
-        return str(o)
 
     def encode_datetime(self, o):
         return o.isoformat()
@@ -112,9 +108,6 @@ class AutoDecoder:
             return obj
         else:
             return decoder(obj)
-
-    def decode_ObjectId(self, o):
-        return ObjectId(o["value"])
 
     def decode_datetime(self, o):
         return datetime.fromisoformat(o["value"])

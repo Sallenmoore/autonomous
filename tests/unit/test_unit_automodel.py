@@ -16,7 +16,7 @@ class MockORM:
 
     def save(self, data):
         if data.get("_id") is None:
-            data["_id"] = bson.ObjectId()
+            data["_id"] = str(bson.ObjectId())
         self.table[data["_id"]] = data
         log(data)
         return data["_id"]

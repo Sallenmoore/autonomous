@@ -8,7 +8,8 @@ _extended_summary_
 """
 import json
 import random
-import uuid
+
+from bson.objectid import ObjectId
 
 from autonomous import log
 from autonomous.model.autoattribute import AutoAttribute
@@ -65,41 +66,51 @@ class Table:
             except Exception as e:
                 # log(e)
                 raise e
-        if obj.get("_id"):
+        if obj_id := obj.get("_id"):
+            obj["_id"] = ObjectId(obj_id)
             self._db.replace_one({"_id": obj["_id"]}, obj, True)
         else:
             obj.pop("_id", None)
             obj["_id"] = self._db.insert_one(obj).inserted_id
-        return obj["_id"]
+        return str(obj["_id"])
 
     def count(self):
         return self._db.count_documents({})
 
     def delete(self, _id):
         try:
-            return self._db.test.delete_one({"_id": _id}).acknowledged
+            return self._db.test.delete_one({"_id": ObjectId(_id)}).acknowledged
         except Exception as e:
             log(e)
-            return None
 
     def find(self, **search_terms):
         result = self._db.find_one(search_terms)
-        return result if result else None
+        if result:
+            result["_id"] = str(result["_id"])
+            return result
 
     def search(self, **search_terms):
         """Not working like I want it to"""
-        result = self._db.find(search_terms)
-        return [o for o in result] if result else None
+        result = self._db.find(search_terms) or []
+        objs = []
+        for o in result:
+            o["_id"] = str(o["_id"])
+            objs.append(o)
+        return objs
 
     def get(self, _id):
         if not _id or _id == "None":
             return None
-        if obj := self._db.find_one({"_id": _id}):
-            return obj
-        return None
+        if o := self._db.find_one({"_id": ObjectId(_id)}):
+            o["_id"] = str(o["_id"]) if o else None
+            return o
 
     def all(self):
-        return [o for o in self._db.find()]
+        objs = []
+        for o in self._db.find():
+            o["_id"] = str(o["_id"])
+            objs.append(o)
+        return objs
 
     def random(self):
         keys = [o for o in self._db.find({}, projection=["_id"])]
@@ -110,7 +121,7 @@ class Table:
             # log(e, f"Table '{self.name}' is empty.")
             return None
         else:
-            result = self.get(key["_id"])
+            result = self.get(str(key["_id"]))
             # log(result)
             return result
 
