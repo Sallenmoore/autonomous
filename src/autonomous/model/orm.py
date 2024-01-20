@@ -1,3 +1,4 @@
+import copy
 from datetime import datetime
 
 from autonomous import log
@@ -39,16 +40,13 @@ class ORM:
 class AutoEncoder:
     @classmethod
     def encode(cls, objs):
-        encoder = cls()
         if isinstance(objs, dict):
-            for k, v in objs.items():
-                objs[k] = cls.encode(v)
+            obj_copy = {k: cls.encode(v) for k, v in objs.items()}
         elif isinstance(objs, list):
-            for i, v in enumerate(objs):
-                objs[i] = cls.encode(v)
+            obj_copy = [cls.encode(v) for v in objs]
         else:
-            return encoder.default(objs)
-        return objs
+            obj_copy = cls().default(objs)
+        return obj_copy
 
     def default(self, o):
         if hasattr(o, "model_name") and hasattr(o, "pk"):
@@ -117,7 +115,8 @@ class AutoDecoder:
         try:
             from autonomous.model.automodel import DelayedModel
 
-            # breakpoint()
+            if not obj["_id"]:
+                raise KeyError
             return DelayedModel(obj["_automodel"], obj["_id"])
         except KeyError:
             log(

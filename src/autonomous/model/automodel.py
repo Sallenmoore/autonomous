@@ -82,8 +82,6 @@ class AutoModel(ABC):
     _table = None
     _orm = ORM
 
-    _save_memo = {}
-
     def __new__(cls, *args, **kwargs):
         """
         Create a new instance of the AutoModel.
@@ -131,6 +129,8 @@ class AutoModel(ABC):
                 log(self.__dict__[name], e)
                 raise e
             return self.__dict__[name]
+        if isinstance(obj, DelayedModel):
+            return obj._instance()
         return obj
 
     def __str__(self) -> str:
@@ -147,9 +147,6 @@ class AutoModel(ABC):
 
     def __eq__(self, other):
         return self.pk == other.pk
-
-    def get_save_key(self):
-        return f"{self.__class__.__name__}-{self.pk}"
 
     @classmethod
     def table(cls):
@@ -193,29 +190,6 @@ class AutoModel(ABC):
         """
         self._id = str(_id)
 
-    def _save(self):  # , key):
-        """
-        Save this model to the database.
-
-        Returns:
-            int: The primary key (pk) of the saved model.
-
-        ALGO:
-        - add self.pk to save_memo is self.pk
-        - save object not in save memo or without pk into database
-        """
-
-        # assert self.pk  # sanity check
-        # assert key and key in AutoModel._save_memo  # sanity check
-
-        # local_key = self.get_save_key()
-
-        # if local_key not in AutoModel._save_memo[key]:
-        #     AutoModel._save_memo[key].append(local_key)
-        serialized_obj = self.serialize()
-        self.pk = self.table().save(serialized_obj)
-        return self.pk
-
     def save(self):
         """
         Save this model to the database.
@@ -223,13 +197,10 @@ class AutoModel(ABC):
         Returns:
             int: The primary key (pk) of the saved model.
         """
-        # breakpoint()
-        # key = self.get_save_key()
-        # AutoModel._save_memo[key] = []
-        result = self._save()  # key)
-        assert result == self.pk
-        # AutoModel._save_memo.pop(key)
-        return result
+        serialized_obj = self.serialize()
+        self.pk = self.table().save(serialized_obj)
+
+        return self.pk
 
     @classmethod
     def get(cls, pk):
@@ -282,11 +253,7 @@ class AutoModel(ABC):
             list: A list of AutoModel instances that match the search criteria.
         """
         for k, v in kwargs.items():
-            if isinstance(v, AutoModel):
-                kwargs[k] = {
-                    "_id": v.pk,
-                    "_automodel": v.model_name(),
-                }
+            kwargs[k] = AutoEncoder.encode(v)
         return [cls(**attribs) for attribs in cls.table().search(**kwargs)]
 
     @classmethod
@@ -318,5 +285,4 @@ class AutoModel(ABC):
         """
         vars = {k: v for k, v in self.__dict__.items() if k in self.attributes}
         json_vars = AutoEncoder.encode(vars)
-        log(json_vars)
         return json_vars
