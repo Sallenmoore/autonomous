@@ -37,6 +37,7 @@ class ORM:
 
     def save(self, data):
         self._replace_pk_with_id(data)
+        log(data)
         if result := self.table.save(data):
             self._replace_id_with_pk(result)
         return result
