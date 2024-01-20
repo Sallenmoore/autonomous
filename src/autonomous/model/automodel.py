@@ -10,7 +10,8 @@ from autonomous import log
 from autonomous.errors import DanglingReferenceError
 
 from .autoattribute import AutoAttribute
-from .orm import ORM, AutoDecoder, AutoEncoder
+from .orm import ORM
+from .serializer import AutoDecoder, AutoEncoder
 
 
 class DelayedModel:
@@ -99,7 +100,7 @@ class AutoModel(ABC):
             obj: The created AutoModel instance.
         """
         obj = super().__new__(cls)
-        obj.pk = kwargs.pop("_id", None) or kwargs.pop("pk", None)
+        obj.pk = kwargs.pop("pk", None)
 
         # set default attributes
         # Get model data from database
@@ -152,7 +153,7 @@ class AutoModel(ABC):
     def table(cls):
         # breakpoint()
         if not cls._table or cls._table.name != cls.__name__:
-            cls.attributes["_id"] = None
+            cls.attributes["pk"] = None
             cls.attributes["last_updated"] = datetime.now()
             cls.attributes["_automodel"] = AutoAttribute(
                 "TEXT", default=cls.model_name()
@@ -171,24 +172,24 @@ class AutoModel(ABC):
         return f"{cls.__module__}.{cls.__name__}"
 
     @property
-    def pk(self):
+    def _id(self):
         """
         Get the primary key of this model.
 
         Returns:
             int: The primary key of this model.
         """
-        return self._id
+        return self.pk
 
-    @pk.setter
-    def pk(self, _id):
+    @_id.setter
+    def _id(self, _id):
         """
         Get the primary key of this model.
 
         Returns:
             int: The primary key of this model.
         """
-        self._id = str(_id)
+        self.pk = str(_id)
 
     def save(self):
         """
@@ -198,6 +199,7 @@ class AutoModel(ABC):
             int: The primary key (pk) of the saved model.
         """
         serialized_obj = self.serialize()
+        serialized_obj["pk"] = self.pk
         self.pk = self.table().save(serialized_obj)
 
         return self.pk
@@ -229,6 +231,7 @@ class AutoModel(ABC):
             AutoModel or None: The retrieved AutoModel instance, or None if not found.
         """
         result = cls.table().random()
+        # breakpoint()
         return cls(**result) if result else None
 
     @classmethod

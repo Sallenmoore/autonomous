@@ -40,7 +40,7 @@ class Database:
         # log(self.username, self.password)
         username = urllib.parse.quote_plus(str(username))
         password = urllib.parse.quote_plus(str(password))
-        log(f"mongodb://{username}:{password}@{host}", port=int(port))
+        # log(f"mongodb://{username}:{password}@{host}", port=int(port))
         self.db = pymongo.MongoClient(
             f"mongodb://{username}:{password}@{host}", port=int(port)
         )[db]

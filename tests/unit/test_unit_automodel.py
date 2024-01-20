@@ -15,15 +15,15 @@ class MockORM:
         self.table = {}
 
     def save(self, data):
-        if data.get("_id") is None:
-            data["_id"] = str(bson.ObjectId())
-        self.table[data["_id"]] = data
+        if data.get("pk") is None:
+            data["pk"] = str(bson.ObjectId())
+        self.table[data["pk"]] = data
         log(data)
-        return data["_id"]
+        return data["pk"]
 
-    def get(self, _id):
-        # log(_id, self.db.get(_id))
-        return self.table.get(_id)
+    def get(self, pk):
+        # log(pk, self.db.get(pk))
+        return self.table.get(pk)
 
     def random(self):
         key = random.choice(list(self.table.keys()))
@@ -43,11 +43,11 @@ class MockORM:
         # log(results)
         return results
 
-    def delete(self, _id):
+    def delete(self, pk):
         try:
-            del self.table[_id]
+            del self.table[pk]
         except KeyError:
-            return _id
+            return pk
         else:
             return None
 
@@ -159,7 +159,7 @@ class TestAutomodel:
         am.save()
         pm.save()
 
-        am_dict = {"_automodel": pm.model_name(), "_id": am.pk}
+        am_dict = {"_automodel": pm.model_name(), "pk": am.pk}
         result = Model(**am_dict)
 
         assert isinstance(result, Model)
@@ -168,7 +168,7 @@ class TestAutomodel:
         assert result.age == am.age
         assert result.date == am.date
 
-        pm_dict = {"_automodel": pm.model_name(), "_id": pm.pk}
+        pm_dict = {"_automodel": pm.model_name(), "pk": pm.pk}
         result = Model(**pm_dict)
         log(result)
         pm_dict["autolist"] = [1, result, 3]
@@ -222,7 +222,7 @@ class TestAutomodel:
             log(a, type(a))
             assert isinstance(a, dict)
             assert testlist[i].model_name() == a["value"]["_automodel"]
-            assert testlist[i].pk == a["value"]["_id"]
+            assert testlist[i].pk == a["value"]["pk"]
 
         am.autodict = {a.pk: a for a in testlist}
         testdict = am.autodict.copy()
@@ -231,7 +231,7 @@ class TestAutomodel:
         for k, a in result["autodict"].items():
             assert isinstance(a, dict)
             assert testdict[k].model_name() == a["value"]["_automodel"]
-            assert testdict[k].pk == a["value"]["_id"]
+            assert testdict[k].pk == a["value"]["pk"]
 
     def test_automodel_circular_reference(self):
         am = Model(name="testam", age=10, date=datetime.now())
@@ -245,7 +245,7 @@ class TestAutomodel:
         assert subam.auto == am
 
         am_ser = am.serialize()
-        assert am_ser["auto"]["value"]["_id"] == subam.pk
+        assert am_ser["auto"]["value"]["pk"] == subam.pk
         obj = Model(**am_ser)
         assert obj.pk == am.pk
         assert obj.auto.pk == subam.pk
@@ -259,4 +259,4 @@ class TestAutomodel:
         assert am.auto.name == "updated"
         assert am.name == "updated"
         am_ser = am.serialize()
-        assert am_ser["auto"]["value"]["_id"] == am.pk
+        assert am_ser["auto"]["value"]["pk"] == am.pk
