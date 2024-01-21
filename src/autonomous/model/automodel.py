@@ -100,19 +100,17 @@ class AutoModel(ABC):
             obj: The created AutoModel instance.
         """
         obj = super().__new__(cls)
-        obj.pk = kwargs.pop("pk", None)
-
+        pk = kwargs.pop("pk", None)
         # set default attributes
         # Get model data from database
-        result = cls.table().get(obj.pk) or {}
+        result = cls.table().get(pk) or {}
 
         # set object attributes
         for k, v in cls.attributes.items():
             if isinstance(v, AutoAttribute):
                 v = v.default
-            v = copy.deepcopy(v)
-            setattr(obj, k, result.get(k, v))
-
+            setattr(obj, k, result.get(k, copy.deepcopy(v)))
+        obj.pk = pk
         obj.__dict__ |= kwargs
         # breakpoint()
         obj.__dict__ = AutoDecoder.decode(obj.__dict__)
