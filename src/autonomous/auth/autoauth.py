@@ -79,7 +79,7 @@ class AutoAuth:
         return userinfo.json(), token
 
     @classmethod
-    def auth_required(cls, guest=False):
+    def auth_required(cls, guest=False, admin=False):
         """
         If you decorate a view with this, it will ensure that the current user is
         logged in and authenticated before calling the actual view. For
@@ -100,7 +100,9 @@ class AutoAuth:
             def decorated_view(*args, **kwargs):
                 # log(session.get("user"))
                 user = cls.current_user()
-                if user.state == "authenticated":
+                if not user:
+                    return redirect(url_for("auth.login"))
+                elif user.state == "authenticated":
                     user.last_login = datetime.now()
                     user.save()
                 session["user"] = user.serialize()
