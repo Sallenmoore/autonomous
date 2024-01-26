@@ -1,12 +1,30 @@
 import importlib
 import os
 import subprocess
+import time
 
 from redis import Redis
 from rq import Queue, Worker
 from rq.job import Job
 
 from autonomous import log
+
+# class AutoJob(Job):
+#     def perform(self):
+#         start = time.time()
+#         result = super().perform()
+#         end = time.time()
+#         log.info(
+#             "Job Finished",
+#             key=self.key,
+#             seconds=(end - start),
+#             method=self.func_name,
+#             data_size=len(self._data),
+#             queue=self.origin,
+#             enqueued_at=self.enqueued_at.timestamp() if self.enqueued_at else None,
+#             started_at=self.started_at.timestamp() if self.started_at else None,
+#         )
+#         return result
 
 
 class AutoTask:
@@ -30,13 +48,11 @@ class AutoTask:
 
     @property
     def finished(self):
-        result = self.status == "finished"
-        return result
+        return self.status == "finished"
 
     @property
     def failed(self):
-        result = self.status == "failed"
-        return result
+        return self.status == "failed"
 
     @property
     def result(self):
@@ -97,6 +113,7 @@ class AutoTasks:
         _task_<option>:pass options to the task object
         :return: job
         """
+
         job = AutoTasks.queue.enqueue(
             func,
             job_timeout=kwargs.get("_task_job_timeout", 3600),

@@ -42,6 +42,7 @@ class ORM:
         return result
 
     def get(self, pk):
+        pk = str(pk)
         if result := self.table.get(pk):
             self._replace_id_with_pk(result)
         return result
@@ -72,6 +73,7 @@ class ORM:
         return result
 
     def delete(self, pk):
+        pk = str(pk)
         return self.table.delete(_id=pk)
 
     def flush_table(self):
