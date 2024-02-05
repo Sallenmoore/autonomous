@@ -1,4 +1,6 @@
 import os
+import random
+import time
 from base64 import b64decode
 
 from openai import OpenAI
@@ -11,9 +13,54 @@ class OpenAIAgent:
 
     def __init__(self, **kwargs):
         self.client = OpenAI(api_key=os.environ.get("OPENAI_KEY"))
+        self.agents = {}
 
-    def generate(self, prompt, primer_text="", **kwargs):
-        return self.generate_text(self, prompt, primer_text)
+    def agent(self, name, instructions, messages=[], function=[], file=None):
+        if self.agents.get(name):
+            return self.agents[name]
+
+        options = {
+            "model": "gpt-4-turbo-preview",
+            "name": name,
+            "instructions": instructions,
+            "messages": messages,
+        }
+
+        if function:
+            options["tools"] = [
+                {"type": "retrieval"},
+                {"type": "function", "function": function},
+            ]
+            options["response_format"] = {"type": "json_object"}
+
+        if file:
+            file = self.client.files.create(file=open(file, "rb"), purpose="assistants")
+            options["file_ids"] = [file.id]
+
+        agent = self.client.beta.assistants.create(**options)
+        thread = self.client.beta.threads.create(
+            assistant_id=agent.id, messages=messages
+        )
+
+        run = self.client.beta.threads.runs.retrieve(thread_id=self.thread.id)
+        while run.status != "completed":
+            time.sleep(1)
+            run = self.client.beta.threads.runs.retrieve(thread_id=self.thread.id)
+
+        messages = self.client.beta.threads.messages.list(thread_id=thread.id)
+        return messages[-1]
+
+    def generate_audio(self, prompt, file_path, **kwargs):
+        voice = kwargs.get("voice") or random.choice(
+            ["alloy", "echo", "fable", "onyx", "nova", "shimmer"]
+        )
+        response = self.client.audio.speech.create(
+            model="tts-1",
+            voice=voice,
+            input=prompt,
+        )
+
+        response.stream_to_file(file_path)
 
     def generate_image(self, prompt, **kwargs):
         image = None
@@ -28,35 +75,28 @@ class OpenAIAgent:
             image = b64decode(image_dict.b64_json)
         return image
 
-    def generate_json(self, text, functions, primer_text=""):
-        json_data = {
-            # "response_format":{ "type": "json_object" },
-            "messages": [
-                {
-                    "role": "system",
-                    "content": f"{primer_text}. Your output must be a JSON object.",
-                },
-                {
-                    "role": "user",
-                    "content": text,
-                },
-            ]
-        }
+    def generate_json(self, text, functions, primer_text="", file=None, context=[]):
+        messages = []
+        for msg in context:
+            message = {"role": "assistant", "content": msg}
+            messages.append(message)
 
-        if isinstance(functions, (list, tuple)):
-            json_data.update({"functions": functions})
-        elif functions is not None:
-            json_data.update({"function_call": {"name": functions["name"]}})
-            json_data.update({"functions": [functions]})
+        agent = self.agent(
+            "json",
+            "Create a JSON object from the following text.",
+            instructions=primer_text,
+            messages=messages,
+            function=functions,
+            file=file,
+        )
 
-        # try:
-        response = self.client.chat.completions.create(model="gpt-4", **json_data)
-        # except Exception as e:
-        #     log(f"{type(e)}:{e}\n\n==== Error: fall back to lesser model ====")
-        #     response = self.client.chat.completions.create(
-        #         model="gpt-3.5-turbo", **json_data
-        #     )
-        # breakpoint()
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-4-turbo-preview", **json_data
+            )
+        except Exception as e:
+            log(f"{type(e)}:{e}\n\n==== Error: fall back to lesser model ====")
+            response = self.client.chat.completions.create(model="gpt-4", **json_data)
         try:
             result = response.choices[0].message.function_call.arguments
         except Exception as e:

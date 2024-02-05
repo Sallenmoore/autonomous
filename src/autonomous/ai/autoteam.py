@@ -24,6 +24,9 @@ class AutoTeam:
             else:
                 raise Exception("Invalid model")
 
+    def generate_audio(self, prompt, **kwargs):
+        return self.proxy.generate_audio(prompt, **kwargs)
+
     def generate_image(self, prompt, **kwargs):
         return self.proxy.generate_image(prompt, **kwargs)
 
