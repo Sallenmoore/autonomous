@@ -114,15 +114,15 @@ class TestDatabase:
         result = self.db.search(name="ste--venallenm#oor e@gmail.com")
         assert result[0]["name"] == "ste--venallenm#oor e@gmail.com"
 
-    @pytest.mark.skip(reason="not implemented")
-    def test_subattribute_search(self):
-        t = RecordTest()
-        t._id = self.db.save(t.__dict__)
-        sub = SubRecordTest()
-        sub._id = self.db.save(sub.__dict__)
-        t.sub = sub.__dict__
-        self.db.save(t.__dict__)
-        result = self.db.search(_id=sub._id)
-        assert len(result) == 1
-        result = self.db.search(_id=000)
-        assert len(result) == 0
+    # @pytest.mark.skip(reason="not implemented")
+    # def test_subattribute_search(self):
+    #     t = RecordTest()
+    #     t._id = self.db.save(t.__dict__)
+    #     sub = SubRecordTest()
+    #     sub._id = self.db.save(sub.__dict__)
+    #     t.sub = sub.__dict__
+    #     self.db.save(t.__dict__)
+    #     result = self.db.search(_id=sub._id)
+    #     assert len(result) == 1
+    #     result = self.db.search(_id=000)
+    #     assert len(result) == 0

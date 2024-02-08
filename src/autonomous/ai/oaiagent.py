@@ -46,6 +46,7 @@ class OAIAgent(AutoModel):
         "agent_id": None,
         "file_ids": [],
         "messages": [],
+        "tools": {},
         "name": "agent",
         "instructions": "You are highly skilled AI trained to assist with various tasks.",
         "description": "A helpful AI assistant trained to assist with various tasks.",
@@ -53,7 +54,11 @@ class OAIAgent(AutoModel):
 
     def __init__(self, **kwargs):
         self.client = OpenAI(api_key=os.environ.get("OPENAI_KEY"))
-        self.agent = self.client.beta.assistants.retrieve(self.agent_id)
+        try:
+            self.agent = self.client.beta.assistants.retrieve(self.agent_id)
+        except ValueError:
+            self.agent = None
+
         if not self.agent:
             self.agent = self.client.beta.assistants.create(
                 instructions=self.instructions,
@@ -67,12 +72,12 @@ class OAIAgent(AutoModel):
     def clear_files(self, file_id=None):
         if file_id and file_id not in self.file_ids:
             return None
-        file_ids = [file_id] or self.file_ids
+        file_ids = [file_id] if file_id else self.file_ids
         for file_id in file_ids:
             self.client.beta.assistants.files.delete(
                 assistant_id=self.agent_id, file_id=file_id
             )
-            self.client.files.delete(file_id=self.file_id)
+            self.client.files.delete(file_id=file_id)
         self.file_ids = []
         self.tools.pop("retrieval", None)
         self.save()
@@ -130,28 +135,30 @@ class OAIAgent(AutoModel):
 
         while run.status in ["queued", "in_progress"]:
             run = self.client.beta.threads.runs.retrieve(
-                thread_id=self.thread_id,
+                thread_id=thread.id,
                 run_id=run.id,
             )
-            log(f"==== Job Status: {run.status} ====")
             time.sleep(0.5)
+            log(f"==== Job Status: {run.status} ====")
 
         if run.status in ["failed", "expired", "canceled"]:
             log(f"==== Error: {run.last_error} ====")
             return None
 
+        result = None
         if run.status == "completed":
-            response = self.client.beta.threads.messages.list(thread_id=self.thread_id)
-            return response.data[0].content[0].text.value
+            response = self.client.beta.threads.messages.list(thread_id=thread.id)
+            result = response.data[0].content[0].text.value
         elif run.status == "requires_action":
             results = run.required_action.submit_tool_outputs.tool_calls[
                 0
             ].function.arguments
-            results = results[results.find("{") : results.rfind("}") + 1]
-            return results
+            result = results[results.find("{") : results.rfind("}") + 1]
+            log(f"====result: {result} ====")
+            result = json.loads(result, strict=False)
         else:
             log(f"====Status: {run.status} Error: {run.last_error} ====")
-            return None
+        return result
 
     def generate_audio(self, prompt, file_path, **kwargs):
         voice = kwargs.get("voice") or random.choice(
@@ -186,9 +193,7 @@ class OAIAgent(AutoModel):
             },
             {"role": "user", "content": text},
         ]
-        response = self.client.chat.completions.create(
-            model="gpt-4", temperature=0, messages=message
-        )
+        response = self.client.chat.completions.create(model="gpt-4", messages=message)
         try:
             result = response.choices[0].message.content
         except Exception as e:

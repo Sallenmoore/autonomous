@@ -2,6 +2,7 @@ import io
 import json
 
 import pytest
+
 from autonomous import log
 from autonomous.ai import AutoTeam
 from autonomous.ai.agents.mockai import MockAIAgent
@@ -223,9 +224,9 @@ class TestMockAI:
         open("tests/assets/summary.txt", "w").write(result)
 
 
-@pytest.mark.skip(reason="This test is not yet implemented")
+# @pytest.mark.skip(reason="This test is not yet implemented")
 class TestOAIAgent:
-    # @pytest.mark.skip(reason="working")
+    #@pytest.mark.skip(reason="working")
     def test_generate_image(self):
         oai = OAIAgent(name="TestAgent")
         prompt = (
@@ -236,7 +237,7 @@ class TestOAIAgent:
         with open("tests/assets/testimg.png", "wb") as fptr:
             fptr.write(img)
 
-    # @pytest.mark.skip(reason="working")
+    #@pytest.mark.skip(reason="working")
     def test_summarize_text(self):
         primer_text = "As a nihilistic AI, you will try to emphasize the absurdities of the text in your summary."
         prompt = " It was 7 minutes after midnight. The dog was lying on the grass in the middle of the lawn in front of Mrs Shears’ house. Its eyes were closed. It looked as if it was running on its side, the way dogs run when they think they are chasing a cat in a dream. But the dog was not running or asleep. The dog was dead. There was a garden fork sticking out of the dog. The points of the fork must have gone all the way through the dog and into the ground because the fork had not fallen over. I decided that the dog was probably killed with the fork because I could not see any other wounds in the dog and I do not think you would stick a garden fork into a dog after it had died for some other reason, like cancer for example, or a road accident. But I could not be certain about this."
@@ -246,7 +247,7 @@ class TestOAIAgent:
         assert result
         open("tests/assets/summary.txt", "w").write(result)
 
-    # @pytest.mark.skip(reason="working")
+    #@pytest.mark.skip(reason="working")
     def test_generate_text(self):
         primer_text = "You are a writer's assistant for a comedian. The comedian is helpful, creative, clever, and very funny."
         prompt = "Write a joke about programming."
@@ -255,7 +256,7 @@ class TestOAIAgent:
         assert result
         open("tests/assets/testjoke.txt", "w").write(result)
 
-    # @pytest.mark.skip(reason="working")
+    #@pytest.mark.skip(reason="working")
     def test_generate_json(self):
         primer_text = "You are a writer's assistant for a comedian. The comedian is helpful, creative, clever, and very funny."
         prompt = "Write a joke about programming."
@@ -269,6 +270,21 @@ class TestOAIAgent:
     def test_file_add(self):
         result = json.load(open("tests/assets/data.json"))
         characters = result["character"]
+        for character in characters:
+            character.pop("_world")
+            character.pop("_parent_obj")
+            character.pop("bs_summary")
+            character.pop("asset_id")
+            character.pop("battlemap")
+            character.pop("wiki_id")
+            character.pop("_journal")
+            character.pop("_relations")
+            character.pop("notes")
+            character.pop("_items")
+            character.pop("chats")
+            character.pop("pk")
+            character.pop("last_updated")
+            character.pop("_automodel")
         char_str = json.dumps(characters).encode("utf-8")
         assert char_str
 
@@ -279,7 +295,10 @@ class TestOAIAgent:
         file_id = oai.attach_file(char_str)
         result = oai.generate(prompt, function=char_funcobj)
         assert result.get("name")
-        open("tests/assets/character.json", "w").write(result)
+        json.dump(result, open("tests/assets/character.json", "w"))
         oai_2 = OAIAgent.get(oai.pk)
         file_list = oai_2.clear_files(file_id)
-        assert not file_list
+        for file in file_list.data:
+            assert file.id != file_id
+        # file_list = oai_2.clear_files()
+        # assert file_list.data == []
