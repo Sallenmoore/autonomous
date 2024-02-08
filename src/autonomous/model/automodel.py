@@ -125,9 +125,12 @@ class AutoModel(ABC):
             try:
                 self.__dict__[name] = obj._instance()
             except DanglingReferenceError as e:
-                log(self.__dict__[name], e)
-                raise e
-            return self.__dict__[name]
+                log(e)
+                self.__dict__[name] = None
+                self.save()
+                return None
+            else:
+                return self.__dict__[name]
         if isinstance(obj, DelayedModel):
             return obj._instance()
         return obj

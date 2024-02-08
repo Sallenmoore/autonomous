@@ -260,3 +260,15 @@ class TestAutomodel:
         assert am.name == "updated"
         am_ser = am.serialize()
         assert am_ser["auto"]["value"]["pk"] == am.pk
+
+    def test_dangling_reference(self):
+        am = Model(name="testam", age=10, date=datetime.now())
+        am.save()
+        subam = Model(name="testsub", age=10, date=datetime.now())
+        subam.save()
+        am.auto = subam
+        am.save()
+        subam.delete()
+        am = Model.get(am.pk)
+        with pytest.raises(AttributeError):
+            assert not am.auto.pk
