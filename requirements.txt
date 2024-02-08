@@ -42,6 +42,7 @@ TODO
 
 ##### AI #####
 
+langchain[llms]
 pyautogen
 openai
 

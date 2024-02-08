@@ -13,10 +13,6 @@ class AutoTeam:
         else:
             model = os.getenv("AI_AGENT", "openai")
             self.proxy = None
-            # if model == "autogen":
-            #     self.proxy = AutoGenAgent()
-            # if model == "local":
-            #     self.proxy = LocalAIAgent()
             if model == "openai":
                 self.proxy = OpenAIAgent()
             elif model == "mockai":

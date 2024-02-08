@@ -12,8 +12,18 @@ class OpenAIAgent:
     def __init__(self, **kwargs):
         self.client = OpenAI(api_key=os.environ.get("OPENAI_KEY"))
 
-    def generate(self, prompt, primer_text="", **kwargs):
-        return self.generate_text(self, prompt, primer_text)
+    def generate_audio(self, prompt, **kwargs):
+        image = None
+        try:
+            response = self.client.images.generate(
+                model="dall-e-3", prompt=prompt, response_format="b64_json", **kwargs
+            )
+            image_dict = response.data[0]
+        except Exception as e:
+            log(f"==== Error: Unable to create image ====\n\n{e}")
+        else:
+            image = b64decode(image_dict.b64_json)
+        return image
 
     def generate_image(self, prompt, **kwargs):
         image = None
@@ -30,7 +40,7 @@ class OpenAIAgent:
 
     def generate_json(self, text, functions, primer_text=""):
         json_data = {
-            # "response_format":{ "type": "json_object" },
+            "response_format": {"type": "json_object"},
             "messages": [
                 {
                     "role": "system",
@@ -40,7 +50,7 @@ class OpenAIAgent:
                     "role": "user",
                     "content": text,
                 },
-            ]
+            ],
         }
 
         if isinstance(functions, (list, tuple)):
@@ -56,6 +66,7 @@ class OpenAIAgent:
         except Exception as e:
             log(f"{type(e)}:{e}\n\n==== Error: fall back to lesser model ====")
             response = self.client.chat.completions.create(model="gpt-4", **json_data)
+        # breakpoint()
         try:
             result = response.choices[0].message.function_call.arguments
         except Exception as e:
