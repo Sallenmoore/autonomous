@@ -11,14 +11,10 @@ from autonomous import AutoModel, log
 
 class AutoAgent(AutoModel):
     attributes = {
-        "model": "gpt-4-turbo-preview",
         "name": None,
         "instructions": "You are a highly skilled AI trained to assist with various tasks.",
         "description": "An AI agent trained to assist with various tasks.",
-        "tools": {},
-        "file_ids": [],
         "agent_id": None,
-        "thread_id": None,
     }
 
     _default_function = {
@@ -42,98 +38,94 @@ class AutoAgent(AutoModel):
         },
     }
 
-    _instructions_addition = """
-        IMPORTANT: always use the function 'response' tool to respond to the user with the requested JSON schema. Never add any other text to the response.
-        """
+
+class OAIAgent(AutoModel):
+    client = None
+    attributes = {
+        "model": "gpt-4-turbo-preview",
+        "agent_id": None,
+        "file_ids": [],
+        "messages": [],
+        "name": "agent",
+        "instructions": "You are highly skilled AI trained to assist with various tasks.",
+        "description": "A helpful AI assistant trained to assist with various tasks.",
+    }
 
     def __init__(self, **kwargs):
         self.client = OpenAI(api_key=os.environ.get("OPENAI_KEY"))
-        self.tools["function"] = {
-            "type": "function",
-            "function": kwargs["function"]
-            if "function" in kwargs
-            else self._default_function,
-        }
-
-        # if self._instructions_addition.strip() not in self.instructions:
-        #     self.instructions += self._instructions_addition
-
-        if not self.agent_id:
-            agent = self.client.beta.assistants.create(
+        self.agent = self.client.beta.assistants.retrieve(self.agent_id)
+        if not self.agent:
+            self.agent = self.client.beta.assistants.create(
                 instructions=self.instructions,
                 description=self.description,
                 name=self.name,
-                tools=list(self.tools.values()),
                 model=self.model,
             )
-            self.agent_id = agent.id
-        else:
-            self.client.beta.assistants.update(
-                self.agent_id,
-                instructions=self.instructions,
-                description=self.description,
-                name=self.name,
-                tools=list(self.tools.values()),
-                model=self.model,
-            )
-
-    def _process_messages(self, messages):
-        self.create_thread()
-        for msg in messages:
-            if isinstance(msg, str):
-                msg = {"role": "user", "content": msg}
-
-            if isinstance(msg, dict):
-                self.client.beta.threads.messages.create(
-                    thread_id=self.thread_id,
-                    role=msg["role"],
-                    content=msg["content"],
-                )
-            else:
-                raise Exception(
-                    f"==== Invalid message: {msg} ====\nMust be a string or dict - {{'role': 'user' or 'assistant', 'content': message}}."
-                )
-
-    def create_thread(self):
-        if self.thread_id is None:
-            thread = self.client.beta.threads.create()
-            self.thread_id = thread.id
+            self.agent_id = self.agent.id
             self.save()
 
-    def clear_files(self):
-        for file_id in self.file_ids:
+    def clear_files(self, file_id=None):
+        if file_id and file_id not in self.file_ids:
+            return None
+        file_ids = [file_id] or self.file_ids
+        for file_id in file_ids:
             self.client.beta.assistants.files.delete(
-                assistant_id=self.agent_id, file_id=self.file_id
+                assistant_id=self.agent_id, file_id=file_id
             )
             self.client.files.delete(file_id=self.file_id)
         self.file_ids = []
         self.tools.pop("retrieval", None)
         self.save()
+        return self.client.files.list()
 
-    def add_files(self, files):
-        self.clear_files()
+    def attach_file(self, file_contents):
         self.tools["retrieval"] = {"type": "retrieval"}
         self.client.beta.assistants.update(
             self.agent_id,
             tools=list(self.tools.values()),
         )
-        for file_contents in files:
-            file = self.client.files.create(file=file_contents, purpose="assistants")
-            self.client.beta.assistants.files.create(
-                assistant_id=self.agent_id, file_id=file.id
-            )
-            self.file_ids.append(file.id)
+        file_obj = self.client.files.create(file=file_contents, purpose="assistants")
+        self.client.beta.assistants.files.create(
+            assistant_id=self.agent_id, file_id=file_obj.id
+        )
+        self.file_ids.append(file_obj.id)
         self.save()
+        return file_obj.id
 
-    def run(self, messages, files=None):
-        self._process_messages(messages)
-        if files:
-            self.add_files(files)
+    def _add_function(self, user_function):
+        self.tools["function"] = {"type": "function", "function": user_function}
+        self.client.beta.assistants.update(
+            self.agent_id,
+            tools=list(self.tools.values()),
+        )
+        return """
+        IMPORTANT: always use the function 'response' tool to respond to the user with the requested JSON schema. Never add any other text to the response.
+        """
+
+    def _format_messages(self, messages):
+        message_list = []
+        if isinstance(messages, str):
+            message_list.insert(0, {"role": "user", "content": messages})
+        else:
+            for message in messages:
+                if isinstance(message, str):
+                    message_list.insert(0, {"role": "user", "content": message})
+                else:
+                    raise Exception(
+                        f"==== Invalid message: {message} ====\nMust be a string "
+                    )
+        return message_list
+
+    def generate(self, messages, function=None):
+        _instructions_addition = self._add_function(function) if function else ""
+
+        formatted_messages = self._format_messages(messages)
+        thread = self.client.beta.threads.create(messages=formatted_messages)
 
         run = self.client.beta.threads.runs.create(
-            thread_id=self.thread_id,
+            thread_id=thread.id,
             assistant_id=self.agent_id,
-            additional_instructions=self._instructions_addition,
+            additional_instructions=_instructions_addition,
         )
 
         while run.status in ["queued", "in_progress"]:
@@ -160,67 +152,6 @@ class AutoAgent(AutoModel):
         else:
             log(f"====Status: {run.status} Error: {run.last_error} ====")
             return None
-
-
-class OAIAgent(AutoModel):
-    client = None
-
-    def __init__(self, **kwargs):
-        self.client = OpenAI(api_key=os.environ.get("OPENAI_KEY"))
-        self.agents = {}
-
-    def generate_json(
-        self,
-        text,
-        functions,
-        name="json_agent",
-        primer_text="",
-        file_data=None,
-        context=[],
-        description="",
-    ):
-        messages = [{"role": "user", "content": text}] + context
-        agent = self.agents.get(name)
-        if not agent:
-            agent = AutoAgent(
-                name=name,
-                instructions=primer_text,
-                messages=messages,
-                function=functions,
-            )
-            agent.save()
-            self.agents[name] = agent
-            self.save()
-        if file_data:
-            agent.add_files(file_data)
-        result = agent.run(messages)
-        json_result = json.loads(result)
-        return json_result
-
-    def generate_text(
-        self,
-        text,
-        name="text_agent",
-        primer_text="",
-        file_data=None,
-        context=[],
-        description="",
-    ):
-        messages = context + [{"role": "user", "content": text}]
-        agent = self.agents.get(name)
-        if not agent:
-            agent = AutoAgent(
-                name=name,
-                instructions=primer_text,
-                messages=messages,
-            )
-            agent.save()
-            self.agents[name] = agent
-            self.save()
-        if file_data:
-            agent.add_files(file_data)
-        result = agent.run(messages)
-        return result
 
     def generate_audio(self, prompt, file_path, **kwargs):
         voice = kwargs.get("voice") or random.choice(

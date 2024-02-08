@@ -2,14 +2,13 @@ import io
 import json
 
 import pytest
-
 from autonomous import log
 from autonomous.ai import AutoTeam
 from autonomous.ai.agents.mockai import MockAIAgent
-from autonomous.ai.agents.oaiagent import OAIAgent
 
 # from autonomous.ai.agents.local import LocalAIAgent
 from autonomous.ai.agents.openai import OpenAIAgent
+from autonomous.ai.oaiagent import OAIAgent
 
 # from autonomous.ai.agents.autogen import AutoGenAgent
 
@@ -131,7 +130,7 @@ class TestAutoTeam:
         assert oai
 
 
-# @pytest.mark.skip(reason="This test is not yet implemented")
+@pytest.mark.skip(reason="This test is not yet implemented")
 class TestOpenAIAgent:
     @pytest.mark.skip(reason="Working")
     def test_generate_image(self):
@@ -226,9 +225,9 @@ class TestMockAI:
 
 @pytest.mark.skip(reason="This test is not yet implemented")
 class TestOAIAgent:
-    @pytest.mark.skip(reason="working")
+    # @pytest.mark.skip(reason="working")
     def test_generate_image(self):
-        oai = AutoTeam(OAIAgent)
+        oai = OAIAgent(name="TestAgent")
         prompt = (
             "A beautiful pasture that seems directly out of a William Wordsworth poem."
         )
@@ -237,40 +236,35 @@ class TestOAIAgent:
         with open("tests/assets/testimg.png", "wb") as fptr:
             fptr.write(img)
 
-    @pytest.mark.skip(reason="working")
-    def test_generate_text(self):
-        primer_text = "You are a writer's assistant for a comedian. The comedian is helpful, creative, clever, and very funny."
-        prompt = "Write a joke about programming."
-        joke = AutoTeam(OAIAgent).generate_text(
-            prompt, name="comedian", primer_text=primer_text
-        )
-        assert joke
-        open("tests/assets/testjoke.txt", "w").write(joke)
-
-    @pytest.mark.skip(reason="working")
-    def test_generate_json(self):
-        primer_text = "You are a writer's assistant for a comedian. The comedian is helpful, creative, clever, and very funny."
-        prompt = "Write a joke about programming."
-        # log(funcobj)
-        result = AutoTeam(OAIAgent).generate_json(
-            prompt, funcobj, name="comedian", primer_text=primer_text
-        )
-        # log(result)
-
-        joke = json.loads(result)
-        assert joke["humor_num"]
-        assert joke["text"]
-        open("tests/assets/testjoke.json", "w").write(result)
-
-    @pytest.mark.skip(reason="working")
+    # @pytest.mark.skip(reason="working")
     def test_summarize_text(self):
         primer_text = "As a nihilistic AI, you will try to emphasize the absurdities of the text in your summary."
         prompt = " It was 7 minutes after midnight. The dog was lying on the grass in the middle of the lawn in front of Mrs Shears’ house. Its eyes were closed. It looked as if it was running on its side, the way dogs run when they think they are chasing a cat in a dream. But the dog was not running or asleep. The dog was dead. There was a garden fork sticking out of the dog. The points of the fork must have gone all the way through the dog and into the ground because the fork had not fallen over. I decided that the dog was probably killed with the fork because I could not see any other wounds in the dog and I do not think you would stick a garden fork into a dog after it had died for some other reason, like cancer for example, or a road accident. But I could not be certain about this."
 
-        result = AutoTeam(OAIAgent).summarize_text(prompt, primer_text)
+        result = OAIAgent(instructions=primer_text).summarize_text(prompt)
         # log(result)
         assert result
         open("tests/assets/summary.txt", "w").write(result)
+
+    # @pytest.mark.skip(reason="working")
+    def test_generate_text(self):
+        primer_text = "You are a writer's assistant for a comedian. The comedian is helpful, creative, clever, and very funny."
+        prompt = "Write a joke about programming."
+        oai = OAIAgent(name="comedian", instructions=primer_text)
+        result = oai.generate(prompt)
+        assert result
+        open("tests/assets/testjoke.txt", "w").write(result)
+
+    # @pytest.mark.skip(reason="working")
+    def test_generate_json(self):
+        primer_text = "You are a writer's assistant for a comedian. The comedian is helpful, creative, clever, and very funny."
+        prompt = "Write a joke about programming."
+        oai = OAIAgent(name="comedian", instructions=primer_text)
+        result = oai.generate(prompt, function=funcobj)
+        joke = json.loads(result)
+        assert joke["humor_num"]
+        assert joke["text"]
+        open("tests/assets/testjoke.json", "w").write(result)
 
     def test_file_add(self):
         result = json.load(open("tests/assets/data.json"))
@@ -280,13 +274,12 @@ class TestOAIAgent:
 
         primer_text = "You are an AI assistant helping create characters for D&D game master. Use the knowledge of existing characters to make the new character consistent and have some connection to with the existing characters in the world."
         prompt = "Generate a new NPC with all required details."
-        result = AutoTeam(OAIAgent).generate_json(
-            prompt,
-            funcobj,
-            name="npc_generator",
-            primer_text=primer_text,
-            file_data=[char_str],
-        )
-
+        oai = OAIAgent(instructions=primer_text)
+        oai.save()
+        file_id = oai.attach_file(char_str)
+        result = oai.generate(prompt, function=char_funcobj)
         assert result.get("name")
         open("tests/assets/character.json", "w").write(result)
+        oai_2 = OAIAgent.get(oai.pk)
+        file_list = oai_2.clear_files(file_id)
+        assert not file_list

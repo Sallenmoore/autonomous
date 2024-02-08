@@ -38,12 +38,10 @@ gunicorn
 Authlib
 
 ##### Async ##### 
-TODO
+
 
 ##### AI #####
 
-langchain[llms]
-pyautogen
 openai
 
 ##### Parsing #####
