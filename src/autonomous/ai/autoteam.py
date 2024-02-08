@@ -30,12 +30,26 @@ class AutoTeam:
         self,
         text,
         functions,
+        name="json_agent",
         primer_text="",
+        file_data=None,
+        context=[],
     ):
-        return self.proxy.generate_json(text, functions, primer_text)
+        return self.proxy.generate_json(
+            text,
+            functions,
+            name=name,
+            primer_text=primer_text,
+            file_data=file_data,
+            context=context,
+        )
 
-    def generate_text(self, text, primer_text=""):
-        return self.proxy.generate_text(text, primer_text)
+    def generate_text(
+        self, text, name="json_agent", primer_text="", file=None, context=[]
+    ):
+        return self.proxy.generate_text(
+            text, name=name, primer_text=primer_text, file_data=file, context=context
+        )
 
     def summarize_text(self, text, primer=""):
         return self.proxy.summarize_text(text, primer)

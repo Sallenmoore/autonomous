@@ -1,3 +1,4 @@
+import json
 import os
 from base64 import b64decode
 
@@ -8,6 +9,10 @@ from autonomous import log
 
 class OpenAIAgent:
     client = None
+
+    _instructions_addition = """
+        IMPORTANT: always use the function 'response' tool to respond to the user with the requested JSON schema. Never add any other text to the response.
+        """
 
     def __init__(self, **kwargs):
         self.client = OpenAI(api_key=os.environ.get("OPENAI_KEY"))
@@ -38,26 +43,24 @@ class OpenAIAgent:
             image = b64decode(image_dict.b64_json)
         return image
 
-    def generate_json(self, text, functions, primer_text=""):
+    def generate_json(
+        self, text, function, name=None, primer_text="", file_data=None, context=[]
+    ):
         json_data = {
             "response_format": {"type": "json_object"},
             "messages": [
                 {
                     "role": "system",
-                    "content": f"{primer_text}. Your output must be a JSON object.",
+                    "content": f"{primer_text}. {self._instructions_addition}",
                 },
                 {
                     "role": "user",
                     "content": text,
                 },
             ],
+            "tools": [{"type": "function", "function": function}],
+            "tool_choice": {"type": "function", "function": {"name": function["name"]}},
         }
-
-        if isinstance(functions, (list, tuple)):
-            json_data.update({"functions": functions})
-        elif functions is not None:
-            json_data.update({"function_call": {"name": functions["name"]}})
-            json_data.update({"functions": [functions]})
 
         try:
             response = self.client.chat.completions.create(
@@ -68,14 +71,19 @@ class OpenAIAgent:
             response = self.client.chat.completions.create(model="gpt-4", **json_data)
         # breakpoint()
         try:
-            result = response.choices[0].message.function_call.arguments
+            results = response.message.tool_calls[0].function.arguments
+            results = results[results.find("{") : results.rfind("}") + 1]
+            log(results)
+            json_result = json.loads(results)
         except Exception as e:
             log(f"==== Unable to generate content ====\n\n{type(e)}:{e}")
             return None
 
-        return result
+        return json_result
 
-    def generate_text(self, text, primer_text=""):
+    def generate_text(
+        self, text, name="text_agent", primer_text="", file_data=None, context=[]
+    ):
         json_data = {
             "messages": [
                 {
