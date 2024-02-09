@@ -4,46 +4,16 @@ import random
 import time
 from base64 import b64decode
 
-from openai import OpenAI
+from openai import NotFoundError, OpenAI
 
 from autonomous import AutoModel, log
-
-
-class AutoAgent(AutoModel):
-    attributes = {
-        "name": None,
-        "instructions": "You are a highly skilled AI trained to assist with various tasks.",
-        "description": "An AI agent trained to assist with various tasks.",
-        "agent_id": None,
-    }
-
-    _default_function = {
-        "type": "function",
-        "function": {
-            "name": "response",
-            "description": "Generate some content based on the user prompt",
-            "parameters": {
-                "type": "object",
-                "required": [
-                    "result",
-                ],
-                "properties": {
-                    "prompt": {"type": "string", "description": "User prompt"},
-                    "result": {
-                        "type": "string",
-                        "description": "Assistant generated content",
-                    },
-                },
-            },
-        },
-    }
 
 
 class OAIAgent(AutoModel):
     client = None
     attributes = {
         "model": "gpt-4-turbo-preview",
-        "agent_id": None,
+        "_agent_id": None,
         "file_ids": [],
         "messages": [],
         "tools": {},
@@ -54,20 +24,20 @@ class OAIAgent(AutoModel):
 
     def __init__(self, **kwargs):
         self.client = OpenAI(api_key=os.environ.get("OPENAI_KEY"))
-        try:
-            self.agent = self.client.beta.assistants.retrieve(self.agent_id)
-        except ValueError:
-            self.agent = None
 
-        if not self.agent:
-            self.agent = self.client.beta.assistants.create(
+    @property
+    def agent_id(self):
+        if not self._agent_id:
+            agent = self.client.beta.assistants.create(
                 instructions=self.instructions,
                 description=self.description,
                 name=self.name,
                 model=self.model,
             )
-            self.agent_id = self.agent.id
+            self._agent_id = agent.id
+            log(f"==== Creating Agent with ID: {self._agent_id} ====")
             self.save()
+        return self._agent_id
 
     def clear_files(self, file_id=None):
         if file_id and file_id not in self.file_ids:

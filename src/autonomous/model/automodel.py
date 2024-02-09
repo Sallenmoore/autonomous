@@ -70,11 +70,10 @@ class DelayedModel:
         return bool(self._instance())
 
     def __str__(self):
-        return str(self._instance())
+        return str(self._instance().__dict__)
 
     def __repr__(self):
-        result = repr(self._instance())
-        msg = f"\n<<DelayedModel {self._delayed_model.__name__}:{self._delayed_pk}>>:\t{result}"
+        msg = f"\n<<DelayedModel {self._delayed_model.__name__}:{self._delayed_pk}>>"
         return msg
 
     def __hash__(self):
