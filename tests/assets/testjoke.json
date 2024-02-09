@@ -1,11 +1,12 @@
 {
+  "humor_num": 67,
   "text": "Why do programmers prefer dark mode? Because light attracts bugs!",
-  "humor_num": 76,
   "influences": [
-    "Mitch Hedberg",
-    "Steven Wright"
+    "Demetri Martin",
+    "Mitch Hedberg"
   ],
   "word_count_by_sentence": [
-    11
+    5,
+    4
   ]
 }

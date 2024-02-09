@@ -267,8 +267,15 @@ class TestAutomodel:
         subam = Model(name="testsub", age=10, date=datetime.now())
         subam.save()
         am.auto = subam
+        am.autolist.insert(0, subam)
         am.save()
         subam.delete()
         am = Model.get(am.pk)
         with pytest.raises(AttributeError):
             assert not am.auto.pk
+        with pytest.raises(AttributeError):
+            assert not am.autolist[0].pk
+
+        result = am.serialize()
+        assert result["auto"] is None
+        assert am.autolist[0] is None

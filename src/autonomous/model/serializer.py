@@ -1,18 +1,23 @@
 from datetime import datetime
 
 from autonomous import log
+from autonomous.errors import DanglingReferenceError
 
 
 class AutoEncoder:
     @classmethod
     def encode(cls, objs):
-        if isinstance(objs, dict):
-            obj_copy = {k: cls.encode(v) for k, v in objs.items()}
-        elif isinstance(objs, list):
-            obj_copy = [cls.encode(v) for v in objs]
-        else:
-            obj_copy = cls().default(objs)
-        return obj_copy
+        try:
+            if isinstance(objs, dict):
+                obj_copy = {k: cls.encode(v) for k, v in objs.items()}
+            elif isinstance(objs, list):
+                obj_copy = [cls.encode(v) for v in objs]
+            else:
+                obj_copy = cls().default(objs)
+            return obj_copy
+        except DanglingReferenceError as e:
+            log(e)
+            return None
 
     def default(self, o):
         from autonomous.model.automodel import AutoModel, DelayedModel
@@ -44,7 +49,7 @@ class AutoEncoder:
             }
         else:
             log(
-                o.__class__.__name__,
+                o,
                 "The above object was not been saved. You must save subobjects if you want them to persist.",
             )
             raise ValueError("Cannot encode unsaved AutoModel")

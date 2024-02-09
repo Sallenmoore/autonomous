@@ -51,7 +51,11 @@ class DelayedModel:
             "_instance",
         ]:
             return object.__getattribute__(self, name)
-        return object.__getattribute__(self._instance(), name)
+        try:
+            return object.__getattribute__(self._instance(), name)
+        except DanglingReferenceError as e:
+            log(e)
+            return None
 
     def __setattr__(self, name, value):
         if name.startswith("_delayed"):
@@ -121,18 +125,41 @@ class AutoModel(ABC):
 
     def __getattribute__(self, name):
         obj = super().__getattribute__(name)
-        if isinstance(obj, DelayedModel):
-            try:
-                self.__dict__[name] = obj._instance()
-            except DanglingReferenceError as e:
-                log(e)
-                self.__dict__[name] = None
-                self.save()
-                return None
-            else:
-                return self.__dict__[name]
-        if isinstance(obj, DelayedModel):
-            return obj._instance()
+        if not name.startswith("__"):
+            if isinstance(obj, DelayedModel):
+                try:
+                    result = obj._instance()
+                except DanglingReferenceError as e:
+                    log(e)
+                    super().__setattr__(name, None)
+                    self.save()
+                    return None
+                else:
+                    super().__setattr__(name, result)
+
+            elif isinstance(obj, list):
+                for i, item in enumerate(obj):
+                    if isinstance(item, DelayedModel):
+                        try:
+                            result = item._instance()
+                        except DanglingReferenceError as e:
+                            log(e)
+                            obj[i] = None
+                            self.save()
+                        else:
+                            obj[i] = result
+
+            elif isinstance(obj, dict):
+                for key, item in obj.items():
+                    if isinstance(item, DelayedModel):
+                        try:
+                            result = item._instance()
+                        except DanglingReferenceError as e:
+                            log(e)
+                            obj[key] = None
+                            self.save()
+                        else:
+                            obj[key] = result
         return obj
 
     def __str__(self) -> str:
@@ -145,7 +172,7 @@ class AutoModel(ABC):
         Returns:
             str: A string representation of the AutoModel instance.
         """
-        return json.dumps(self.serialize(), indent=4)
+        return str(self.__dict__)
 
     def __eq__(self, other):
         return self.pk == other.pk
