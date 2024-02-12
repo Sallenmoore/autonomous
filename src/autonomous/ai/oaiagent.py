@@ -14,7 +14,6 @@ class OAIAgent(AutoModel):
     attributes = {
         "model": "gpt-4-turbo-preview",
         "_agent_id": None,
-        "file_ids": [],
         "messages": [],
         "tools": {},
         "name": "agent",
@@ -40,17 +39,20 @@ class OAIAgent(AutoModel):
         return self._agent_id
 
     def clear_files(self, file_id=None):
-        if file_id and file_id not in self.file_ids:
-            return None
-        file_ids = [file_id] if file_id else self.file_ids
-        for file_id in file_ids:
-            self.client.beta.assistants.files.delete(
-                assistant_id=self.agent_id, file_id=file_id
-            )
-            self.client.files.delete(file_id=file_id)
-        self.file_ids = []
-        self.tools.pop("retrieval", None)
-        self.save()
+        assistant_files = self.client.beta.assistants.files.list(
+            assistant_id=self.agent_id
+        )
+        log(f"==== Files: {assistant_files.data}")
+        if file_ids := [o.id for o in assistant_files.data]:
+            if file_id and file_id in file_ids:
+                file_ids = [file_id]
+            for file_id in file_ids:
+                self.client.beta.assistants.files.delete(
+                    assistant_id=self.agent_id, file_id=file_id
+                )
+                self.client.files.delete(file_id=file_id)
+            self.tools.pop("retrieval", None)
+            self.save()
         return self.client.files.list()
 
     def attach_file(self, file_contents):
@@ -63,7 +65,6 @@ class OAIAgent(AutoModel):
         self.client.beta.assistants.files.create(
             assistant_id=self.agent_id, file_id=file_obj.id
         )
-        self.file_ids.append(file_obj.id)
         self.save()
         return file_obj.id
 
@@ -125,7 +126,24 @@ class OAIAgent(AutoModel):
             ].function.arguments
             result = results[results.find("{") : results.rfind("}") + 1]
             log(f"====result: {result} ====")
-            result = json.loads(result, strict=False)
+            try:
+                result = json.loads(result, strict=False)
+            except Exception:
+                if result:
+                    result = (
+                        f"Rewrite the following response as valid JSON: \n\n {result}"
+                    )
+                    response = self.client.chat.completions.create(
+                        model="gpt-4",
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": "You are a helpful AI assistant trained to take unstructured data strings and make them valid structured JSON data. While you try to minimized data loss, valid JSON is more important than data integrity.",
+                            },
+                            {"role": "user", "content": result},
+                        ],
+                    )
+                    result = json.loads(result, strict=False)
         else:
             log(f"====Status: {run.status} Error: {run.last_error} ====")
         return result
