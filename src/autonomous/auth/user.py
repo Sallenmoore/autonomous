@@ -14,7 +14,7 @@ class AutoUser(AutoModel):
     """
 
     attributes = {
-        "name": AutoAttribute("TEXT", required=True),
+        "name": AutoAttribute("TEXT"),
         "email": AutoAttribute("TEXT", required=True),
         "last_login": datetime.now(),
         "state": "unauthenticated",

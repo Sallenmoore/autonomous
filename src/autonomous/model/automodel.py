@@ -218,6 +218,21 @@ class AutoModel(ABC):
         """
         self.pk = str(_id)
 
+    def validate(self):
+        """
+        Validate this model.
+        """
+        for key, vattr in self.attributes.items():
+            if isinstance(vattr, AutoAttribute):
+                vattr.type_check(getattr(self, key))
+
+                if vattr.required and getattr(self, key) is None:
+                    raise ValueError(f"{key} is required")
+                if vattr.unique and len(self.search(**{key: getattr(self, key)})) > 1:
+                    raise ValueError(f"{key} must be unique")
+                if vattr.primary_key:
+                    self.pk = getattr(self, key)
+
     def save(self):
         """
         Save this model to the database.
@@ -225,6 +240,7 @@ class AutoModel(ABC):
         Returns:
             int: The primary key (pk) of the saved model.
         """
+        self.validate()
         serialized_obj = self.serialize()
         serialized_obj["pk"] = self.pk
         self.pk = self.table().save(serialized_obj)
