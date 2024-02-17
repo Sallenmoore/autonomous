@@ -224,14 +224,30 @@ class AutoModel(ABC):
         """
         for key, vattr in self.attributes.items():
             if isinstance(vattr, AutoAttribute):
-                vattr.type_check(getattr(self, key))
+                val = getattr(self, key)
+                if vattr.type == "TEXT":
+                    if not isinstance(val, str):
+                        raise TypeError(f"Value must be a string, not {type(val)}")
+                elif vattr.type == "NUMERIC":
+                    if not isinstance(val, (int, float)):
+                        raise TypeError(f"Value must be a number, not {type(val)}")
+                elif vattr.type == "MODEL":
+                    # log(isinstance(val, (AutoModel, DelayedModel)), type(val))
+                    if val is not None and not isinstance(
+                        val, (AutoModel, DelayedModel)
+                    ):
+                        raise TypeError(
+                            f"Value must be an AutoModel or None, not {type(val)}"
+                        )
+                else:
+                    raise ValueError(f"Invalid type {self.type}")
 
-                if vattr.required and getattr(self, key) is None:
+                if vattr.required and val is None:
                     raise ValueError(f"{key} is required")
-                if vattr.unique and len(self.search(**{key: getattr(self, key)})) > 1:
+                if vattr.unique and len(self.search(**{key: val})) > 1:
                     raise ValueError(f"{key} must be unique")
                 if vattr.primary_key:
-                    self.pk = getattr(self, key)
+                    self.pk = val
 
     def save(self):
         """
