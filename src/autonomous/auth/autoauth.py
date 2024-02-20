@@ -104,7 +104,7 @@ class AutoAuth:
                     return redirect(url_for("auth.login"))
                 elif user.state == "authenticated":
                     user.last_login = datetime.now()
-                    log(user)
+                    # log(user)
                     user.save()
                 session["user"] = user.serialize()
 
