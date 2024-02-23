@@ -21,30 +21,42 @@ class ImageStorage:
         folder = f"{folder.replace('/', '.')}{pkey or uuid.uuid4()}"
         return f"{folder}"
 
-    def _resize_image(self, asset_id, max_size):
+    def _resize_image(self, asset_id, max_size=1024):
         # log("Resizing image", asset_id, max_size)
         file_path = f"{self.get_path(asset_id)}/orig.webp"
         with Image.open(file_path) as img:
-            max_size = self._sizes.get(max_size) or int(max_size)
             resized_img = img.copy()
+            max_size = self._sizes.get(max_size) or int(max_size)
             resized_img.thumbnail((max_size, max_size))
             img_byte_arr = io.BytesIO()
             resized_img.save(img_byte_arr, format="WEBP")
             return img_byte_arr.getvalue()
 
-    def _convert_image(self, raw):
+    def _convert_image(self, raw, crop=False):
         with Image.open(io.BytesIO(raw)) as img:
+            width, height = img.size
+            width, height = img.size
+            if crop and width != height:
+                max_size = min(width, height)
+                img.crop(
+                    (
+                        (width - max_size) / 2,
+                        (height - max_size) / 2,
+                        (width + max_size) / 2,
+                        (height + max_size) / 2,
+                    )
+                )
             img = img.copy()
             img_byte_arr = io.BytesIO()
             img.save(img_byte_arr, format="WEBP")
             return img_byte_arr.getvalue()
 
-    def save(self, file, folder=""):
+    def save(self, file, folder="", crop=False):
         asset_id = self._get_key(folder)
         os.makedirs(self.get_path(asset_id), exist_ok=True)
         file_path = f"{self.get_path(asset_id)}/orig.webp"
         with open(file_path, "wb") as asset:
-            file = self._convert_image(file)
+            file = self._convert_image(file, crop=crop)
             asset.write(file)
         return asset_id
 

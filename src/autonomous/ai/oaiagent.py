@@ -158,7 +158,7 @@ class OAIAgent(AutoModel):
             input=prompt,
         )
 
-        response.stream_to_file(file_path)
+        return response.stream_to_file(file_path)
 
     def generate_image(self, prompt, **kwargs):
         image = None

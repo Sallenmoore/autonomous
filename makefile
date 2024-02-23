@@ -26,7 +26,7 @@ inittests: clean
 	pip install -e .
 	cd /root/dev/testdb && docker compose up -d
 
-TESTING=TestAutomodel
+TESTING=TestImageStorage
 
 test: inittests
 	python -m pytest -k "$(TESTING)"
