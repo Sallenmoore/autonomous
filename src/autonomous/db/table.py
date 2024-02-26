@@ -84,15 +84,20 @@ class Table:
         except Exception as e:
             log(e)
 
-    def _convert_to_dot_notation(self, search_terms, prefix=""):
+    def _convert_to_dot_notation(self, search_terms, fuzzy_search=False, prefix=""):
         dot_notation = {}
         for key, value in search_terms.items():
             if isinstance(value, dict):
                 dot_notation.update(
-                    self._convert_to_dot_notation(value, f"{prefix}{key}.")
+                    self._convert_to_dot_notation(
+                        value, fuzzy_search=fuzzy_search, prefix=f"{prefix}{key}."
+                    )
                 )
             else:
-                dot_notation[f"{prefix}{key}"] = value
+                if fuzzy_search and isinstance(value, str):
+                    dot_notation[f"{prefix}{key}"] = {"$regex": value, "$options": "i"}
+                else:
+                    dot_notation[f"{prefix}{key}"] = value
         return dot_notation
 
     def find(self, **search_terms):
@@ -103,12 +108,17 @@ class Table:
             return result
 
     def search(self, **search_terms):
-        search_terms = self._convert_to_dot_notation(search_terms)
+        fuzzy_search = search_terms.pop("_FUZZY_SEARCH", False)
+        search_terms = self._convert_to_dot_notation(
+            search_terms, fuzzy_search=fuzzy_search
+        )
         result = self._db.find(search_terms) or []
+
         objs = []
         for o in result:
             o["_id"] = str(o["_id"])
             objs.append(o)
+        # log(search_terms, fuzzy_search, objs)
         return objs
 
     def get(self, _id):
