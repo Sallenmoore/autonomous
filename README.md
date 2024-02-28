@@ -5,7 +5,7 @@
 ![Tests](https://github.com/Sallenmoore/autonomous/actions/workflows/tests.yml/badge.svg)
 
 A local, containerized, service based application library built on top of Flask.
-The goal is to make it easy to create self-contained Python applications with minimal dependencies using built in libraries for many different kinds of tasks.
+A self-contained containerized Python applications with minimal dependencies using built in libraries for many different kinds of tasks.
 
 - **[pypi](https://test.pypi.org/project/autonomous)**
 - **[github](https://github.com/Sallenmoore/autonomous)**
@@ -14,14 +14,17 @@ The goal is to make it easy to create self-contained Python applications with mi
 
 - Fully containerized, service based Python application framework
 - All services are localized to a virtual intranet
-- Built-in Local NoSQL database and Model API
-- Cloud file storage with Cloudinary or S3
-- Auto-Generated Documentation Pages (Coming Soon!!!)
+- Container based MongoDB database
+- Model ORM API
+- File storage locally or with services such as Cloudinary or S3 
+- Separate service for long running tasks
+- Built-in Authentication with Google or Github
+- Auto-Generated Documentation Pages
 
 ## Dependencies
 
 - **Languages**
-  - [Python 3.10](/Dev/language/python)
+  - [Python 3.11](/Dev/language/python)
 - **Frameworks**
   - [Flask](https://flask.palletsprojects.com/en/2.1.x/)
 - **Containers**
@@ -33,25 +36,21 @@ The goal is to make it easy to create self-contained Python applications with mi
 - **Networking and Serialization**
   - [requests](https://requests.readthedocs.io/en/latest/)
 - **Database**
-  - [Local](https://tinydb.readthedocs.io/en/latest/)
+  - [pymongo](https://pymongo.readthedocs.io/en/stable/api/pymongo/index.html)
 - **Testing**
   - [pytest](/Dev/tools/pytest)
   - [coverage](https://coverage.readthedocs.io/en/6.4.1/cmd.html)
 - **Documentation** - Coming Soon
   - [pdoc](https://pdoc.dev/docs/pdoc/doc.html)
-  - [highlight.js](https://highlightjs.org/)
-
 ---
 
 ## Developer Notes
 
 ### TODO
 
-- Auto generate API documentation
 - Setup/fix template app generator
 - Add type hints
 - Switch to less verbose html preprocessor
-- Add more database options
 - 100% testing coverage
 
 ### Issue Tracking

@@ -78,3 +78,9 @@ class ORM:
 
     def flush_table(self):
         return self.table.clear()
+
+    def dbdump(self, directory="./dbbackups"):
+        return self._database.dbdump(directory)
+
+    def dbload(self, directory="./dbbackups"):
+        return self._database.dbload(directory)
