@@ -168,7 +168,7 @@ class OAIAgent(AutoModel):
             )
             image_dict = response.data[0]
         except Exception as e:
-            log(f"==== Error: Unable to create image ====\n\n{e}")
+            print(f"==== Error: Unable to create image ====\n\n{e}")
         else:
             image = b64decode(image_dict.b64_json)
         return image

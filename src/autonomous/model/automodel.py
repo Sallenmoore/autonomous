@@ -177,6 +177,13 @@ class AutoModel(ABC):
         return self.pk == other.pk
 
     @classmethod
+    def load_model(cls, model, module=None):
+        if not module:
+            module = f"models.{model.lower()}"
+        module = importlib.import_module(module)
+        return getattr(module, model)
+
+    @classmethod
     def table(cls):
         # breakpoint()
         if not cls._table or cls._table.name != cls.__name__:
