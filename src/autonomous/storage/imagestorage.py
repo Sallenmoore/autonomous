@@ -97,7 +97,7 @@ class ImageStorage:
         imgs = []
         # log(f"{self.base_path}")
         for f in os.listdir(f"{self.base_path}/{folder}"):
-            log(f"{self.base_path}/{folder}/{f}")
+            # log(f"{self.base_path}/{folder}/{f}")
             for img in os.listdir(f"{self.base_path}/{folder}/{f}"):
                 img_key = self._get_key(
                     f"{folder}",
