@@ -117,7 +117,7 @@ class AutoModel(ABC):
         obj.__dict__ |= kwargs
         # breakpoint()
         obj.__dict__ = AutoDecoder.decode(obj.__dict__)
-        obj._automodel = obj.model_name()
+        obj._automodel = obj.model_name(qualified=True)
         obj.last_updated = datetime.now()
 
         return obj
@@ -190,20 +190,20 @@ class AutoModel(ABC):
             cls.attributes["pk"] = None
             cls.attributes["last_updated"] = datetime.now()
             cls.attributes["_automodel"] = AutoAttribute(
-                "TEXT", default=cls.model_name()
+                "TEXT", default=cls.model_name(qualified=True)
             )
             cls._table = cls._orm(cls._table_name or cls.__name__, cls.attributes)
         return cls._table
 
     @classmethod
-    def model_name(cls):
+    def model_name(cls, qualified=False):
         """
         Get the fully qualified name of this model.
 
         Returns:
             str: The fully qualified name of this model.
         """
-        return f"{cls.__module__}.{cls.__name__}"
+        return f"{cls.__module__}.{cls.__name__}" if qualified else cls.__name__
 
     @property
     def _id(self):
