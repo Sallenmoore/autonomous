@@ -45,7 +45,7 @@ class AutoEncoder:
         if o.pk:
             return {
                 "pk": o.pk,
-                "_automodel": o.model_name(),
+                "_automodel": o.model_name(qualified=True),
             }
         else:
             log(
