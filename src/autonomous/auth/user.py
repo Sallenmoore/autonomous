@@ -1,6 +1,7 @@
 """
-    This module provides a User class that uses the OpenIDAuth class for authentication.
+This module provides a User class that uses the OpenIDAuth class for authentication.
 """
+
 from datetime import datetime
 
 from autonomous import log
@@ -59,7 +60,16 @@ class AutoUser(AutoModel):
         """
         Returns a guest user.
         """
-        return cls(name="Guest", email="guest@mail.com", state="guest", role="guest")
+        guest = cls.find(name="_GuestOfAutonomous_", state="guest")
+        if not guest:
+            guest = cls(
+                name="_GuestOfAutonomous_",
+                email="guest@mail.com",
+                state="guest",
+                role="guest",
+            )
+            guest.save()
+        return guest
 
     @property
     def is_guest(self):

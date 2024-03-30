@@ -59,12 +59,12 @@ class ORM:
         return results
 
     def find(self, **kwargs):
-        log(kwargs)
+        # log(kwargs)
         self._replace_pk_with_id(kwargs)
-        log(kwargs)
+        # log(kwargs)
         if result := self.table.find(**kwargs):
             self._replace_id_with_pk(result)
-        log(result)
+        # log(result)
         return result
 
     def random(self):
