@@ -1,10 +1,11 @@
+import io
 import json
 import os
 import random
 import time
 from base64 import b64decode
 
-from openai import NotFoundError, OpenAI
+from openai import OpenAI
 
 from autonomous import AutoModel, log
 
@@ -55,13 +56,17 @@ class OAIAgent(AutoModel):
             self.save()
         return self.client.files.list()
 
-    def attach_file(self, file_contents):
+    def attach_file(self, file_contents, filename="dbdata.json"):
         self.tools["retrieval"] = {"type": "retrieval"}
         self.client.beta.assistants.update(
             self.agent_id,
             tools=list(self.tools.values()),
         )
-        file_obj = self.client.files.create(file=file_contents, purpose="assistants")
+        # file_contents = io.BytesIO(file_contents)
+        file_obj = self.client.files.create(
+            file=(filename, file_contents), purpose="assistants"
+        )
+
         self.client.beta.assistants.files.create(
             assistant_id=self.agent_id, file_id=file_obj.id
         )
