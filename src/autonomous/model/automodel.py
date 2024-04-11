@@ -174,7 +174,7 @@ class AutoModel(ABC):
         return str(self.__dict__)
 
     def __eq__(self, other):
-        return self.pk == other.pk
+        return self.pk == other.pk if other else False
 
     @classmethod
     def load_model(cls, model, module=None):
