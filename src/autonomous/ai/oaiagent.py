@@ -13,10 +13,11 @@ from autonomous import AutoModel, log
 class OAIAgent(AutoModel):
     client = None
     attributes = {
-        "model": "gpt-4-turbo-preview",
+        "model": "gpt-4-turbo",
         "_agent_id": None,
         "messages": [],
         "tools": {},
+        "vector_store": None,
         "name": "agent",
         "instructions": "You are highly skilled AI trained to assist with various tasks.",
         "description": "A helpful AI assistant trained to assist with various tasks.",
@@ -27,7 +28,9 @@ class OAIAgent(AutoModel):
 
     @property
     def agent_id(self):
-        if not self._agent_id:
+        if not self._agent_id or not self.client.beta.assistants.retrieve(
+            self._agent_id
+        ):
             agent = self.client.beta.assistants.create(
                 instructions=self.instructions,
                 description=self.description,
@@ -39,36 +42,55 @@ class OAIAgent(AutoModel):
             self.save()
         return self._agent_id
 
+    @agent_id.setter
+    def agent_id(self, value):
+        self._agent_id = value
+
+    def clear_agent(self):
+        self.client.beta.assistants.delete(self._agent_id)
+        self.agent_id = ""
+
+    def get_agent(self):
+        return self.client.beta.assistants.retrieve(self._agent_id)
+
     def clear_files(self, file_id=None):
-        assistant_files = self.client.beta.assistants.files.list(
-            assistant_id=self.agent_id
-        )
-        log(f"==== Files: {assistant_files.data}")
-        if file_ids := [o.id for o in assistant_files.data]:
-            if file_id and file_id in file_ids:
-                file_ids = [file_id]
-            for file_id in file_ids:
-                self.client.beta.assistants.files.delete(
-                    assistant_id=self.agent_id, file_id=file_id
-                )
+        if self.vector_store:
+            if not file_id:
+                vector_store_files = self.client.beta.vector_stores.files.list(
+                    vector_store_id=self.vector_store
+                ).data
+                for vsf in vector_store_files:
+                    self.client.files.delete(file_id=vsf["id"])
+            else:
                 self.client.files.delete(file_id=file_id)
-            self.tools.pop("retrieval", None)
+            self.tools.pop("file_search", None)
             self.save()
         return self.client.files.list()
 
     def attach_file(self, file_contents, filename="dbdata.json"):
-        self.tools["retrieval"] = {"type": "retrieval"}
-        self.client.beta.assistants.update(
-            self.agent_id,
-            tools=list(self.tools.values()),
-        )
-        # file_contents = io.BytesIO(file_contents)
+        # Upload the user provided file to OpenAI
+        self.tools["file_search"] = {"type": "file_search"}
+        # Create a vector store
+        if not self.vector_store:
+            vs = self.client.beta.vector_stores.list().data
+            if vs:
+                self.vector_store = vs[0].id
+            else:
+                self.vector_store = self.client.beta.vector_stores.create(
+                    name="Data Reference"
+                ).id
+
         file_obj = self.client.files.create(
             file=(filename, file_contents), purpose="assistants"
         )
 
-        self.client.beta.assistants.files.create(
-            assistant_id=self.agent_id, file_id=file_obj.id
+        self.client.beta.vector_stores.files.create(
+            vector_store_id=self.vector_store, file_id=file_obj.id
+        )
+        self.client.beta.assistants.update(
+            self.agent_id,
+            tools=list(self.tools.values()),
+            tool_resources={"file_search": {"vector_store_ids": [self.vector_store]}},
         )
         self.save()
         return file_obj.id

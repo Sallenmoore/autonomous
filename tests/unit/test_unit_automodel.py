@@ -159,7 +159,7 @@ class TestAutomodel:
         am.save()
         pm.save()
 
-        am_dict = {"_automodel": pm.model_name(), "pk": am.pk}
+        am_dict = {"_automodel": pm.model_name(qualified=True), "pk": am.pk}
         result = Model(**am_dict)
 
         assert isinstance(result, Model)
@@ -168,7 +168,7 @@ class TestAutomodel:
         assert result.age == am.age
         assert result.date == am.date
 
-        pm_dict = {"_automodel": pm.model_name(), "pk": pm.pk}
+        pm_dict = {"_automodel": pm.model_name(qualified=True), "pk": pm.pk}
         result = Model(**pm_dict)
         log(result)
         pm_dict["autolist"] = [1, result, 3]
@@ -221,7 +221,7 @@ class TestAutomodel:
         for i, a in enumerate(result["autolist"]):
             log(a, type(a))
             assert isinstance(a, dict)
-            assert testlist[i].model_name() == a["value"]["_automodel"]
+            assert testlist[i].model_name(qualified=True) == a["value"]["_automodel"]
             assert testlist[i].pk == a["value"]["pk"]
 
         am.autodict = {a.pk: a for a in testlist}
@@ -230,7 +230,7 @@ class TestAutomodel:
         # breakpoint()
         for k, a in result["autodict"].items():
             assert isinstance(a, dict)
-            assert testdict[k].model_name() == a["value"]["_automodel"]
+            assert testdict[k].model_name(qualified=True) == a["value"]["_automodel"]
             assert testdict[k].pk == a["value"]["pk"]
 
     def test_automodel_circular_reference(self):

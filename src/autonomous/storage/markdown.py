@@ -1,6 +1,3 @@
-from autonomous.storage import WikiJS
-
-
 class MarkdownParser:
     """
     Parses a record into Markdown
@@ -74,56 +71,3 @@ class MarkdownParser:
         self.parseJSON(self.record)
         self.markdown = self.markdown.replace("#######", "######")
         return self.markdown
-
-
-class Page:
-    """
-    Creates a Page object that can be converted to amrkdown and pushed to a wiki
-    Object must be:
-        - a dict
-        - a class with a __dict__ attribute
-        - a class with a serialize() method
-    The default wiki is the built in WIkiJS container. Overwrite with your own wiki API by setting the `wiki_api` class attribute.
-    Inherit from autonomous.wiki.Wiki abstract class for the required interface.
-    """
-
-    wiki_api = WikiJS()
-    parser = MarkdownParser
-
-    @classmethod
-    def convert(cls, record):
-        """
-        Converts the object to markdown
-        """
-        parser = cls.parser(record)
-        return parser.parse()
-
-    @classmethod
-    def push(cls, record, title, id=None, **kwargs):
-        if hasattr(record, "serialize"):
-            record = record.serialize()
-            record = {title: record}
-        elif hasattr(record, "__dict__"):
-            record = record.__dict__
-
-        if not isinstance(record, dict):
-            raise TypeError(
-                "Record must be a dict, have a __dict__ attribute, or have a serialize() method that converts it to a dictionary"
-            )
-
-        content = cls.convert(record)
-
-        if id:
-            page = cls.wiki_api.update_page(id, content=content, **kwargs)
-        else:
-            page = cls.wiki_api.create_page(
-                title,
-                content,
-                path=kwargs["path"],
-                description=kwargs.get("description", title),
-                tags=kwargs.get("tags", []),
-            )
-        if hasattr(page, "id"):
-            return page
-        else:
-            raise ValueError(f"Page not created. Response: {page}")

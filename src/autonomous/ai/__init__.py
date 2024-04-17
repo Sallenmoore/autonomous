@@ -1,1 +1,0 @@
-from .autoteam import AutoTeam

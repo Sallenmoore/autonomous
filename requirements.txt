@@ -4,7 +4,7 @@
 
 ##### Frameworks #####
 
-Flask 
+Flask
 
 ##### Debugging, Logging, and Documentation #####
 
@@ -37,12 +37,12 @@ gunicorn
 
 Authlib
 
-##### Async ##### 
+##### Async #####
 
 
 ##### AI #####
 
-openai
+openai >= 1.21.1
 
 ##### Parsing #####
 
