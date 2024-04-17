@@ -35,7 +35,6 @@ class ImageStorage:
     def _convert_image(self, raw, crop=False):
         with Image.open(io.BytesIO(raw)) as img:
             width, height = img.size
-            width, height = img.size
             if crop and width != height:
                 max_size = min(width, height)
                 img.crop(
@@ -99,16 +98,14 @@ class ImageStorage:
 
     def search(self, folder="", **kwargs):
         imgs = []
-        # log(f"{self.base_path}")
         for f in os.listdir(f"{self.base_path}/{folder}"):
-            # log(f"{self.base_path}/{folder}/{f}")
-            for img in os.listdir(f"{self.base_path}/{folder}/{f}"):
-                img_key = self._get_key(
-                    f"{folder}",
-                    pkey=f,
-                )
-                imgs.append(img_key)
-        # log(imgs)
+            log(f"{self.base_path}/{folder}", f)
+            img_key = self._get_key(
+                f"{folder}",
+                pkey=f,
+            )
+            log(img_key)
+            imgs.append(img_key)
         return imgs
 
     def remove(self, asset_id):
