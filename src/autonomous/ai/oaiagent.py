@@ -47,11 +47,11 @@ class OAIAgent(AutoModel):
         self._agent_id = value
 
     def clear_agent(self):
-        self.client.beta.assistants.delete(self._agent_id)
+        self.client.beta.assistants.delete(self.agent_id)
         self.agent_id = ""
 
     def get_agent(self):
-        return self.client.beta.assistants.retrieve(self._agent_id)
+        return self.client.beta.assistants.retrieve(self.agent_id)
 
     def clear_files(self, file_id=None):
         if self.vector_store:
