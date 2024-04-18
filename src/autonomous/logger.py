@@ -1,3 +1,4 @@
+import datetime
 import inspect
 import logging
 import os
@@ -27,6 +28,10 @@ class Logger:
         level = os.environ.get("LOG_LEVEL") or self.logger.level
         self.logger.setLevel(log_levels.get(level, "DEBUG"))
         self.enabled = True
+        self.logfile = "logs/current_run_error_log.log"
+        self.logarchive = (
+            f"logs/error_log-{datetime.datetime.now().strftime('%Y-%m-%d')}.log"
+        )
 
     def set_level(self, level):
         self.logger.setLevel(log_levels[level])
@@ -46,6 +51,10 @@ class Logger:
                 msg += "\n---\n".join([f"{k} : {v}" for k, v in kwargs.items()])
             msg += f"\n{'='*20}\n"
             self.logger.log(self.logger.level, f"{msg}\n")
+            with open(self.logfile, "w") as current:
+                current.write(f"{msg}\n")
+            with open(self.logarchive, "a") as archive:
+                archive.write(f"{msg}\n")
 
 
 log = Logger()
