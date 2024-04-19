@@ -51,7 +51,9 @@ class OAIAgent(AutoModel):
         self.agent_id = ""
 
     def get_agent(self):
-        return self.client.beta.assistants.retrieve(self.agent_id)
+        result = self.client.beta.assistants.retrieve(self.agent_id)
+        log(f"==== Agent: {result} ====")
+        return result
 
     def clear_files(self, file_id=None):
         if self.vector_store:
@@ -98,8 +100,7 @@ class OAIAgent(AutoModel):
     def _add_function(self, user_function):
         self.tools["function"] = {"type": "function", "function": user_function}
         self.client.beta.assistants.update(
-            self.agent_id,
-            tools=list(self.tools.values()),
+            self.agent_id, tools=list(self.tools.values())
         )
         return """
         IMPORTANT: always use the function 'response' tool to respond to the user with the requested JSON schema. Never add any other text to the response.
@@ -143,7 +144,6 @@ class OAIAgent(AutoModel):
             log(f"==== Error: {run.last_error} ====")
             return None
 
-        result = None
         if run.status == "completed":
             response = self.client.beta.threads.messages.list(thread_id=thread.id)
             result = response.data[0].content[0].text.value
@@ -152,27 +152,13 @@ class OAIAgent(AutoModel):
                 0
             ].function.arguments
             result = results[results.find("{") : results.rfind("}") + 1]
-            log(f"====result: {result} ====")
             try:
                 result = json.loads(result, strict=False)
             except Exception:
-                if result:
-                    result = (
-                        f"Rewrite the following response as valid JSON: \n\n {result}"
-                    )
-                    response = self.client.chat.completions.create(
-                        model="gpt-4",
-                        messages=[
-                            {
-                                "role": "system",
-                                "content": "You are a helpful AI assistant trained to take unstructured data strings and make them valid structured JSON data. While you try to minimized data loss, valid JSON is more important than data integrity.",
-                            },
-                            {"role": "user", "content": result},
-                        ],
-                    )
-                    result = json.loads(result, strict=False)
+                log(f"==== Invalid JSON:\n{result}")
         else:
             log(f"====Status: {run.status} Error: {run.last_error} ====")
+            return None
         return result
 
     def generate_audio(self, prompt, file_path, **kwargs):
