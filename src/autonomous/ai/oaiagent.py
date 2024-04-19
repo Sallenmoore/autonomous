@@ -51,9 +51,7 @@ class OAIAgent(AutoModel):
         self.agent_id = ""
 
     def get_agent(self):
-        result = self.client.beta.assistants.retrieve(self.agent_id)
-        log(f"==== Agent: {result} ====")
-        return result
+        return self.client.beta.assistants.retrieve(self.agent_id)
 
     def clear_files(self, file_id=None):
         if self.vector_store:
