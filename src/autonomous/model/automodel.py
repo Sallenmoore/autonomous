@@ -336,6 +336,8 @@ class AutoModel(ABC):
         Returns:
             AutoModel or None: The first matching AutoModel instance, or None if not found.
         """
+        for k, v in kwargs.items():
+            kwargs[k] = AutoEncoder.encode(v)
         attribs = cls.table().find(**kwargs)
         return cls(**attribs) if attribs else None
 

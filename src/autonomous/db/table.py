@@ -102,6 +102,7 @@ class Table:
 
     def find(self, **search_terms):
         search_terms = self._convert_to_dot_notation(search_terms)
+        log(search_terms)
         result = self._db.find_one(search_terms)
         if result:
             result["_id"] = str(result["_id"])
@@ -112,6 +113,7 @@ class Table:
         search_terms = self._convert_to_dot_notation(
             search_terms, fuzzy_search=fuzzy_search
         )
+        log(search_terms)
         result = self._db.find(search_terms) or []
 
         objs = []
