@@ -6,6 +6,7 @@ _extended_summary_
 :return: _description_
 :rtype: _type_
 """
+
 import json
 import random
 
@@ -113,7 +114,6 @@ class Table:
         search_terms = self._convert_to_dot_notation(
             search_terms, fuzzy_search=fuzzy_search
         )
-        log(search_terms)
         result = self._db.find(search_terms) or []
 
         objs = []
