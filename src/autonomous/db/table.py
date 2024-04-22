@@ -103,7 +103,6 @@ class Table:
 
     def find(self, **search_terms):
         search_terms = self._convert_to_dot_notation(search_terms)
-        log(search_terms)
         result = self._db.find_one(search_terms)
         if result:
             result["_id"] = str(result["_id"])
