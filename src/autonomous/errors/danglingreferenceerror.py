@@ -4,5 +4,5 @@ class DanglingReferenceError(Exception):
         self.pk = pk
         self.obj = obj
         super().__init__(
-            f"Model relationship error. Most likely failed to clean up dangling reference.\nModel: {model}\npk: {pk}\nResult: {obj}"
+            f"Reference to a deleted object.\nModel: {model}\npk: {pk}\nResult: {obj}"
         )
