@@ -99,12 +99,12 @@ class ImageStorage:
     def search(self, folder="", **kwargs):
         imgs = []
         for f in os.listdir(f"{self.base_path}/{folder}"):
-            log(f"{self.base_path}/{folder}", f)
+            # log(f"{self.base_path}/{folder}", f)
             img_key = self._get_key(
                 f"{folder}",
                 pkey=f,
             )
-            log(img_key)
+            # log(img_key)
             imgs.append(img_key)
         return imgs
 
