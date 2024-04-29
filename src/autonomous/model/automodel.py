@@ -341,6 +341,20 @@ class AutoModel(ABC):
         attribs = cls.table().find(**kwargs)
         return cls(**attribs) if attribs else None
 
+    def update(self, values):
+        """
+        Delete this model from the database.
+        """
+        if not isinstance(values, dict):
+            raise ValueError("Values must be a dictionary")
+        for k, v in values.items():
+            if k in self.attributes or f"_{k}" in self.attributes:
+                if getattr(self.__class__, k, None) and getattr(self.__class__, k).fset:
+                    getattr(self.__class__, k).fset(self, v)
+                elif k in self.attributes:
+                    setattr(self, k, v)
+        self.save()
+
     def delete(self):
         """
         Delete this model from the database.
