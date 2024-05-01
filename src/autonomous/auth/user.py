@@ -48,13 +48,6 @@ class AutoUser(AutoModel):
         user.save()
         return user
 
-    @property
-    def is_authenticated(self):
-        """
-        Returns True if the user is authenticated, False otherwise.
-        """
-        return self.state == "authenticated"
-
     @classmethod
     def get_guest(cls):
         """
@@ -72,8 +65,22 @@ class AutoUser(AutoModel):
         return guest
 
     @property
+    def is_authenticated(self):
+        """
+        Returns True if the user is authenticated, False otherwise.
+        """
+        return self.state == "authenticated"
+
+    @property
     def is_guest(self):
         """
         Returns True if the user is a guest, False otherwise.
         """
-        return self.state == "guest"
+        return self.state == "unauthenticated" or self.role == "guest"
+
+    @property
+    def is_admin(self):
+        """
+        Returns True if the user is a guest, False otherwise.
+        """
+        return self.role == "admin"
