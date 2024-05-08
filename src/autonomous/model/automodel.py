@@ -20,11 +20,16 @@ class DelayedModel:
         assert model
         assert pk
         module_name, class_name = model.rsplit(".", 1)
-        module = importlib.import_module(module_name)
-        model = getattr(module, class_name)
-        object.__setattr__(self, "_delayed_model", model)
-        object.__setattr__(self, "_delayed_pk", pk)
-        object.__setattr__(self, "_delayed_obj", None)
+        try:
+            module = importlib.import_module(module_name)
+        except ModuleNotFoundError as e:
+            log(e)
+            raise DanglingReferenceError(model, pk, None)
+        else:
+            model = getattr(module, class_name)
+            object.__setattr__(self, "_delayed_model", model)
+            object.__setattr__(self, "_delayed_pk", pk)
+            object.__setattr__(self, "_delayed_obj", None)
 
     def _instance(self):
         #### DO NOT TO ANY LOGGING IN THIS METHOD; IT CAUSES INFINITE RECURSION ####

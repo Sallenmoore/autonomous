@@ -91,6 +91,9 @@ class AutoDecoder:
             if not obj["pk"]:
                 raise KeyError
             return DelayedModel(obj["_automodel"], obj["pk"])
+        except DanglingReferenceError as e:
+            log(e)
+            return None
         except KeyError:
             log(
                 "AutoModel",
