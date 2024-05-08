@@ -137,28 +137,38 @@ class AutoModel(ABC):
                     super().__setattr__(name, result)
 
             elif isinstance(obj, list):
+                results = []
+                scrubbed = False
                 for i, item in enumerate(obj):
                     if isinstance(item, DelayedModel):
                         try:
                             result = item._instance()
                         except DanglingReferenceError as e:
                             log(e)
-                            obj[i] = None
-                            self.save()
+                            scrubbed = True
                         else:
-                            obj[i] = result
+                            results.append(result)
+                if scrubbed:
+                    super().__setattr__(name, results)
+                    obj = results
+                    self.save()
 
             elif isinstance(obj, dict):
+                results = {}
+                scrubbed = False
                 for key, item in obj.items():
                     if isinstance(item, DelayedModel):
                         try:
                             result = item._instance()
                         except DanglingReferenceError as e:
                             log(e)
-                            obj[key] = None
-                            self.save()
+                            scrubbed = True
                         else:
-                            obj[key] = result
+                            results[key] = result
+                    if scrubbed:
+                        super().__setattr__(name, results)
+                        obj = results
+                        self.save()
         return obj
 
     def __str__(self) -> str:
