@@ -110,6 +110,8 @@ class AutoAuth:
 
                 if not guest and user.is_guest:
                     return redirect(url_for("auth.login"))
+                if not admin and not user.is_admin:
+                    return redirect(url_for("auth.login"))
                 return func(*args, **kwargs)
 
             return decorated_view

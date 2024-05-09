@@ -76,11 +76,11 @@ class AutoUser(AutoModel):
         """
         Returns True if the user is a guest, False otherwise.
         """
-        return self.state == "unauthenticated" or self.role == "guest"
+        return not self.is_authenticated or self.role == "guest"
 
     @property
     def is_admin(self):
         """
         Returns True if the user is a guest, False otherwise.
         """
-        return self.role == "admin"
+        return self.is_authenticated and self.role == "admin"
