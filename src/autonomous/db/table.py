@@ -123,11 +123,13 @@ class Table:
         return objs
 
     def get(self, _id):
-        if not _id or _id == "None":
-            return None
-        if o := self._db.find_one({"_id": ObjectId(_id)}):
-            o["_id"] = str(o["_id"])
-            return o
+        o = None
+        try:
+            if o := self._db.find_one({"_id": ObjectId(_id)}):
+                o["_id"] = str(o["_id"])
+        except Exception as e:
+            log(e, f"Object '{_id}' not found in '{self.name}'")
+        return o
 
     def all(self):
         objs = []
