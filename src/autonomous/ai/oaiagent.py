@@ -13,7 +13,7 @@ from autonomous import AutoModel, log
 class OAIAgent(AutoModel):
     client = None
     attributes = {
-        "model": "gpt-4-turbo",
+        "model": "gpt-4o",
         "_agent_id": None,
         "messages": [],
         "tools": {},
