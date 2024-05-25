@@ -118,8 +118,10 @@ class OAIAgent(AutoModel):
                     )
         return message_list
 
-    def generate(self, messages, function=None):
-        _instructions_addition = self._add_function(function) if function else ""
+    def generate(self, messages, function=None, additional_instructions=""):
+        _instructions_addition = (
+            self._add_function(function) if function else additional_instructions
+        )
 
         formatted_messages = self._format_messages(messages)
         thread = self.client.beta.threads.create(messages=formatted_messages)
