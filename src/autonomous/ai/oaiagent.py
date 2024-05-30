@@ -194,7 +194,7 @@ class OAIAgent(AutoModel):
             },
             {"role": "user", "content": text},
         ]
-        response = self.client.chat.completions.create(model="gpt-4", messages=message)
+        response = self.client.chat.completions.create(model="gpt-4o", messages=message)
         try:
             result = response.choices[0].message.content
         except Exception as e:
