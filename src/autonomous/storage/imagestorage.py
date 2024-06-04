@@ -3,7 +3,7 @@ import os
 import shutil
 import uuid
 
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 
 from autonomous import log
 
@@ -24,13 +24,17 @@ class ImageStorage:
     def _resize_image(self, asset_id, max_size=1024):
         # log("Resizing image", asset_id, max_size)
         file_path = f"{self.get_path(asset_id)}/orig.webp"
-        with Image.open(file_path) as img:
-            resized_img = img.copy()
-            max_size = self._sizes.get(max_size) or int(max_size)
-            resized_img.thumbnail((max_size, max_size))
-            img_byte_arr = io.BytesIO()
-            resized_img.save(img_byte_arr, format="WEBP")
-            return img_byte_arr.getvalue()
+        try:
+            with Image.open(file_path) as img:
+                resized_img = img.copy()
+                max_size = self._sizes.get(max_size) or int(max_size)
+                resized_img.thumbnail((max_size, max_size))
+                img_byte_arr = io.BytesIO()
+                resized_img.save(img_byte_arr, format="WEBP")
+                return img_byte_arr.getvalue()
+        except UnidentifiedImageError as e:
+            log(f"Error resizing image: {e}")
+            return None
 
     def _convert_image(self, raw, crop=False):
         with Image.open(io.BytesIO(raw)) as img:
@@ -66,25 +70,40 @@ class ImageStorage:
         original_path = f"{self.get_path(asset_id)}"
         # log(f"Getting image: {asset_id}.{size}", original_path)
         if not os.path.exists(original_path):
-            # log(f"Original image not found: {original_path}")
+            log(f"Original image not found: {original_path}")
             return ""
         file_path = f"{original_path}/{size}.webp"
         # log(file_path)
+        result_url = f"/{file_path}"
+        # log(
+        #     f"{asset_id}",
+        #     size,
+        #     os.path.exists(original_path),
+        #     os.path.exists(file_path),
+        # )
         if (
             size != "orig"
             and os.path.exists(original_path)
             and not os.path.exists(file_path)
         ):
             # If the file doesn't exist, create it
-            result = self._resize_image(asset_id, size)
-            with open(file_path, "wb") as asset:
-                asset.write(result)
-        result_url = (
-            f"/{file_path}"
-            if not full_url
-            else f"{os.environ.get('APP_BASE_URL', '')}/{file_path}"
-        )
-        # log(f"Returning image url: {result_url}")
+            if result := self._resize_image(asset_id, size):
+                with open(file_path, "wb") as asset:
+                    asset.write(result)
+                result_url = (
+                    f"/{file_path}"
+                    if not full_url
+                    else f"{os.environ.get('APP_BASE_URL', '')}/{file_path}"
+                )
+            else:
+                log(
+                    f"Error resizing image: {asset_id}",
+                    size,
+                    os.path.exists(original_path),
+                    os.path.exists(file_path),
+                )
+                self.remove(asset_id)
+        # log(f"Returning image: {result_url}")
         return result_url
 
     def get_path(self, asset_id):
