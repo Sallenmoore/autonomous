@@ -24,9 +24,9 @@ inittests: clean
 	pip install --upgrade -r ./requirements.txt
 	pip install --upgrade -r ./requirements_dev.txt
 	pip install -e .
-	cd /root/dev/testdb && docker compose up -d
+	cd /root/dev/testdb && docker compose up -d --build
 
-TESTING=TestImageStorage
+TESTING=TestAutomodel
 
 test: inittests
 	python -m pytest -k "$(TESTING)"

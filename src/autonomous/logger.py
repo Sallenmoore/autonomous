@@ -28,6 +28,8 @@ class Logger:
         level = os.environ.get("LOG_LEVEL") or self.logger.level
         self.logger.setLevel(log_levels.get(level, "DEBUG"))
         self.enabled = True
+        if not os.path.exists("logs"):
+            os.makedirs("logs")
         self.logfile = "logs/current_run_error_log.log"
         self.logarchive = (
             f"logs/error_log-{datetime.datetime.now().strftime('%Y-%m-%d')}.log"

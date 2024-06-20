@@ -118,12 +118,18 @@ class AutoModel(ABC):
                 v = v.default
             setattr(obj, k, result.get(k, copy.deepcopy(v)))
         obj.pk = pk
+        for key, val in list(kwargs.items()):
+            if (
+                getattr(cls, key, None)
+                and getattr(cls, key).fset
+                and f"_{key}" in cls.attributes
+            ):
+                kwargs[f"_{key}"] = kwargs.pop(key)
         obj.__dict__ |= kwargs
         # breakpoint()
         obj.__dict__ = AutoDecoder.decode(obj.__dict__)
         obj._automodel = obj.model_name(qualified=True)
         obj.last_updated = datetime.now()
-
         return obj
 
     def __getattribute__(self, name):
@@ -248,20 +254,24 @@ class AutoModel(ABC):
                 val = getattr(self, key)
                 if vattr.type == "TEXT":
                     if not isinstance(val, str):
-                        raise TypeError(f"Value must be a string, not {type(val)}")
+                        raise TypeError(
+                            f"{key} value must be a string, not {type(val)}"
+                        )
                 elif vattr.type == "NUMERIC":
                     if not isinstance(val, (int, float)):
-                        raise TypeError(f"Value must be a number, not {type(val)}")
+                        raise TypeError(
+                            f"{key} value must be a number, not {type(val)}"
+                        )
                 elif vattr.type == "MODEL":
                     # log(isinstance(val, (AutoModel, DelayedModel)), type(val))
                     if val is not None and not isinstance(
                         val, (AutoModel, DelayedModel)
                     ):
                         raise TypeError(
-                            f"Value must be an AutoModel or None, not {type(val)}"
+                            f"{key} value must be an AutoModel or None, not {type(val)}"
                         )
                 else:
-                    raise ValueError(f"Invalid type {self.type}")
+                    raise ValueError(f"{key}: Invalid type {self.type}")
 
                 if vattr.required and val is None:
                     raise ValueError(f"{key} is required")

@@ -16,7 +16,7 @@ class ChildModel(RealModel):
     pass
 
 
-class TestAutomodel:
+class TestIntegratedAutomodel:
     def test_automodel_save(self):
         am = RealModel(name="test")
         am.save()
