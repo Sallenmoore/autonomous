@@ -130,6 +130,7 @@ class OAIAgent(AutoModel):
             thread_id=thread.id,
             assistant_id=self.agent_id,
             additional_instructions=_instructions_addition,
+            parallel_tool_calls=False,
         )
 
         while run.status in ["queued", "in_progress"]:
@@ -139,27 +140,37 @@ class OAIAgent(AutoModel):
             )
             time.sleep(0.5)
             log(f"==== Job Status: {run.status} ====")
+            print(f"==== Job Status: {run.status} ====")
 
         if run.status in ["failed", "expired", "canceled"]:
             log(f"==== Error: {run.last_error} ====")
+            print(f"==== Error: {run.last_error} ====")
             return None
-
+        print("=================== RUN COMPLETED ===================")
+        print(run.status)
         if run.status == "completed":
             response = self.client.beta.threads.messages.list(thread_id=thread.id)
-            result = response.data[0].content[0].text.value
+            results = response.data[0].content[0].text.value
         elif run.status == "requires_action":
             results = run.required_action.submit_tool_outputs.tool_calls[
                 0
             ].function.arguments
-            result = results[results.find("{") : results.rfind("}") + 1]
-            try:
-                result = json.loads(result, strict=False)
-            except Exception:
-                log(f"==== Invalid JSON:\n{result}")
         else:
             log(f"====Status: {run.status} Error: {run.last_error} ====")
+            print(f"====Status: {run.status} Error: {run.last_error} ====")
             return None
-        return result
+
+        if function:
+            results = results[results.find("{") : results.rfind("}") + 1]
+            try:
+                results = json.loads(results, strict=False)
+            except Exception:
+                print(f"==== Invalid JSON:\n{results}")
+                log(f"==== Invalid JSON:\n{results}")
+
+        print(results)
+        print("=================== END REPORT ===================")
+        return results
 
     def generate_audio(self, prompt, file_path, **kwargs):
         voice = kwargs.get("voice") or random.choice(
