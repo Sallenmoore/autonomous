@@ -52,7 +52,7 @@ class AutoEncoder:
                 o,
                 "The above object was not been saved. You must save subobjects if you want them to persist.",
             )
-            raise ValueError("Cannot encode unsaved AutoModel")
+            raise ValueError(f"Cannot encode unsaved {o.model_name(qualified=True)}")
 
 
 class AutoDecoder:
