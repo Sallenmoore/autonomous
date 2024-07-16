@@ -141,7 +141,6 @@ class AutoModel(ABC):
                 except DanglingReferenceError as e:
                     log(e)
                     super().__setattr__(name, None)
-                    self.save()
                     return None
                 else:
                     super().__setattr__(name, result)
@@ -161,7 +160,6 @@ class AutoModel(ABC):
                 if scrubbed:
                     super().__setattr__(name, results)
                     obj = results
-                    self.save()
 
             elif isinstance(obj, dict):
                 results = {}
@@ -178,7 +176,6 @@ class AutoModel(ABC):
                     if scrubbed:
                         super().__setattr__(name, results)
                         obj = results
-                        self.save()
         return obj
 
     def __str__(self) -> str:
