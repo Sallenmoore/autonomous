@@ -1,3 +1,4 @@
+import glob
 import io
 import os
 import shutil
@@ -130,6 +131,40 @@ class ImageStorage:
     def remove(self, asset_id):
         file_path = self.get_path(asset_id)
         if os.path.isdir(file_path):
-            shutil.rmtree(file_path)
-            return True
+            os.rmdir(file_path)
+        return False
+
+    def clear_cached(self, asset_id):
+        file_path = self.get_path(asset_id)
+        if os.path.isdir(file_path):
+            for file in glob.glob(os.path.join(file_path, "*")):
+                if os.path.basename(file) != "orig.webp":
+                    os.remove(file)
+        return False
+
+    def rotate(self, asset_id, amount=-90):
+        file_path = self.get_path(asset_id)
+        log(asset_id)
+        with Image.open(f"{file_path}/orig.webp") as img:
+            # Rotate the image 90 degrees
+            rotated_img = img.rotate(amount, expand=True)
+            # Save the rotated image
+            log(img, rotated_img)
+            # img = img.copy()
+            # img_byte_arr = io.BytesIO()
+            # img.save(img_byte_arr, )
+            self.clear_cached(asset_id)
+            rotated_img.save(f"{file_path}/orig.webp", format="WEBP")
+        return False
+
+    def flip(self, asset_id, flipx=True, flipy=True):
+        file_path = self.get_path(asset_id)
+        with Image.open(f"{file_path}/orig.webp") as img:
+            if flipx:
+                rotated_img = img.transpose(Image.FLIP_LEFT_RIGHT)
+            if flipy:
+                rotated_img = img.transpose(Image.FLIP_TOP_BOTTOM)
+            # Save the rotated image
+            rotated_img.save(f"{file_path}/orig.webp", format="WEBP")
+            self.clear_cached(asset_id)
         return False
