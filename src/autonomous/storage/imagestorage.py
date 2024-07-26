@@ -15,6 +15,12 @@ class ImageStorage:
     def __init__(self, path="static/images"):
         self.base_path = path
 
+    def scan_storage(self, path=None):
+        for root, dirs, files in os.walk(path or self.base_path):
+            for file in files:
+                if file == "orig.webp":
+                    yield os.path.join(root, file)
+
     @classmethod
     def _get_key(cls, folder="", pkey=None):
         if folder and not folder.endswith("/"):
@@ -69,10 +75,10 @@ class ImageStorage:
         if not asset_id:
             return ""
         original_path = f"{self.get_path(asset_id)}"
-        # log(f"Getting image: {asset_id}.{size}", original_path)
+        # log(f"Getting image: {asset_id}", original_path)
         if not os.path.exists(original_path):
             log(f"Original image not found: {original_path}")
-            return ""
+            return None
         file_path = f"{original_path}/{size}.webp"
         # log(file_path)
         result_url = f"/{file_path}"
@@ -109,10 +115,7 @@ class ImageStorage:
 
     def get_path(self, asset_id):
         if asset_id:
-            asset_path = asset_id.replace(".", "/")
-            if asset_path.endswith("/"):
-                asset_path = asset_path[:-1]
-            return os.path.join(self.base_path, f"{asset_path}")
+            return os.path.join(self.base_path, f"{asset_id}")
         else:
             return self.base_path
 
@@ -129,9 +132,12 @@ class ImageStorage:
         return imgs
 
     def remove(self, asset_id):
+        if not asset_id:
+            return False
         file_path = self.get_path(asset_id)
         if os.path.isdir(file_path):
-            os.rmdir(file_path)
+            print(f"Removing {file_path}")
+            # return shutil.rmtree(file_path, ignore_errors=True)
         return False
 
     def clear_cached(self, asset_id):
