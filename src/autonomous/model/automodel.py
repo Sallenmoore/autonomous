@@ -21,11 +21,11 @@ class DelayedModel:
         module_name, class_name = model.rsplit(".", 1)
         try:
             module = importlib.import_module(module_name)
-        except ModuleNotFoundError as e:
+            model = getattr(module, class_name)
+        except (ModuleNotFoundError, AttributeError) as e:
             log(e)
             raise DanglingReferenceError(model, pk, None)
         else:
-            model = getattr(module, class_name)
             object.__setattr__(self, "_delayed_model", model)
             object.__setattr__(self, "_delayed_pk", pk)
             object.__setattr__(self, "_delayed_obj", None)
