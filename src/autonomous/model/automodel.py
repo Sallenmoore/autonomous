@@ -2,6 +2,8 @@
 # default : Optional[str] = "value"  # for default values
 import copy
 import importlib
+
+# import traceback
 from abc import ABC
 from datetime import datetime
 
@@ -23,7 +25,13 @@ class DelayedModel:
             module = importlib.import_module(module_name)
             model = getattr(module, class_name)
         except (ModuleNotFoundError, AttributeError) as e:
-            log(e)
+            # stack = traceback.extract_stack()
+            # function_names = [
+            #     f"{frame.filename}:{frame.lineno} - {frame.name} "
+            #     for frame in stack[:-1]
+            #     if "__" not in frame.filename
+            # ]
+            # log(e, *function_names)
             raise DanglingReferenceError(model, pk, None)
         else:
             object.__setattr__(self, "_delayed_model", model)
@@ -42,9 +50,6 @@ class DelayedModel:
                 object.__setattr__(self, "_delayed_obj", _obj)
 
         return object.__getattribute__(self, "_delayed_obj")
-
-    # def __getattr__(self, name):
-    #     return getattr(self._instance(), name)
 
     def __getattribute__(self, name):
         # log(name)
@@ -304,7 +309,8 @@ class AutoModel(ABC):
         """
         table = cls.table()
         result = table.get(pk)
-        return cls(**result) if result else None
+        obj = cls(**result) if result else None
+        return obj
 
     @classmethod
     def random(cls):

@@ -1,4 +1,3 @@
-import io
 import json
 import os
 import random
@@ -60,7 +59,7 @@ class OAIAgent(AutoModel):
                     vector_store_id=self.vector_store
                 ).data
                 for vsf in vector_store_files:
-                    self.client.files.delete(file_id=vsf["id"])
+                    self.client.files.delete(file_id=vsf.id)
             else:
                 self.client.files.delete(file_id=file_id)
             self.tools.pop("file_search", None)

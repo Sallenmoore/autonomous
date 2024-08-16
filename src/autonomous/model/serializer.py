@@ -1,3 +1,4 @@
+# import traceback
 from datetime import datetime
 
 from autonomous import log
@@ -75,7 +76,8 @@ class AutoDecoder:
             name = obj["__extended_json_type__"]
             decoder_name = f"decode_{name}"
             decoder = getattr(self, decoder_name)
-        except (KeyError, AttributeError, TypeError):
+        except (KeyError, AttributeError, TypeError) as e:
+            log(e)
             return obj
         else:
             return decoder(obj)
@@ -92,7 +94,13 @@ class AutoDecoder:
                 raise KeyError
             return DelayedModel(obj["_automodel"], obj["pk"])
         except DanglingReferenceError as e:
-            log(e)
+            # stack = traceback.extract_stack()
+            # function_names = [
+            #     f"{frame.filename}:{frame.lineno} - {frame.name} "
+            #     for frame in stack[:-1]
+            #     if "__" not in frame.filename
+            # ]
+            # log(e, *function_names)
             return None
         except KeyError:
             log(
