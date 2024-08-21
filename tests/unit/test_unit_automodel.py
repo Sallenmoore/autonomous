@@ -1,6 +1,7 @@
 from datetime import datetime
 
 import pytest
+
 from autonomous import log
 from autonomous.model.autoattr import (
     DateTimeAttr,
@@ -24,8 +25,8 @@ class Model(AutoModel):
     name = StringAttr(default="")
     age = IntAttr()
     date = DateTimeAttr()
-    auto = ReferenceAttr("self")
-    autolist = ListAttr(ReferenceAttr("self"))
+    auto = ReferenceAttr()
+    autolist = ListAttr(ReferenceAttr())
 
 
 # @pytest.mark.skip(reason="dumb test")
@@ -146,13 +147,14 @@ class TestAutomodel:
         am.save()
         subam = Model(name="testsub", age=10, date=datetime.now())
         subam.save()
+        subam2 = Model(name="testsub2", age=10, date=datetime.now())
+        subam2.save()
         am.auto = subam
-        am.autolist.insert(0, subam)
+        am.autolist.append(subam)
+        am.autolist.append(subam2)
         am.save()
         subam.delete()
         am = Model.get(am.pk)
-        with pytest.raises(AttributeError):
-            assert not am.auto.pk
-        with pytest.raises(IndexError):
-            assert not am.autolist[0].pk
-        assert am.autolist == []
+        assert am.auto is None
+        log(am.autolist)
+        assert len(am.autolist) == 1

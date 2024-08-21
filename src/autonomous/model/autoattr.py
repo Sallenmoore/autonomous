@@ -1,18 +1,23 @@
+from mongoengine.base import (
+    get_document,
+)
 from mongoengine.fields import (
     BooleanField,
     DateTimeField,
     DictField,
+    DoesNotExist,
     EmailField,
     EnumField,
     FileField,
     FloatField,
+    GenericReferenceField,
     ImageField,
     IntField,
     ListField,
-    ReferenceField,
     StringField,
 )
-from mongoengine.queryset import NULLIFY
+
+from autonomous import log
 
 
 class StringAttr(StringField):
@@ -47,19 +52,53 @@ class ImageAttr(ImageField):
     pass
 
 
-class ReferenceAttr(ReferenceField):
-    def __init__(self, document_type, *args, **kwargs):
-        if "reverse_delete_rule" not in kwargs:
-            kwargs["reverse_delete_rule"] = NULLIFY
-        super().__init__(document_type, *args, **kwargs)
+class ReferenceAttr(GenericReferenceField):
+    def __get__(self, instance, owner):
+        try:
+            # Attempt to retrieve the referenced document
+            return super().__get__(instance, owner)
+        except DoesNotExist:
+            # If the document doesn't exist, return None
+            return None
 
 
 class ListAttr(ListField):
-    pass
+    def clean_references(self, values):
+        safe_values = []
+        updated = False
+
+        for value in values:
+            try:
+                if isinstance(value, dict) and "_cls" in value:
+                    doc_cls = get_document(value["_cls"])
+                    value = doc_cls._get_db().dereference(value["_ref"])
+                if value:
+                    safe_values.append(value)
+                else:
+                    updated = True
+            except DoesNotExist:
+                updated = True
+        log("hi")
+        return safe_values, updated
 
 
 class DictAttr(DictField):
-    pass
+    def clean_references(self, values):
+        safe_values = {}
+        updated = False
+        for key, value in values.items():
+            try:
+                if isinstance(value, dict) and "_cls" in value:
+                    doc_cls = get_document(value["_cls"])
+                    value = doc_cls._get_db().dereference(value["_ref"])
+                if value:
+                    safe_values[key] = value
+                else:
+                    updated = True
+            except DoesNotExist:
+                updated = True
+
+        return safe_values, updated
 
 
 class EnumAttr(EnumField):

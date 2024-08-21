@@ -1,7 +1,3 @@
-# PYDANTIC NOTES: https://pydantic-docs.helpmanual.io/usage/models/
-# opt : Optional[str]  # for optional attributes
-# default : Optional[str] = "value"  # for optional default values
-# #from typing import ClassVar
 import importlib
 import os
 import urllib.parse
@@ -12,6 +8,8 @@ from mongoengine import Document, connect
 from mongoengine.fields import DateTimeField
 
 from autonomous import log
+
+from .autoattr import DictAttr, ListAttr
 
 host = os.getenv("DB_HOST", "db")
 port = os.getenv("DB_PORT", 27017)
@@ -32,6 +30,18 @@ class AutoModel(Document):
         for k, v in kwargs.items():
             setattr(self, k, v)
         self.last_updated = datetime.now()
+
+        for field_name, field in self._fields.items():
+            value = getattr(self, field_name, None)
+            log(
+                f"Field: {field_name}, Type:{type(value)}, Value: {value}, {hasattr(field, "clean_references")}"
+            )
+
+            if hasattr(field, "clean_references") and value:
+                cleaned_values, updated = field.clean_references(value)
+                log(f"Cleaned Values: {cleaned_values}")
+                if updated:
+                    setattr(self, field_name, cleaned_values)
 
     def __eq__(self, other):
         return self.pk == other.pk if other else False

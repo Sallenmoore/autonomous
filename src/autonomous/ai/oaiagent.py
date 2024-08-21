@@ -9,7 +9,7 @@ from openai import OpenAI
 from pydantic import model_validator
 
 from autonomous import log
-from autonomous.model.autoattr import BoolAttr, DictAttr, IntAttr, ListAttr, StringAttr
+from autonomous.model.autoattr import DictAttr, ListAttr, StringAttr
 from autonomous.model.automodel import AutoModel
 
 

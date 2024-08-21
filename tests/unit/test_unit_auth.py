@@ -1,8 +1,4 @@
-import urllib.request
-
-import pytest
 from autonomous import log
-from autonomous.auth import AutoAuth, auth_required
 from autonomous.auth.github import GithubAuth
 from autonomous.auth.google import GoogleAuth
 from autonomous.auth.user import AutoUser
