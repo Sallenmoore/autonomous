@@ -1,7 +1,6 @@
 import urllib.request
 
 import pytest
-
 from autonomous import log
 from autonomous.auth import AutoAuth, auth_required
 from autonomous.auth.github import GithubAuth
@@ -36,8 +35,8 @@ class TestAuth:
         assert user.pk == user2.pk
         user.state = "unauthenticated"
         assert not user.is_authenticated
-        pk = user.save()
+        res = user.save()
         user = AutoUser.authenticate(user_info)
-        assert pk == user.pk
+        assert res == user
         assert user.pk == user2.pk
         assert user.is_authenticated

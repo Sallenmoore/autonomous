@@ -5,7 +5,6 @@
 ##### Frameworks #####
 
 Flask
-pydantic[all]
 
 ##### Debugging, Logging, and Documentation #####
 
@@ -18,9 +17,8 @@ python-dotenv
 
 PyGithub
 pygit2
-
+mongoengine
 pillow
-pymongo
 redis
 
 ##### Frontend #####

@@ -8,21 +8,25 @@ from base64 import b64decode
 from openai import OpenAI
 from pydantic import model_validator
 
-from autonomous import AutoModel, log
+from autonomous import log
+from autonomous.model.autoattr import BoolAttr, DictAttr, IntAttr, ListAttr, StringAttr
+from autonomous.model.automodel import AutoModel
 
 
 class OAIAgent(AutoModel):
     _client = None
-    model: str = "gpt-4o"
-    agent_id: str = None
-    messages: list = []
-    tools: dict = {}
-    vector_store: str = None
-    name: str = "agent"
-    instructions: str = (
-        "You are highly skilled AI trained to assist with various tasks."
+    model = StringAttr(default="gpt-4o")
+    agent_id = StringAttr()
+    messages = ListAttr(StringAttr(default=[]))
+    tools = DictAttr()
+    vector_store = StringAttr()
+    name = StringAttr(default="agent")
+    instructions = StringAttr(
+        default="You are highly skilled AI trained to assist with various tasks."
     )
-    description: str = "A helpful AI assistant trained to assist with various tasks."
+    description = StringAttr(
+        default="A helpful AI assistant trained to assist with various tasks."
+    )
 
     def __init__(self, **kwargs):
         self._client = OpenAI(api_key=os.environ.get("OPENAI_KEY"))

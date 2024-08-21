@@ -161,9 +161,3 @@ class AutoTasks:
     def clear(self):
         AutoTasks.queue.empty()
         AutoTasks.all_tasks = []
-
-
-# if __name__ == "__main__":
-#     autotasks = AutoTasks()
-#     for _ in range(autotasks.workers):
-#         create_worker(autotasks.queue.name)
