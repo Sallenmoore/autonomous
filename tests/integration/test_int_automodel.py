@@ -7,9 +7,7 @@ from autonomous.model.automodel import AutoModel
 
 class RealModel(AutoModel):
     # set model default attributes
-    attributes = {
-        "name": "",
-    }
+    name: str = ""
 
 
 class ChildModel(RealModel):

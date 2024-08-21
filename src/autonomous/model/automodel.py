@@ -1,84 +1,42 @@
+# PYDANTIC NOTES: https://pydantic-docs.helpmanual.io/usage/models/
 # opt : Optional[str]  # for optional attributes
-# default : Optional[str] = "value"  # for default values
-import copy
+# default : Optional[str] = "value"  # for optional default values
+# #from typing import ClassVar
+import abc
 import importlib
-from abc import ABC
+import json
 from datetime import datetime
+from typing import Any, ClassVar
+
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 from autonomous import log
-from autonomous.errors import DanglingReferenceError
 
-from .autoattribute import AutoAttribute
 from .orm import ORM
-from .serializer import AutoDecoder, AutoEncoder
 
 
-class DelayedModel:
-    def __init__(self, model, pk):
-        # log(model, pk)
-        assert model
-        assert pk
-        module_name, class_name = model.rsplit(".", 1)
-        try:
-            module = importlib.import_module(module_name)
-        except ModuleNotFoundError as e:
-            log(e)
-            raise DanglingReferenceError(model, pk, None)
-        else:
-            model = getattr(module, class_name)
-            object.__setattr__(self, "_delayed_model", model)
-            object.__setattr__(self, "_delayed_pk", pk)
-            object.__setattr__(self, "_delayed_obj", None)
-
-    def _instance(self):
-        #### DO NOT TO ANY LOGGING IN THIS METHOD; IT CAUSES INFINITE RECURSION ####
-        if not object.__getattribute__(self, "_delayed_obj"):
-            _pk = object.__getattribute__(self, "_delayed_pk")
-            _model = object.__getattribute__(self, "_delayed_model")
-            _obj = _model.get(_pk)
-            if not _pk or not _model or _obj is None:
-                raise DanglingReferenceError(_model, _pk, _obj)
-            else:
-                object.__setattr__(self, "_delayed_obj", _obj)
-
-        return object.__getattribute__(self, "_delayed_obj")
-
-    # def __getattr__(self, name):
-    #     return getattr(self._instance(), name)
+class AutoModel(BaseModel, abc.ABC):
+    model_config = ConfigDict(
+        populate_by_name=True,
+        arbitrary_types_allowed=True,
+    )
+    pk: str = Field(default=None)
+    last_updated: datetime = Field(default_factory=lambda: datetime.now())
+    table_name: ClassVar[str] = ""
 
     def __getattribute__(self, name):
-        # log(name)
-        if name in [
-            "_delayed_model",
-            "_delayed_pk",
-            "_delayed_obj",
-            "_instance",
-        ]:
-            return object.__getattribute__(self, name)
-        try:
-            return object.__getattribute__(self._instance(), name)
-        except DanglingReferenceError as e:
-            log(e)
-            return None
+        attr = super().__getattribute__(name)
+        if not name.startswith("_") and name in dict(self):
+            # log(f"Deserializing {name}, attr: {attr}")
+            attr = self._deserialize(name, attr)
+        return attr
 
     def __setattr__(self, name, value):
-        if name.startswith("_delayed"):
-            object.__setattr__(self, name, value)
-        else:
-            setattr(self._instance(), name, value)
+        value = self._serialize(name, value)
+        super().__setattr__(name, value)
 
-    def __delattr__(self, name):
-        delattr(self._instance(), name)
-
-    def __nonzero__(self):
-        return bool(self._instance())
-
-    def __str__(self):
-        return str(self._instance().__dict__)
-
-    def __repr__(self):
-        msg = f"\n<<DelayedModel {self._delayed_model.__name__}:{self._delayed_pk}>>"
-        return msg
+    def __eq__(self, other):
+        return self.pk == other.pk
 
     def __hash__(self):
         return hash(self._instance())
@@ -202,15 +160,9 @@ class AutoModel(ABC):
 
     @classmethod
     def table(cls):
-        # breakpoint()
-        if not cls._table or cls._table.name != cls.__name__:
-            cls.attributes["pk"] = None
-            cls.attributes["last_updated"] = datetime.now()
-            cls.attributes["_automodel"] = AutoAttribute(
-                "TEXT", default=cls.model_name(qualified=True)
-            )
-            cls._table = cls._orm(cls._table_name or cls.__name__, cls.attributes)
-        return cls._table
+        table_name = cls.table_name or cls.__name__.lower()
+        # log(f"Table Name: {table_name}")
+        return ORM(table_name, cls.model_fields)
 
     @classmethod
     def model_name(cls, qualified=False):
@@ -222,60 +174,11 @@ class AutoModel(ABC):
         """
         return f"{cls.__module__}.{cls.__name__}" if qualified else cls.__name__
 
-    @property
-    def _id(self):
-        """
-        Get the primary key of this model.
-
-        Returns:
-            int: The primary key of this model.
-        """
-        return self.pk
-
-    @_id.setter
-    def _id(self, _id):
-        """
-        Get the primary key of this model.
-
-        Returns:
-            int: The primary key of this model.
-        """
-        self.pk = str(_id)
-
-    def validate(self):
-        """
-        Validate this model.
-        """
-        for key, vattr in self.attributes.items():
-            if isinstance(vattr, AutoAttribute):
-                val = getattr(self, key)
-                if vattr.type == "TEXT":
-                    if not isinstance(val, str):
-                        raise TypeError(
-                            f"{key} value must be a string, not {type(val)}"
-                        )
-                elif vattr.type == "NUMERIC":
-                    if not isinstance(val, (int, float)):
-                        raise TypeError(
-                            f"{key} value must be a number, not {type(val)}"
-                        )
-                elif vattr.type == "MODEL":
-                    # log(isinstance(val, (AutoModel, DelayedModel)), type(val))
-                    if val is not None and not isinstance(
-                        val, (AutoModel, DelayedModel)
-                    ):
-                        raise TypeError(
-                            f"{key} value must be an AutoModel or None, not {type(val)}"
-                        )
-                else:
-                    raise ValueError(f"{key}: Invalid type {self.type}")
-
-                if vattr.required and val is None:
-                    raise ValueError(f"{key} is required")
-                if vattr.unique and len(self.search(**{key: val})) > 1:
-                    raise ValueError(f"{key} must be unique")
-                if vattr.primary_key:
-                    self.pk = val
+    @classmethod
+    def load_model(cls, model):
+        module_name, model = model.rsplit(".", 1) if "." in model else ("models", model)
+        module = importlib.import_module(module_name)
+        return getattr(module, model)
 
     def save(self):
         """
@@ -284,11 +187,11 @@ class AutoModel(ABC):
         Returns:
             int: The primary key (pk) of the saved model.
         """
-        self.validate()
-        serialized_obj = self.serialize()
-        serialized_obj["pk"] = self.pk
-        self.pk = self.table().save(serialized_obj)
-
+        # log(self.model_dump_json())
+        record = json.loads(self.model_dump_json())
+        for k, v in record.items():
+            record[k] = self._serialize(k, v)
+        self.pk = self.table().save(record)
         return self.pk
 
     @classmethod
@@ -302,8 +205,8 @@ class AutoModel(ABC):
         Returns:
             AutoModel or None: The retrieved AutoModel instance, or None if not found.
         """
-        table = cls.table()
-        result = table.get(pk)
+        result = cls.table().get(pk)
+        log(result)
         return cls(**result) if result else None
 
     @classmethod
@@ -329,6 +232,7 @@ class AutoModel(ABC):
         Returns:
             list: A list of AutoModel instances.
         """
+        results = cls.table().all()
         return [cls(**o) for o in cls.table().all()]
 
     @classmethod
@@ -343,7 +247,7 @@ class AutoModel(ABC):
             list: A list of AutoModel instances that match the search criteria.
         """
         for k, v in kwargs.items():
-            kwargs[k] = AutoEncoder.encode(v)
+            kwargs[k] = v
         return [cls(**attribs) for attribs in cls.table().search(**kwargs)]
 
     @classmethod
@@ -358,7 +262,7 @@ class AutoModel(ABC):
             AutoModel or None: The first matching AutoModel instance, or None if not found.
         """
         for k, v in kwargs.items():
-            kwargs[k] = AutoEncoder.encode(v)
+            kwargs[k] = v
         attribs = cls.table().find(**kwargs)
         return cls(**attribs) if attribs else None
 
@@ -381,14 +285,3 @@ class AutoModel(ABC):
         Delete this model from the database.
         """
         return self.table().delete(self.pk)
-
-    def serialize(self):
-        """
-        Serialize this model to a dictionary.
-
-        Returns:
-            dict: A dictionary representation of the serialized model.
-        """
-        vars = {k: v for k, v in self.__dict__.items() if k in self.attributes}
-        json_vars = AutoEncoder.encode(vars)
-        return json_vars

@@ -5,10 +5,9 @@
 ##### Frameworks #####
 
 Flask
+pydantic[all]
 
 ##### Debugging, Logging, and Documentation #####
-
-icecream
 
 ##### System #####
 
@@ -20,9 +19,9 @@ python-dotenv
 PyGithub
 pygit2
 
-cloudinary
 pillow
 pymongo
+redis
 
 ##### Frontend #####
 
@@ -38,14 +37,12 @@ gunicorn
 Authlib
 
 ##### Async #####
-
+rq
 
 ##### AI #####
 
-openai >= 1.21.1
+openai >= 1.35.10
 
 ##### Parsing #####
-
-validators
 dateparser
 python-slugify

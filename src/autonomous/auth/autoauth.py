@@ -4,14 +4,14 @@ from functools import wraps
 
 import requests
 from authlib.integrations.requests_client import OAuth2Auth, OAuth2Session
-from flask import current_app, redirect, request, session, url_for
+from flask import redirect, session, url_for
 
 from autonomous import log
 from autonomous.auth.user import AutoUser
 
 
 class AutoAuth:
-    user_class = AutoUser
+    user_class: type[AutoUser] = AutoUser
 
     def __init__(
         self,

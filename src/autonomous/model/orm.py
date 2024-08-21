@@ -5,10 +5,8 @@ from autonomous.db.autodb import Database
 
 
 class ORM:
-    _database = Database()
-
     def __init__(self, name, attributes):
-        self.table = self._database.get_table(table=name, schema=attributes)
+        self.table = Database().get_table(table=name, schema=attributes)
         self.name = name
 
     def _replace_pk_with_id(self, data):

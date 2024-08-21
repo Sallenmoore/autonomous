@@ -6,88 +6,85 @@ import time
 from base64 import b64decode
 
 from openai import OpenAI
+from pydantic import model_validator
 
 from autonomous import AutoModel, log
 
 
 class OAIAgent(AutoModel):
-    client = None
-    attributes = {
-        "model": "gpt-4o",
-        "_agent_id": None,
-        "messages": [],
-        "tools": {},
-        "vector_store": None,
-        "name": "agent",
-        "instructions": "You are highly skilled AI trained to assist with various tasks.",
-        "description": "A helpful AI assistant trained to assist with various tasks.",
-    }
+    _client = None
+    model: str = "gpt-4o"
+    agent_id: str = None
+    messages: list = []
+    tools: dict = {}
+    vector_store: str = None
+    name: str = "agent"
+    instructions: str = (
+        "You are highly skilled AI trained to assist with various tasks."
+    )
+    description: str = "A helpful AI assistant trained to assist with various tasks."
 
     def __init__(self, **kwargs):
-        self.client = OpenAI(api_key=os.environ.get("OPENAI_KEY"))
+        self._client = OpenAI(api_key=os.environ.get("OPENAI_KEY"))
 
-    @property
-    def agent_id(self):
-        if not self._agent_id or not self.client.beta.assistants.retrieve(
-            self._agent_id
+    @model_validator(mode="after")
+    def validate_model(self):
+        if not self.agent_id or not self._client.beta.assistants.retrieve(
+            self.agent_id
         ):
-            agent = self.client.beta.assistants.create(
+            agent = self._client.beta.assistants.create(
                 instructions=self.instructions,
                 description=self.description,
                 name=self.name,
                 model=self.model,
             )
-            self._agent_id = agent.id
+            self.agent_id = agent.id
             log(f"==== Creating Agent with ID: {self._agent_id} ====")
             self.save()
-        return self._agent_id
-
-    @agent_id.setter
-    def agent_id(self, value):
-        self._agent_id = value
+        return self.agent_id
 
     def clear_agent(self):
-        self.client.beta.assistants.delete(self.agent_id)
+        self._client.beta.assistants.delete(self.agent_id)
         self.agent_id = ""
 
     def get_agent(self):
-        return self.client.beta.assistants.retrieve(self.agent_id)
+        return self._client.beta.assistants.retrieve(self.agent_id)
 
     def clear_files(self, file_id=None):
         if self.vector_store:
             if not file_id:
-                vector_store_files = self.client.beta.vector_stores.files.list(
+                vector_store_files = self._client.beta.vector_stores.files.list(
                     vector_store_id=self.vector_store
                 ).data
                 for vsf in vector_store_files:
-                    self.client.files.delete(file_id=vsf["id"])
+                    self._client.files.delete(file_id=vsf["id"])
             else:
-                self.client.files.delete(file_id=file_id)
+                self._client.files.delete(file_id=file_id)
             self.tools.pop("file_search", None)
             self.save()
-        return self.client.files.list()
+        return self._client.files.list()
 
     def attach_file(self, file_contents, filename="dbdata.json"):
         # Upload the user provided file to OpenAI
         self.tools["file_search"] = {"type": "file_search"}
         # Create a vector store
         if not self.vector_store:
-            vs = self.client.beta.vector_stores.list().data
+            vs = self._client.beta.vector_stores.list().data
             if vs:
                 self.vector_store = vs[0].id
             else:
-                self.vector_store = self.client.beta.vector_stores.create(
+                self.vector_store = self._client.beta.vector_stores.create(
                     name="Data Reference"
                 ).id
 
-        file_obj = self.client.files.create(
+        file_obj = self._client.files.create(
             file=(filename, file_contents), purpose="assistants"
         )
 
-        self.client.beta.vector_stores.files.create(
+        self._client.beta.vector_stores.files.create(
             vector_store_id=self.vector_store, file_id=file_obj.id
         )
-        self.client.beta.assistants.update(
+        self._client.beta.assistants.update(
             self.agent_id,
             tools=list(self.tools.values()),
             tool_resources={"file_search": {"vector_store_ids": [self.vector_store]}},
@@ -97,7 +94,7 @@ class OAIAgent(AutoModel):
 
     def _add_function(self, user_function):
         self.tools["function"] = {"type": "function", "function": user_function}
-        self.client.beta.assistants.update(
+        self._client.beta.assistants.update(
             self.agent_id, tools=list(self.tools.values())
         )
         return """
@@ -124,9 +121,9 @@ class OAIAgent(AutoModel):
         )
 
         formatted_messages = self._format_messages(messages)
-        thread = self.client.beta.threads.create(messages=formatted_messages)
+        thread = self._client.beta.threads.create(messages=formatted_messages)
 
-        run = self.client.beta.threads.runs.create(
+        run = self._client.beta.threads.runs.create(
             thread_id=thread.id,
             assistant_id=self.agent_id,
             additional_instructions=_instructions_addition,
@@ -134,7 +131,7 @@ class OAIAgent(AutoModel):
         )
 
         while run.status in ["queued", "in_progress"]:
-            run = self.client.beta.threads.runs.retrieve(
+            run = self._client.beta.threads.runs.retrieve(
                 thread_id=thread.id,
                 run_id=run.id,
             )
@@ -149,7 +146,7 @@ class OAIAgent(AutoModel):
         print("=================== RUN COMPLETED ===================")
         print(run.status)
         if run.status == "completed":
-            response = self.client.beta.threads.messages.list(thread_id=thread.id)
+            response = self._client.beta.threads.messages.list(thread_id=thread.id)
             results = response.data[0].content[0].text.value
         elif run.status == "requires_action":
             results = run.required_action.submit_tool_outputs.tool_calls[
@@ -176,18 +173,18 @@ class OAIAgent(AutoModel):
         voice = kwargs.get("voice") or random.choice(
             ["alloy", "echo", "fable", "onyx", "nova", "shimmer"]
         )
-        response = self.client.audio.speech.create(
+        response = self._client.audio.speech.create(
             model="tts-1",
             voice=voice,
             input=prompt,
         )
 
-        return response.stream_to_file(file_path)
+        return response.with_streaming_response.method(file_path)
 
     def generate_image(self, prompt, **kwargs):
         image = None
         try:
-            response = self.client.images.generate(
+            response = self._client.images.generate(
                 model="dall-e-3", prompt=prompt, response_format="b64_json", **kwargs
             )
             image_dict = response.data[0]
@@ -205,7 +202,9 @@ class OAIAgent(AutoModel):
             },
             {"role": "user", "content": text},
         ]
-        response = self.client.chat.completions.create(model="gpt-4o", messages=message)
+        response = self._client.chat.completions.create(
+            model="gpt-4o", messages=message
+        )
         try:
             result = response.choices[0].message.content
         except Exception as e:

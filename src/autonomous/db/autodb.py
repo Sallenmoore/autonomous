@@ -41,14 +41,14 @@ class Database:
         """
         create an interface for your database
         """
-        # log(self.username, self.password)
+        # log(username, password)
         username = urllib.parse.quote_plus(str(username))
         password = urllib.parse.quote_plus(str(password))
         self.connect_str = f"mongodb://{username}:{password}@{host}:{port}"
-        # log(f"mongodb://{username}:{password}@{host}", port=int(port))
-        self.db = pymongo.MongoClient(
-            f"mongodb://{username}:{password}@{host}", port=int(port)
-        )[db]
+        # log(self.connect_str)
+        self.db = pymongo.MongoClient(f"mongodb://{username}:{password}@{host}:{port}")[
+            db
+        ]
         self.tables = {}
 
     def get_table(self, table="default", schema=None):

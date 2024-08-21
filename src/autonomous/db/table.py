@@ -13,7 +13,6 @@ import random
 from bson.objectid import ObjectId
 
 from autonomous import log
-from autonomous.model.autoattribute import AutoAttribute
 
 
 class Table:
@@ -21,17 +20,6 @@ class Table:
         self._db = db[name]
         self.name = name
         # log(attributes)
-        self._rules = {}
-
-        for k, v in attributes.items():
-            if isinstance(v, AutoAttribute):
-                self._rules[k] = v
-            elif isinstance(v, str):
-                self._rules[k] = AutoAttribute("TEXT", default=v)
-            elif isinstance(v, (int, float)):
-                self._rules[k] = AutoAttribute("NUMERIC", default=v)
-            else:
-                self._rules[k] = None
         self._index = self._get_index(f"idx:{name}")
 
     def __str__(self):
@@ -40,34 +28,7 @@ class Table:
     def _get_index(self, name):
         pass
 
-    def _validate(self, k, v):
-        # log(k, v, self._rules)
-        if rule := self._rules.get(k):
-            if rule.type == "NUMERIC":
-                if v:
-                    try:
-                        float(v)
-                    except TypeError:
-                        raise Exception(
-                            f"VALIDATION ERROR: Invalid attribute value. Must be a number: {k}:{v}"
-                        )
-
-            if rule.required:
-                try:
-                    assert v is not None
-                except AssertionError:
-                    raise Exception(
-                        f"VALIDATION ERROR: Attribute Required. Must not be 'None': {k}:{v}"
-                    )
-
     def save(self, obj):
-        for k, v in obj.items():
-            try:
-                self._validate(k, v)
-            except Exception as e:
-                # log(e)
-                raise e
-
         if obj_id := obj.get("_id"):
             obj["_id"] = ObjectId(obj_id)
             self._db.replace_one({"_id": obj["_id"]}, obj, True)

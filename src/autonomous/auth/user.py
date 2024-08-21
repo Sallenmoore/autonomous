@@ -5,7 +5,6 @@ This module provides a User class that uses the OpenIDAuth class for authenticat
 from datetime import datetime
 
 from autonomous import log
-from autonomous.model.autoattribute import AutoAttribute
 from autonomous.model.automodel import AutoModel
 
 
@@ -14,15 +13,13 @@ class AutoUser(AutoModel):
     This class represents a user who can authenticate using OpenID.
     """
 
-    attributes = {
-        "name": AutoAttribute("TEXT"),
-        "email": AutoAttribute("TEXT", required=True),
-        "last_login": datetime.now(),
-        "state": "unauthenticated",
-        "provider": None,
-        "role": "user",
-        "token": None,
-    }
+    name: str = ""
+    email: str
+    last_login: datetime = datetime.now()
+    state: str = "unauthenticated"
+    provider: str = None
+    role: str = "user"
+    token: str = None
 
     def __eq__(self, other):
         return self.pk == other.pk
