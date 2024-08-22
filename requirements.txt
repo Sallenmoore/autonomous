@@ -39,7 +39,7 @@ rq
 
 ##### AI #####
 
-openai >= 1.35.10
+openai >= 1.42
 
 ##### Parsing #####
 dateparser

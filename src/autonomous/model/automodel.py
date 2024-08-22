@@ -33,13 +33,13 @@ class AutoModel(Document):
 
         for field_name, field in self._fields.items():
             value = getattr(self, field_name, None)
-            log(
-                f"Field: {field_name}, Type:{type(value)}, Value: {value}, {hasattr(field, "clean_references")}"
-            )
+            # log(
+            #     f"Field: {field_name}, Type:{type(value)}, Value: {value}, {hasattr(field, "clean_references")}"
+            # )
 
             if hasattr(field, "clean_references") and value:
                 cleaned_values, updated = field.clean_references(value)
-                log(f"Cleaned Values: {cleaned_values}")
+                # log(f"Cleaned Values: {cleaned_values}")
                 if updated:
                     setattr(self, field_name, cleaned_values)
 
