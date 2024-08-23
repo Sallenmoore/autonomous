@@ -66,16 +66,18 @@ class OpenAIModel(AutoModel):
             self.save()
         return self.agent_id
 
-    def clear_files(self, file_id=None):
+    def clear_files(self, file_id=None, all=False):
         if not file_id:
             store_files = self.client.files.list().data
-            for sf in store_files:
-                self.client.files.delete(file_id=sf.id)
+
             for vs in self.client.beta.vector_stores.list().data:
                 try:
                     self.client.beta.vector_stores.delete(vs.id)
                 except openai_NotFoundError:
                     log(f"==== Vector Store {vs.id} not found ====")
+            if all:
+                for sf in store_files:
+                    self.client.files.delete(file_id=sf.id)
         else:
             self.client.files.delete(file_id=file_id)
         self.tools.pop("file_search", None)
