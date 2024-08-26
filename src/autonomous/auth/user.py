@@ -14,6 +14,9 @@ class AutoUser(AutoModel):
     This class represents a user who can authenticate using OpenID.
     """
 
+    meta = {
+        "abstract": True,
+    }
     name = StringAttr(default="Anonymous")
     email = StringAttr(required=True)
     last_login = DateTimeAttr(default=datetime.now)
@@ -82,3 +85,16 @@ class AutoUser(AutoModel):
         Returns True if the user is a guest, False otherwise.
         """
         return self.is_authenticated and self.role == "admin"
+
+
+class User(AutoUser):
+    """
+    This class represents a user who can authenticate using OpenID.
+    """
+
+    meta = {
+        "collection": "users",
+    }
+
+    def __repr__(self):
+        return f"<User {self.pk} {self.email}>"

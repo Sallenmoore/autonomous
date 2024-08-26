@@ -61,12 +61,15 @@ class ReferenceAttr(GenericReferenceField):
             # If the document doesn't exist, return None
             return None
 
+    def validate(self, value):
+        if value is not None and not self.required:
+            super().validate(value)
+
 
 class ListAttr(ListField):
     def clean_references(self, values):
         safe_values = []
         updated = False
-
         for value in values:
             try:
                 if isinstance(value, dict) and "_cls" in value:
@@ -78,7 +81,6 @@ class ListAttr(ListField):
                     updated = True
             except DoesNotExist:
                 updated = True
-        log("hi")
         return safe_values, updated
 
 
@@ -97,7 +99,6 @@ class DictAttr(DictField):
                     updated = True
             except DoesNotExist:
                 updated = True
-
         return safe_values, updated
 
 

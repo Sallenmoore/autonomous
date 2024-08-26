@@ -1,3 +1,4 @@
+import json
 import uuid
 from datetime import datetime
 from functools import wraps
@@ -47,12 +48,14 @@ class AutoAuth:
         Returns the current user.
         """
         user = cls.user_class.get_guest()
-        if session.get("user") and session["user"]["state"] == "authenticated":
-            try:
-                user = cls.user_class.get(session["user"].get("pk"))
-                user.pk
-            except Exception as e:
-                log(e, session["user"])
+        if user_data := session.get("user"):
+            user_data = json.loads(user_data)
+            if user_data and user_data.get("state") == "authenticated":
+                try:
+                    user = cls.user_class.get(session["user"].get("pk"))
+                    user.pk
+                except Exception as e:
+                    log(e, session["user"])
         return user
 
     def authenticate(self):
@@ -106,7 +109,7 @@ class AutoAuth:
                     user.last_login = datetime.now()
                     # log(user)
                     user.save()
-                session["user"] = user.serialize()
+                session["user"] = user.to_json()
                 # log(guest, user.is_guest)
                 if not guest and user.is_guest:
                     return redirect(url_for("auth.login"))

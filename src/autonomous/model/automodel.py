@@ -15,12 +15,16 @@ host = os.getenv("DB_HOST", "db")
 port = os.getenv("DB_PORT", 27017)
 password = urllib.parse.quote_plus(str(os.getenv("DB_PASSWORD")))
 username = urllib.parse.quote_plus(str(os.getenv("DB_USERNAME")))
-db = os.getenv("DB_DB")
-db = connect(host=f"mongodb://{username}:{password}@{host}:{port}")
+dbname = os.getenv("DB_DB")
+# log(f"Connecting to MongoDB at {host}:{port} with {username}:{password} for {dbname}")
+db = connect(
+    host=f"mongodb://{username}:{password}@{host}:{port}/{dbname}?authSource=admin"
+)
+# log(f"{db}")
 
 
 class AutoModel(Document):
-    meta = {"abstract": True, "allow_inheritance": True}
+    meta = {"abstract": True, "allow_inheritance": True, "strict": False}
     last_updated = DateTimeField(default=datetime.now)
     _db = db
 
