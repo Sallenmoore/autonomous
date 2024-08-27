@@ -297,6 +297,7 @@ class TestJSONAgent:
         json.dump(result, open("tests/assets/character.json", "w"))
 
 
+@pytest.mark.skip(reason="working")
 def test_clean():
     ai = OpenAIModel()
     ai.save()

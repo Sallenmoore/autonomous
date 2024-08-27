@@ -6,11 +6,10 @@ from datetime import datetime
 from bson import ObjectId
 from mongoengine import Document, connect
 from mongoengine.fields import DateTimeField
-from mongoengine.queryset.manager import queryset_manager
 
 from autonomous import log
 
-from .autoattr import DictAttr, ListAttr, ReferenceAttr
+from .autoattr import ListAttr
 
 host = os.getenv("DB_HOST", "db")
 port = os.getenv("DB_PORT", 27017)

@@ -93,9 +93,5 @@ class User(AutoUser):
     This class represents a user who can authenticate using OpenID.
     """
 
-    meta = {
-        "collection": "users",
-    }
-
     def __repr__(self):
         return f"<User {self.pk} {self.email}>"

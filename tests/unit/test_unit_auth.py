@@ -1,7 +1,7 @@
 from autonomous import log
 from autonomous.auth.github import GithubAuth
 from autonomous.auth.google import GoogleAuth
-from autonomous.auth.user import AutoUser
+from autonomous.auth.user import User
 
 
 class TestAuth:
@@ -20,19 +20,19 @@ class TestAuth:
         assert status
 
     def test_user(self):
-        # AutoUser.table().flush_table()
         user_info = {
             "name": "test",
             "email": "test@test.com",
             "token": "testtoken",
         }
-        user = AutoUser.authenticate(user_info)
-        user2 = AutoUser.authenticate(user_info)
+        User(**user_info).save()
+        user = User.authenticate(user_info)
+        user2 = User.authenticate(user_info)
         assert user.pk == user2.pk
         user.state = "unauthenticated"
         assert not user.is_authenticated
         res = user.save()
-        user = AutoUser.authenticate(user_info)
+        user = User.authenticate(user_info)
         assert res == user
         assert user.pk == user2.pk
         assert user.is_authenticated
