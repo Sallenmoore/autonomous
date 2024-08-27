@@ -24,7 +24,7 @@ db = connect(
 
 
 class AutoModel(Document):
-    meta = {"abstract": True, "allow_inheritance": True}
+    meta = {"abstract": True}
     last_updated = DateTimeField(default=datetime.now)
     _db = db
 
