@@ -51,10 +51,13 @@ class AutoAuth:
         if user_data := session.get("user"):
             if user_data and user_data.get("state") == "authenticated":
                 try:
-                    user = cls.user_class.get(session["user"].get("pk"))
+                    pk = session["user"].get("_id")
+                    # log(pk, type(pk))
+                    user = cls.user_class.get(pk)
                     user.pk
                 except Exception as e:
                     log(e, session["user"])
+
         return user
 
     def authenticate(self):

@@ -37,9 +37,10 @@ class AutoUser(AutoModel):
         email = user_info["email"].strip()
         name = user_info["name"].strip()
         user = cls.find(email=email)
+        log(email, user)
         if not user:
             log(f"Creating new user for {email}")
-            user = cls(name=name, email=email)
+            # user = cls(name=name, email=email)
 
         # parse user_info into a user object
         user.name = name
@@ -54,7 +55,7 @@ class AutoUser(AutoModel):
         """
         Returns a guest user.
         """
-        guest = cls.find(name="_GuestOfAutonomous_", state="guest")
+        guest = cls.find(name="_GuestOfAutonomous_")
         if not guest:
             guest = cls(
                 name="_GuestOfAutonomous_",

@@ -6,6 +6,7 @@ from datetime import datetime
 from bson import ObjectId
 from mongoengine import Document, connect
 from mongoengine.fields import DateTimeField
+from mongoengine.queryset.manager import queryset_manager
 
 from autonomous import log
 
@@ -24,13 +25,13 @@ db = connect(
 
 
 class AutoModel(Document):
-    meta = {"abstract": True, "allow_inheritance": True, "strict": False}
+    meta = {"abstract": True, "allow_inheritance": True}
     last_updated = DateTimeField(default=datetime.now)
     _db = db
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        if kwargs.pop("pk", None):
+        if kwargs.pop("pk", None) or kwargs.pop("_id", None):
             self.reload()
         for k, v in kwargs.items():
             setattr(self, k, v)
@@ -38,10 +39,6 @@ class AutoModel(Document):
 
         for field_name, field in self._fields.items():
             value = getattr(self, field_name, None)
-            # log(
-            #     f"Field: {field_name}, Type:{type(value)}, Value: {value}, {hasattr(field, "clean_references")}"
-            # )
-
             if hasattr(field, "clean_references") and value:
                 cleaned_values, updated = field.clean_references(value)
                 # log(f"Cleaned Values: {cleaned_values}")
@@ -92,10 +89,13 @@ class AutoModel(Document):
         Returns:
             AutoModel or None: The retrieved AutoModel instance, or None if not found.
         """
-        if pk and isinstance(pk, str):
-            pk = ObjectId(pk)
+        if pk:
+            if isinstance(pk, str):
+                pk = ObjectId(pk)
+            elif isinstance(pk, dict) and "$oid" in pk:
+                pk = ObjectId(pk["$oid"])
         try:
-            return cls.objects(pk=pk).get()
+            return cls.objects(id=pk).get()
         except Exception as e:
             log(e)
             return None
@@ -125,6 +125,7 @@ class AutoModel(Document):
         Returns:
             list: A list of AutoModel instances.
         """
+        log(cls, cls.objects())
         return list(cls.objects())
 
     @classmethod
