@@ -9,7 +9,7 @@ from mongoengine.fields import DateTimeField
 
 from autonomous import log
 
-from .autoattr import DictAttr, ListAttr
+from .autoattr import DictAttr, ListAttr, ReferenceAttr
 
 host = os.getenv("DB_HOST", "db")
 port = os.getenv("DB_PORT", 27017)
@@ -60,6 +60,20 @@ class AutoModel(Document):
             str: The fully qualified name of this model.
         """
         return f"{cls.__module__}.{cls.__name__}" if qualified else cls.__name__
+
+    @classmethod
+    def get_schema(cls):
+        schema = {}
+        for field_name, field in cls._fields.items():
+            field_info = {"type": type(field).__name__, "required": field.required}
+
+            # Handle ListField case
+            if isinstance(field, ListAttr):
+                field_info["item_type"] = type(field.field).__name__
+
+            schema[field_name] = field_info
+
+        return schema
 
     @classmethod
     def load_model(cls, model):
