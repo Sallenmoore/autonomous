@@ -3,11 +3,13 @@ import os
 import urllib.parse
 from datetime import datetime
 
+import bson
 from bson import ObjectId
+from mongoengine import Document, connect
+from mongoengine.errors import DoesNotExist, ValidationError
+from mongoengine.fields import DateTimeField
 
 from autonomous import log
-from mongoengine import Document, connect
-from mongoengine.fields import DateTimeField
 
 from .autoattr import ListAttr
 
@@ -29,15 +31,24 @@ class AutoModel(Document):
     _db = db
 
     def __init__(self, *args, **kwargs):
+        # log(kwargs, self._meta)
+        # if kwargs.get("pk"):
+        #     kwargs["id"] = kwargs.pop("pk")
+        #     log(f"Pulling {self.__class__.__name__} with {kwargs}")
+        # else:
+        #     log(f"Creating {self.__class__.__name__} with {kwargs}")
+        if kwargs.get("pk") or kwargs.get("id"):
+            record = self._get_collection().find_one(
+                {"_id": kwargs.get("pk") or kwargs.get("id")}
+            )
+            record["id"] = record.pop("_id")
+            kwargs.update(record)
+            log(f"Record: {record}", vars(self), kwargs)
         super().__init__(*args, **kwargs)
-        if kwargs.pop("pk", None) or kwargs.pop("_id", None) or kwargs.pop("id", None):
-            self.reload()
-        for k, v in kwargs.items():
-            setattr(self, k, v)
         self.last_updated = datetime.now()
-        log(self._fields.items())
         for field_name, field in self._fields.items():
             value = getattr(self, field_name, None)
+            log(f"Field Name: {field_name}, Field: {field} Value: {value}")
             if hasattr(field, "clean_references") and value:
                 cleaned_values, updated = field.clean_references(value)
                 # log(f"Cleaned Values: {cleaned_values}")
@@ -88,15 +99,16 @@ class AutoModel(Document):
         Returns:
             AutoModel or None: The retrieved AutoModel instance, or None if not found.
         """
-        if pk:
-            if isinstance(pk, str):
-                pk = ObjectId(pk)
-            elif isinstance(pk, dict) and "$oid" in pk:
-                pk = ObjectId(pk["$oid"])
+
+        if isinstance(pk, str):
+            pk = ObjectId(pk)
+        elif isinstance(pk, dict) and "$oid" in pk:
+            pk = ObjectId(pk["$oid"])
+        log(cls, pk)
         try:
-            return cls.objects(id=pk).get()
-        except Exception as e:
-            log(e)
+            return cls.objects.get(id=pk)
+        except (cls.DoesNotExist, ValidationError):
+            print(f"Model {cls.__name__} with pk {pk} not found.")
             return None
 
     @classmethod

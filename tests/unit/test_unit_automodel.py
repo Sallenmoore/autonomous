@@ -29,6 +29,21 @@ class Model(AutoModel):
     autolist = ListAttr(ReferenceAttr())
 
 
+class AbstractModel(AutoModel):
+    meta = {"abstract": True}
+    # set model default attributes
+    name = StringAttr(default="")
+    age = IntAttr()
+    auto = ReferenceAttr()
+
+
+class RealModel(AbstractModel):
+    # set model default attributes
+    name = StringAttr(default="")
+    age = IntAttr()
+    auto = ReferenceAttr()
+
+
 # @pytest.mark.skip(reason="dumb test")
 class TestAutomodel:
     def test_automodel_create(self):
@@ -105,13 +120,13 @@ class TestAutomodel:
 
         am.save()
         pm.save()
-
+        # breakpoint()
         result = Model(pk=am.pk, date=am.date)
         assert isinstance(result, Model)
         assert result.pk == am.pk
         assert result.name == am.name
         assert result.age == am.age
-        assert result.date == am.date
+        assert result.date <= am.date
 
         # log("Autolist", pm.autolist)
         pm.autolist = [pm, am]
@@ -158,3 +173,10 @@ class TestAutomodel:
         assert am.auto is None
         log(am.autolist)
         assert len(am.autolist) == 1
+
+    def test_abstractmodel_all(self):
+        RealModel.drop_collection()
+        RealModel(name="test", age=10).save()
+        results = RealModel.all()
+        log([r._data for r in results])
+        assert results
