@@ -4,10 +4,10 @@ import urllib.parse
 from datetime import datetime
 
 from bson import ObjectId
-from mongoengine import Document, connect
-from mongoengine.fields import DateTimeField
 
 from autonomous import log
+from mongoengine import Document, connect
+from mongoengine.fields import DateTimeField
 
 from .autoattr import ListAttr
 
@@ -24,18 +24,18 @@ db = connect(
 
 
 class AutoModel(Document):
-    meta = {"abstract": True, "allow_inheritance": True}
+    meta = {"abstract": True}
     last_updated = DateTimeField(default=datetime.now)
     _db = db
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        if kwargs.pop("pk", None) or kwargs.pop("_id", None):
+        if kwargs.pop("pk", None) or kwargs.pop("_id", None) or kwargs.pop("id", None):
             self.reload()
         for k, v in kwargs.items():
             setattr(self, k, v)
         self.last_updated = datetime.now()
-
+        log(self._fields.items())
         for field_name, field in self._fields.items():
             value = getattr(self, field_name, None)
             if hasattr(field, "clean_references") and value:
@@ -124,11 +124,7 @@ class AutoModel(Document):
         Returns:
             list: A list of AutoModel instances.
         """
-        log(cls, cls.objects())
-        for m in cls.objects():
-            log(m.my_metaclass)
-            m.reload()
-            log(m.to_json())
+        log(cls, [o.reload() for o in cls.objects()])
         return list(cls.objects())
 
     @classmethod
