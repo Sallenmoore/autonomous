@@ -24,7 +24,7 @@ db = connect(
 
 
 class AutoModel(Document):
-    meta = {"abstract": True}
+    meta = {"abstract": True, "allow_inheritance": True}
     last_updated = DateTimeField(default=datetime.now)
     _db = db
 
@@ -125,6 +125,10 @@ class AutoModel(Document):
             list: A list of AutoModel instances.
         """
         log(cls, cls.objects())
+        for m in cls.objects():
+            log(m.my_metaclass)
+            m.reload()
+            log(m.to_json())
         return list(cls.objects())
 
     @classmethod
