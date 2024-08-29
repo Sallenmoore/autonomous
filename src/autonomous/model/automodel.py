@@ -31,24 +31,18 @@ class AutoModel(Document):
     _db = db
 
     def __init__(self, *args, **kwargs):
-        # log(kwargs, self._meta)
-        # if kwargs.get("pk"):
-        #     kwargs["id"] = kwargs.pop("pk")
-        #     log(f"Pulling {self.__class__.__name__} with {kwargs}")
-        # else:
-        #     log(f"Creating {self.__class__.__name__} with {kwargs}")
         if kwargs.get("pk") or kwargs.get("id"):
             record = self._get_collection().find_one(
                 {"_id": kwargs.get("pk") or kwargs.get("id")}
             )
             record["id"] = record.pop("_id")
             kwargs.update(record)
-            log(f"Record: {record}", vars(self), kwargs)
+            # log(f"Record: {record}", vars(self), kwargs)
         super().__init__(*args, **kwargs)
         self.last_updated = datetime.now()
         for field_name, field in self._fields.items():
             value = getattr(self, field_name, None)
-            log(f"Field Name: {field_name}, Field: {field} Value: {value}")
+            # log(f"Field Name: {field_name}, Field: {field} Value: {value}")
             if hasattr(field, "clean_references") and value:
                 cleaned_values, updated = field.clean_references(value)
                 # log(f"Cleaned Values: {cleaned_values}")
@@ -136,8 +130,8 @@ class AutoModel(Document):
         Returns:
             list: A list of AutoModel instances.
         """
-        log(cls, [o.reload() for o in cls.objects()])
-        return list(cls.objects())
+        log(cls.objects._has_data())
+        return cls.objects.all()
 
     @classmethod
     def search(cls, _order_by=None, _limit=None, **kwargs):

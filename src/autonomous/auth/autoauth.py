@@ -49,9 +49,10 @@ class AutoAuth:
         """
         user = cls.user_class.get_guest()
         if user_data := session.get("user"):
+            user_data = json.loads(user_data)
             if user_data and user_data.get("state") == "authenticated":
                 try:
-                    pk = session["user"].get("_id")
+                    pk = session["user"].get("id")
                     # log(pk, type(pk))
                     user = cls.user_class.get(pk)
                     user.pk
