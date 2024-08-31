@@ -43,6 +43,7 @@ class Logger:
 
     def __call__(self, *args, **kwargs):
         if self.enabled:
+            is_printed = kwargs.pop("_print", False)
             caller = inspect.stack()[1]
             fn = caller.filename.split("/")[-1]
             msg = f"\n\n{'='*20}\t{fn}:{caller.function}()::{caller.lineno}\t{'='*20}\n"
@@ -57,6 +58,8 @@ class Logger:
                 current.write(f"{msg}\n")
             with open(self.logarchive, "a") as archive:
                 archive.write(f"{msg}\n")
+            if is_printed:
+                print(msg)
 
 
 log = Logger()

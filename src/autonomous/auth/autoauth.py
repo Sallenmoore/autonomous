@@ -8,11 +8,11 @@ from authlib.integrations.requests_client import OAuth2Auth, OAuth2Session
 from flask import redirect, session, url_for
 
 from autonomous import log
-from autonomous.auth.user import AutoUser
+from autonomous.auth.user import User
 
 
 class AutoAuth:
-    user_class: type[AutoUser] = AutoUser
+    user_class: type[User] = User
 
     def __init__(
         self,

@@ -5,7 +5,7 @@ from datetime import datetime
 
 import bson
 from bson import ObjectId
-from mongoengine import Document, connect
+from mongoengine import Document, connect, signals
 from mongoengine.errors import DoesNotExist, ValidationError
 from mongoengine.fields import DateTimeField
 
@@ -26,31 +26,33 @@ db = connect(
 
 
 class AutoModel(Document):
-    meta = {"abstract": True}
+    meta = {"abstract": True, "allow_inheritance": True, "strict": False}
     last_updated = DateTimeField(default=datetime.now)
     _db = db
 
-    def __init__(self, *args, **kwargs):
-        if kwargs.get("pk") or kwargs.get("id"):
-            record = self._get_collection().find_one(
-                {"_id": kwargs.get("pk") or kwargs.get("id")}
-            )
-            record["id"] = record.pop("_id")
-            kwargs.update(record)
-            # log(f"Record: {record}", vars(self), kwargs)
-        super().__init__(*args, **kwargs)
-        self.last_updated = datetime.now()
-        for field_name, field in self._fields.items():
-            value = getattr(self, field_name, None)
-            # log(f"Field Name: {field_name}, Field: {field} Value: {value}")
-            if hasattr(field, "clean_references") and value:
-                cleaned_values, updated = field.clean_references(value)
-                # log(f"Cleaned Values: {cleaned_values}")
-                if updated:
-                    setattr(self, field_name, cleaned_values)
-
     def __eq__(self, other):
         return self.pk == other.pk if other else False
+
+    @classmethod
+    def auto_post_init(cls, sender, document, **kwargs):
+        # if kwargs.get("pk") or kwargs.get("id"):
+        #     record = self._get_collection().find_one(
+        #         {"_id": kwargs.get("pk") or kwargs.get("id")}
+        #     )
+        #     record["id"] = record.pop("_id")
+        #     # log(kwargs, record)
+        #     record.update(kwargs)
+        #     # log(kwargs)
+        document.last_updated = datetime.now()
+        for field_name, field in document._fields.items():
+            # log(f"Field Name: {field_name}, Field: {field} Value: {value}")
+            if hasattr(field, "clean_references") and getattr(
+                document, field_name, None
+            ):
+                value = getattr(document, field_name)
+                # log(f"Cleaned Values: {cleaned_values}")
+                if cleaned_values := field.clean_references(value):
+                    setattr(document, field_name, cleaned_values)
 
     @classmethod
     def model_name(cls, qualified=False):
@@ -61,20 +63,6 @@ class AutoModel(Document):
             str: The fully qualified name of this model.
         """
         return f"{cls.__module__}.{cls.__name__}" if qualified else cls.__name__
-
-    @classmethod
-    def get_schema(cls):
-        schema = {}
-        for field_name, field in cls._fields.items():
-            field_info = {"type": type(field).__name__, "required": field.required}
-
-            # Handle ListField case
-            if isinstance(field, ListAttr):
-                field_info["item_type"] = type(field.field).__name__
-
-            schema[field_name] = field_info
-
-        return schema
 
     @classmethod
     def load_model(cls, model):
@@ -98,7 +86,6 @@ class AutoModel(Document):
             pk = ObjectId(pk)
         elif isinstance(pk, dict) and "$oid" in pk:
             pk = ObjectId(pk["$oid"])
-        log(cls, pk)
         try:
             return cls.objects.get(id=pk)
         except (cls.DoesNotExist, ValidationError):
@@ -130,8 +117,7 @@ class AutoModel(Document):
         Returns:
             list: A list of AutoModel instances.
         """
-        log(cls.objects._has_data())
-        return cls.objects.all()
+        return list(cls.objects())
 
     @classmethod
     def search(cls, _order_by=None, _limit=None, **kwargs):
@@ -174,11 +160,16 @@ class AutoModel(Document):
         Returns:
             int: The primary key (pk) of the saved model.
         """
-        # log(self.model_dump_json())
-        return super().save()
+        # log(self.to_json())
+        obj = super().save()
+        self.pk = obj.pk
+        return self.pk
 
     def delete(self):
         """
         Delete this model from the database.
         """
         return super().delete()
+
+
+signals.post_init.connect(AutoModel.auto_post_init, sender=AutoModel)

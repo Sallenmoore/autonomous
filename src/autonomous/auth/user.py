@@ -16,6 +16,8 @@ class AutoUser(AutoModel):
 
     meta = {
         "abstract": True,
+        "allow_inheritance": True,
+        "strict": False,
     }
     name = StringAttr(default="Anonymous")
     email = StringAttr(required=True)
