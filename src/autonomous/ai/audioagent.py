@@ -6,7 +6,7 @@ from .models.openai import OpenAIModel
 
 
 class AudioAgent(AutoModel):
-    client = ReferenceAttr()
+    client = ReferenceAttr(choices=[OpenAIModel])
     name = StringAttr(default="audioagent")
     instructions = StringAttr(
         default="You are highly skilled AI trained to assist with generating audio files."

@@ -6,7 +6,7 @@ from .models.openai import OpenAIModel
 
 
 class TextAgent(AutoModel):
-    client = ReferenceAttr()
+    client = ReferenceAttr(choices=[OpenAIModel])
     name = StringAttr(default="textagent")
     instructions = StringAttr(
         default="You are highly skilled AI trained to assist with generating text according to the given requirements."

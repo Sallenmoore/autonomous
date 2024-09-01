@@ -14,6 +14,7 @@ from mongoengine.fields import (
     ImageField,
     IntField,
     ListField,
+    ReferenceField,
     StringField,
 )
 
@@ -56,6 +57,7 @@ class ReferenceAttr(GenericReferenceField):
     def __get__(self, instance, owner):
         try:
             # Attempt to retrieve the referenced document
+            log(self.__dict__)
             return super().__get__(instance, owner)
         except DoesNotExist:
             # If the document doesn't exist, return None
@@ -73,7 +75,7 @@ class ListAttr(ListField):
             try:
                 if isinstance(value, dict) and "_cls" in value:
                     doc_cls = get_document(value["_cls"])
-                    value = doc_cls._get_db().dereference(value["_ref"])
+                    value = doc_cls._db.dereference(value["_ref"])
                 if value:
                     safe_values.append(value)
             except DoesNotExist:
@@ -88,7 +90,7 @@ class DictAttr(DictField):
             try:
                 if isinstance(value, dict) and "_cls" in value:
                     doc_cls = get_document(value["_cls"])
-                    value = doc_cls._get_db().dereference(value["_ref"])
+                    value = doc_cls._db.dereference(value["_ref"])
                 if value:
                     safe_values[key] = value
             except DoesNotExist:

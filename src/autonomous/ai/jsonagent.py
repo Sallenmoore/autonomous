@@ -7,7 +7,7 @@ from .models.openai import OpenAIModel
 
 
 class JSONAgent(AutoModel):
-    client = ReferenceAttr()
+    client = ReferenceAttr(choices=[OpenAIModel])
     name = StringAttr(default="jsonagent")
     instructions = StringAttr(
         default="You are highly skilled AI trained to assist with generating JSON formatted data."

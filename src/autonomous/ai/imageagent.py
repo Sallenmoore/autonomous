@@ -5,7 +5,7 @@ from .models.openai import OpenAIModel
 
 
 class ImageAgent(AutoModel):
-    client = ReferenceAttr()
+    client = ReferenceAttr(choices=[OpenAIModel])
     name = StringAttr(default="imageagent")
     instructions = StringAttr(
         default="You are highly skilled AI trained to assist with generating images."

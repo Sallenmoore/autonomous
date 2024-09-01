@@ -16,7 +16,7 @@ from .models.openai import OpenAIModel
 
 
 class OAIAgent(AutoModel):
-    client_model = ReferenceAttr()
+    client_model = ReferenceAttr(choices=[OpenAIModel])
     _ai_model = OpenAIModel
 
     @property
