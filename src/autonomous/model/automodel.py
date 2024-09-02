@@ -66,7 +66,9 @@ class AutoModel(Document):
 
     @classmethod
     def load_model(cls, model):
-        module_name, model = model.rsplit(".", 1) if "." in model else ("models", model)
+        module_name, model = (
+            model.rsplit(".", 1) if "." in model else (f"models.{model.lower()}", model)
+        )
         module = importlib.import_module(module_name)
         return getattr(module, model)
 
@@ -89,7 +91,7 @@ class AutoModel(Document):
         try:
             return cls.objects.get(id=pk)
         except (cls.DoesNotExist, ValidationError):
-            print(f"Model {cls.__name__} with pk {pk} not found.")
+            log(f"Model {cls.__name__} with pk {pk} not found.", _print=True)
             return None
 
     @classmethod

@@ -57,7 +57,7 @@ class ReferenceAttr(GenericReferenceField):
     def __get__(self, instance, owner):
         try:
             # Attempt to retrieve the referenced document
-            log(self.__dict__)
+            # log(self.__dict__)
             return super().__get__(instance, owner)
         except DoesNotExist:
             # If the document doesn't exist, return None

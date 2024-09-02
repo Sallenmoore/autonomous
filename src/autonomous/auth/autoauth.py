@@ -47,18 +47,12 @@ class AutoAuth:
         """
         Returns the current user.
         """
-        user = cls.user_class.get_guest()
-        if user_data := session.get("user"):
-            user_data = json.loads(user_data)
-            if user_data and user_data.get("state") == "authenticated":
-                try:
-                    pk = session["user"].get("id")
-                    # log(pk, type(pk))
-                    user = cls.user_class.get(pk)
-                    user.pk
-                except Exception as e:
-                    log(e, session["user"])
 
+        user = (
+            cls.user_class.from_json(session["user"]) if session.get("user") else None
+        )
+        if not user or user.state != "authenticated":
+            user = cls.user_class.get_guest()
         return user
 
     def authenticate(self):

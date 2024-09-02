@@ -162,15 +162,13 @@ IMPORTANT: Always use the function 'response' tool to respond to the user with t
                 run_id=run.id,
             )
             time.sleep(0.5)
-            log(f"==== Job Status: {run.status} ====")
-            print(f"==== Job Status: {run.status} ====")
+            log(f"==== Job Status: {run.status} ====", _print=True)
 
         if run.status in ["failed", "expired", "canceled"]:
-            log(f"==== Error: {run.last_error} ====")
-            print(f"==== Error: {run.last_error} ====")
+            log(f"==== Error: {run.last_error} ====", _print=True)
             return None
-        print("=================== RUN COMPLETED ===================")
-        print(run.status)
+        log("=================== RUN COMPLETED ===================", _print=True)
+        log(run.status, _print=True)
         if run.status == "completed":
             response = self.client.beta.threads.messages.list(thread_id=thread.id)
             results = response.data[0].content[0].text.value
@@ -179,21 +177,18 @@ IMPORTANT: Always use the function 'response' tool to respond to the user with t
                 0
             ].function.arguments
         else:
-            log(f"====Status: {run.status} Error: {run.last_error} ====")
-            print(f"====Status: {run.status} Error: {run.last_error} ====")
+            log(f"====Status: {run.status} Error: {run.last_error} ====", _print=True)
             return None
 
         results = results[results.find("{") : results.rfind("}") + 1]
         try:
             results = json.loads(results, strict=False)
         except Exception:
-            print(f"==== Invalid JSON:\n{results}")
-            log(f"==== Invalid JSON:\n{results}")
+            print(f"==== Invalid JSON:\n{results}", _print=True)
             return {}
         else:
-            log(f"==== Results: {results} ====")
-            print(results)
-            print("=================== END REPORT ===================")
+            log(f"==== Results: {results}", _print=True)
+            log("=================== END REPORT ===================", _print=True)
             return results
 
     def generate_text(self, messages, additional_instructions=""):
@@ -213,25 +208,22 @@ IMPORTANT: Always use the function 'response' tool to respond to the user with t
                 run_id=run.id,
             )
             time.sleep(0.5)
-            log(f"==== Job Status: {run.status} ====")
-            print(f"==== Job Status: {run.status} ====")
+            log(f"==== Job Status: {run.status} ====", _print=True)
 
         if run.status in ["failed", "expired", "canceled"]:
-            log(f"==== Error: {run.last_error} ====")
-            print(f"==== Error: {run.last_error} ====")
+            log(f"==== Error: {run.last_error} ====", _print=True)
             return None
-        print("=================== RUN COMPLETED ===================")
-        print(run.status)
+        log("=================== RUN COMPLETED ===================", _print=True)
+        log(run.status, _print=True)
         if run.status == "completed":
             response = self.client.beta.threads.messages.list(thread_id=thread.id)
             results = response.data[0].content[0].text.value
         else:
-            log(f"====Status: {run.status} Error: {run.last_error} ====")
-            print(f"====Status: {run.status} Error: {run.last_error} ====")
+            log(f"====Status: {run.status} Error: {run.last_error} ====", _print=True)
             return None
 
-        print(results)
-        print("=================== END REPORT ===================")
+        log(results, _print=True)
+        log("=================== END REPORT ===================", _print=True)
         return results
 
     def generate_audio(self, prompt, file_path, **kwargs):
