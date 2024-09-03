@@ -1,1 +1,1 @@
-from .mongoengine import mongoengine
+from . import mongoengine
