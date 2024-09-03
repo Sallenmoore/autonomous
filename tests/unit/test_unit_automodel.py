@@ -177,7 +177,6 @@ class TestAutomodel:
         subam.delete()
         am = Model.get(am.pk)
         assert am.auto is None
-        log(am.autolist)
         assert len(am.autolist) == 1
 
     def test_abstractmodel_all(self):

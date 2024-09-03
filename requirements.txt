@@ -18,7 +18,6 @@ blinker
 
 PyGithub
 pygit2
-mongoengine
 pillow
 redis
 
