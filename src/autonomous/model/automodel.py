@@ -9,6 +9,7 @@ from mongoengine.errors import ValidationError
 from mongoengine.fields import DateTimeField
 
 from autonomous import log
+from autonomous.model.autoattr import DictAttr, ListAttr
 
 host = os.getenv("DB_HOST", "db")
 port = os.getenv("DB_PORT", 27017)
@@ -29,7 +30,6 @@ class AutoModel(Document):
 
     @classmethod
     def auto_pre_init(cls, sender, document, **kwargs):
-        log(sender, document, kwargs)
         values = kwargs.pop("values", None)
         if pk := values.get("pk") or values.get("id"):
             # Try to load the existing document from the database
@@ -37,7 +37,6 @@ class AutoModel(Document):
                 # Update the current instance with the existing data
                 existing_doc.pop("_id", None)
                 existing_doc.pop("_cls", None)
-                log(f"Existing Document: {existing_doc}")
                 for k, v in existing_doc.items():
                     if not values.get(k):
                         values[k] = v
@@ -46,12 +45,17 @@ class AutoModel(Document):
     def auto_post_init(cls, sender, document, **kwargs):
         document.last_updated = datetime.now()
         for field_name, field in document._fields.items():
-            if hasattr(field, "clean_references") and getattr(
-                document, field_name, None
-            ):
+            if isinstance(field, (ListAttr, DictAttr)):
+                doc_data = document.to_mongo()
+                log(f"{document} -- Field: {field_name} {field}, {field.__class__}")
+                log(doc_data)
                 value = getattr(document, field_name)
-                if cleaned_values := field.clean_references(value):
-                    setattr(document, field_name, cleaned_values)
+                # cleaned_values = []
+                # for v in value:
+                #     log(v)
+                #     if obj := v.fetch():
+                #         cleaned_values.append(obj)
+                # setattr(document, field_name, cleaned_values)
 
     @classmethod
     def model_name(cls, qualified=False):

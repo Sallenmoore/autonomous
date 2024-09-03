@@ -68,35 +68,39 @@ class ReferenceAttr(GenericReferenceField):
 
 
 class ListAttr(ListField):
-    def clean_references(self, values):
-        safe_values = []
-        for value in values:
-            try:
-                if isinstance(value, dict) and "_cls" in value:
-                    doc_cls = get_document(value["_cls"])
-                    db = doc_cls._get_collection().database
-                    value = db.dereference(value["_ref"])
-                if value:
-                    safe_values.append(value)
-            except DoesNotExist:
-                log(f"Error Cleaning Reference: {value}")
-        return safe_values if safe_values != values else None
+    pass
+    # @classmethod
+    # def clean_references(cls, values):
+    #     safe_values = []
+    #     for value in values:
+    #         try:
+    #             if isinstance(value, dict) and "_cls" in value:
+    #                 doc_cls = get_document(value["_cls"])
+    #                 db = doc_cls._get_collection().database
+    #                 value = db.dereference(value["_ref"])
+    #             if value:
+    #                 safe_values.append(value)
+    #         except DoesNotExist:
+    #             log(f"Error Cleaning Reference: {value}")
+    #     return safe_values if safe_values != values else None
 
 
 class DictAttr(DictField):
-    def clean_references(self, values):
-        safe_values = {}
-        for key, value in values.items():
-            try:
-                if isinstance(value, dict) and "_cls" in value:
-                    doc_cls = get_document(value["_cls"])
-                    db = doc_cls._get_collection().database
-                    value = db.dereference(value["_ref"])
-                if value:
-                    safe_values[key] = value
-            except DoesNotExist:
-                log(f"Error Cleaning Reference: {key} -- {value}")
-        return safe_values if safe_values != values else None
+    pass
+    # @classmethod
+    # def clean_references(cls, values):
+    #     safe_values = {}
+    #     for key, value in values.items():
+    #         try:
+    #             if isinstance(value, dict) and "_cls" in value:
+    #                 doc_cls = get_document(value["_cls"])
+    #                 db = doc_cls._get_collection().database
+    #                 value = db.dereference(value["_ref"])
+    #             if value:
+    #                 safe_values[key] = value
+    #         except DoesNotExist:
+    #             log(f"Error Cleaning Reference: {key} -- {value}")
+    #     return safe_values if safe_values != values else None
 
 
 class EnumAttr(EnumField):
