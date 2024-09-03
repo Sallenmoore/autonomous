@@ -5,6 +5,7 @@
 ##### Frameworks #####
 
 Flask
+mongoengine
 
 ##### Debugging, Logging, and Documentation #####
 
