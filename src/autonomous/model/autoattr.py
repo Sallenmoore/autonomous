@@ -1,7 +1,8 @@
-from mongoengine.base import (
+from autonomous import log
+from autonomous.libraries.mongoengine.base import (
     get_document,
 )
-from mongoengine.fields import (
+from autonomous.libraries.mongoengine.fields import (
     BooleanField,
     DateTimeField,
     DictField,
@@ -14,11 +15,8 @@ from mongoengine.fields import (
     ImageField,
     IntField,
     ListField,
-    ReferenceField,
     StringField,
 )
-
-from autonomous import log
 
 
 class StringAttr(StringField):

@@ -3,15 +3,12 @@ import os
 import urllib.parse
 from datetime import datetime
 
-import bson
 from bson import ObjectId
-from mongoengine import Document, connect, signals
-from mongoengine.errors import DoesNotExist, ValidationError
-from mongoengine.fields import DateTimeField
 
 from autonomous import log
-
-from .autoattr import ListAttr
+from autonomous.libraries.mongoengine import Document, connect, signals
+from autonomous.libraries.mongoengine.errors import ValidationError
+from autonomous.libraries.mongoengine.fields import DateTimeField
 
 host = os.getenv("DB_HOST", "db")
 port = os.getenv("DB_PORT", 27017)
@@ -35,22 +32,12 @@ class AutoModel(Document):
 
     @classmethod
     def auto_post_init(cls, sender, document, **kwargs):
-        # if kwargs.get("pk") or kwargs.get("id"):
-        #     record = self._get_collection().find_one(
-        #         {"_id": kwargs.get("pk") or kwargs.get("id")}
-        #     )
-        #     record["id"] = record.pop("_id")
-        #     # log(kwargs, record)
-        #     record.update(kwargs)
-        #     # log(kwargs)
         document.last_updated = datetime.now()
         for field_name, field in document._fields.items():
-            # log(f"Field Name: {field_name}, Field: {field} Value: {value}")
             if hasattr(field, "clean_references") and getattr(
                 document, field_name, None
             ):
                 value = getattr(document, field_name)
-                # log(f"Cleaned Values: {cleaned_values}")
                 if cleaned_values := field.clean_references(value):
                     setattr(document, field_name, cleaned_values)
 
