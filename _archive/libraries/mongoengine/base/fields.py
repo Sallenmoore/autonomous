@@ -6,14 +6,14 @@ import weakref
 import pymongo
 from bson import SON, DBRef, ObjectId
 
-from mongoengine.base.common import UPDATE_OPERATORS
-from mongoengine.base.datastructures import (
+from autonomous.libraries.mongoengine.base.common import UPDATE_OPERATORS
+from autonomous.libraries.mongoengine.base.datastructures import (
     BaseDict,
     BaseList,
     EmbeddedDocumentList,
 )
-from mongoengine.common import _import_class
-from mongoengine.errors import DeprecatedError, ValidationError
+from autonomous.libraries.mongoengine.common import _import_class
+from autonomous.libraries.mongoengine.errors import DeprecatedError, ValidationError
 
 __all__ = ("BaseField", "ComplexBaseField", "ObjectIdField", "GeoJsonBaseField")
 

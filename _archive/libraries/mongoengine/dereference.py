@@ -1,22 +1,22 @@
 from bson import SON, DBRef
 
-from mongoengine.base import (
+from autonomous.libraries.mongoengine.base import (
     BaseDict,
     BaseList,
     EmbeddedDocumentList,
     TopLevelDocumentMetaclass,
     get_document,
 )
-from mongoengine.base.datastructures import LazyReference
-from mongoengine.connection import get_db
-from mongoengine.document import Document, EmbeddedDocument
-from mongoengine.fields import (
+from autonomous.libraries.mongoengine.base.datastructures import LazyReference
+from autonomous.libraries.mongoengine.connection import get_db
+from autonomous.libraries.mongoengine.document import Document, EmbeddedDocument
+from autonomous.libraries.mongoengine.fields import (
     DictField,
     ListField,
     MapField,
     ReferenceField,
 )
-from mongoengine.queryset import QuerySet
+from autonomous.libraries.mongoengine.queryset import QuerySet
 
 
 class DeReference:

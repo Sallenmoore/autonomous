@@ -28,10 +28,10 @@ def _import_class(cls_name):
 
     # Field Classes
     if not _field_list_cache:
-        from mongoengine.fields import __all__ as fields
+        from autonomous.libraries.mongoengine.fields import __all__ as fields
 
         _field_list_cache.extend(fields)
-        from mongoengine.base.fields import __all__ as fields
+        from autonomous.libraries.mongoengine.base.fields import __all__ as fields
 
         _field_list_cache.extend(fields)
 
@@ -40,19 +40,19 @@ def _import_class(cls_name):
     deref_classes = ("DeReference",)
 
     if cls_name == "BaseDocument":
-        from mongoengine.base import document as module
+        from autonomous.libraries.mongoengine.base import document as module
 
         import_classes = ["BaseDocument"]
     elif cls_name in doc_classes:
-        from mongoengine import document as module
+        from autonomous.libraries.mongoengine import document as module
 
         import_classes = doc_classes
     elif cls_name in field_classes:
-        from mongoengine import fields as module
+        from autonomous.libraries.mongoengine import fields as module
 
         import_classes = field_classes
     elif cls_name in deref_classes:
-        from mongoengine import dereference as module
+        from autonomous.libraries.mongoengine import dereference as module
 
         import_classes = deref_classes
     else:

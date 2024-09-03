@@ -1,5 +1,5 @@
-from mongoengine.errors import OperationError
-from mongoengine.queryset.base import (
+from autonomous.libraries.mongoengine.errors import OperationError
+from autonomous.libraries.mongoengine.queryset.base import (
     CASCADE,
     DENY,
     DO_NOTHING,

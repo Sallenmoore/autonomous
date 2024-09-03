@@ -4,11 +4,11 @@ import urllib.parse
 from datetime import datetime
 
 from bson import ObjectId
+from mongoengine import Document, connect, signals
+from mongoengine.errors import ValidationError
+from mongoengine.fields import DateTimeField
 
 from autonomous import log
-from autonomous.libraries.mongoengine import Document, connect, signals
-from autonomous.libraries.mongoengine.errors import ValidationError
-from autonomous.libraries.mongoengine.fields import DateTimeField
 
 host = os.getenv("DB_HOST", "db")
 port = os.getenv("DB_PORT", 27017)
@@ -16,19 +16,31 @@ password = urllib.parse.quote_plus(str(os.getenv("DB_PASSWORD")))
 username = urllib.parse.quote_plus(str(os.getenv("DB_USERNAME")))
 dbname = os.getenv("DB_DB")
 # log(f"Connecting to MongoDB at {host}:{port} with {username}:{password} for {dbname}")
-db = connect(
-    host=f"mongodb://{username}:{password}@{host}:{port}/{dbname}?authSource=admin"
-)
+connect(host=f"mongodb://{username}:{password}@{host}:{port}/{dbname}?authSource=admin")
 # log(f"{db}")
 
 
 class AutoModel(Document):
     meta = {"abstract": True, "allow_inheritance": True, "strict": False}
     last_updated = DateTimeField(default=datetime.now)
-    _db = db
 
     def __eq__(self, other):
         return self.pk == other.pk if other else False
+
+    @classmethod
+    def auto_pre_init(cls, sender, document, **kwargs):
+        log(sender, document, kwargs)
+        values = kwargs.pop("values", None)
+        if pk := values.get("pk") or values.get("id"):
+            # Try to load the existing document from the database
+            if existing_doc := sender._get_collection().find_one({"_id": ObjectId(pk)}):
+                # Update the current instance with the existing data
+                existing_doc.pop("_id", None)
+                existing_doc.pop("_cls", None)
+                log(f"Existing Document: {existing_doc}")
+                for k, v in existing_doc.items():
+                    if not values.get(k):
+                        values[k] = v
 
     @classmethod
     def auto_post_init(cls, sender, document, **kwargs):
@@ -78,8 +90,11 @@ class AutoModel(Document):
         try:
             return cls.objects.get(id=pk)
         except (cls.DoesNotExist, ValidationError):
-            log(f"Model {cls.__name__} with pk {pk} not found.", _print=True)
+            log(f"Model {cls.__name__} with pk {pk} not found.")
             return None
+        except Exception as e:
+            log(f"Error getting model {cls.__name__} with pk {pk}: {e}", _print=True)
+            raise e
 
     @classmethod
     def random(cls):
@@ -161,4 +176,5 @@ class AutoModel(Document):
         return super().delete()
 
 
-signals.post_init.connect(AutoModel.auto_post_init, sender=AutoModel)
+signals.pre_init.connect(AutoModel.auto_pre_init)
+signals.post_init.connect(AutoModel.auto_post_init)

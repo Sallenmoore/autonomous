@@ -1,5 +1,5 @@
 # Import submodules so that we can expose their __all__
-from mongoengine import (
+from autonomous.libraries.mongoengine import (
     connection,
     document,
     errors,
@@ -9,15 +9,15 @@ from mongoengine import (
 )
 
 # Import everything from each submodule so that it can be accessed via
-# mongoengine, e.g. instead of `from mongoengine.connection import connect`,
+# mongoengine, e.g. instead of `from autonomous.libraries.mongoengine.connection import connect`,
 # users can simply use `from mongoengine import connect`, or even
 # `from mongoengine import *` and then `connect('testdb')`.
-from mongoengine.connection import *  # noqa: F401
-from mongoengine.document import *  # noqa: F401
-from mongoengine.errors import *  # noqa: F401
-from mongoengine.fields import *  # noqa: F401
-from mongoengine.queryset import *  # noqa: F401
-from mongoengine.signals import *  # noqa: F401
+from autonomous.libraries.mongoengine.connection import *  # noqa: F401
+from autonomous.libraries.mongoengine.document import *  # noqa: F401
+from autonomous.libraries.mongoengine.errors import *  # noqa: F401
+from autonomous.libraries.mongoengine.fields import *  # noqa: F401
+from autonomous.libraries.mongoengine.queryset import *  # noqa: F401
+from autonomous.libraries.mongoengine.signals import *  # noqa: F401
 
 __all__ = (
     list(document.__all__)

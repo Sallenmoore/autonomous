@@ -2,8 +2,11 @@ import weakref
 
 from bson import DBRef
 
-from mongoengine.common import _import_class
-from mongoengine.errors import DoesNotExist, MultipleObjectsReturned
+from autonomous.libraries.mongoengine.common import _import_class
+from autonomous.libraries.mongoengine.errors import (
+    DoesNotExist,
+    MultipleObjectsReturned,
+)
 
 __all__ = (
     "BaseDict",

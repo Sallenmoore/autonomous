@@ -5,10 +5,10 @@ from contextlib import contextmanager
 from pymongo.read_concern import ReadConcern
 from pymongo.write_concern import WriteConcern
 
-from mongoengine.base.fields import _no_dereference_for_fields
-from mongoengine.common import _import_class
-from mongoengine.connection import DEFAULT_CONNECTION_NAME, get_db
-from mongoengine.pymongo_support import count_documents
+from autonomous.libraries.mongoengine.base.fields import _no_dereference_for_fields
+from autonomous.libraries.mongoengine.common import _import_class
+from autonomous.libraries.mongoengine.connection import DEFAULT_CONNECTION_NAME, get_db
+from autonomous.libraries.mongoengine.pymongo_support import count_documents
 
 __all__ = (
     "switch_db",

@@ -24,7 +24,7 @@ except ImportError:
 else:
     import dateutil.parser
 
-from mongoengine.base import (
+from autonomous.libraries.mongoengine.base import (
     BaseDocument,
     BaseField,
     ComplexBaseField,
@@ -33,18 +33,18 @@ from mongoengine.base import (
     ObjectIdField,
     get_document,
 )
-from mongoengine.base.utils import LazyRegexCompiler
-from mongoengine.common import _import_class
-from mongoengine.connection import DEFAULT_CONNECTION_NAME, get_db
-from mongoengine.document import Document, EmbeddedDocument
-from mongoengine.errors import (
+from autonomous.libraries.mongoengine.base.utils import LazyRegexCompiler
+from autonomous.libraries.mongoengine.common import _import_class
+from autonomous.libraries.mongoengine.connection import DEFAULT_CONNECTION_NAME, get_db
+from autonomous.libraries.mongoengine.document import Document, EmbeddedDocument
+from autonomous.libraries.mongoengine.errors import (
     DoesNotExist,
     InvalidQueryError,
     ValidationError,
 )
-from mongoengine.queryset import DO_NOTHING
-from mongoengine.queryset.base import BaseQuerySet
-from mongoengine.queryset.transform import STRING_OPERATORS
+from autonomous.libraries.mongoengine.queryset import DO_NOTHING
+from autonomous.libraries.mongoengine.queryset.base import BaseQuerySet
+from autonomous.libraries.mongoengine.queryset.transform import STRING_OPERATORS
 
 try:
     from PIL import Image, ImageOps
@@ -1303,7 +1303,7 @@ class CachedReferenceField(BaseField):
         super().__init__(**kwargs)
 
     def start_listener(self):
-        from mongoengine import signals
+        from autonomous.libraries.mongoengine import signals
 
         signals.post_save.connect(self.on_document_pre_save, sender=self.document_type)
 

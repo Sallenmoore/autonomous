@@ -33,6 +33,6 @@ class TestAuth:
         assert not user.is_authenticated
         res = user.save()
         user = User.authenticate(user_info)
-        assert res == user
+        assert res == user.pk
         assert user.pk == user2.pk
         assert user.is_authenticated

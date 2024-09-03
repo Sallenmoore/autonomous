@@ -2,10 +2,10 @@ import re
 
 import pymongo
 from bson.dbref import DBRef
+from autonomous.libraries.mongoengine import signals
 from pymongo.read_preferences import ReadPreference
 
-from mongoengine import signals
-from mongoengine.base import (
+from autonomous.libraries.mongoengine.base import (
     BaseDict,
     BaseDocument,
     BaseList,
@@ -14,20 +14,20 @@ from mongoengine.base import (
     TopLevelDocumentMetaclass,
     get_document,
 )
-from mongoengine.common import _import_class
-from mongoengine.connection import DEFAULT_CONNECTION_NAME, get_db
-from mongoengine.context_managers import (
+from autonomous.libraries.mongoengine.common import _import_class
+from autonomous.libraries.mongoengine.connection import DEFAULT_CONNECTION_NAME, get_db
+from autonomous.libraries.mongoengine.context_managers import (
     set_write_concern,
     switch_collection,
     switch_db,
 )
-from mongoengine.errors import (
+from autonomous.libraries.mongoengine.errors import (
     InvalidDocumentError,
     InvalidQueryError,
     SaveConditionError,
 )
-from mongoengine.pymongo_support import list_collection_names
-from mongoengine.queryset import (
+from autonomous.libraries.mongoengine.pymongo_support import list_collection_names
+from autonomous.libraries.mongoengine.queryset import (
     NotUniqueError,
     OperationError,
     QuerySet,

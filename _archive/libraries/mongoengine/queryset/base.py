@@ -12,30 +12,30 @@ from pymongo.collection import ReturnDocument
 from pymongo.common import validate_read_preference
 from pymongo.read_concern import ReadConcern
 
-from mongoengine import signals
-from mongoengine.base import get_document
-from mongoengine.common import _import_class
-from mongoengine.connection import get_db
-from mongoengine.context_managers import (
+from autonomous.libraries.mongoengine import signals
+from autonomous.libraries.mongoengine.base import get_document
+from autonomous.libraries.mongoengine.common import _import_class
+from autonomous.libraries.mongoengine.connection import get_db
+from autonomous.libraries.mongoengine.context_managers import (
     no_dereferencing_active_for_class,
     set_read_write_concern,
     set_write_concern,
     switch_db,
 )
-from mongoengine.errors import (
+from autonomous.libraries.mongoengine.errors import (
     BulkWriteError,
     InvalidQueryError,
     LookUpError,
     NotUniqueError,
     OperationError,
 )
-from mongoengine.pymongo_support import (
+from autonomous.libraries.mongoengine.pymongo_support import (
     LEGACY_JSON_OPTIONS,
     count_documents,
 )
-from mongoengine.queryset import transform
-from mongoengine.queryset.field_list import QueryFieldList
-from mongoengine.queryset.visitor import Q, QNode
+from autonomous.libraries.mongoengine.queryset import transform
+from autonomous.libraries.mongoengine.queryset.field_list import QueryFieldList
+from autonomous.libraries.mongoengine.queryset.visitor import Q, QNode
 
 __all__ = ("BaseQuerySet", "DO_NOTHING", "NULLIFY", "CASCADE", "DENY", "PULL")
 
@@ -1815,9 +1815,7 @@ class BaseQuerySet:
                     emit(null, 1);
                 }}
             }}
-        """.format(
-            field=field
-        )
+        """.format(field=field)
         reduce_func = """
             function(key, values) {
                 var total = 0;

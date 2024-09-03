@@ -4,9 +4,9 @@ import pymongo
 from bson import SON, ObjectId
 from bson.dbref import DBRef
 
-from mongoengine.base import UPDATE_OPERATORS
-from mongoengine.common import _import_class
-from mongoengine.errors import InvalidQueryError
+from autonomous.libraries.mongoengine.base import UPDATE_OPERATORS
+from autonomous.libraries.mongoengine.common import _import_class
+from autonomous.libraries.mongoengine.errors import InvalidQueryError
 
 __all__ = ("query", "update", "STRING_OPERATORS")
 

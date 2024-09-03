@@ -1,4 +1,4 @@
-from mongoengine.errors import NotRegistered
+from autonomous.libraries.mongoengine.errors import NotRegistered
 
 __all__ = ("UPDATE_OPERATORS", "get_document", "_document_registry")
 

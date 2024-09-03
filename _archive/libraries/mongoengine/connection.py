@@ -11,7 +11,8 @@ except ImportError:
     DriverInfo = None
 
 import mongoengine
-from mongoengine.pymongo_support import PYMONGO_VERSION
+
+from autonomous.libraries.mongoengine.pymongo_support import PYMONGO_VERSION
 
 __all__ = [
     "DEFAULT_CONNECTION_NAME",
@@ -264,8 +265,9 @@ def register_connection(
 
 def disconnect(alias=DEFAULT_CONNECTION_NAME):
     """Close the connection with a given alias."""
-    from mongoengine import Document
-    from mongoengine.base.common import _get_documents_by_db
+    from autonomous.libraries.mongoengine import Document
+
+    from autonomous.libraries.mongoengine.base.common import _get_documents_by_db
 
     connection = _connections.pop(alias, None)
     if connection:

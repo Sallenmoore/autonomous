@@ -37,7 +37,13 @@ class AbstractModel(AutoModel):
     auto = ReferenceAttr()
 
 
-class RealModel(AbstractModel):
+class AbstractModel2(AbstractModel):
+    meta = {"abstract": True}
+    # set model default attributes
+    date = DateTimeAttr()
+
+
+class RealModel(AbstractModel2):
     # set model default attributes
     name = StringAttr(default="")
     age = IntAttr()

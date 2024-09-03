@@ -12,6 +12,7 @@ Flask
 
 setuptools
 python-dotenv
+blinker
 
 ##### Storage #####
 

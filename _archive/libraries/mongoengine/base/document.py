@@ -5,26 +5,26 @@ from functools import partial
 
 import pymongo
 from bson import SON, DBRef, ObjectId, json_util
+from autonomous.libraries.mongoengine import signals
 
-from mongoengine import signals
-from mongoengine.base.common import get_document
-from mongoengine.base.datastructures import (
+from autonomous.libraries.mongoengine.base.common import get_document
+from autonomous.libraries.mongoengine.base.datastructures import (
     BaseDict,
     BaseList,
     EmbeddedDocumentList,
     LazyReference,
     StrictDict,
 )
-from mongoengine.base.fields import ComplexBaseField
-from mongoengine.common import _import_class
-from mongoengine.errors import (
+from autonomous.libraries.mongoengine.base.fields import ComplexBaseField
+from autonomous.libraries.mongoengine.common import _import_class
+from autonomous.libraries.mongoengine.errors import (
     FieldDoesNotExist,
     InvalidDocumentError,
     LookUpError,
     OperationError,
     ValidationError,
 )
-from mongoengine.pymongo_support import LEGACY_JSON_OPTIONS
+from autonomous.libraries.mongoengine.pymongo_support import LEGACY_JSON_OPTIONS
 
 __all__ = ("BaseDocument", "NON_FIELD_ERRORS")
 
@@ -85,7 +85,7 @@ class BaseDocument:
         __auto_convert = values.pop("__auto_convert", True)
 
         _created = values.pop("_created", True)
-
+        breakpoint()
         signals.pre_init.send(self.__class__, document=self, values=values)
 
         # Check if there are undefined fields supplied to the constructor,

@@ -1,8 +1,7 @@
-from autonomous import log
-from autonomous.libraries.mongoengine.base import (
+from mongoengine.base import (
     get_document,
 )
-from autonomous.libraries.mongoengine.fields import (
+from mongoengine.fields import (
     BooleanField,
     DateTimeField,
     DictField,
@@ -17,6 +16,8 @@ from autonomous.libraries.mongoengine.fields import (
     ListField,
     StringField,
 )
+
+from autonomous import log
 
 
 class StringAttr(StringField):
@@ -73,7 +74,8 @@ class ListAttr(ListField):
             try:
                 if isinstance(value, dict) and "_cls" in value:
                     doc_cls = get_document(value["_cls"])
-                    value = doc_cls._db.dereference(value["_ref"])
+                    db = doc_cls._get_collection().database
+                    value = db.dereference(value["_ref"])
                 if value:
                     safe_values.append(value)
             except DoesNotExist:
@@ -88,7 +90,8 @@ class DictAttr(DictField):
             try:
                 if isinstance(value, dict) and "_cls" in value:
                     doc_cls = get_document(value["_cls"])
-                    value = doc_cls._db.dereference(value["_ref"])
+                    db = doc_cls._get_collection().database
+                    value = db.dereference(value["_ref"])
                 if value:
                     safe_values[key] = value
             except DoesNotExist:

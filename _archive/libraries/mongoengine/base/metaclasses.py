@@ -1,15 +1,16 @@
 import itertools
+import sys
 import warnings
 
-from mongoengine.base.common import _document_registry
-from mongoengine.base.fields import (
+from autonomous.libraries.mongoengine.base.common import _document_registry
+from autonomous.libraries.mongoengine.base.fields import (
     BaseField,
     ComplexBaseField,
     ObjectIdField,
 )
-from mongoengine.common import _import_class
-from mongoengine.errors import InvalidDocumentError
-from mongoengine.queryset import (
+from autonomous.libraries.mongoengine.common import _import_class
+from autonomous.libraries.mongoengine.errors import InvalidDocumentError
+from autonomous.libraries.mongoengine.queryset import (
     DO_NOTHING,
     DoesNotExist,
     MultipleObjectsReturned,
@@ -19,12 +20,17 @@ from mongoengine.queryset import (
 __all__ = ("DocumentMetaclass", "TopLevelDocumentMetaclass")
 
 
+def print_with_line_no(msg):
+    print(sys._getframe().f_back.f_lineno, msg, sep=": ", end="\n\n")
+
+
 class DocumentMetaclass(type):
     """Metaclass for all documents."""
 
     # TODO lower complexity of this method
     def __new__(mcs, name, bases, attrs):
         flattened_bases = mcs._get_bases(bases)
+
         super_new = super().__new__
 
         # If a base class just call super
@@ -49,9 +55,9 @@ class DocumentMetaclass(type):
                 elif hasattr(base, "_meta"):
                     meta.merge(base._meta)
             attrs["_meta"] = meta
-            attrs["_meta"][
-                "abstract"
-            ] = False  # 789: EmbeddedDocument shouldn't inherit abstract
+            attrs["_meta"]["abstract"] = (
+                False  # 789: EmbeddedDocument shouldn't inherit abstract
+            )
 
         # If allow_inheritance is True, add a "_cls" string field to the attrs
         if attrs["_meta"].get("allow_inheritance"):
@@ -136,9 +142,9 @@ class DocumentMetaclass(type):
                         'To enable inheritance, use the "allow_inheritance" meta attribute.'
                         % base.__name__
                     )
-
         # Get superclasses from last base superclass
         document_bases = [b for b in flattened_bases if hasattr(b, "_class_name")]
+
         if document_bases:
             superclasses = document_bases[0]._superclasses
             superclasses += (document_bases[0]._class_name,)
