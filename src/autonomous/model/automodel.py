@@ -4,11 +4,11 @@ import urllib.parse
 from datetime import datetime
 
 from bson import ObjectId
-from mongoengine import Document, connect, signals
-from mongoengine.errors import ValidationError
-from mongoengine.fields import DateTimeField
 
 from autonomous import log
+from autonomous.db import Document, connect, signals
+from autonomous.db.errors import ValidationError
+from autonomous.db.fields import DateTimeField
 from autonomous.model.autoattr import DictAttr, ListAttr
 
 host = os.getenv("DB_HOST", "db")
