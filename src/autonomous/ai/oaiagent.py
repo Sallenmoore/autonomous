@@ -26,9 +26,6 @@ class OAIAgent(AutoModel):
             self.save()
         return self.client_model
 
-    def __init__(self, **kwargs):
-        self._client = OpenAI(api_key=os.environ.get("OPENAI_KEY"))
-
     def clear_files(self, file_id=None):
         return self.client.clear_files(file_id)
 
