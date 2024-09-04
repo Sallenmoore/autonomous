@@ -1,13 +1,3 @@
-import io
-import json
-import os
-import random
-import time
-from base64 import b64decode
-
-from openai import OpenAI
-from pydantic import model_validator
-
 from autonomous import log
 from autonomous.model.autoattr import ReferenceAttr
 from autonomous.model.automodel import AutoModel
