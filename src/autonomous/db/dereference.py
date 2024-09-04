@@ -1,5 +1,6 @@
 from bson import SON, DBRef
 
+from autonomous import log
 from autonomous.db.base import (
     BaseDict,
     BaseList,
@@ -12,6 +13,7 @@ from autonomous.db.connection import get_db
 from autonomous.db.document import Document, EmbeddedDocument
 from autonomous.db.fields import (
     DictField,
+    GenericReferenceField,
     ListField,
     MapField,
     ReferenceField,
@@ -50,8 +52,7 @@ class DeReference:
             doc_type = instance._fields.get(name)
             while hasattr(doc_type, "field"):
                 doc_type = doc_type.field
-
-            if isinstance(doc_type, ReferenceField):
+            if isinstance(doc_type, (ReferenceField)):
                 field = doc_type
                 doc_type = doc_type.document_type
                 is_list = not hasattr(items, "items")
@@ -97,7 +98,6 @@ class DeReference:
                         items = _get_items_from_list(items)
                     else:
                         items = _get_items_from_dict(items)
-
         self.reference_map = self._find_references(items)
         self.object_map = self._fetch_objects(doc_type=doc_type)
         return self._attach_objects(items, 0, instance, name)
@@ -165,11 +165,7 @@ class DeReference:
         """Fetch all references and convert to their document objects"""
         object_map = {}
         for collection, dbrefs in self.reference_map.items():
-            # we use getattr instead of hasattr because hasattr swallows any exception under python2
-            # so it could hide nasty things without raising exceptions (cfr bug #1688))
-            ref_document_cls_exists = getattr(collection, "objects", None) is not None
-
-            if ref_document_cls_exists:
+            if hasattr(collection, "objects"):
                 col_name = collection._get_collection_name()
                 refs = [
                     dbref for dbref in dbrefs if (col_name, dbref) not in object_map
@@ -184,8 +180,8 @@ class DeReference:
                 refs = [
                     dbref for dbref in dbrefs if (collection, dbref) not in object_map
                 ]
-
-                if doc_type:
+                # log(doc_type)
+                if isinstance(doc_type, Document):
                     references = doc_type._get_db()[collection].find(
                         {"_id": {"$in": refs}}
                     )

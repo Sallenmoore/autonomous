@@ -17,6 +17,8 @@ from bson.decimal128 import Decimal128, create_decimal128_context
 from bson.int64 import Int64
 from pymongo import ReturnDocument
 
+from autonomous import log
+
 try:
     import dateutil
 except ImportError:
@@ -931,6 +933,7 @@ class ListField(ComplexBaseField):
             and value
         ):
             instance._data[self.name] = [self.field.build_lazyref(x) for x in value]
+
         return super().__get__(instance, owner)
 
     def validate(self, value):
@@ -1488,6 +1491,7 @@ class GenericReferenceField(BaseField):
     @staticmethod
     def _lazy_load_ref(ref_cls, dbref):
         dereferenced_son = ref_cls._get_db().dereference(dbref)
+        log(dereferenced_son)
         if dereferenced_son is None:
             raise DoesNotExist(f"Trying to dereference unknown document {dbref}")
 
@@ -2448,6 +2452,7 @@ class LazyReferenceField(BaseField):
         return self.document_type_obj
 
     def build_lazyref(self, value):
+        log("build_lazyref", value)
         if isinstance(value, LazyReference):
             if value.passthrough != self.passthrough:
                 value = LazyReference(
@@ -2471,6 +2476,7 @@ class LazyReferenceField(BaseField):
 
     def __get__(self, instance, owner):
         """Descriptor to allow lazy dereferencing."""
+        log("__get__", instance, owner)
         if instance is None:
             # Document class being used rather than a document object
             return self
@@ -2478,7 +2484,7 @@ class LazyReferenceField(BaseField):
         value = self.build_lazyref(instance._data.get(self.name))
         if value:
             instance._data[self.name] = value
-
+        # log("get", instance, self.name, value)
         return super().__get__(instance, owner)
 
     def to_mongo(self, value):

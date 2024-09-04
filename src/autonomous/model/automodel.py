@@ -44,19 +44,6 @@ class AutoModel(Document):
     @classmethod
     def auto_post_init(cls, sender, document, **kwargs):
         document.last_updated = datetime.now()
-        doc_data = document.to_mongo()
-        log(doc_data)
-        for field_name, field in document._fields.items():
-            log(f"-- Field: {field_name} {field}, {field.__class__}")
-            if isinstance(field, (ListAttr, DictAttr)):
-                value = getattr(document, field_name)
-                log(value)
-                cleaned_values = []
-                for v in value:
-                    if isinstance(v, Document):
-                        cleaned_values.append(v)
-                log(cleaned_values)
-                setattr(document, field_name, cleaned_values)
 
     @classmethod
     def model_name(cls, qualified=False):

@@ -6,6 +6,7 @@ import weakref
 import pymongo
 from bson import SON, DBRef, ObjectId
 
+from autonomous import log
 from autonomous.db.base.common import UPDATE_OPERATORS
 from autonomous.db.base.datastructures import (
     BaseDict,
@@ -269,6 +270,7 @@ class BaseField:
             self._validate_choices(value)
 
         # check validation argument
+        log(f"Validating {self.name} with value {value}: {self.validation}")
         if self.validation is not None:
             if callable(self.validation):
                 try:
@@ -353,7 +355,6 @@ class ComplexBaseField(BaseField):
         EmbeddedDocumentListField = _import_class("EmbeddedDocumentListField")
 
         auto_dereference = instance._fields[self.name]._auto_dereference
-
         dereference = auto_dereference and (
             self.field is None
             or isinstance(self.field, (GenericReferenceField, ReferenceField))
@@ -366,12 +367,13 @@ class ComplexBaseField(BaseField):
             and not getattr(instance._data[self.name], "_dereferenced", False)
         ):
             ref_values = instance._data.get(self.name)
+            # log(f"Lazy loading refs for {self.name}: {ref_values}")
             instance._data[self.name] = self._lazy_load_refs(
                 ref_values=ref_values, instance=instance, name=self.name, max_depth=1
             )
+            # log(f"Lazy loading results: {instance._data[self.name]}")
             if hasattr(instance._data[self.name], "_dereferenced"):
                 instance._data[self.name]._dereferenced = True
-
         value = super().__get__(instance, owner)
 
         # Convert lists / values so we can watch for any changes on them

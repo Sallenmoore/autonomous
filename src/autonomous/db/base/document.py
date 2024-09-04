@@ -6,6 +6,7 @@ from functools import partial
 import pymongo
 from bson import SON, DBRef, ObjectId, json_util
 
+from autonomous import log
 from autonomous.db import signals
 from autonomous.db.base.common import get_document
 from autonomous.db.base.datastructures import (
@@ -420,6 +421,7 @@ class BaseDocument:
                     ):
                         field._validate(value, clean=clean)
                     else:
+                        log(f"Field: {field.name} - {field}, Value: {value}")
                         field._validate(value)
                 except ValidationError as error:
                     errors[field.name] = error.errors or error
