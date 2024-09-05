@@ -2,6 +2,7 @@ import weakref
 
 from bson import DBRef
 
+from autonomous import log
 from autonomous.db.common import _import_class
 from autonomous.db.errors import DoesNotExist, MultipleObjectsReturned
 
@@ -160,6 +161,7 @@ class BaseList(list):
         return self
 
     def __setitem__(self, key, value):
+        # log(key, value)
         changed_key = key
         if isinstance(key, slice):
             # In case of slice, we don't bother to identify the exact elements being updated

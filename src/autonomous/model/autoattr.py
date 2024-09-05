@@ -56,7 +56,7 @@ class ReferenceAttr(GenericLazyReferenceField):
         except DoesNotExist as e:
             log(f"ReferenceAttr Error: {e}")
             return None
-        return result.fetch() if result else None
+        return result.fetch() if result and result.pk else result
 
     # except DoesNotExist:
     # If the document doesn't exist, return None
@@ -74,33 +74,35 @@ class ListAttr(ListField):
         results = super().__get__(instance, owner) or []
         # log(self.name, self.field, owner, results)
         if isinstance(self.field, ReferenceAttr):
-            safe_results = []
-            for lazy_obj in results:
-                try:
-                    real_obj = lazy_obj.fetch()
-                    # log(f"Real Object: {real_obj}")
-                    if real_obj:
-                        safe_results.append(real_obj)
-                except DoesNotExist:
-                    log(f"Object Not Found: {lazy_obj}")
-            results = safe_results
+            for idx, lazy_obj in enumerate(results):
+                if lazy_obj:
+                    try:
+                        real_obj = lazy_obj.fetch()
+                        log(f"Real Object: {real_obj}")
+                        if real_obj:
+                            results[idx] = real_obj
+                    except DoesNotExist:
+                        log(f"Object Not Found: {lazy_obj}")
+                else:
+                    results[idx] = None
+        # log(results)
         return results
 
 
 class DictAttr(DictField):
     def __get__(self, instance, owner):
         # log(instance, owner)
-        results = super().__get__(instance, owner) or []
-        # log(self.name, self.field, owner, results)
-        safe_results = []
-        for lazy_obj in results.items():
+        results = super().__get__(instance, owner) or {}
+        log(self.name, self.field, owner, results)
+        for key, lazy_obj in results.items():
             try:
                 if hasattr(lazy_obj, "fetch"):
-                    real_obj = lazy_obj.fetch()
+                    lazy_obj = (
+                        lazy_obj.fetch() if lazy_obj and lazy_obj.pk else lazy_obj
+                    )
             except DoesNotExist:
                 log(f"Object Not Found: {lazy_obj}")
-            safe_results.append(real_obj)
-        results = safe_results
+            results[key] = lazy_obj
         return results
 
 

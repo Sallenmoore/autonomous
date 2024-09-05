@@ -136,6 +136,7 @@ class StringField(BaseField):
         return value
 
     def validate(self, value):
+        # log("Validating StringField", value)
         if not isinstance(value, str):
             self.error("StringField only accepts string values")
 
@@ -938,6 +939,7 @@ class ListField(ComplexBaseField):
 
     def validate(self, value):
         """Make sure that a list of valid fields is being used."""
+        # log(value)
         if not isinstance(value, (list, tuple, BaseQuerySet)):
             self.error("Only lists and tuples may be used in a list field")
 
@@ -1470,7 +1472,7 @@ class GenericReferenceField(BaseField):
                 if isinstance(choice, str):
                     self.choices.append(choice)
                 elif isinstance(choice, type) and issubclass(choice, Document):
-                    self.choices.append(choice._class_name)
+                    self.choices.append(choice.__name__)
                 else:
                     # XXX ValidationError raised outside of the "validate"
                     # method.
@@ -1480,18 +1482,26 @@ class GenericReferenceField(BaseField):
                     )
 
     def _validate_choices(self, value):
+        log(value, self.null)
+        if not value and self.null:
+            return
         if isinstance(value, dict):
             # If the field has not been dereferenced, it is still a dict
             # of class and DBRef
             value = value.get("_cls")
         elif isinstance(value, Document):
-            value = value._class_name
+            mro = [cls.__name__ for cls in value.__class__.mro()]
+            for choice in self.choices:
+                if choice in mro:
+                    value = choice
+                    break
+        log(value, self.choices)
         super()._validate_choices(value)
 
     @staticmethod
     def _lazy_load_ref(ref_cls, dbref):
         dereferenced_son = ref_cls._get_db().dereference(dbref)
-        log(dereferenced_son)
+        # log(dereferenced_son)
         if dereferenced_son is None:
             raise DoesNotExist(f"Trying to dereference unknown document {dbref}")
 
@@ -1511,6 +1521,8 @@ class GenericReferenceField(BaseField):
         return super().__get__(instance, owner)
 
     def validate(self, value):
+        if not value and self.null:
+            return
         if not isinstance(value, (Document, DBRef, dict, SON)):
             self.error("GenericReferences can only contain documents")
 
@@ -2452,7 +2464,7 @@ class LazyReferenceField(BaseField):
         return self.document_type_obj
 
     def build_lazyref(self, value):
-        log("build_lazyref", value)
+        # log("build_lazyref", value)
         if isinstance(value, LazyReference):
             if value.passthrough != self.passthrough:
                 value = LazyReference(
@@ -2476,7 +2488,7 @@ class LazyReferenceField(BaseField):
 
     def __get__(self, instance, owner):
         """Descriptor to allow lazy dereferencing."""
-        log("__get__", instance, owner)
+        # log("__get__", instance, owner)
         if instance is None:
             # Document class being used rather than a document object
             return self
@@ -2579,7 +2591,12 @@ class GenericLazyReferenceField(GenericReferenceField):
 
     def _validate_choices(self, value):
         if isinstance(value, LazyReference):
-            value = value.document_type._class_name
+            log(value, value.document_type)
+            mro = [cls.__name__ for cls in value.document_type.mro()]
+            for choice in self.choices:
+                if choice in mro:
+                    value = choice
+                    break
         super()._validate_choices(value)
 
     def build_lazyref(self, value):

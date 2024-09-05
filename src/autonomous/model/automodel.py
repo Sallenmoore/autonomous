@@ -81,8 +81,11 @@ class AutoModel(Document):
             pk = ObjectId(pk["$oid"])
         try:
             return cls.objects.get(id=pk)
-        except (cls.DoesNotExist, ValidationError):
-            log(f"Model {cls.__name__} with pk {pk} not found.")
+        except cls.DoesNotExist as e:
+            log(f"Model {cls.__name__} with pk {pk} not found : {e}")
+            return None
+        except ValidationError as e:
+            log(f"Model Validation failure {cls.__name__} [{pk}]: {e}")
             return None
         except Exception as e:
             log(f"Error getting model {cls.__name__} with pk {pk}: {e}", _print=True)
@@ -149,6 +152,13 @@ class AutoModel(Document):
         """
         return cls.objects(**kwargs).first()
 
+    @classmethod
+    def auto_pre_save(cls, sender, document, **kwargs):
+        """
+        Post-save hook for this model.
+        """
+        pass
+
     def save(self):
         """
         Save this model to the database.
@@ -161,6 +171,13 @@ class AutoModel(Document):
         self.pk = obj.pk
         return self.pk
 
+    @classmethod
+    def auto_post_save(cls, sender, document, **kwargs):
+        """
+        Post-save hook for this model.
+        """
+        pass
+
     def delete(self):
         """
         Delete this model from the database.
@@ -170,3 +187,5 @@ class AutoModel(Document):
 
 signals.pre_init.connect(AutoModel.auto_pre_init)
 signals.post_init.connect(AutoModel.auto_post_init)
+signals.post_init.connect(AutoModel.auto_pre_save)
+signals.post_init.connect(AutoModel.auto_post_save)

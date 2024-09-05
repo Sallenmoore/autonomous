@@ -4,6 +4,7 @@ import pymongo
 from bson.dbref import DBRef
 from pymongo.read_preferences import ReadPreference
 
+from autonomous import log
 from autonomous.db import signals
 from autonomous.db.base import (
     BaseDict,
@@ -415,7 +416,6 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
 
         if self._meta.get("abstract"):
             raise InvalidDocumentError("Cannot save an abstract document.")
-
         signals.pre_save.send(self.__class__, document=self, **signal_kwargs)
 
         if validate:

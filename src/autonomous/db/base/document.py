@@ -410,19 +410,19 @@ class BaseDocument:
             for name in self._fields_ordered
         ]
 
-        EmbeddedDocumentField = _import_class("EmbeddedDocumentField")
-        GenericEmbeddedDocumentField = _import_class("GenericEmbeddedDocumentField")
+        # EmbeddedDocumentField = _import_class("EmbeddedDocumentField")
+        # GenericEmbeddedDocumentField = _import_class("GenericEmbeddedDocumentField")
 
         for field, value in fields:
             if value is not None:
                 try:
-                    if isinstance(
-                        field, (EmbeddedDocumentField, GenericEmbeddedDocumentField)
-                    ):
-                        field._validate(value, clean=clean)
-                    else:
-                        log(f"Field: {field.name} - {field}, Value: {value}")
-                        field._validate(value)
+                    # if isinstance(
+                    #     field, (EmbeddedDocumentField, GenericEmbeddedDocumentField)
+                    # ):
+                    #     field._validate(value, clean=clean)
+                    # else:
+                    # log(f"Validating {field}:{field.name} with value {value}")
+                    field._validate(value)
                 except ValidationError as error:
                     errors[field.name] = error.errors or error
                 except (ValueError, AttributeError, AssertionError) as error:

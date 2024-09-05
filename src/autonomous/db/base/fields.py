@@ -11,7 +11,7 @@ from autonomous.db.base.common import UPDATE_OPERATORS
 from autonomous.db.base.datastructures import (
     BaseDict,
     BaseList,
-    EmbeddedDocumentList,
+    # EmbeddedDocumentList,
 )
 from autonomous.db.common import _import_class
 from autonomous.db.errors import DeprecatedError, ValidationError
@@ -58,7 +58,7 @@ class BaseField:
         primary_key=False,
         validation=None,
         choices=None,
-        null=False,
+        null=True,
         sparse=False,
         **kwargs,
     ):
@@ -254,6 +254,12 @@ class BaseField:
             # next(iter) is useful for sets
             choice_list = [k for k, _ in choice_list]
 
+        # log(
+        #     value,
+        #     type(value),
+        #     choice_list,
+        #     value in choice_list,
+        # )
         # Choices which are other types of Documents
         if isinstance(value, (Document, EmbeddedDocument)):
             if not any(isinstance(value, c) for c in choice_list):
@@ -270,7 +276,7 @@ class BaseField:
             self._validate_choices(value)
 
         # check validation argument
-        log(f"Validating {self.name} with value {value}: {self.validation}")
+        # log(f"Validating {self.name} with value {value}: {self.validation}")
         if self.validation is not None:
             if callable(self.validation):
                 try:
@@ -335,6 +341,7 @@ class ComplexBaseField(BaseField):
     def __set__(self, instance, value):
         # Some fields e.g EnumField are converted upon __set__
         # So it is fair to mimic the same behavior when using e.g ListField(EnumField)
+        # log(f"Setting  {self.name}[{instance}] with value {value}")
         EnumField = _import_class("EnumField")
         if self.field and isinstance(self.field, EnumField):
             if isinstance(value, (list, tuple)):
@@ -352,7 +359,7 @@ class ComplexBaseField(BaseField):
 
         ReferenceField = _import_class("ReferenceField")
         GenericReferenceField = _import_class("GenericReferenceField")
-        EmbeddedDocumentListField = _import_class("EmbeddedDocumentListField")
+        # EmbeddedDocumentListField = _import_class("EmbeddedDocumentListField")
 
         auto_dereference = instance._fields[self.name]._auto_dereference
         dereference = auto_dereference and (
@@ -378,11 +385,12 @@ class ComplexBaseField(BaseField):
 
         # Convert lists / values so we can watch for any changes on them
         if isinstance(value, (list, tuple)):
-            if issubclass(type(self), EmbeddedDocumentListField) and not isinstance(
-                value, EmbeddedDocumentList
-            ):
-                value = EmbeddedDocumentList(value, instance, self.name)
-            elif not isinstance(value, BaseList):
+            # if issubclass(type(self), EmbeddedDocumentListField) and not isinstance(
+            #     value, EmbeddedDocumentList
+            # ):
+            #     value = EmbeddedDocumentList(value, instance, self.name)
+            # el
+            if not isinstance(value, BaseList):
                 value = BaseList(value, instance, self.name)
             instance._data[self.name] = value
         elif isinstance(value, dict) and not isinstance(value, BaseDict):
@@ -400,7 +408,7 @@ class ComplexBaseField(BaseField):
             )
             value._dereferenced = True
             instance._data[self.name] = value
-
+        # log(f"Value: {value}")
         return value
 
     def to_python(self, value):

@@ -1,3 +1,5 @@
+import importlib
+
 _class_registry_cache = {}
 _field_list_cache = []
 
@@ -55,8 +57,21 @@ def _import_class(cls_name):
         from autonomous.db import dereference as module
 
         import_classes = deref_classes
+    elif cls_name == "AutoModel":
+        from autonomous.model import automodel as module
+
+        import_classes = [cls_name]
     else:
-        raise ValueError("No import set for: %s" % cls_name)
+        try:
+            module_name, model_name = (
+                cls_name.rsplit(".", 1)
+                if "." in cls_name
+                else (f"models.{cls_name.lower()}", cls_name)
+            )
+            module = importlib.import_module(module_name)
+            import_classes = [cls_name]
+        except Exception as e:
+            raise Exception(f"{e} \n No import set for: {cls_name}")
 
     for cls in import_classes:
         _class_registry_cache[cls] = getattr(module, cls)
