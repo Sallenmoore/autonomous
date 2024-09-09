@@ -919,7 +919,8 @@ class ListField(ComplexBaseField):
 
     def __init__(self, field=None, *, max_length=None, **kwargs):
         self.max_length = max_length
-        kwargs.setdefault("default", list)
+        if not kwargs.get("default"):
+            kwargs["default"] = list
         super().__init__(field=field, **kwargs)
 
     def __get__(self, instance, owner):
@@ -1482,20 +1483,46 @@ class GenericReferenceField(BaseField):
                     )
 
     def _validate_choices(self, value):
-        log(value, self.null)
+        # log(value, self.null)
         if not value and self.null:
             return
-        if isinstance(value, dict):
+        elif isinstance(value, dict):
             # If the field has not been dereferenced, it is still a dict
             # of class and DBRef
             value = value.get("_cls")
         elif isinstance(value, Document):
             mro = [cls.__name__ for cls in value.__class__.mro()]
+            # log(
+            #     value,
+            #     mro,
+            #     self.choices,
+            #     _print=True,
+            # )
+            base_value = None
             for choice in self.choices:
                 if choice in mro:
-                    value = choice
+                    base_value = choice
                     break
-        log(value, self.choices)
+            if base_value:
+                value = base_value
+            else:
+                raise ValidationError(
+                    f"Invalid Model Type. Must be or derive from on of: {self.choices}, not: {value} for attribute {self.name}"
+                )
+        else:
+            # log(
+            #     value,
+            #     type(value),
+            #     "!!!! Need to update to this !!!!",
+            #     _print=True,
+            # )
+            value = value.__class__.__name__
+        # log(
+        #     value,
+        #     self.choices,
+        #     type(value),
+        #     _print=True,
+        # )
         super()._validate_choices(value)
 
     @staticmethod
@@ -2590,8 +2617,11 @@ class GenericLazyReferenceField(GenericReferenceField):
         super().__init__(*args, **kwargs)
 
     def _validate_choices(self, value):
+        log(
+            value, value.document_type, "!!!! Need to CHange LazyReference to this !!!!"
+        )
         if isinstance(value, LazyReference):
-            log(value, value.document_type)
+            # log(value, value.document_type)
             mro = [cls.__name__ for cls in value.document_type.mro()]
             for choice in self.choices:
                 if choice in mro:

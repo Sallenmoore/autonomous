@@ -172,19 +172,27 @@ class BaseField:
             return self
 
         # Get value from document instance if available
-        return instance._data.get(self.name)
+        result = instance._data.get(self.name)
+        if not result:
+            if self.default is not None:
+                result = self.default
+                if callable(result):
+                    result = result()
+        return result
 
     def __set__(self, instance, value):
         """Descriptor for assigning a value to a field in a document."""
         # If setting to None and there is a default value provided for this
         # field, then set the value to the default value.
         if value is None:
-            if self.null:
-                value = None
-            elif self.default is not None:
+            if self.default is not None:
                 value = self.default
                 if callable(value):
                     value = value()
+            if not self.null:
+                raise ValueError(
+                    "Field value cannot be set to None for required fields."
+                )
 
         if instance._initialised:
             try:

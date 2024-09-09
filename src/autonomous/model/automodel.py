@@ -42,8 +42,16 @@ class AutoModel(Document):
                         values[k] = v
 
     @classmethod
+    def _auto_pre_init(cls, sender, document, **kwargs):
+        sender.auto_pre_init(sender, document, **kwargs)
+
+    @classmethod
     def auto_post_init(cls, sender, document, **kwargs):
         document.last_updated = datetime.now()
+
+    @classmethod
+    def _auto_post_init(cls, sender, document, **kwargs):
+        sender.auto_post_init(sender, document, **kwargs)
 
     @classmethod
     def model_name(cls, qualified=False):
@@ -159,6 +167,13 @@ class AutoModel(Document):
         """
         pass
 
+    @classmethod
+    def _auto_pre_save(cls, sender, document, **kwargs):
+        """
+        Post-save hook for this model.
+        """
+        sender.auto_pre_save(sender, document, **kwargs)
+
     def save(self):
         """
         Save this model to the database.
@@ -178,6 +193,13 @@ class AutoModel(Document):
         """
         pass
 
+    @classmethod
+    def _auto_post_save(cls, sender, document, **kwargs):
+        """
+        Post-save hook for this model.
+        """
+        sender.auto_post_save(sender, document, **kwargs)
+
     def delete(self):
         """
         Delete this model from the database.
@@ -185,7 +207,7 @@ class AutoModel(Document):
         return super().delete()
 
 
-signals.pre_init.connect(AutoModel.auto_pre_init)
-signals.post_init.connect(AutoModel.auto_post_init)
-signals.post_init.connect(AutoModel.auto_pre_save)
-signals.post_init.connect(AutoModel.auto_post_save)
+signals.pre_init.connect(AutoModel._auto_pre_init)
+signals.post_init.connect(AutoModel._auto_post_init)
+signals.pre_save.connect(AutoModel._auto_pre_save)
+signals.post_save.connect(AutoModel._auto_post_save)

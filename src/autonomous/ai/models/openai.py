@@ -14,9 +14,9 @@ from autonomous.model.automodel import AutoModel
 
 class OpenAIModel(AutoModel):
     _client = None
-    text_model = StringAttr(default="gpt-4o")
-    image_model = StringAttr(default="dall-e-3")
-    json_model = StringAttr(default="gpt-4o")
+    _text_model = "gpt-4o-mini"
+    _image_model = "dall-e-3"
+    _json_model = "gpt-4o"
     agent_id = StringAttr()
     messages = ListAttr(StringAttr(default=[]))
     tools = DictAttr()
@@ -59,7 +59,7 @@ class OpenAIModel(AutoModel):
                 instructions=self.instructions,
                 description=self.description,
                 name=self.name,
-                model=self.json_model,
+                model=self._json_model,
             )
             self.agent_id = agent.id
             log(f"==== Creating Agent with ID: {self.agent_id} ====")
@@ -114,17 +114,18 @@ class OpenAIModel(AutoModel):
 
     def _add_function(self, user_function):
         user_function["strict"] = True
-        user_function["parameters"]["required"] = list(
-            user_function["parameters"]["properties"].keys()
-        )
         user_function["parameters"]["additionalProperties"] = False
+        if not user_function["parameters"].get("required"):
+            user_function["parameters"]["required"] = list(
+                user_function["parameters"]["properties"].keys()
+            )
 
         self.tools["function"] = {"type": "function", "function": user_function}
         self.client.beta.assistants.update(
             self._get_agent_id(), tools=list(self.tools.values())
         )
         return """
-IMPORTANT: Always use the function 'response' tool to respond to the user with the only the requested JSON schema. DO NOT add any text to the response outside of the JSON schema.
+IMPORTANT: Always use the function 'response' tool to respond to the user with only the requested JSON schema. DO NOT add any text to the response outside of the JSON schema.
 
         """
 
@@ -143,17 +144,31 @@ IMPORTANT: Always use the function 'response' tool to respond to the user with t
         return message_list
 
     def generate_json(self, messages, function, additional_instructions=""):
-        _instructions_addition = self._add_function(function)
-        _instructions_addition += additional_instructions
+        # _instructions_addition = self._add_function(function)
+        function["strict"] = True
+        function["parameters"]["additionalProperties"] = False
+        function["parameters"]["required"] = list(
+            function["parameters"]["properties"].keys()
+        )
 
         formatted_messages = self._format_messages(messages)
         thread = self.client.beta.threads.create(messages=formatted_messages)
-
+        log(function, _print=True)
         run = self.client.beta.threads.runs.create(
             thread_id=thread.id,
             assistant_id=self._get_agent_id(),
-            additional_instructions=_instructions_addition,
+            additional_instructions=additional_instructions,
             parallel_tool_calls=False,
+            tools=[{"type": "file_search"}, {"type": "function", "function": function}],
+            # response_format={
+            #     "type": "json_schema",
+            #     "json_schema": {
+            #         "name": function["name"],
+            #         "schema": function,
+            #         "strict": True,
+            #     },
+            # },
+            tool_choice={"type": "function", "function": {"name": function["name"]}},
         )
 
         while run.status in ["queued", "in_progress"]:
@@ -242,7 +257,7 @@ IMPORTANT: Always use the function 'response' tool to respond to the user with t
         image = None
         try:
             response = self.client.images.generate(
-                model=self.image_model,
+                model=self._image_model,
                 prompt=prompt,
                 response_format="b64_json",
                 **kwargs,
@@ -263,7 +278,7 @@ IMPORTANT: Always use the function 'response' tool to respond to the user with t
             {"role": "user", "content": text},
         ]
         response = self.client.chat.completions.create(
-            model="gpt-4o-mini", messages=message
+            model=self._text_model, messages=message
         )
         try:
             result = response.choices[0].message.content

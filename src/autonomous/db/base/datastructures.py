@@ -20,6 +20,7 @@ def mark_as_changed_wrapper(parent_method):
 
     def wrapper(self, *args, **kwargs):
         # Can't use super() in the decorator.
+        # log(args, kwargs)
         result = parent_method(self, *args, **kwargs)
         self._mark_as_changed()
         return result
