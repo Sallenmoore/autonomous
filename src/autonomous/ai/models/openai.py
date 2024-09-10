@@ -4,6 +4,7 @@ import random
 import time
 from base64 import b64decode
 
+import openai
 from openai import NotFoundError as openai_NotFoundError
 from openai import OpenAI
 
@@ -153,34 +154,52 @@ IMPORTANT: Always use the function 'response' tool to respond to the user with o
 
         formatted_messages = self._format_messages(messages)
         thread = self.client.beta.threads.create(messages=formatted_messages)
-        log(function, _print=True)
-        run = self.client.beta.threads.runs.create(
-            thread_id=thread.id,
-            assistant_id=self._get_agent_id(),
-            additional_instructions=additional_instructions,
-            parallel_tool_calls=False,
-            tools=[{"type": "file_search"}, {"type": "function", "function": function}],
-            # response_format={
-            #     "type": "json_schema",
-            #     "json_schema": {
-            #         "name": function["name"],
-            #         "schema": function,
-            #         "strict": True,
-            #     },
-            # },
-            tool_choice={"type": "function", "function": {"name": function["name"]}},
-        )
+        # log(function, _print=True)
+        running_job = True
+        while running_job:
+            try:
+                run = self.client.beta.threads.runs.create_and_poll(
+                    thread_id=thread.id,
+                    assistant_id=self._get_agent_id(),
+                    additional_instructions=additional_instructions,
+                    parallel_tool_calls=False,
+                    tools=[
+                        {"type": "file_search"},
+                        {"type": "function", "function": function},
+                    ],
+                    tool_choice={
+                        "type": "function",
+                        "function": {"name": function["name"]},
+                    },
+                )
+                log(f"==== Job Status: {run.status} ====", _print=True)
+                if run.status in [
+                    "failed",
+                    "expired",
+                    "canceled",
+                    "completed",
+                    "incomplete",
+                    "requires_action",
+                ]:
+                    running_job = False
 
-        while run.status in ["queued", "in_progress"]:
-            run = self.client.beta.threads.runs.retrieve(
-                thread_id=thread.id,
-                run_id=run.id,
-            )
-            time.sleep(0.5)
-            log(f"==== Job Status: {run.status} ====", _print=True)
+            except openai.error.BadRequestError as e:
+                # Handle specific bad request errors
+                error_message = e.json_body.get("error", {}).get("message", "")
+                if "already has an active run" in error_message:
+                    log("Previous run is still active. Waiting...", _print=True)
+                    time.sleep(2)  # wait before retrying or checking run status
+                else:
+                    raise e
 
+        # while run.status in ["queued", "in_progress"]:
+        #     run = self.client.beta.threads.runs.retrieve(
+        #         thread_id=thread.id,
+        #         run_id=run.id,
+        #     )
+        #     time.sleep(0.5)
         if run.status in ["failed", "expired", "canceled"]:
-            log(f"==== Error: {run.last_error} ====", _print=True)
+            log(f"==== !!! ERROR !!!: {run.last_error} ====", _print=True)
             return None
         log("=================== RUN COMPLETED ===================", _print=True)
         log(run.status, _print=True)
