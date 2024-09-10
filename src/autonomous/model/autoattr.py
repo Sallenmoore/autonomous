@@ -103,7 +103,7 @@ class DictAttr(DictField):
     def __get__(self, instance, owner):
         # log(instance, owner)
         results = super().__get__(instance, owner) or {}
-        log(self.name, self.field, owner, results)
+        # log(self.name, self.field, owner, results)
         for key, lazy_obj in results.items():
             try:
                 if hasattr(lazy_obj, "fetch"):
