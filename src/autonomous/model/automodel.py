@@ -137,7 +137,14 @@ class AutoModel(Document):
         Returns:
             list: A list of AutoModel instances that match the search criteria.
         """
-        results = cls.objects(**kwargs)
+        new_kwargs = {}
+        for k, v in kwargs.items():
+            if isinstance(v, str):
+                new_k = f"{k}__icontains"
+                new_kwargs[new_k] = v
+            else:
+                new_kwargs[k] = v
+        results = cls.objects(**new_kwargs)
         if _order_by:
             results = results.order_by(*_order_by)
         if _limit:
