@@ -1,4 +1,7 @@
-__version__ = "0.2.25"
+__version__ = "0.3.1"
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from .logger import log
-from .model.automodel import AutoModel

@@ -1,17 +1,18 @@
+import json
 import uuid
 from datetime import datetime
 from functools import wraps
 
 import requests
 from authlib.integrations.requests_client import OAuth2Auth, OAuth2Session
-from flask import current_app, redirect, request, session, url_for
+from flask import redirect, session, url_for
 
 from autonomous import log
-from autonomous.auth.user import AutoUser
+from autonomous.auth.user import User
 
 
 class AutoAuth:
-    user_class = AutoUser
+    user_class: type[User] = User
 
     def __init__(
         self,
@@ -46,13 +47,12 @@ class AutoAuth:
         """
         Returns the current user.
         """
-        user = cls.user_class.get_guest()
-        if session.get("user") and session["user"]["state"] == "authenticated":
-            try:
-                user = cls.user_class.get(session["user"].get("pk"))
-                user.pk
-            except Exception as e:
-                log(e, session["user"])
+
+        user = (
+            cls.user_class.from_json(session["user"]) if session.get("user") else None
+        )
+        if not user or user.state != "authenticated":
+            user = cls.user_class.get_guest()
         return user
 
     def authenticate(self):
@@ -106,7 +106,7 @@ class AutoAuth:
                     user.last_login = datetime.now()
                     # log(user)
                     user.save()
-                session["user"] = user.serialize()
+                session["user"] = user.to_json()
                 # log(guest, user.is_guest)
                 if not guest and user.is_guest:
                     return redirect(url_for("auth.login"))

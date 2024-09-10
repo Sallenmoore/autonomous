@@ -1,1 +1,3 @@
-Why do programmers always mix up Halloween and Christmas? Because Oct 31 equals Dec 25.
+Why do Python programmers prefer the dark mode?
+
+Because light attracts bugs!

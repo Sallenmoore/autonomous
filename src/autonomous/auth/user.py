@@ -5,7 +5,7 @@ This module provides a User class that uses the OpenIDAuth class for authenticat
 from datetime import datetime
 
 from autonomous import log
-from autonomous.model.autoattribute import AutoAttribute
+from autonomous.model.autoattr import DateTimeAttr, StringAttr
 from autonomous.model.automodel import AutoModel
 
 
@@ -14,15 +14,18 @@ class AutoUser(AutoModel):
     This class represents a user who can authenticate using OpenID.
     """
 
-    attributes = {
-        "name": AutoAttribute("TEXT"),
-        "email": AutoAttribute("TEXT", required=True),
-        "last_login": datetime.now(),
-        "state": "unauthenticated",
-        "provider": None,
-        "role": "user",
-        "token": None,
+    meta = {
+        "abstract": True,
+        "allow_inheritance": True,
+        "strict": False,
     }
+    name = StringAttr(default="Anonymous")
+    email = StringAttr(required=True)
+    last_login = DateTimeAttr(default=datetime.now)
+    state = StringAttr(default="unauthenticated")
+    provider = StringAttr()
+    role = StringAttr(default="guest")
+    token = StringAttr()
 
     def __eq__(self, other):
         return self.pk == other.pk
@@ -36,9 +39,10 @@ class AutoUser(AutoModel):
         email = user_info["email"].strip()
         name = user_info["name"].strip()
         user = cls.find(email=email)
+        log(email, user)
         if not user:
             log(f"Creating new user for {email}")
-            user = cls(name=name, email=email)
+            # user = cls(name=name, email=email)
 
         # parse user_info into a user object
         user.name = name
@@ -53,7 +57,7 @@ class AutoUser(AutoModel):
         """
         Returns a guest user.
         """
-        guest = cls.find(name="_GuestOfAutonomous_", state="guest")
+        guest = cls.find(name="_GuestOfAutonomous_")
         if not guest:
             guest = cls(
                 name="_GuestOfAutonomous_",
@@ -84,3 +88,12 @@ class AutoUser(AutoModel):
         Returns True if the user is a guest, False otherwise.
         """
         return self.is_authenticated and self.role == "admin"
+
+
+class User(AutoUser):
+    """
+    This class represents a user who can authenticate using OpenID.
+    """
+
+    def __repr__(self):
+        return f"<User {self.pk} {self.email}>"

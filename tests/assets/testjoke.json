@@ -1,6 +1,1 @@
-{
-  "humor_num": 78,
-  "text": "Why do programmers prefer dark mode? Because light attracts bugs!",
-  "influences": ["Mitch Hedberg", "Jerry Seinfeld"],
-  "word_count_by_sentence": [8]
-}
+{'humor_num': 85, 'text': "Why do programmers prefer iOS development? Because when they encounter a bug, they can just tell it to 'Swift' away!", 'influences': ['John Mulaney', 'Bill Burr'], 'word_count_by_sentence': [6, 21]}

@@ -88,11 +88,7 @@ class ImageStorage:
         #     os.path.exists(original_path),
         #     os.path.exists(file_path),
         # )
-        if (
-            size != "orig"
-            and os.path.exists(original_path)
-            and not os.path.exists(file_path)
-        ):
+        if size != "orig" and not os.path.exists(file_path):
             # If the file doesn't exist, create it
             if result := self._resize_image(asset_id, size):
                 with open(file_path, "wb") as asset:

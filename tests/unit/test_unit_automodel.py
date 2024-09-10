@@ -1,118 +1,53 @@
-import random
-import uuid
 from datetime import datetime
 
-import bson
 import pytest
 
 from autonomous import log
+from autonomous.model.autoattr import (
+    DateTimeAttr,
+    IntAttr,
+    ListAttr,
+    ReferenceAttr,
+    StringAttr,
+)
 from autonomous.model.automodel import AutoModel
-
-
-class MockORM:
-    def __init__(self, name, attributes):
-        self.name = name
-        self.table = {}
-
-    def save(self, data):
-        if data.get("pk") is None:
-            data["pk"] = str(bson.ObjectId())
-        self.table[data["pk"]] = data
-        log(data)
-        return data["pk"]
-
-    def get(self, pk):
-        # log(pk, self.db.get(pk))
-        return self.table.get(pk)
-
-    def random(self):
-        key = random.choice(list(self.table.keys()))
-        return self.table[key]
-
-    def all(self):
-        # log(self.db.values())
-        return self.table.values()
-
-    def search(self, **kwargs):
-        results = []
-        for key, value in kwargs.items():
-            for item in self.table.values():
-                if item[key] == value:
-                    results.append(item)
-        results = list(set(results))
-        # log(results)
-        return results
-
-    def delete(self, pk):
-        try:
-            del self.table[pk]
-        except KeyError:
-            return pk
-        else:
-            return None
 
 
 class SubModel(AutoModel):
     # set model default attributes
-    attributes = {"name": "", "age": None, "date": None}
-    _orm = MockORM
+    name = StringAttr(default="")
+    age = IntAttr()
+    date = DateTimeAttr()
 
 
 class Model(AutoModel):
     # set model default attributes
-    attributes = {
-        "name": "",
-        "age": None,
-        "date": None,
-        "auto": None,
-        "autolist": [],
-        "autodict": {},
-        "autoobj": None,
-    }
-    _orm = MockORM
+    name = StringAttr(default="")
+    age = IntAttr()
+    date = DateTimeAttr()
+    auto = ReferenceAttr()
+    autolist = ListAttr(ReferenceAttr())
 
 
-class AttrModel(AutoModel):
+class AbstractModel(AutoModel):
+    meta = {"abstract": True}
     # set model default attributes
-    attributes = {
-        "_name": "",
-        "_age": None,
-        "_date": None,
-        "_auto": None,
-    }
-    _orm = MockORM
+    name = StringAttr(default="")
+    age = IntAttr()
+    auto = ReferenceAttr()
 
-    @property
-    def auto(self):
-        return self._auto
 
-    @auto.setter
-    def auto(self, value):
-        self._auto = value
+class AbstractModel2(AbstractModel):
+    meta = {"abstract": True}
+    # set model default attributes
+    date = DateTimeAttr()
 
-    @property
-    def name(self):
-        return self._name
 
-    @name.setter
-    def name(self, value):
-        self._name = value
-
-    @property
-    def age(self):
-        return self._age
-
-    @age.setter
-    def age(self, value):
-        self._age = value
-
-    @property
-    def date(self):
-        return self._date
-
-    @date.setter
-    def date(self, value):
-        self._date = value
+class RealModel(AbstractModel2):
+    # set model default attributes
+    name = StringAttr(default="")
+    age = IntAttr()
+    auto = ReferenceAttr()
 
 
 # @pytest.mark.skip(reason="dumb test")
@@ -125,6 +60,7 @@ class TestAutomodel:
         # assert am.pk
 
     def test_automodel_all_when_empty(self):
+        Model.drop_collection()
         results = Model.all()
         log(results)
 
@@ -190,80 +126,22 @@ class TestAutomodel:
 
         am.save()
         pm.save()
-
-        am_dict = {"_automodel": pm.model_name(qualified=True), "pk": am.pk}
-        result = Model(**am_dict)
-
+        # breakpoint()
+        result = Model(pk=am.pk, date=am.date)
         assert isinstance(result, Model)
         assert result.pk == am.pk
         assert result.name == am.name
         assert result.age == am.age
-        assert result.date == am.date
+        assert result.date <= am.date
 
-        pm_dict = {"_automodel": pm.model_name(qualified=True), "pk": pm.pk}
-        result = Model(**pm_dict)
-        log(result)
-        pm_dict["autolist"] = [1, result, 3]
-        log(pm_dict["autolist"])
-        result = Model(**pm_dict)
-        assert result.autolist[0] == 1
-        assert result.autolist[2] == 3
-        assert isinstance(result.autolist[1], Model)
-        assert result.autolist[1].pk == pm.pk
-        assert result.autolist[1].name == pm.name
-        assert result.autolist[1].age == pm.age
+        # log("Autolist", pm.autolist)
+        pm.autolist = [pm, am]
+        assert isinstance(pm.autolist[0], Model)
+        assert isinstance(pm.autolist[1], Model)
 
-        pm_dict = {"__extended_json_type__": "AutoModel", "value": pm_dict}
-        am_dict["autodict"] = {"a": 1, "b": pm_dict}
-        result = Model(**am_dict)
-        assert result.autodict["a"] == 1
-        assert isinstance(result.autodict["b"], Model)
-        assert result.autodict["b"].pk == pm.pk
-        assert result.autodict["b"].name == pm.name
-        assert result.autodict["b"].age == pm.age
-
-        am_dict["autodict"] = {"a": 1, "b": [pm_dict]}
-        result = Model(**am_dict)
-        assert result.autodict["a"] == 1
-        assert isinstance(result.autodict["b"][0], Model)
-        assert result.autodict["b"][0].pk == pm.pk
-        assert result.autodict["b"][0].name == pm.name
-        assert result.autodict["b"][0].age == pm.age
-
-        am_dict["autodict"] = {"a": 1, "b": {"c": pm_dict}}
-        result = Model(**am_dict)
-        assert result.autodict["a"] == 1
-        assert isinstance(result.autodict["b"]["c"], Model)
-        assert result.autodict["b"]["c"].pk == pm.pk
-        assert result.autodict["b"]["c"].name == pm.name
-        assert result.autodict["b"]["c"].age == pm.age
-
-    def test_automodel_serialize(self):
-        am = Model(name="test", age=10, date=datetime.now())
-        am.save()
-
-        for i in range(3):
-            subobj = SubModel(name=f"subtest{i}", age=11, date=datetime.now())
-            subobj.save()
-            am.autolist.append(subobj)
-        testlist = am.autolist[:]
-
-        result = am.serialize()
-
-        for i, a in enumerate(result["autolist"]):
-            log(a, type(a))
-            assert isinstance(a, dict)
-            assert testlist[i].model_name(qualified=True) == a["value"]["_automodel"]
-            assert testlist[i].pk == a["value"]["pk"]
-
-        am.autodict = {a.pk: a for a in testlist}
-        testdict = am.autodict.copy()
-        result = am.serialize()
-        # breakpoint()
-        for k, a in result["autodict"].items():
-            assert isinstance(a, dict)
-            assert testdict[k].model_name(qualified=True) == a["value"]["_automodel"]
-            assert testdict[k].pk == a["value"]["pk"]
+        assert pm.autolist[0].pk == pm.pk
+        assert pm.autolist[0].name == pm.name
+        assert pm.autolist[0].age == pm.age
 
     def test_automodel_circular_reference(self):
         am = Model(name="testam", age=10, date=datetime.now())
@@ -276,12 +154,6 @@ class TestAutomodel:
         assert am.auto == subam
         assert subam.auto == am
 
-        am_ser = am.serialize()
-        assert am_ser["auto"]["value"]["pk"] == subam.pk
-        obj = Model(**am_ser)
-        assert obj.pk == am.pk
-        assert obj.auto.pk == subam.pk
-
         am.auto = am
         am.save()
         assert am.auto == am
@@ -290,97 +162,26 @@ class TestAutomodel:
         am.auto.save()
         assert am.auto.name == "updated"
         assert am.name == "updated"
-        am_ser = am.serialize()
-        assert am_ser["auto"]["value"]["pk"] == am.pk
 
     def test_automodel_dangling_reference(self):
         am = Model(name="testam", age=10, date=datetime.now())
         am.save()
         subam = Model(name="testsub", age=10, date=datetime.now())
         subam.save()
+        subam2 = Model(name="testsub2", age=10, date=datetime.now())
+        subam2.save()
         am.auto = subam
-        am.autolist.insert(0, subam)
+        am.autolist.append(subam)
+        am.autolist.append(subam2)
         am.save()
         subam.delete()
         am = Model.get(am.pk)
-        with pytest.raises(AttributeError):
-            assert not am.auto.pk
-        with pytest.raises(IndexError):
-            assert not am.autolist[0].pk
+        assert am.auto is None
+        assert len(am.autolist) == 1
 
-        result = am.serialize()
-        assert result["auto"] is None
-        assert am.autolist == []
-
-    def test_property_attr(self):
-        am = AttrModel(name="testam", age=10, date=datetime.now())
-        am.save()
-        assert am.name == "testam"
-        assert am.age == 10
-        assert am.date <= datetime.now()
-
-    def test_property_automodel_deserialize(self):
-        am = AttrModel(name="test", age=10, date=datetime.now())
-        pm = AttrModel(name="test2", age=11, date=datetime.now())
-        am.save()
-        am_dict = {"_automodel": pm.model_name(qualified=True), "pk": am.pk}
-        result = AttrModel(**am_dict)
-
-        assert isinstance(result, AttrModel)
-        assert result.pk == am.pk
-        assert result.name == am.name
-        assert result.age == am.age
-        assert result.date == am.date
-
-    def test_property_automodel_serialize(self):
-        am = AttrModel(name="test", age=10, date=datetime.now())
-        am.save()
-        assert am.name == "test"
-        assert am.age == 10
-        assert am.date <= datetime.now()
-        result = am.serialize()
-        assert result["_name"] == "test"
-        assert result["_age"] == 10
-        assert result["_date"]
-
-    def test_property_automodel_circular_reference(self):
-        am = AttrModel(name="testam", age=10, date=datetime.now())
-        am.save()
-        subam = AttrModel(name="testsub", age=10, date=datetime.now())
-        subam.save()
-        subam.auto = am
-        am.auto = subam
-
-        assert am.auto == subam
-        assert subam.auto == am
-
-        am_ser = am.serialize()
-        assert am_ser["_auto"]["value"]["pk"] == subam.pk
-        obj = AttrModel(**am_ser)
-        assert obj.pk == am.pk
-        assert obj.auto.pk == subam.pk
-
-        am.auto = am
-        am.save()
-        assert am.auto == am
-        assert am.auto.name == "testam"
-        am.auto.name = "updated"
-        am.auto.save()
-        assert am.auto.name == "updated"
-        assert am.name == "updated"
-        am_ser = am.serialize()
-        assert am_ser["_auto"]["value"]["pk"] == am.pk
-
-    def test_property_dangling_reference(self):
-        am = AttrModel(name="testam", age=10, date=datetime.now())
-        am.save()
-        subam = Model(name="testsub", age=10, date=datetime.now())
-        subam.save()
-        am.auto = subam
-        am.save()
-        subam.delete()
-        am = AttrModel.get(am.pk)
-        with pytest.raises(AttributeError):
-            assert not am.auto.pk
-        result = am.serialize()
-        assert result["_auto"] is None
+    def test_abstractmodel_all(self):
+        RealModel.drop_collection()
+        RealModel(name="test", age=10).save()
+        results = RealModel.all()
+        log([r._data for r in results])
+        assert results

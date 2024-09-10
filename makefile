@@ -19,17 +19,20 @@ clean:
 
 ###### TESTING #######
 
-inittests: clean
+inittests: cleantests
 	pip install --no-cache-dir --upgrade pip wheel
 	pip install --upgrade -r ./requirements.txt
 	pip install --upgrade -r ./requirements_dev.txt
 	pip install -e .
-	cd /root/dev/testdb && docker compose up -d --build
+	cd tests && sudo docker compose up -d && docker compose logs -f
 
-TESTING=TestAutomodel
+cleantests: clean
+	cd tests && sudo docker compose down --remove-orphans
 
-test: inittests
-	python -m pytest -k "$(TESTING)"
+TESTING=test_unit_automodel
 
-tests: inittests
+test:
+	python -m pytest -k $(TESTING)
+
+tests:
 	python -m pytest

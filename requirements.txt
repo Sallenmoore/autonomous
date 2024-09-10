@@ -8,21 +8,18 @@ Flask
 
 ##### Debugging, Logging, and Documentation #####
 
-icecream
-
 ##### System #####
 
 setuptools
 python-dotenv
+blinker
 
 ##### Storage #####
 
 PyGithub
 pygit2
-
-cloudinary
 pillow
-pymongo
+redis
 
 ##### Frontend #####
 
@@ -38,14 +35,12 @@ gunicorn
 Authlib
 
 ##### Async #####
-
+rq
 
 ##### AI #####
 
-openai >= 1.21.1
+openai >= 1.42
 
 ##### Parsing #####
-
-validators
 dateparser
 python-slugify
