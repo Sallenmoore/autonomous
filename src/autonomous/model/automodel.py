@@ -3,13 +3,12 @@ import os
 import urllib.parse
 from datetime import datetime
 
-from bson import ObjectId
+import bson
 
 from autonomous import log
 from autonomous.db import Document, connect, signals
 from autonomous.db.errors import ValidationError
 from autonomous.db.fields import DateTimeField
-from autonomous.model.autoattr import DictAttr, ListAttr
 
 host = os.getenv("DB_HOST", "db")
 port = os.getenv("DB_PORT", 27017)
@@ -33,7 +32,9 @@ class AutoModel(Document):
         values = kwargs.pop("values", None)
         if pk := values.get("pk") or values.get("id"):
             # Try to load the existing document from the database
-            if existing_doc := sender._get_collection().find_one({"_id": ObjectId(pk)}):
+            if existing_doc := sender._get_collection().find_one(
+                {"_id": bson.ObjectId(pk)}
+            ):
                 # Update the current instance with the existing data
                 existing_doc.pop("_id", None)
                 existing_doc.pop("_cls", None)
@@ -84,9 +85,12 @@ class AutoModel(Document):
         """
 
         if isinstance(pk, str):
-            pk = ObjectId(pk)
+            try:
+                pk = bson.ObjectId(pk)
+            except bson.errors.InvalidId:
+                return None
         elif isinstance(pk, dict) and "$oid" in pk:
-            pk = ObjectId(pk["$oid"])
+            pk = bson.ObjectId(pk["$oid"])
         try:
             return cls.objects.get(id=pk)
         except cls.DoesNotExist as e:

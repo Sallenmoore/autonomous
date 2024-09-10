@@ -1541,7 +1541,7 @@ class GenericReferenceField(BaseField):
         value = instance._data.get(self.name)
 
         auto_dereference = instance._fields[self.name]._auto_dereference
-        if auto_dereference and isinstance(value, dict):
+        if auto_dereference and isinstance(value, dict) and "_cls" in value:
             doc_cls = get_document(value["_cls"])
             instance._data[self.name] = self._lazy_load_ref(doc_cls, value["_ref"])
 
