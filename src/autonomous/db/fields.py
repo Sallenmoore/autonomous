@@ -36,7 +36,8 @@ from autonomous.db.base import (
     get_document,
 )
 from autonomous.db.base.utils import LazyRegexCompiler
-from autonomous.db.common import _import_class
+
+# from autonomous.db.common import _import_class
 from autonomous.db.connection import DEFAULT_CONNECTION_NAME, get_db
 from autonomous.db.document import Document, EmbeddedDocument
 from autonomous.db.errors import (
@@ -927,15 +928,14 @@ class ListField(ComplexBaseField):
         if instance is None:
             # Document class being used rather than a document object
             return self
-        value = instance._data.get(self.name)
-        LazyReferenceField = _import_class("LazyReferenceField")
-        GenericLazyReferenceField = _import_class("GenericLazyReferenceField")
-        if (
-            isinstance(self.field, (LazyReferenceField, GenericLazyReferenceField))
-            and value
-        ):
-            instance._data[self.name] = [self.field.build_lazyref(x) for x in value]
-
+        # value = instance._data.get(self.name)
+        # LazyReferenceField = _import_class("LazyReferenceField")
+        # GenericLazyReferenceField = _import_class("GenericLazyReferenceField")
+        # if (
+        #     isinstance(self.field, (LazyReferenceField, GenericLazyReferenceField))
+        #     and value
+        # ):
+        #     instance._data[self.name] = [self.field.build_lazyref(x) for x in value]
         return super().__get__(instance, owner)
 
     def validate(self, value):

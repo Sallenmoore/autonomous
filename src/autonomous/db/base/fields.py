@@ -338,12 +338,15 @@ class ComplexBaseField(BaseField):
     @staticmethod
     def _lazy_load_refs(instance, name, ref_values, *, max_depth):
         _dereference = _import_class("DeReference")()
+        # log("_lazy_load_refs", _dereference)
+        # MARK: PROBLEM
         documents = _dereference(
             ref_values,
             max_depth=max_depth,
             instance=instance,
             name=name,
         )
+
         return documents
 
     def __set__(self, instance, value):
@@ -365,14 +368,14 @@ class ComplexBaseField(BaseField):
             # Document class being used rather than a document object
             return self
 
-        ReferenceField = _import_class("ReferenceField")
+        # ReferenceField = _import_class("ReferenceField")
         GenericReferenceField = _import_class("GenericReferenceField")
         # EmbeddedDocumentListField = _import_class("EmbeddedDocumentListField")
 
         auto_dereference = instance._fields[self.name]._auto_dereference
         dereference = auto_dereference and (
-            self.field is None
-            or isinstance(self.field, (GenericReferenceField, ReferenceField))
+            self.field is None or isinstance(self.field, GenericReferenceField)
+            # or isinstance(self.field, (GenericReferenceField, ReferenceField))
         )
 
         if (
@@ -382,11 +385,9 @@ class ComplexBaseField(BaseField):
             and not getattr(instance._data[self.name], "_dereferenced", False)
         ):
             ref_values = instance._data.get(self.name)
-            # log(f"Lazy loading refs for {self.name}: {ref_values}")
             instance._data[self.name] = self._lazy_load_refs(
                 ref_values=ref_values, instance=instance, name=self.name, max_depth=1
             )
-            # log(f"Lazy loading results: {instance._data[self.name]}")
             if hasattr(instance._data[self.name], "_dereferenced"):
                 instance._data[self.name]._dereferenced = True
         value = super().__get__(instance, owner)
@@ -416,7 +417,6 @@ class ComplexBaseField(BaseField):
             )
             value._dereferenced = True
             instance._data[self.name] = value
-        # log(f"Value: {value}")
         return value
 
     def to_python(self, value):

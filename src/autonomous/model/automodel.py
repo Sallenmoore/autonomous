@@ -54,15 +54,16 @@ class AutoModel(Document):
     def _auto_post_init(cls, sender, document, **kwargs):
         sender.auto_post_init(sender, document, **kwargs)
 
-    @classmethod
-    def model_name(cls, qualified=False):
+    def model_name(self, qualified=False):
         """
         Get the fully qualified name of this model.
 
         Returns:
             str: The fully qualified name of this model.
         """
-        return f"{cls.__module__}.{cls.__name__}" if qualified else cls.__name__
+        return (
+            f"{self.__module__}.{self._class_name}" if qualified else self._class_name
+        )
 
     @classmethod
     def load_model(cls, model):

@@ -12,6 +12,7 @@ from pymongo.collection import ReturnDocument
 from pymongo.common import validate_read_preference
 from pymongo.read_concern import ReadConcern
 
+from autonomous import log
 from autonomous.db import signals
 from autonomous.db.base import get_document
 from autonomous.db.common import _import_class
@@ -785,7 +786,6 @@ class BaseQuerySet:
                     doc,
                     _auto_dereference=self._auto_dereference,
                 )
-
         return doc_map
 
     def none(self):

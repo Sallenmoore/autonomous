@@ -13,7 +13,7 @@ from autonomous.db.connection import get_db
 from autonomous.db.document import Document, EmbeddedDocument
 from autonomous.db.fields import (
     DictField,
-    GenericReferenceField,
+    # GenericReferenceField,
     ListField,
     MapField,
     ReferenceField,
@@ -180,7 +180,6 @@ class DeReference:
                 refs = [
                     dbref for dbref in dbrefs if (collection, dbref) not in object_map
                 ]
-                # log(doc_type)
                 if isinstance(doc_type, Document):
                     references = doc_type._get_db()[collection].find(
                         {"_id": {"$in": refs}}
@@ -225,9 +224,14 @@ class DeReference:
 
         if isinstance(items, (dict, SON)):
             if "_ref" in items:
-                return self.object_map.get(
-                    (items["_ref"].collection, items["_ref"].id), items
+                # MARK: Changed this to remove deleted references
+                # result = self.object_map.get(
+                #     (items["_ref"].collection, items["_ref"].id), items
+                # )
+                result = self.object_map.get(
+                    (items["_ref"].collection, items["_ref"].id)
                 )
+                return result
             elif "_cls" in items:
                 doc = get_document(items["_cls"])._from_son(items)
                 _cls = doc._data.pop("_cls", None)

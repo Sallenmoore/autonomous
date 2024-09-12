@@ -60,30 +60,25 @@ class ReferenceAttr(GenericReferenceField):
 
 class ListAttr(ListField):
     def __get__(self, instance, owner):
-        # log(instance, owner)
         results = super().__get__(instance, owner) or []
-        # print(self.name, self.field, owner, results)
         if isinstance(self.field, ReferenceAttr):
             i = 0
             while i < len(results):
                 try:
                     if not results[i]:
-                        log(f"Removing Object: {results[i]}")
+                        # log(f"Removing Object: {results[i]}")
                         results.pop(i)
                     else:
                         i += 1
                 except DoesNotExist:
                     results.pop(i)
-                    log(f"Object Not Found: {results[i]}")
-        # log(results)
+                    # log(f"Object Not Found: {results[i]}")
         return results
 
 
 class DictAttr(DictField):
     def __get__(self, instance, owner):
-        # log(instance, owner)
         results = super().__get__(instance, owner) or {}
-        # log(self.name, self.field, owner, results)
         for key, lazy_obj in results.items():
             try:
                 if hasattr(lazy_obj, "fetch"):
