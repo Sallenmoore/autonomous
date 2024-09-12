@@ -8,7 +8,6 @@ from autonomous.db.fields import (
     EnumField,
     FileField,
     FloatField,
-    GenericLazyReferenceField,
     GenericReferenceField,
     ImageField,
     IntField,
@@ -59,26 +58,7 @@ class ReferenceAttr(GenericReferenceField):
         return result
 
 
-# class ReferenceAttr(GenericLazyReferenceField):
-#     def __get__(self, instance, owner):
-#         try:
-#             result = super().__get__(instance, owner)
-#         except DoesNotExist as e:
-#             log(f"ReferenceAttr Error: {e}")
-#             return None
-#         return result.fetch() if result and result.pk else result
-
-# except DoesNotExist:
-# If the document doesn't exist, return None
-#    return None
-
-# def validate(self, value):
-#     if value is not None and not self.required:
-#         super().validate(value)
-
-
 class ListAttr(ListField):
-    # pass
     def __get__(self, instance, owner):
         # log(instance, owner)
         results = super().__get__(instance, owner) or []
