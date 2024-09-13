@@ -60,7 +60,7 @@ class ReferenceAttr(GenericReferenceField):
 
 class ListAttr(ListField):
     def __get__(self, instance, owner):
-        results = super().__get__(instance, owner) or []
+        results = super().__get__(instance, owner)
         if isinstance(self.field, ReferenceAttr):
             i = 0
             while i < len(results):
@@ -74,6 +74,9 @@ class ListAttr(ListField):
                     results.pop(i)
                     # log(f"Object Not Found: {results[i]}")
         return results
+
+    # def append(self, obj):
+    #     results = super().__get__(instance, owner) or []
 
 
 class DictAttr(DictField):
