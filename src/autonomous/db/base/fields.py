@@ -173,11 +173,8 @@ class BaseField:
 
         # Get value from document instance if available
         result = instance._data.get(self.name)
-        if not result:
-            if self.default is not None:
-                result = self.default
-                if callable(result):
-                    result = result()
+        if result is None and self.default is not None:
+            result = self.default() if callable(self.default) else self.default
         return result
 
     def __set__(self, instance, value):

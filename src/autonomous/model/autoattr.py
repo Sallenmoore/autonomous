@@ -22,6 +22,9 @@ class StringAttr(StringField):
 
 class IntAttr(IntField):
     pass
+    # def __set__(self, instance, owner):
+    #     results = super().__get__(instance, owner)
+    #     return results
 
 
 class FloatAttr(FloatField):
