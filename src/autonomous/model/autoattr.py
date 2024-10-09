@@ -56,7 +56,7 @@ class ReferenceAttr(GenericReferenceField):
         try:
             result = super().__get__(instance, owner)
         except DoesNotExist as e:
-            log(f"ReferenceAttr Error: {e}")
+            # log(f"ReferenceAttr Error: {e}")
             return None
         return result
 
