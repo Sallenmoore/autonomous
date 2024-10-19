@@ -1483,21 +1483,22 @@ class GenericReferenceField(BaseField):
                     )
 
     def _validate_choices(self, value):
-        # log(value, self.null)
         if not value and self.null:
             return
         elif isinstance(value, dict):
             # If the field has not been dereferenced, it is still a dict
             # of class and DBRef
-            value = value.get("_cls")
-        elif isinstance(value, Document):
+            # value = value.get("_cls")
+            try:
+                value = self._lazy_load_ref(
+                    get_document(value.get("_cls")), value.get("_ref")
+                )
+            except DoesNotExist:
+                log(f"{value} DoesNotExist")
+                return
+
+        if isinstance(value, Document):
             mro = [cls.__name__ for cls in value.__class__.mro()]
-            # log(
-            #     value,
-            #     mro,
-            #     self.choices,
-            #     _print=True,
-            # )
             base_value = None
             for choice in self.choices:
                 if choice in mro:
@@ -1510,19 +1511,8 @@ class GenericReferenceField(BaseField):
                     f"Invalid Model Type. Must be or derive from on of: {self.choices}, not: {value} for attribute {self.name}"
                 )
         else:
-            # log(
-            #     value,
-            #     type(value),
-            #     "!!!! Need to update to this !!!!",
-            #     _print=True,
-            # )
             value = value.__class__.__name__
-        # log(
-        #     value,
-        #     self.choices,
-        #     type(value),
-        #     _print=True,
-        # )
+        # log(value, type(value))
         super()._validate_choices(value)
 
     @staticmethod
@@ -1543,6 +1533,7 @@ class GenericReferenceField(BaseField):
         auto_dereference = instance._fields[self.name]._auto_dereference
         if auto_dereference and isinstance(value, dict) and "_cls" in value:
             doc_cls = get_document(value["_cls"])
+            log(self.name, value, doc_cls)
             instance._data[self.name] = self._lazy_load_ref(doc_cls, value["_ref"])
 
         return super().__get__(instance, owner)

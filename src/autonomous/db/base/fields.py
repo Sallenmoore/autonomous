@@ -259,12 +259,6 @@ class BaseField:
             # next(iter) is useful for sets
             choice_list = [k for k, _ in choice_list]
 
-        # log(
-        #     value,
-        #     type(value),
-        #     choice_list,
-        #     value in choice_list,
-        # )
         # Choices which are other types of Documents
         if isinstance(value, (Document, EmbeddedDocument)):
             if not any(isinstance(value, c) for c in choice_list):
@@ -273,6 +267,7 @@ class BaseField:
         else:
             values = value if isinstance(value, (list, tuple)) else [value]
             if len(set(values) - set(choice_list)):
+                raise Exception(f"Value must be one of {choice_list}, not {value}")
                 self.error("Value must be one of %s" % str(choice_list))
 
     def _validate(self, value, **kwargs):

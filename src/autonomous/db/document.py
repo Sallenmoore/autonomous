@@ -417,7 +417,6 @@ class Document(BaseDocument, metaclass=TopLevelDocumentMetaclass):
         if self._meta.get("abstract"):
             raise InvalidDocumentError("Cannot save an abstract document.")
         signals.pre_save.send(self.__class__, document=self, **signal_kwargs)
-
         if validate:
             self.validate(clean=clean)
 
