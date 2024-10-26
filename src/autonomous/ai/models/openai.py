@@ -55,7 +55,11 @@ class OpenAIModel(AutoModel):
         self.save()
 
     def _get_agent_id(self):
-        if not self.agent_id or not self.client.beta.assistants.retrieve(self.agent_id):
+        try:
+            self.client.beta.assistants.retrieve(self.agent_id)
+        except openai.NotFoundError as e:
+            self.clear_files()
+            log("no agent found, creating a new one")
             agent = self.client.beta.assistants.create(
                 instructions=self.instructions,
                 description=self.description,
@@ -183,7 +187,7 @@ IMPORTANT: Always use the function 'response' tool to respond to the user with o
                 ]:
                     running_job = False
 
-            except openai.error.BadRequestError as e:
+            except openai.BadRequestError as e:
                 # Handle specific bad request errors
                 error_message = e.json_body.get("error", {}).get("message", "")
                 if "already has an active run" in error_message:
@@ -226,6 +230,7 @@ IMPORTANT: Always use the function 'response' tool to respond to the user with o
             return results
 
     def generate_text(self, messages, additional_instructions=""):
+        self._get_agent_id()
         formatted_messages = self._format_messages(messages)
         thread = self.client.beta.threads.create(messages=formatted_messages)
 
