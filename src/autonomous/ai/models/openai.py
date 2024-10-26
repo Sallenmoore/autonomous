@@ -57,9 +57,9 @@ class OpenAIModel(AutoModel):
     def _get_agent_id(self):
         try:
             self.client.beta.assistants.retrieve(self.agent_id)
-        except openai.NotFoundError as e:
+        except (ValueError, openai.NotFoundError) as e:
+            log(f"{e} -- no agent found, creating a new one")
             self.clear_files()
-            log("no agent found, creating a new one")
             agent = self.client.beta.assistants.create(
                 instructions=self.instructions,
                 description=self.description,
