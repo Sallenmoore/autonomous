@@ -27,6 +27,29 @@ class AutoModel(Document):
     def __eq__(self, other):
         return self.pk == other.pk if other else False
 
+    def __lt__(self, other):
+        return self.pk < other.pk if other else False
+
+    def __gt__(self, other):
+        return not (self.pk < other.pk) if other else False
+
+    def __le__(self, other):
+        return self < other or self == other
+
+    def __ge__(self, other):
+        return self > other or self == other
+
+    def __ne__(self, other):
+        return not self == other
+
+    def __hash__(self):
+        return hash(
+            (
+                self.model_name(),
+                self.pk,
+            )
+        )
+
     @classmethod
     def auto_pre_init(cls, sender, document, **kwargs):
         values = kwargs.pop("values", None)
