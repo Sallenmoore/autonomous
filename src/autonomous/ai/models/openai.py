@@ -92,9 +92,14 @@ class OpenAIModel(AutoModel):
         # Upload the user provided file to OpenAI
         self.tools["file_search"] = {"type": "file_search"}
         # Create a vector store
-        if vs := self.client.beta.vector_stores.list().data:
-            self.vector_store = vs[0].id
-        else:
+        try:
+            if vs := self.client.beta.vector_stores.list().data:
+                self.vector_store = self.client.beta.vector_stores.retrieve(
+                    vector_store_id=vs[0].id
+                ).id
+            else:
+                raise openai.NotFoundError(message="No vector store found")
+        except openai.NotFoundError:
             self.vector_store = self.client.beta.vector_stores.create(
                 name="Data Reference",
                 expires_after={"anchor": "last_active_at", "days": 14},
@@ -251,8 +256,8 @@ IMPORTANT: Always use the function 'response' tool to respond to the user with o
         if run.status in ["failed", "expired", "canceled"]:
             log(f"==== Error: {run.last_error} ====", _print=True)
             return None
-        log("=================== RUN COMPLETED ===================", _print=True)
-        log(run.status, _print=True)
+        # log("=================== RUN COMPLETED ===================", _print=True)
+        # log(run.status, _print=True)
         if run.status == "completed":
             response = self.client.beta.threads.messages.list(thread_id=thread.id)
             results = response.data[0].content[0].text.value
@@ -260,8 +265,8 @@ IMPORTANT: Always use the function 'response' tool to respond to the user with o
             log(f"====Status: {run.status} Error: {run.last_error} ====", _print=True)
             return None
 
-        log(results, _print=True)
-        log("=================== END REPORT ===================", _print=True)
+        # log(results, _print=True)
+        # log("=================== END REPORT ===================", _print=True)
         return results
 
     def generate_audio(self, prompt, file_path, **kwargs):
