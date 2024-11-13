@@ -42,13 +42,13 @@ class AutoUser(AutoModel):
         log(email, user)
         if not user:
             log(f"Creating new user for {email}")
-            # user = cls(name=name, email=email)
-
+            user = cls(name=name, email=email)
         # parse user_info into a user object
         user.name = name
         user.email = email
         user.last_login = datetime.now()
         user.state = "authenticated"
+        user.role = "user"
         user.save()
         return user
 

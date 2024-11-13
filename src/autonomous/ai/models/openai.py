@@ -36,6 +36,12 @@ class OpenAIModel(AutoModel):
             self._client = OpenAI(api_key=os.environ.get("OPENAI_KEY"))
         return self._client
 
+    def delete(self):
+        self.clear_files()
+        if self.agent_id:
+            self.client.beta.assistants.delete(self.agent_id)
+        return super().delete()
+
     def clear_agent(self):
         if self.agent_id:
             self.client.beta.assistants.delete(self.agent_id)
@@ -70,18 +76,15 @@ class OpenAIModel(AutoModel):
             self.save()
         return self.agent_id
 
-    def clear_files(self, file_id=None, all=False):
+    def clear_files(self, file_id=None):
         if not file_id:
-            store_files = self.client.files.list().data
-
             for vs in self.client.beta.vector_stores.list().data:
                 try:
                     self.client.beta.vector_stores.delete(vs.id)
                 except openai_NotFoundError:
                     log(f"==== Vector Store {vs.id} not found ====")
-            if all:
-                for sf in store_files:
-                    self.client.files.delete(file_id=sf.id)
+            for sf in self.client.files.list().data:
+                self.client.files.delete(file_id=sf.id)
         else:
             self.client.files.delete(file_id=file_id)
         self.tools.pop("file_search", None)
@@ -98,17 +101,20 @@ class OpenAIModel(AutoModel):
                     vector_store_id=vs[0].id
                 ).id
             else:
-                raise openai.NotFoundError(message="No vector store found")
-        except openai.NotFoundError:
+                for sf in self.client.files.list().data:
+                    self.client.files.delete(file_id=sf.id)
+                raise FileNotFoundError("No vector store found")
+        except FileNotFoundError:
             self.vector_store = self.client.beta.vector_stores.create(
-                name="Data Reference",
+                name="World Reference",
                 expires_after={"anchor": "last_active_at", "days": 14},
             ).id
-
+        log(f"==== Vector Store ID: {self.vector_store}====")
+        # Attach File
         file_obj = self.client.files.create(
             file=(filename, file_contents), purpose="assistants"
         )
-
+        log(f"==== FileStore ID: {file_obj.id}====")
         self.client.beta.vector_stores.files.create(
             vector_store_id=self.vector_store,
             file_id=file_obj.id,

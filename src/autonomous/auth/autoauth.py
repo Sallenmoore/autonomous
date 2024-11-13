@@ -43,14 +43,17 @@ class AutoAuth:
         )
 
     @classmethod
-    def current_user(cls):
+    def current_user(cls, pk=None):
         """
         Returns the current user.
         """
+        if pk:
+            user = cls.user_class.get(pk)
+        elif session.get("user"):
+            user = cls.user_class.from_json(session["user"])
+        else:
+            user = None
 
-        user = (
-            cls.user_class.from_json(session["user"]) if session.get("user") else None
-        )
         if not user or user.state != "authenticated":
             user = cls.user_class.get_guest()
         return user
