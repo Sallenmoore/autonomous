@@ -90,11 +90,15 @@ class AutoModel(Document):
 
     @classmethod
     def load_model(cls, model):
-        module_name, model = (
-            model.rsplit(".", 1) if "." in model else (f"models.{model.lower()}", model)
-        )
-        module = importlib.import_module(module_name)
-        return getattr(module, model)
+        subclasses = AutoModel.__subclasses__()
+        while subclasses:
+            subclass = subclasses.pop()
+            if "_meta" in subclass.__dict__ and not subclass._meta.get("abstract"):
+                if subclass.__name__.lower() == model.lower():
+                    return subclass
+                elif subclass not in subclasses:
+                    subclasses += [subclass]
+        raise ValueError(f"Model {model} not found")
 
     @classmethod
     def get(cls, pk):
