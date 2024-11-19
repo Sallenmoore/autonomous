@@ -1,3 +1,4 @@
+import io
 import json
 import os
 import random
@@ -275,7 +276,7 @@ IMPORTANT: Always use the function 'response' tool to respond to the user with o
         # log("=================== END REPORT ===================", _print=True)
         return results
 
-    def generate_audio(self, prompt, file_path, **kwargs):
+    def generate_audio(self, prompt, **kwargs):
         voice = kwargs.get("voice") or random.choice(
             ["alloy", "echo", "fable", "onyx", "nova", "shimmer"]
         )
@@ -284,8 +285,9 @@ IMPORTANT: Always use the function 'response' tool to respond to the user with o
             voice=voice,
             input=prompt,
         )
-
-        return response.stream_to_file(file_path)
+        log(response)
+        audio_data = io.BytesIO(response["audio"].encode("utf-8"))
+        return audio_data
 
     def generate_image(self, prompt, **kwargs):
         image = None

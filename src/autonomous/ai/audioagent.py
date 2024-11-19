@@ -1,6 +1,6 @@
 from autonomous import log
-from autonomous.model.autoattr import ReferenceAttr, StringAttr
 from autonomous.ai.baseagent import BaseAgent
+from autonomous.model.autoattr import ReferenceAttr, StringAttr
 
 from .models.openai import OpenAIModel
 
@@ -14,5 +14,5 @@ class AudioAgent(BaseAgent):
         default="A helpful AI assistant trained to assist with generating audio files."
     )
 
-    def generate(self, prompt, file_path, **kwargs):
-        return self.get_client().generate_audio(prompt, file_path, **kwargs)
+    def generate(self, prompt, **kwargs):
+        return self.get_client().generate_audio(prompt, **kwargs)
