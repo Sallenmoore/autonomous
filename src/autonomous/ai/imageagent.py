@@ -1,7 +1,5 @@
-from autonomous.model.autoattr import ReferenceAttr, StringAttr
-from autonomous.model.automodel import AutoModel
 from autonomous.ai.baseagent import BaseAgent
-from .models.openai import OpenAIModel
+from autonomous.model.autoattr import StringAttr
 
 
 class ImageAgent(BaseAgent):

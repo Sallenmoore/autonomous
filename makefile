@@ -29,7 +29,7 @@ inittests: cleantests
 cleantests: clean
 	cd tests && sudo docker compose down --remove-orphans
 
-TESTING=test_unit_automodel
+TESTING=test_unit_ai
 
 test:
 	python -m pytest -k $(TESTING)

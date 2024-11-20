@@ -120,8 +120,17 @@ char_funcobj["parameters"]["required"] = list(
 )
 
 
-@pytest.mark.skip(reason="These tests are working")
 class TestOAIModel:
+    def test_generate_audio(self):
+        oai = OpenAIModel(name="TestAgent")
+        prompt = (
+            "An existential scene that seems directly out of a Robert Browning poem."
+        )
+        response = oai.generate_audio(prompt, voice="echo")
+        assert isinstance(response.read(), bytes)
+        with open("tests/assets/testaudio.mp3", "wb") as fptr:
+            fptr.write(response.read())
+
     @pytest.mark.skip(reason="working")
     def test_generate_image(self):
         oai = OpenAIModel(name="TestAgent")

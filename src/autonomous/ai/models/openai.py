@@ -285,9 +285,8 @@ IMPORTANT: Always use the function 'response' tool to respond to the user with o
             voice=voice,
             input=prompt,
         )
-        log(response)
-        audio_data = io.BytesIO(response["audio"].encode("utf-8"))
-        return audio_data
+        log(response, _print=True)
+        return response.read()
 
     def generate_image(self, prompt, **kwargs):
         image = None
