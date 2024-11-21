@@ -90,6 +90,9 @@ class AutoModel(Document):
 
     @classmethod
     def load_model(cls, model):
+        if not isinstance(model, str):
+            return model
+
         subclasses = AutoModel.__subclasses__()
         while subclasses:
             subclass = subclasses.pop()
