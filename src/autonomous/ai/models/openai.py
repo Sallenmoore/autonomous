@@ -233,7 +233,7 @@ IMPORTANT: Always use the function 'response' tool to respond to the user with o
         try:
             results = json.loads(results, strict=False)
         except Exception:
-            print(f"==== Invalid JSON:\n{results}", _print=True)
+            log(f"==== Invalid JSON:\n{results}", _print=True)
             return {}
         else:
             log(f"==== Results: {results}", _print=True)
