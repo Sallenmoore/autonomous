@@ -198,14 +198,14 @@ IMPORTANT: Always use the function 'response' tool to respond to the user with o
                 ]:
                     running_job = False
 
-            except openai.BadRequestError as e:
+            except openai.BadRequestError as err:
                 # Handle specific bad request errors
-                error_message = e.json_body.get("error", {}).get("message", "")
-                if "already has an active run" in error_message:
+                log(f"==== Error: {err} ====", _print=True)
+                if "already has an active run" in err:
                     log("Previous run is still active. Waiting...", _print=True)
                     time.sleep(2)  # wait before retrying or checking run status
                 else:
-                    raise e
+                    raise err
 
         # while run.status in ["queued", "in_progress"]:
         #     run = self.client.beta.threads.runs.retrieve(

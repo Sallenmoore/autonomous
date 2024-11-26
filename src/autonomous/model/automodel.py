@@ -94,13 +94,17 @@ class AutoModel(Document):
             return model
 
         subclasses = AutoModel.__subclasses__()
+        visited_subclasses = []
         while subclasses:
+            # log(subclasses, _print=True)
             subclass = subclasses.pop()
             if "_meta" in subclass.__dict__ and not subclass._meta.get("abstract"):
+                # log(f"Checking {subclass.__name__}", _print=True)
                 if subclass.__name__.lower() == model.lower():
                     return subclass
-                elif subclass not in subclasses:
-                    subclasses += [subclass]
+            if subclass not in visited_subclasses:
+                subclasses += subclass.__subclasses__()
+                visited_subclasses += [subclass]
         raise ValueError(f"Model {model} not found")
 
     @classmethod
