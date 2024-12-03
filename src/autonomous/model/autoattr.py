@@ -64,6 +64,13 @@ class ReferenceAttr(GenericReferenceField):
 class ListAttr(ListField):
     def __get__(self, instance, owner):
         results = super().__get__(instance, owner)
+
+        # sanity check
+        if not isinstance(results, list):
+            super().__set__(instance, [])
+            results = super().__get__(instance, owner)
+
+        # log(f"ListAttr: {results}")
         if isinstance(self.field, ReferenceAttr):
             i = 0
             while i < len(results):
@@ -77,9 +84,6 @@ class ListAttr(ListField):
                     results.pop(i)
                     # log(f"Object Not Found: {results[i]}")
         return results
-
-    # def append(self, obj):
-    #     results = super().__get__(instance, owner) or []
 
 
 class DictAttr(DictField):
@@ -95,6 +99,16 @@ class DictAttr(DictField):
                 log(f"Object Not Found: {lazy_obj}")
             results[key] = lazy_obj
         return results
+
+    # def __set__(self, instance, value):
+    #     import traceback
+
+    #     traceback.print_stack()
+
+    #     log(value, instance.player_messages, _print=True)
+    #     result = super().__set__(instance, value) or {}
+    #     log(value, instance.player_messages, _print=True)
+    #     return result
 
 
 class EnumAttr(EnumField):

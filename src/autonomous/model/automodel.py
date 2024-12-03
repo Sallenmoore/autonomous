@@ -227,7 +227,6 @@ class AutoModel(Document):
         Returns:
             int: The primary key (pk) of the saved model.
         """
-        # log(self.to_json())
         obj = super().save()
         self.pk = obj.pk
         return self.pk

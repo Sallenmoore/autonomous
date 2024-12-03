@@ -217,7 +217,7 @@ IMPORTANT: Always use the function 'response' tool to respond to the user with o
             log(f"==== !!! ERROR !!!: {run.last_error} ====", _print=True)
             return None
         log("=================== RUN COMPLETED ===================", _print=True)
-        log(run.status, _print=True)
+        # log(run.status, _print=True)
         if run.status == "completed":
             response = self.client.beta.threads.messages.list(thread_id=thread.id)
             results = response.data[0].content[0].text.value
@@ -236,8 +236,8 @@ IMPORTANT: Always use the function 'response' tool to respond to the user with o
             log(f"==== Invalid JSON:\n{results}", _print=True)
             return {}
         else:
-            log(f"==== Results: {results}", _print=True)
-            log("=================== END REPORT ===================", _print=True)
+            # log(f"==== Results: {results}", _print=True)
+            # log("=================== END REPORT ===================", _print=True)
             return results
 
     def generate_text(self, messages, additional_instructions=""):
@@ -285,7 +285,7 @@ IMPORTANT: Always use the function 'response' tool to respond to the user with o
             voice=voice,
             input=prompt,
         )
-        log(response, _print=True)
+        # log(response, _print=True)
         return response.read()
 
     def generate_image(self, prompt, **kwargs):
@@ -299,7 +299,7 @@ IMPORTANT: Always use the function 'response' tool to respond to the user with o
             )
             image_dict = response.data[0]
         except Exception as e:
-            print(f"==== Error: Unable to create image ====\n\n{e}")
+            log(f"==== Error: Unable to create image ====\n\n{e}", _print=True)
         else:
             image = b64decode(image_dict.b64_json)
         return image
