@@ -1,5 +1,6 @@
 import importlib
 import os
+import traceback
 import urllib.parse
 from datetime import datetime
 
@@ -132,6 +133,7 @@ class AutoModel(Document):
             log(f"Model {cls.__name__} with pk {pk} not found : {e}")
             return None
         except ValidationError as e:
+            # traceback.print_stack(limit=5)
             log(f"Model Validation failure {cls.__name__} [{pk}]: {e}")
             return None
         except Exception as e:
