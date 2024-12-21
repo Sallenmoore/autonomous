@@ -110,12 +110,12 @@ class OpenAIModel(AutoModel):
                 name="World Reference",
                 expires_after={"anchor": "last_active_at", "days": 14},
             ).id
-        log(f"==== Vector Store ID: {self.vector_store}====")
+        log(f"==== Vector Store ID: {self.vector_store}====", _print=True)
         # Attach File
         file_obj = self.client.files.create(
             file=(filename, file_contents), purpose="assistants"
         )
-        log(f"==== FileStore ID: {file_obj.id}====")
+        log(f"==== FileStore ID: {file_obj.id}====", _print=True)
         self.client.beta.vector_stores.files.create(
             vector_store_id=self.vector_store,
             file_id=file_obj.id,
