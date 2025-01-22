@@ -4,6 +4,7 @@ import pymongo
 from bson import SON, ObjectId
 from bson.dbref import DBRef
 
+from autonomous import log
 from autonomous.db.base import UPDATE_OPERATORS
 from autonomous.db.common import _import_class
 from autonomous.db.errors import InvalidQueryError
@@ -74,16 +75,21 @@ def handle_raw_query(value, mongo_query):
 # TODO make this less complex
 def query(_doc_cls=None, **kwargs):
     """Transform a query from Django-style format to Mongo format."""
+    log("Querying for", _doc_cls, kwargs)
     mongo_query = {}
     merge_query = defaultdict(list)
+
+    # Iterate over sorted keyword arguments
     for key, value in sorted(kwargs.items()):
         if key == "__raw__":
             handle_raw_query(value, mongo_query)
             continue
 
+        # Split the key into parts based on '__'
         parts = key.rsplit("__")
         indices = [(i, p) for i, p in enumerate(parts) if p.isdigit()]
         parts = [part for part in parts if not part.isdigit()]
+
         # Check for an operator and transform to mongo-style if there is
         op = None
         if len(parts) > 1 and parts[-1] in MATCH_OPERATORS:
@@ -93,6 +99,7 @@ def query(_doc_cls=None, **kwargs):
         if len(parts) > 1 and parts[-1] == "":
             parts.pop()
 
+        # Check for negation
         negate = False
         if len(parts) > 1 and parts[-1] == "not":
             parts.pop()
@@ -115,7 +122,7 @@ def query(_doc_cls=None, **kwargs):
                 if isinstance(field, str):
                     parts.append(field)
                     append_field = False
-                # is last and CachedReferenceField
+                # Handle CachedReferenceField
                 elif isinstance(field, CachedReferenceField) and fields[-1] == field:
                     parts.append("%s._id" % field.db_field)
                 else:
@@ -139,17 +146,15 @@ def query(_doc_cls=None, **kwargs):
                 # Raise an error if the in/nin/all/near param is not iterable.
                 value = _prepare_query_for_iterable(field, op, value)
 
-            # If we're querying a GenericReferenceField, we need to alter the
-            # key depending on the value:
-            # * If the value is a DBRef, the key should be "field_name._ref".
-            # * If the value is an ObjectId, the key should be "field_name._ref.$id".
+            # Handle GenericReferenceField
+            log(field)
             if isinstance(field, GenericReferenceField):
                 if isinstance(value, DBRef):
                     parts[-1] += "._ref"
                 elif isinstance(value, ObjectId):
                     parts[-1] += "._ref.$id"
 
-        # if op and op not in COMPARISON_OPERATORS:
+        # Handle different operators
         if op:
             if op in GEO_OPERATORS:
                 value = _geo_operator(field, op, value)
@@ -166,9 +171,7 @@ def query(_doc_cls=None, **kwargs):
                     value = field.prepare_query_value(op, value)
                 value = {"$elemMatch": value}
             elif op in CUSTOM_OPERATORS:
-                NotImplementedError(
-                    'Custom method "%s" has not ' "been implemented" % op
-                )
+                NotImplementedError('Custom method "%s" has not been implemented' % op)
             elif op not in STRING_OPERATORS:
                 value = {"$" + op: value}
 
@@ -179,7 +182,7 @@ def query(_doc_cls=None, **kwargs):
             parts.insert(i, part)
 
         key = ".".join(parts)
-
+        log(key, value, mongo_query)
         if key not in mongo_query:
             mongo_query[key] = value
         else:
@@ -439,7 +442,7 @@ def _geo_operator(field, op, value):
             value = {"$within": {"$box": value}}
         else:
             raise NotImplementedError(
-                'Geo method "%s" has not been ' "implemented for a GeoPointField" % op
+                'Geo method "%s" has not been implemented for a GeoPointField' % op
             )
     else:
         if op == "geo_within":
