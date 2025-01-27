@@ -1,6 +1,4 @@
-import importlib
 import os
-import traceback
 import urllib.parse
 from datetime import datetime
 
@@ -128,7 +126,9 @@ class AutoModel(Document):
         elif isinstance(pk, dict) and "$oid" in pk:
             pk = bson.ObjectId(pk["$oid"])
         try:
-            return cls.objects.get(id=pk)
+            # log(pk, type(pk))
+            result = cls.objects.get(id=pk)
+            # log(result)
         except cls.DoesNotExist as e:
             log(f"Model {cls.__name__} with pk {pk} not found : {e}")
             return None
@@ -139,6 +139,8 @@ class AutoModel(Document):
         except Exception as e:
             log(f"Error getting model {cls.__name__} with pk {pk}: {e}", _print=True)
             raise e
+        else:
+            return result
 
     @classmethod
     def random(cls):

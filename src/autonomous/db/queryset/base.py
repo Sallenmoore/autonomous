@@ -117,10 +117,7 @@ class BaseQuerySet:
         if q_obj:
             # Make sure proper query object is passed.
             if not isinstance(q_obj, QNode):
-                msg = (
-                    "Not a query object: %s. "
-                    "Did you intend to use key=value?" % q_obj
-                )
+                msg = "Not a query object: %s. Did you intend to use key=value?" % q_obj
                 raise InvalidQueryError(msg)
             query &= q_obj
 

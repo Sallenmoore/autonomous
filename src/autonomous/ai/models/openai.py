@@ -16,9 +16,9 @@ from autonomous.model.automodel import AutoModel
 
 class OpenAIModel(AutoModel):
     _client = None
-    _text_model = "gpt-4o-mini"
+    _text_model = "o1-mini"
     _image_model = "dall-e-3"
-    _json_model = "gpt-4o"
+    _json_model = "o1"
     agent_id = StringAttr()
     messages = ListAttr(StringAttr(default=[]))
     tools = DictAttr()

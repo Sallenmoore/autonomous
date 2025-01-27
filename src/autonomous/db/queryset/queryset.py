@@ -1,3 +1,4 @@
+from autonomous import log
 from autonomous.db.errors import OperationError
 from autonomous.db.queryset.base import (
     CASCADE,
