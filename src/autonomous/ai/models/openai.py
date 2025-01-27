@@ -300,6 +300,7 @@ IMPORTANT: Always use the function 'response' tool to respond to the user with o
             image_dict = response.data[0]
         except Exception as e:
             log(f"==== Error: Unable to create image ====\n\n{e}", _print=True)
+            raise e
         else:
             image = b64decode(image_dict.b64_json)
         return image
