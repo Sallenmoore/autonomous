@@ -75,7 +75,6 @@ def handle_raw_query(value, mongo_query):
 # TODO make this less complex
 def query(_doc_cls=None, **kwargs):
     """Transform a query from Django-style format to Mongo format."""
-    log("Querying for", _doc_cls, kwargs)
     mongo_query = {}
     merge_query = defaultdict(list)
 
@@ -147,7 +146,6 @@ def query(_doc_cls=None, **kwargs):
                 value = _prepare_query_for_iterable(field, op, value)
 
             # Handle GenericReferenceField
-            log(field)
             if isinstance(field, GenericReferenceField):
                 if isinstance(value, DBRef):
                     parts[-1] += "._ref"
@@ -182,7 +180,7 @@ def query(_doc_cls=None, **kwargs):
             parts.insert(i, part)
 
         key = ".".join(parts)
-        log(key, value, mongo_query)
+
         if key not in mongo_query:
             mongo_query[key] = value
         else:
