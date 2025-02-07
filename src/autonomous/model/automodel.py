@@ -24,13 +24,13 @@ class AutoModel(Document):
     last_updated = DateTimeField(default=datetime.now)
 
     def __eq__(self, other):
-        return self.pk == other.pk if other else False
+        return str(self.pk) == str(other.pk) if other else False
 
     def __lt__(self, other):
-        return self.pk < other.pk if other else False
+        return str(self.pk) < str(other.pk) if other else False
 
     def __gt__(self, other):
-        return not (self.pk < other.pk) if other else False
+        return not (str(self.pk) < str(other.pk)) if other else False
 
     def __le__(self, other):
         return self < other or self == other

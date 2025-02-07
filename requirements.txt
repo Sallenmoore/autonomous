@@ -15,7 +15,7 @@ python-dotenv
 blinker
 
 ##### Storage #####
-
+pymongo
 PyGithub
 pygit2
 pillow
@@ -38,7 +38,7 @@ Authlib
 rq
 
 ##### AI #####
-
+ollama
 openai >= 1.42
 
 ##### Parsing #####
