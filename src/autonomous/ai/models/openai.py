@@ -18,7 +18,7 @@ class OpenAIModel(AutoModel):
     _client = None
     _text_model = "o3-mini"
     _image_model = "dall-e-3"
-    _json_model = "o3"
+    _json_model = "gpt-4o"
     agent_id = StringAttr()
     messages = ListAttr(StringAttr(default=[]))
     tools = DictAttr()
@@ -201,7 +201,7 @@ IMPORTANT: Always use the function 'response' tool to respond to the user with o
             except openai.BadRequestError as err:
                 # Handle specific bad request errors
                 log(f"==== Error: {err} ====", _print=True)
-                if "already has an active run" in err:
+                if "already has an active run" in str(err):
                     log("Previous run is still active. Waiting...", _print=True)
                     time.sleep(2)  # wait before retrying or checking run status
                 else:

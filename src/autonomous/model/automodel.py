@@ -107,6 +107,12 @@ class AutoModel(Document):
         raise ValueError(f"Model {model} not found")
 
     @classmethod
+    def get_model(cls, model, pk=None):
+        # log(model, pk)
+        Model = cls.load_model(model)
+        return Model.get(pk) if Model and pk else Model
+
+    @classmethod
     def get(cls, pk):
         """
         Get a model by primary key.
