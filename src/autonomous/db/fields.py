@@ -721,8 +721,7 @@ class EmbeddedDocumentField(BaseField):
             or issubclass(document_type, EmbeddedDocument)
         ):
             self.error(
-                "Invalid embedded document class provided to an "
-                "EmbeddedDocumentField"
+                "Invalid embedded document class provided to an EmbeddedDocumentField"
             )
 
         self.document_type_obj = document_type
