@@ -40,7 +40,10 @@ class OpenAIModel(AutoModel):
     def delete(self):
         self.clear_files()
         if self.agent_id:
-            self.client.beta.assistants.delete(self.agent_id)
+            try:
+                self.client.beta.assistants.delete(self.agent_id)
+            except openai_NotFoundError:
+                log(f"==== Agent with ID: {self.agent_id} not found ====")
         return super().delete()
 
     def clear_agent(self):
@@ -51,15 +54,16 @@ class OpenAIModel(AutoModel):
 
     def clear_agents(self):
         assistants = self.client.beta.assistants.list().data
-        log(assistants)
-        for assistant in assistants:
-            log(f"==== Deleting Agent with ID: {assistant.id} ====")
-            try:
-                self.client.beta.assistants.delete(assistant.id)
-            except openai_NotFoundError:
-                log(f"==== Agent with ID: {assistant.id} not found ====")
-        self.agent_id = ""
-        self.save()
+        if assistants:
+            log(assistants)
+            for assistant in assistants:
+                log(f"==== Deleting Agent with ID: {assistant.id} ====")
+                try:
+                    self.client.beta.assistants.delete(assistant.id)
+                except openai_NotFoundError:
+                    log(f"==== Agent with ID: {assistant.id} not found ====")
+            self.agent_id = ""
+            self.save()
 
     def _get_agent_id(self):
         try:
@@ -79,9 +83,9 @@ class OpenAIModel(AutoModel):
 
     def clear_files(self, file_id=None):
         if not file_id:
-            for vs in self.client.beta.vector_stores.list().data:
+            for vs in self.client.vector_stores.list().data:
                 try:
-                    self.client.beta.vector_stores.delete(vs.id)
+                    self.client.vector_stores.delete(vs.id)
                 except openai_NotFoundError:
                     log(f"==== Vector Store {vs.id} not found ====")
             for sf in self.client.files.list().data:
@@ -97,8 +101,8 @@ class OpenAIModel(AutoModel):
         self.tools["file_search"] = {"type": "file_search"}
         # Create a vector store
         try:
-            if vs := self.client.beta.vector_stores.list().data:
-                self.vector_store = self.client.beta.vector_stores.retrieve(
+            if vs := self.client.vector_stores.list().data:
+                self.vector_store = self.client.vector_stores.retrieve(
                     vector_store_id=vs[0].id
                 ).id
             else:
@@ -106,7 +110,7 @@ class OpenAIModel(AutoModel):
                     self.client.files.delete(file_id=sf.id)
                 raise FileNotFoundError("No vector store found")
         except FileNotFoundError:
-            self.vector_store = self.client.beta.vector_stores.create(
+            self.vector_store = self.client.vector_stores.create(
                 name="World Reference",
                 expires_after={"anchor": "last_active_at", "days": 14},
             ).id
@@ -116,7 +120,7 @@ class OpenAIModel(AutoModel):
             file=(filename, file_contents), purpose="assistants"
         )
         log(f"==== FileStore ID: {file_obj.id}====", _print=True)
-        self.client.beta.vector_stores.files.create(
+        self.client.vector_stores.files.create(
             vector_store_id=self.vector_store,
             file_id=file_obj.id,
         )
@@ -278,7 +282,18 @@ IMPORTANT: Always use the function 'response' tool to respond to the user with o
 
     def generate_audio(self, prompt, **kwargs):
         voice = kwargs.get("voice") or random.choice(
-            ["alloy", "echo", "fable", "onyx", "nova", "shimmer"]
+            [
+                "alloy",
+                "ash",
+                "ballad",
+                "coral",
+                "echo",
+                "fable",
+                "onyx",
+                "nova",
+                "sage",
+                "shimmer",
+            ]
         )
         response = self.client.audio.speech.create(
             model="tts-1",

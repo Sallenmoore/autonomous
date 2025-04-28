@@ -5,6 +5,15 @@ from autonomous.model.automodel import AutoModel
 from .models.openai import OpenAIModel
 
 
+def clear_agents():
+    for agent in OpenAIModel.all():
+        log(f"Deleting {agent.name}")
+        agent.clear_agents()
+        agent.clear_files()
+        agent.delete()
+    return "Success"
+
+
 class BaseAgent(AutoModel):
     meta = {"abstract": True, "allow_inheritance": True, "strict": False}
 
