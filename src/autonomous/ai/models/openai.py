@@ -303,6 +303,13 @@ IMPORTANT: Always use the function 'response' tool to respond to the user with o
         # log(response, _print=True)
         return response.read()
 
+    def generate_audio_text(self, audio_file, **kwargs):
+        response = self.client.audio.transcriptions.create(
+            model="gpt-4o-transcribe", file=audio_file, language="en", **kwargs
+        )
+        log(response, _print=True)
+        return response.text
+
     def generate_image(self, prompt, **kwargs):
         image = None
         try:

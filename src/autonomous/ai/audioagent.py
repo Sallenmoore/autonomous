@@ -16,3 +16,6 @@ class AudioAgent(BaseAgent):
 
     def generate(self, prompt, **kwargs):
         return self.get_client().generate_audio(prompt, **kwargs)
+
+    def generate_text(self, audio, **kwargs):
+        return self.get_client().generate_audio_text(audio, **kwargs)
