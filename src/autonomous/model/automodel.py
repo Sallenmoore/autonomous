@@ -88,6 +88,11 @@ class AutoModel(Document):
         )
 
     @classmethod
+    def get_model(cls, model, pk=None):
+        Model = cls.load_model(model)
+        return Model.get(pk) if Model and pk else Model
+
+    @classmethod
     def load_model(cls, model):
         if not isinstance(model, str):
             return model
