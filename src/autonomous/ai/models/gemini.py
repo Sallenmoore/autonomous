@@ -5,6 +5,7 @@ import random
 
 from google import genai
 from google.genai import types
+from pydub import AudioSegment
 
 from autonomous import log
 from autonomous.model.autoattr import DictAttr, ListAttr, StringAttr
@@ -17,7 +18,7 @@ class GeminiAIModel(AutoModel):
     _summary_model = "gemini-2.5-flash"
     _image_model = "imagen-4.0-generate-001"
     _json_model = "gemini-2.5-pro"
-    _audio_model = "gemini-2.5-flash-preview"
+    _stt_model = "gemini-2.5-flash-preview"
     _tts_model = "gemini-2.5-flash-preview-tts"
     messages = ListAttr(StringAttr(default=[]))
     name = StringAttr(default="agent")
@@ -67,7 +68,7 @@ class GeminiAIModel(AutoModel):
 
     def generate_text(self, message, additional_instructions=""):
         response = self.client.models.generate_content(
-            model="gemini-2.5-flash",
+            model=self._text_model,
             config=types.GenerateContentConfig(
                 system_instruction=f"{self.instructions}.{additional_instructions}",
             ),
@@ -78,8 +79,8 @@ class GeminiAIModel(AutoModel):
         # log("=================== END REPORT ===================", _print=True)
         return response.text
 
-    def generate_audio(self, prompt, **kwargs):
-        voice = kwargs.get("voice") or random.choice(
+    def generate_audio(self, prompt, voice=None):
+        voice = voice or random.choice(
             [
                 "Zephyr",
                 "Puck",
@@ -129,12 +130,26 @@ class GeminiAIModel(AutoModel):
             ),
         )
         blob = response.candidates[0].content.parts[0].inline_data
-        # log(response, _print=True)
-        return blob
 
-    def generate_audio_text(self, audio_file, **kwargs):
+        # 1. Create an in-memory file from the raw audio bytes
+        raw_audio_stream = io.BytesIO(blob)
+
+        # 2. Load the raw PCM audio using pydub
+        # `format='s16le'` is critical for telling pydub the correct format
+        audio_segment = AudioSegment.from_file(raw_audio_stream, format="s16le")
+
+        # 3. Create a new in-memory buffer for the MP3 output
+        mp3_buffer = io.BytesIO()
+
+        # 4. Export the audio segment directly to the in-memory buffer
+        audio_segment.export(mp3_buffer, format="mp3")
+
+        # 5. Return the bytes from the buffer, not the filename
+        return mp3_buffer.getvalue()
+
+    def generate_audio_text(self, audio_file):
         response = self.client.models.generate_content(
-            model="gemini-2.5-flash",
+            model=self._stt_model,
             contents=[
                 "Transcribe this audio clip",
                 types.Part.from_bytes(
@@ -164,15 +179,17 @@ class GeminiAIModel(AutoModel):
         return image
 
     def summarize_text(self, text, primer=""):
+        primer = primer or self.instructions
         response = self.client.models.generate_content(
             model=self._summary_model,
             config=types.GenerateContentConfig(
-                system_instruction=f"You are a highly skilled AI trained in language comprehension and summarization.{primer}",
+                system_instruction=f"{primer}",
             ),
             contents=text,
         )
+        log(response)
         try:
-            result = response.choices[0].message.content
+            result = response.candidates[0].content.parts[0].text
         except Exception as e:
             log(f"{type(e)}:{e}\n\n Unable to generate content ====")
             return None

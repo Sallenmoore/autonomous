@@ -7,7 +7,7 @@ from autonomous import log
 from autonomous.ai.audioagent import AudioAgent
 from autonomous.ai.imageagent import ImageAgent
 from autonomous.ai.jsonagent import JSONAgent
-from autonomous.ai.models.local import LocalAIModel
+from autonomous.ai.models.gemini import GeminiAIModel
 from autonomous.ai.models.openai import OpenAIModel
 from autonomous.ai.textagent import TextAgent
 
@@ -121,6 +121,72 @@ char_funcobj["parameters"]["required"] = list(
 )
 
 
+class TestGeminiModel:
+    # def summarize_text(self, text, primer=""):
+    def test_summarize_text(self):
+        primer_text = "As a nihilistic AI that summarizes text, you will try to emphasize the absurdities of the text in your summary."
+        prompt = " It was 7 minutes after midnight. The dog was lying on the grass in the middle of the lawn in front of Mrs Shears’ house. Its eyes were closed. It looked as if it was running on its side, the way dogs run when they think they are chasing a cat in a dream. But the dog was not running or asleep. The dog was dead. There was a garden fork sticking out of the dog. The points of the fork must have gone all the way through the dog and into the ground because the fork had not fallen over. I decided that the dog was probably killed with the fork because I could not see any other wounds in the dog and I do not think you would stick a garden fork into a dog after it had died for some other reason, like cancer for example, or a road accident. But I could not be certain about this."
+
+        result = GeminiAIModel(instructions=primer_text).summarize_text(
+            prompt, primer=primer_text
+        )
+        log(result)
+        assert result
+        open("tests/assets/summary.txt", "w").write(result)
+
+    # def generate_text(self, message, additional_instructions=""):
+    def test_generate_text(self):
+        primer_text = "You are a writer's assistant for a comedian. The comedian is helpful, creative, clever, and very funny."
+        prompt = "Write a joke about programming."
+        result = GeminiAIModel(name="comedian", instructions=primer_text).generate_text(
+            prompt
+        )
+        assert result
+        open("tests/assets/testjoke.txt", "w").write(result)
+
+    # def generate_json(self, message, function, additional_instructions=""):
+    def test_generate_json(self):
+        primer_text = "You are a writer's assistant for a comedian. The comedian is helpful, creative, clever, and very funny."
+        prompt = "Write a joke about programming."
+        oai = GeminiAIModel(name="comedian", instructions=primer_text)
+        joke = oai.generate_json(prompt, function=funcobj)
+        if isinstance(joke, str):
+            joke = json.loads(joke)
+        assert joke["humor_num"]
+        assert joke["text"]
+        open("tests/assets/testjoke.json", "w").write(f"{joke}")
+
+    # def generate_audio_text(self, audio_file, **kwargs):
+    def test_generate_audio_text(self):
+        with open("tests/assets/testaudio.mp3", "rb") as f:
+            audio_bytes = f.read()
+            result = GeminiAIModel().generate_audio_text(audio_bytes)
+        # log(result)
+        assert result
+        open("tests/assets/audio_text.txt", "w").write(result)
+
+    # def generate_audio_text(self, audio_file, **kwargs):
+    def test_generate_audio(self):
+        prompt = "April is the cruellest month, breeding Lilacs out of the dead land, mixing Memory and desire, stirring Dull roots with spring rain"
+
+        result = GeminiAIModel().generate_audio(prompt)
+        # log(result)
+        assert result
+        open("tests/assets/newaudio.mp3", "w").write(result)
+
+    # def generate_image(self, prompt, **kwargs):
+    def test_generate_image(self):
+        oai = GeminiAIModel(name="TestAgent")
+        prompt = (
+            "An existential scene that seems directly out of a Robert Browning poem."
+        )
+        img = oai.generate_image(prompt)
+        assert isinstance(img, bytes)
+        with open("tests/assets/testimg.png", "wb") as fptr:
+            fptr.write(img)
+
+
+@pytest.mark.skip(reason="These tests are working")
 class TestLocalModel:
     @pytest.mark.skip(reason="working")
     def test_summarize_text(self):

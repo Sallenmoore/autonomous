@@ -45,3 +45,6 @@ google-genai
 ##### Parsing #####
 dateparser
 python-slugify
+
+##### Audio #####
+pydub
