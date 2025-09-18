@@ -40,6 +40,7 @@ rq
 ##### AI #####
 ollama
 openai >= 1.42
+google-genai
 
 ##### Parsing #####
 dateparser
