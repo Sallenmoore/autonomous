@@ -14,12 +14,6 @@ class TextAgent(BaseAgent):
         default="A helpful AI assistant trained to assist with generating text according to the given requirements."
     )
 
-    def clear_files(self, file_id=None):
-        return self.get_client().clear_files(file_id)
-
-    def attach_file(self, file_contents, filename="dbdata.json"):
-        return self.get_client().attach_file(file_contents, filename)
-
     def summarize_text(self, text, primer=""):
         return self.get_client().summarize_text(text, primer)
 

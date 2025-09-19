@@ -2,6 +2,7 @@ import io
 import json
 import os
 import random
+import wave
 
 from google import genai
 from google.genai import types
@@ -16,9 +17,9 @@ class GeminiAIModel(AutoModel):
     _client = None
     _text_model = "gemini-2.5-pro"
     _summary_model = "gemini-2.5-flash"
-    _image_model = "imagen-4.0-generate-001"
+    _image_model = "gemini-2.5-flash-image-preview"
     _json_model = "gemini-2.5-pro"
-    _stt_model = "gemini-2.5-flash-preview"
+    _stt_model = "gemini-2.5-flash"
     _tts_model = "gemini-2.5-flash-preview-tts"
     messages = ListAttr(StringAttr(default=[]))
     name = StringAttr(default="agent")
@@ -51,28 +52,46 @@ class GeminiAIModel(AutoModel):
                 "Tool schema must have a 'name', 'description', and 'parameters' field."
             )
 
-        # Ensure 'strict' and 'additionalProperties' are set for a robust schema
-        # tool_schema["parameters"]["additionalProperties"] = False
-        # tool_schema["parameters"]["strict"] = True
-
         return tool_schema
+
+    def _create_wav_header(
+        self, raw_audio_bytes, channels=1, rate=24000, sample_width=2
+    ):
+        """Creates an in-memory WAV file from raw PCM audio bytes."""
+        buffer = io.BytesIO()
+        with wave.open(buffer, "wb") as wav_file:
+            # Set audio parameters
+            wav_file.setnchannels(channels)
+            wav_file.setsampwidth(sample_width)
+            wav_file.setframerate(rate)  # 16,000 Hz sample rate
+
+            # Write the raw audio data
+            wav_file.writeframes(raw_audio_bytes)
+
+        buffer.seek(0)
+        return buffer
 
     def generate_json(self, message, function, additional_instructions=""):
         # The API call must use the 'tools' parameter instead of 'response_json_schema'
-        tool_definition = self._add_function(function)
+        function_definition = self._add_function(function)
 
         response = self.client.models.generate_content(
             model=self._json_model,
             contents=message,
             config=types.GenerateContentConfig(
                 system_instruction=f"{self.instructions}.{additional_instructions}",
-                tools=[types.Tool(function_declarations=[tool_definition])],
+                tools=[types.Tool(function_declarations=[function_definition])],
+                tool_config={
+                    "function_calling_config": {
+                        "mode": "ANY",  # Force a function call
+                    }
+                },
             ),
         )
 
         # The response is now a ToolCall, not a JSON string
         try:
-            log(response.candidates[0].content.parts[0], _print=True)
+            # log(response.candidates[0].content.parts[0].function_call, _print=True)
             tool_call = response.candidates[0].content.parts[0].function_call
             if tool_call and tool_call.name == function["name"]:
                 return tool_call.args
@@ -97,6 +116,19 @@ class GeminiAIModel(AutoModel):
 
         # log(results, _print=True)
         # log("=================== END REPORT ===================", _print=True)
+        return response.text
+
+    def generate_audio_text(self, audio_file):
+        response = self.client.models.generate_content(
+            model=self._stt_model,
+            contents=[
+                "Transcribe this audio clip",
+                types.Part.from_bytes(
+                    data=audio_file,
+                    mime_type="audio/mp3",
+                ),
+            ],
+        )
         return response.text
 
     def generate_audio(self, prompt, voice=None):
@@ -135,50 +167,44 @@ class GeminiAIModel(AutoModel):
             ]
         )
 
-        response = self.client.models.generate_content(
-            model=self._tts_model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_modalities=["AUDIO"],
-                speech_config=types.SpeechConfig(
-                    voice_config=types.VoiceConfig(
-                        prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                            voice_name=voice,
+        try:
+            response = self.client.models.generate_content(
+                model=self._tts_model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_modalities=["AUDIO"],
+                    speech_config=types.SpeechConfig(
+                        voice_config=types.VoiceConfig(
+                            prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                                voice_name=voice,
+                            )
                         )
-                    )
+                    ),
                 ),
-            ),
-        )
-        blob = response.candidates[0].content.parts[0].inline_data
+            )
+            blob = response.candidates[0].content.parts[0].inline_data
 
-        # 1. Create an in-memory file from the raw audio bytes
-        raw_audio_stream = io.BytesIO(blob)
+            # Create a WAV file in memory from the raw audio bytes
+            wav_buffer = self._create_wav_header(blob.data)
 
-        # 2. Load the raw PCM audio using pydub
-        # `format='s16le'` is critical for telling pydub the correct format
-        audio_segment = AudioSegment.from_file(raw_audio_stream, format="s16le")
+            # 2. Load the WAV audio using pydub, which will now correctly read the header
+            audio_segment = AudioSegment.from_file(wav_buffer, format="wav")
 
-        # 3. Create a new in-memory buffer for the MP3 output
-        mp3_buffer = io.BytesIO()
+            # 3. Create a new in-memory buffer for the MP3 output
+            mp3_buffer = io.BytesIO()
 
-        # 4. Export the audio segment directly to the in-memory buffer
-        audio_segment.export(mp3_buffer, format="mp3")
+            # 4. Export the audio segment directly to the in-memory buffer
+            audio_segment.export(mp3_buffer, format="mp3")
 
-        # 5. Return the bytes from the buffer, not the filename
-        return mp3_buffer.getvalue()
+            # 5. Return the bytes from the buffer, not the filename
+            return mp3_buffer.getvalue()
 
-    def generate_audio_text(self, audio_file):
-        response = self.client.models.generate_content(
-            model=self._stt_model,
-            contents=[
-                "Transcribe this audio clip",
-                types.Part.from_bytes(
-                    data=audio_file,
-                    mime_type="audio/mp3",
-                ),
-            ],
-        )
-        return response.text
+        except Exception as e:
+            log(
+                f"==== Error: Unable to generate audio ====\n{type(e)}:{e}", _print=True
+            )
+            # You can return a default empty byte string or re-raise the exception
+            raise e
 
     def generate_image(self, prompt, **kwargs):
         image = None
@@ -192,7 +218,8 @@ class GeminiAIModel(AutoModel):
                 for part in response.candidates[0].content.parts
                 if part.inline_data
             ]
-            image = io.BytesIO(image_parts[0] if image_parts else None)
+            # log(image_parts, _print=True)
+            image = image_parts[0]
         except Exception as e:
             log(f"==== Error: Unable to create image ====\n\n{e}", _print=True)
             raise e

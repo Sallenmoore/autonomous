@@ -2,6 +2,7 @@ from autonomous import log
 from autonomous.model.autoattr import ReferenceAttr
 from autonomous.model.automodel import AutoModel
 
+from .models.gemini import GeminiAIModel
 from .models.openai import OpenAIModel
 
 
@@ -17,9 +18,9 @@ def clear_agents():
 class BaseAgent(AutoModel):
     meta = {"abstract": True, "allow_inheritance": True, "strict": False}
 
-    client = ReferenceAttr(choices=[OpenAIModel])
+    client = ReferenceAttr(choices=[GeminiAIModel])
 
-    _ai_model = OpenAIModel
+    _ai_model = GeminiAIModel
 
     def delete(self):
         if self.client:
@@ -39,9 +40,3 @@ class BaseAgent(AutoModel):
             self.client.save()
             self.save()
         return self.client
-
-    def clear_files(self, file_id=None):
-        return self.client.clear_files(file_id)
-
-    def attach_file(self, file_contents, filename="dbdata.json"):
-        return self.client.attach_file(file_contents, filename)

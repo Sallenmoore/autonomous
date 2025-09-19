@@ -15,12 +15,6 @@ class JSONAgent(BaseAgent):
         default="A helpful AI assistant trained to assist with generating JSON formatted data."
     )
 
-    def clear_files(self, file_id=None):
-        return self.get_client().clear_files(file_id)
-
-    def attach_file(self, file_contents, filename="dbdata.json"):
-        return self.get_client().attach_file(file_contents, filename)
-
     def generate(self, messages, function, additional_instructions=""):
         result = self.get_client().generate_json(
             messages, function, additional_instructions
