@@ -36,35 +36,55 @@ class GeminiAIModel(AutoModel):
         return self._client
 
     def _add_function(self, user_function):
-        user_function["strict"] = True
-        user_function["parameters"]["additionalProperties"] = False
-        if not user_function["parameters"].get("required"):
-            user_function["parameters"]["required"] = list(
-                user_function["parameters"]["properties"].keys()
+        # This function is now a bit more advanced to conform to the Tool Use schema
+        tool_schema = {
+            "name": user_function.get("name"),
+            "description": user_function.get("description"),
+            "parameters": user_function.get("parameters"),
+        }
+
+        # Validate that the schema has a name, description, and parameters
+        if not all(
+            [tool_schema["name"], tool_schema["description"], tool_schema["parameters"]]
+        ):
+            raise ValueError(
+                "Tool schema must have a 'name', 'description', and 'parameters' field."
             )
-        return user_function
+
+        # Ensure 'strict' and 'additionalProperties' are set for a robust schema
+        # tool_schema["parameters"]["additionalProperties"] = False
+        # tool_schema["parameters"]["strict"] = True
+
+        return tool_schema
 
     def generate_json(self, message, function, additional_instructions=""):
-        function = self._add_function(function)
+        # The API call must use the 'tools' parameter instead of 'response_json_schema'
+        tool_definition = self._add_function(function)
+
         response = self.client.models.generate_content(
             model=self._json_model,
             contents=message,
-            config={
-                "response_mime_type": "application/json",
-                "response_json_schema": function,
-                "system_instruction": f"{self.instructions}.{additional_instructions}",
-            },
+            config=types.GenerateContentConfig(
+                system_instruction=f"{self.instructions}.{additional_instructions}",
+                tools=[types.Tool(function_declarations=[tool_definition])],
+            ),
         )
-        results = response.text
+
+        # The response is now a ToolCall, not a JSON string
         try:
-            results = json.loads(results, strict=False)
-        except Exception:
-            log(f"==== Invalid JSON:\n{results}", _print=True)
+            log(response.candidates[0].content.parts[0], _print=True)
+            tool_call = response.candidates[0].content.parts[0].function_call
+            if tool_call and tool_call.name == function["name"]:
+                return tool_call.args
+            else:
+                log(
+                    "==== Model did not return a tool call or returned the wrong one. ===="
+                )
+                log(f"Response: {response.text}", _print=True)
+                return {}
+        except Exception as e:
+            log(f"==== Failed to parse ToolCall response: {e} ====")
             return {}
-        else:
-            # log(f"==== Results: {results}", _print=True)
-            # log("=================== END REPORT ===================", _print=True)
-            return results
 
     def generate_text(self, message, additional_instructions=""):
         response = self.client.models.generate_content(

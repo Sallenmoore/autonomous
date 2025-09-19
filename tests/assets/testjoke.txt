@@ -1,17 +1,11 @@
-Alright, let's workshop this. Here's a little something for the set.
+Alright, got a new one for you. Let's see if this lands. We can workshop the delivery.
 
-*(Leans into the mic, friendly and conspiratorial)*
+*(Leans into the mic, conversational tone)*
 
-You know, debugging code is a weirdly emotional rollercoaster. It's the only job where you go through the five stages of grief several times a day.
+I've realized that writing code is the only profession where you can spend your entire day in a deeply committed, borderline-abusive relationship with an imaginary friend.
 
-First, there's **Denial**: "No, that's impossible. My code is perfect. The *computer* must be wrong."
+You spend hours whispering your deepest secrets to it... "Okay, *if* the user clicks this button, *then* I want you to make them happy..." You pour your heart and soul into making it understand you.
 
-Then, **Anger**: "WHY WON'T YOU WORK?! I GAVE YOU LIFE! I CAN TAKE IT AWAY!" *(mimes shaking a monitor)*
+And after all that, it just looks you dead in the eye and says:
 
-Then, **Bargaining**: "Okay, look. If you just work for this one demo, I swear I'll go back and write the documentation. I'll even add comments. *Good* comments."
-
-Followed by **Depression**: "I'm a fraud. I've forgotten how to type. Maybe I should have been a baker."
-
-And finally, you reach **Acceptance**. Which, for a programmer, is when you finally accept that you have no idea why it's not working... and you just copy and paste a solution from a twelve-year-old Stack Overflow post written by someone named `CodeWizard420`.
-
-And it works. And you have learned nothing. It's a beautiful cycle.
+**`SyntaxError: Unexpected emotional outburst.`**
