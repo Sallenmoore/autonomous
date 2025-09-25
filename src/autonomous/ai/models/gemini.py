@@ -6,6 +6,7 @@ import wave
 
 from google import genai
 from google.genai import types
+from PIL import Image as PILImage
 from pydub import AudioSegment
 
 from autonomous import log
@@ -118,6 +119,24 @@ class GeminiAIModel(AutoModel):
         # log("=================== END REPORT ===================", _print=True)
         return response.text
 
+    def summarize_text(self, text, primer=""):
+        primer = primer or self.instructions
+        response = self.client.models.generate_content(
+            model=self._summary_model,
+            config=types.GenerateContentConfig(
+                system_instruction=f"{primer}",
+            ),
+            contents=text,
+        )
+        log(response)
+        try:
+            result = response.candidates[0].content.parts[0].text
+        except Exception as e:
+            log(f"{type(e)}:{e}\n\n Unable to generate content ====")
+            return None
+
+        return result
+
     def generate_audio_text(self, audio_file):
         response = self.client.models.generate_content(
             model=self._stt_model,
@@ -208,10 +227,17 @@ class GeminiAIModel(AutoModel):
 
     def generate_image(self, prompt, **kwargs):
         image = None
+        contents = [prompt]
+
+        if kwargs.get("files"):
+            files = kwargs.get("files")
+            images = [PILImage.open(io.BytesIO(f)) for f in files if f]
+            contents += images
+
         try:
             response = self.client.models.generate_content(
                 model=self._image_model,
-                contents=[prompt],
+                contents=contents,
             )
             image_parts = [
                 part.inline_data.data
@@ -224,21 +250,3 @@ class GeminiAIModel(AutoModel):
             log(f"==== Error: Unable to create image ====\n\n{e}", _print=True)
             raise e
         return image
-
-    def summarize_text(self, text, primer=""):
-        primer = primer or self.instructions
-        response = self.client.models.generate_content(
-            model=self._summary_model,
-            config=types.GenerateContentConfig(
-                system_instruction=f"{primer}",
-            ),
-            contents=text,
-        )
-        log(response)
-        try:
-            result = response.candidates[0].content.parts[0].text
-        except Exception as e:
-            log(f"{type(e)}:{e}\n\n Unable to generate content ====")
-            return None
-
-        return result
