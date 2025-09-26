@@ -16,7 +16,6 @@ username = urllib.parse.quote_plus(str(os.getenv("DB_USERNAME")))
 dbname = os.getenv("DB_DB")
 # log(f"Connecting to MongoDB at {host}:{port} with {username}:{password} for {dbname}")
 connect(host=f"mongodb://{username}:{password}@{host}:{port}/{dbname}?authSource=admin")
-# log(f"{db}")
 
 
 class AutoModel(Document):
@@ -113,12 +112,6 @@ class AutoModel(Document):
                 subclasses += subclass.__subclasses__()
                 visited_subclasses += [subclass]
         raise ValueError(f"Model {model} not found")
-
-    @classmethod
-    def get_model(cls, model, pk=None):
-        # log(model, pk)
-        Model = cls.load_model(model)
-        return Model.get(pk) if Model and pk else Model
 
     @classmethod
     def get(cls, pk):
