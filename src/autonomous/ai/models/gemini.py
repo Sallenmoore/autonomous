@@ -34,7 +34,9 @@ class GeminiAIModel(AutoModel):
     @property
     def client(self):
         if not self._client:
+            # log("=== Initializing Gemini AI Client ===", _print=True)
             self._client = genai.Client(api_key=os.environ.get("GOOGLEAI_KEY"))
+            # log("=== Gemini AI Client Initialized ===", _print=True)
         return self._client
 
     def _add_function(self, user_function):
@@ -233,18 +235,18 @@ class GeminiAIModel(AutoModel):
             files = kwargs.get("files")
             images = [PILImage.open(io.BytesIO(f)) for f in files if f]
             contents += images
-
         try:
+            # log(self._image_model, contents, _print=True)
             response = self.client.models.generate_content(
                 model=self._image_model,
                 contents=contents,
             )
+            # log(response.candidates[0], _print=True)
             image_parts = [
                 part.inline_data.data
                 for part in response.candidates[0].content.parts
                 if part.inline_data
             ]
-            # log(image_parts, _print=True)
             image = image_parts[0]
         except Exception as e:
             log(f"==== Error: Unable to create image ====\n\n{e}", _print=True)
