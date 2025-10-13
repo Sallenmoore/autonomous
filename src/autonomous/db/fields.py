@@ -1493,7 +1493,7 @@ class GenericReferenceField(BaseField):
                     get_document(value.get("_cls")), value.get("_ref")
                 )
             except DoesNotExist:
-                log(f"{value} DoesNotExist")
+                # log(f"{value} DoesNotExist")
                 return
 
         if isinstance(value, Document):
