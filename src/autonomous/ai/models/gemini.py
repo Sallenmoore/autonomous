@@ -240,8 +240,32 @@ class GeminiAIModel(AutoModel):
             response = self.client.models.generate_content(
                 model=self._image_model,
                 contents=contents,
+                config=types.GenerateContentConfig(
+                    safety_settings=[
+                        types.SafetySetting(
+                            category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                            threshold=types.HarmBlockThreshold.BLOCK_NONE,
+                        ),
+                        types.SafetySetting(
+                            category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                            threshold=types.HarmBlockThreshold.BLOCK_NONE,
+                        ),
+                        types.SafetySetting(
+                            category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                            threshold=types.HarmBlockThreshold.BLOCK_NONE,
+                        ),
+                        types.SafetySetting(
+                            category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+                            threshold=types.HarmBlockThreshold.BLOCK_NONE,
+                        ),
+                        types.SafetySetting(
+                            category=types.HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY,
+                            threshold=types.HarmBlockThreshold.BLOCK_NONE,
+                        ),
+                    ]
+                ),
             )
-            # log(response.candidates[0], _print=True)
+            log(response.candidates[0], _print=True)
             image_parts = [
                 part.inline_data.data
                 for part in response.candidates[0].content.parts
@@ -250,7 +274,7 @@ class GeminiAIModel(AutoModel):
             image = image_parts[0]
         except Exception as e:
             log(
-                f"==== Error: {response} ====",
+                f"==== Error: {response.promptFeedback.blockReason} ====",
                 _print=True,
             )
             log(
