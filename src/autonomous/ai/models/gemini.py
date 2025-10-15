@@ -274,7 +274,7 @@ class GeminiAIModel(AutoModel):
             image = image_parts[0]
         except Exception as e:
             log(
-                f"==== Error: {response.promptFeedback.blockReason} ====",
+                f"==== Error: {response} ====",
                 _print=True,
             )
             log(
