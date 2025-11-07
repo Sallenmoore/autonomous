@@ -17,5 +17,10 @@ class AudioAgent(BaseAgent):
     def generate(self, prompt, **kwargs):
         return self.get_client().generate_audio(prompt, **kwargs)
 
+    ## DEPRECATED - use transcribe instead
     def generate_text(self, audio, **kwargs):
+        log("AudioAgent.generate_text is deprecated; use transcribe instead.")
+        return self.get_client().generate_audio_text(audio, **kwargs)
+
+    def transcribe(self, audio, **kwargs):
         return self.get_client().generate_audio_text(audio, **kwargs)
