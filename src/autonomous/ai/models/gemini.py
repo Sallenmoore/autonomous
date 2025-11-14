@@ -262,7 +262,10 @@ class GeminiAIModel(AutoModel):
                             category=types.HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY,
                             threshold=types.HarmBlockThreshold.BLOCK_NONE,
                         ),
-                    ]
+                    ],
+                    image_config=types.ImageConfig(
+                        aspect_ratio=kwargs.get("aspect_ratio", "3:4"), image_size="4K"
+                    ),
                 ),
             )
             log(response.candidates[0], _print=True)
