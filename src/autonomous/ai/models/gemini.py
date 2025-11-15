@@ -264,7 +264,8 @@ class GeminiAIModel(AutoModel):
                         ),
                     ],
                     image_config=types.ImageConfig(
-                        aspect_ratio=kwargs.get("aspect_ratio", "3:4"), image_size="4K"
+                        aspect_ratio=kwargs.get("aspect_ratio", "3:4"),
+                        image_size=kwargs.get("image_size", "2K"),
                     ),
                 ),
             )
