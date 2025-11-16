@@ -139,11 +139,13 @@ class GeminiAIModel(AutoModel):
 
         return result
 
-    def generate_audio_text(self, audio_file):
+    def generate_audio_text(
+        self, audio_file, prompt="Transcribe this audio clip", **kwargs
+    ):
         response = self.client.models.generate_content(
             model=self._stt_model,
             contents=[
-                "Transcribe this audio clip",
+                prompt,
                 types.Part.from_bytes(
                     data=audio_file,
                     mime_type="audio/mp3",
