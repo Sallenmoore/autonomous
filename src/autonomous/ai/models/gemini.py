@@ -280,10 +280,6 @@ class GeminiAIModel(AutoModel):
             image = image_parts[0]
         except Exception as e:
             log(
-                f"==== Error: {response} ====",
-                _print=True,
-            )
-            log(
                 f"==== Error: Unable to create image ====\n\n{e}",
                 _print=True,
             )
