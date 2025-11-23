@@ -3,6 +3,7 @@ import json
 import os
 import random
 import wave
+from http import client
 
 from google import genai
 from google.genai import types
@@ -234,9 +235,11 @@ class GeminiAIModel(AutoModel):
         contents = [prompt]
 
         if kwargs.get("files"):
-            files = kwargs.get("files")
-            images = [PILImage.open(io.BytesIO(f)) for f in files if f]
-            contents += images
+            for fn, f in kwargs.get("files").items():
+                media = PILImage.open(io.BytesIO(f))
+                myfile = self.client.files.upload(file=media / fn)
+                contents += [myfile]
+
         try:
             # log(self._image_model, contents, _print=True)
             response = self.client.models.generate_content(
