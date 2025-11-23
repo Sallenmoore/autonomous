@@ -16,10 +16,10 @@ from autonomous.model.automodel import AutoModel
 
 class GeminiAIModel(AutoModel):
     _client = None
-    _text_model = "gemini-2.5-pro"
+    _text_model = "gemini-3-pro-preview"
     _summary_model = "gemini-2.5-flash"
-    _image_model = "gemini-2.5-flash-image-preview"
-    _json_model = "gemini-2.5-pro"
+    _image_model = "gemini-3-pro-image-preview"
+    _json_model = "gemini-3-pro-preview"
     _stt_model = "gemini-2.5-flash"
     _tts_model = "gemini-2.5-flash-preview-tts"
     messages = ListAttr(StringAttr(default=[]))
@@ -271,7 +271,8 @@ class GeminiAIModel(AutoModel):
                     ),
                 ),
             )
-            log(response.candidates[0], _print=True)
+            # log(response, _print=True)
+            # log(response.candidates[0], _print=True)
             image_parts = [
                 part.inline_data.data
                 for part in response.candidates[0].content.parts
