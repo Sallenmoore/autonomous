@@ -236,8 +236,10 @@ class GeminiAIModel(AutoModel):
 
         if kwargs.get("files"):
             for fn, f in kwargs.get("files").items():
-                media = PILImage.open(io.BytesIO(f))
-                myfile = self.client.files.upload(file=media / fn)
+                media = io.BytesIO(f)
+                myfile = self.client.files.upload(
+                    file=media, config={"mime_type": "image/webp", "display_name": fn}
+                )
                 contents += [myfile]
 
         try:
