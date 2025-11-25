@@ -22,7 +22,7 @@ class GeminiAIModel(AutoModel):
     _summary_model = "gemini-2.5-flash"
     _image_model = "gemini-3-pro-image-preview"
     _json_model = "gemini-3-pro-preview"
-    _stt_model = "gemini-2.5-flash"
+    _stt_model = "gemini-3-pro-preview"
     _tts_model = "gemini-2.5-flash-preview-tts"
     messages = ListAttr(StringAttr(default=[]))
     name = StringAttr(default="agent")
