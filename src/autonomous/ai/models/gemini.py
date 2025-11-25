@@ -1,3 +1,4 @@
+import datetime
 import io
 import json
 import os
@@ -143,14 +144,19 @@ class GeminiAIModel(AutoModel):
     def generate_audio_text(
         self, audio_file, prompt="Transcribe this audio clip", **kwargs
     ):
+        myfile = self.client.files.upload(
+            file=io.BytesIO(audio_file),
+            config={
+                "mime_type": "audio/mp3",
+                "display_name": kwargs.get("display_name", "audio.mp3"),
+            },
+        )
+
         response = self.client.models.generate_content(
             model=self._stt_model,
             contents=[
                 prompt,
-                types.Part.from_bytes(
-                    data=audio_file,
-                    mime_type="audio/mp3",
-                ),
+                myfile,
             ],
         )
         return response.text
