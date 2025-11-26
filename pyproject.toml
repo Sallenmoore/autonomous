@@ -11,7 +11,7 @@ description = "Containerized application framework built on Flask with additiona
 dynamic = ["version", "dependencies"]
 readme = "README.md"
 requires-python = ">=3.12"
-license={file = "LICENSE"}
+#license = {text = "MIT License"}
 classifiers=[
     "Programming Language :: Python :: 3.12",
     "License :: OSI Approved :: MIT License",
@@ -20,6 +20,11 @@ classifiers=[
 
 [project.urls]
 homepage="https://github.com/Sallenmoore/autonomous"
+
+[tool.setuptools]
+# This prevents setuptools from adding the 'License-File' metadata key
+# which is causing the "unrecognized field" error in twine.
+license-files = []
 
 [tool.setuptools.dynamic]
 #https://setuptools.pypa.io/en/latest/userguide/pyproject_config.html#dynamic-metadata

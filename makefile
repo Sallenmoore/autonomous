@@ -7,8 +7,8 @@ export
 all: test clean package
 
 package: clean
+	python -m pip install --upgrade build twine setuptools wheel
 	python -m build
-	python -m pip install --upgrade twine
 	twine check dist/*
 	twine upload dist/* --skip-existing --verbose
 
