@@ -24,6 +24,8 @@ class GeminiAIModel(AutoModel):
     _json_model = "gemini-3-pro-preview"
     _stt_model = "gemini-3-pro-preview"
     _tts_model = "gemini-2.5-flash-preview-tts"
+    MAX_FILES = 14
+
     messages = ListAttr(StringAttr(default=[]))
     name = StringAttr(default="agent")
     instructions = StringAttr(
@@ -241,12 +243,16 @@ class GeminiAIModel(AutoModel):
         contents = [prompt]
 
         if kwargs.get("files"):
+            counter = 0
             for fn, f in kwargs.get("files").items():
                 media = io.BytesIO(f)
                 myfile = self.client.files.upload(
                     file=media, config={"mime_type": "image/webp", "display_name": fn}
                 )
                 contents += [myfile]
+                counter += 1
+                if counter >= self.MAX_FILES:
+                    break
 
         try:
             # log(self._image_model, contents, _print=True)
