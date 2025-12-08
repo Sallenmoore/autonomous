@@ -247,7 +247,8 @@ class GeminiAIModel(AutoModel):
             for fn, f in kwargs.get("files").items():
                 media = io.BytesIO(f)
                 myfile = self.client.files.upload(
-                    file=media, config={"mime_type": "image/webp", "display_name": fn}
+                    file=media,
+                    config={"mime_type": "image/webp", "display_name": fn},
                 )
                 contents += [myfile]
                 counter += 1
