@@ -1,18 +1,14 @@
-import datetime
 import io
-import json
 import os
 import random
 import wave
-from http import client
 
 from google import genai
 from google.genai import types
-from PIL import Image as PILImage
 from pydub import AudioSegment
 
 from autonomous import log
-from autonomous.model.autoattr import DictAttr, ListAttr, StringAttr
+from autonomous.model.autoattr import ListAttr, StringAttr
 from autonomous.model.automodel import AutoModel
 
 
@@ -25,6 +21,38 @@ class GeminiAIModel(AutoModel):
     _stt_model = "gemini-3-pro-preview"
     _tts_model = "gemini-2.5-flash-preview-tts"
     MAX_FILES = 14
+    VOICES = {
+        "Zephyr": ["female"],
+        "Puck": ["male"],
+        "Charon": ["male"],
+        "Kore": ["female"],
+        "Fenrir": ["non-binary"],
+        "Leda": ["female"],
+        "Orus": ["male"],
+        "Aoede": ["female"],
+        "Callirhoe": ["female"],
+        "Autonoe": ["female"],
+        "Enceladus": ["male"],
+        "Iapetus": ["male"],
+        "Umbriel": ["male"],
+        "Algieba": ["male"],
+        "Despina": ["female"],
+        "Erinome": ["female"],
+        "Algenib": ["male"],
+        "Rasalgethi": ["non-binary"],
+        "Laomedeia": ["female"],
+        "Achernar": ["female"],
+        "Alnilam": ["male"],
+        "Schedar": ["male"],
+        "Gacrux": ["female"],
+        "Pulcherrima": ["non-binary"],
+        "Achird": ["male"],
+        "Zubenelgenubi": ["male"],
+        "Vindemiatrix": ["female"],
+        "Sadachbia": ["male"],
+        "Sadaltager": ["male"],
+        "Sulafar": ["female"],
+    }
 
     messages = ListAttr(StringAttr(default=[]))
     name = StringAttr(default="agent")
@@ -163,41 +191,17 @@ class GeminiAIModel(AutoModel):
         )
         return response.text
 
+    def list_voices(self, filters=[]):
+        if not filters:
+            return list(self.VOICES.keys())
+        voices = []
+        for voice, attribs in self.VOICES.items():
+            if any(f.lower() in attribs for f in filters):
+                voices.append(voice)
+        return voices
+
     def generate_audio(self, prompt, voice=None):
-        voice = voice or random.choice(
-            [
-                "Zephyr",
-                "Puck",
-                "Charon",
-                "Kore",
-                "Fenrir",
-                "Leda",
-                "Orus",
-                "Aoede",
-                "Callirhoe",
-                "Autonoe",
-                "Enceladus",
-                "Iapetus",
-                "Umbriel",
-                "Algieba",
-                "Despina",
-                "Erinome",
-                "Algenib",
-                "Rasalgethi",
-                "Laomedeia",
-                "Achernar",
-                "Alnilam",
-                "Schedar",
-                "Gacrux",
-                "Pulcherrima",
-                "Achird",
-                "Zubenelgenubi",
-                "Vindemiatrix",
-                "Sadachbia",
-                "Sadaltager",
-                "Sulafar",
-            ]
-        )
+        voice = voice or random.choice(self.list_voices())
 
         try:
             response = self.client.models.generate_content(
