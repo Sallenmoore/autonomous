@@ -26,5 +26,5 @@ class AudioAgent(BaseAgent):
     def transcribe(self, audio, **kwargs):
         return self.get_client().generate_audio_text(audio, **kwargs)
 
-    def available_voices(filters=filters):
-        return AudioAgent.get_client().list_voices(filters=filters)
+    def available_voices(self, filters=filters):
+        return self.get_client().list_voices(filters=filters)

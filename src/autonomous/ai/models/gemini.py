@@ -200,9 +200,8 @@ class GeminiAIModel(AutoModel):
                 voices.append(voice)
         return voices
 
-    def generate_audio(self, prompt, voice=None):
+    def generate_audio(self, prompt, voice=None, **kwargs):
         voice = voice or random.choice(self.list_voices())
-
         try:
             response = self.client.models.generate_content(
                 model=self._tts_model,
