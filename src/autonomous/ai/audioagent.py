@@ -1,9 +1,7 @@
 import filters
 from autonomous import log
 from autonomous.ai.baseagent import BaseAgent
-from autonomous.model.autoattr import ReferenceAttr, StringAttr
-
-from .models.openai import OpenAIModel
+from autonomous.model.autoattr import StringAttr
 
 
 class AudioAgent(BaseAgent):
@@ -26,5 +24,5 @@ class AudioAgent(BaseAgent):
     def transcribe(self, audio, **kwargs):
         return self.get_client().generate_audio_text(audio, **kwargs)
 
-    def available_voices(self, filters=filters):
+    def available_voices(self, filters=[]):
         return self.get_client().list_voices(filters=filters)
