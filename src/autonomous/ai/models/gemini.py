@@ -292,8 +292,8 @@ class GeminiAIModel(AutoModel):
                     ),
                 ),
             )
-            # log(response, _print=True)
-            # log(response.candidates, _print=True)
+            log(response, _print=True)
+            log(response.candidates, _print=True)
             image_parts = [
                 part.inline_data.data
                 for part in response.candidates[0].content.parts
