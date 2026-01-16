@@ -15,9 +15,9 @@ class JSONAgent(BaseAgent):
         default="A helpful AI assistant trained to assist with generating JSON formatted data."
     )
 
-    def generate(self, messages, function, additional_instructions=""):
+    def generate(self, messages, function, additional_instructions="", **kwargs):
         result = self.get_client().generate_json(
-            messages, function, additional_instructions
+            messages, function, additional_instructions, **kwargs
         )
         if isinstance(result, str):
             result = json.loads(result)

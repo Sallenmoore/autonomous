@@ -1,10 +1,13 @@
 import io
 import os
 import random
+import re
+import time
 import wave
 
 from google import genai
 from google.genai import types
+from google.genai.types import Part
 from pydub import AudioSegment
 
 from autonomous import log
@@ -21,6 +24,7 @@ class GeminiAIModel(AutoModel):
     _stt_model = "gemini-3-pro-preview"
     _tts_model = "gemini-2.5-flash-preview-tts"
     MAX_FILES = 14
+    MAX_SUMMARY_TOKEN_LENGTH = 10000
     VOICES = {
         "Zephyr": ["female"],
         "Puck": ["male"],
@@ -106,13 +110,49 @@ class GeminiAIModel(AutoModel):
         buffer.seek(0)
         return buffer
 
-    def generate_json(self, message, function, additional_instructions=""):
+    def _add_files(self, file_list):
+        existing_files = self.client.files.list()
+        log(f"Existing files: {[f.display_name for f in existing_files]}", _print=True)
+        for f in existing_files:
+            result = self.client.files.delete(name=f.name)
+            log(f"Deleting old version of {f.name}: {result}", _print=True)
+        file_refs = []
+        for file_dict in file_list:
+            fn = file_dict["name"]
+            fileobj = file_dict["file"]
+            log(f"Uploading new {fn}...", _print=True)
+            uploaded_file = self.client.files.upload(
+                file=fileobj.name,
+                config={"mime_type": "application/json", "display_name": fn},
+            )
+            # 4. Wait for processing (Usually instant for JSON, critical for Video/PDF)
+
+            # This ensures the file is 'ACTIVE' before you use it in a prompt.
+            while uploaded_file.state.name == "PROCESSING":
+                time.sleep(1)
+                uploaded_file = self.client.get_file(uploaded_file.name)
+            file_refs.append(uploaded_file)
+        return file_refs
+
+    def generate_json(self, message, function, additional_instructions="", **kwargs):
         # The API call must use the 'tools' parameter instead of 'response_json_schema'
         function_definition = self._add_function(function)
 
+        contents = [message]
+        if uri := kwargs.get("uri"):
+            contents.append(
+                Part.from_uri(
+                    file_uri=uri,
+                    mime_type="application/json",
+                ),
+            )
+
+        if files := kwargs.get("files"):
+            contents += self._add_files(files)
+
         response = self.client.models.generate_content(
             model=self._json_model,
-            contents=message,
+            contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=f"{self.instructions}.{additional_instructions}",
                 tools=[types.Tool(function_declarations=[function_definition])],
@@ -140,36 +180,61 @@ class GeminiAIModel(AutoModel):
             log(f"==== Failed to parse ToolCall response: {e} ====")
             return {}
 
-    def generate_text(self, message, additional_instructions=""):
+    def generate_text(self, message, additional_instructions="", **kwargs):
+        contents = [message]
+        if uri := kwargs.get("uri"):
+            contents.append(
+                Part.from_uri(
+                    file_uri=uri,
+                    mime_type="application/json",
+                ),
+            )
+
+        if files := kwargs.get("files"):
+            contents += self._add_files(files)
+
         response = self.client.models.generate_content(
             model=self._text_model,
             config=types.GenerateContentConfig(
                 system_instruction=f"{self.instructions}.{additional_instructions}",
             ),
-            contents=message,
+            contents=contents,
         )
 
         # log(results, _print=True)
         # log("=================== END REPORT ===================", _print=True)
         return response.text
 
-    def summarize_text(self, text, primer=""):
+    def summarize_text(self, text, primer="", **kwargs):
         primer = primer or self.instructions
-        response = self.client.models.generate_content(
-            model=self._summary_model,
-            config=types.GenerateContentConfig(
-                system_instruction=f"{primer}",
-            ),
-            contents=text,
-        )
-        log(response)
-        try:
-            result = response.candidates[0].content.parts[0].text
-        except Exception as e:
-            log(f"{type(e)}:{e}\n\n Unable to generate content ====")
-            return None
 
-        return result
+        updated_prompt_list = []
+        # Find all words in the prompt
+        words = re.findall(r"\w+", text)
+        # Split the words into chunks
+        for i in range(0, len(words), self.MAX_SUMMARY_TOKEN_LENGTH):
+            # Join a chunk of words and add to the list
+            updated_prompt_list.append(
+                " ".join(words[i : i + self.MAX_SUMMARY_TOKEN_LENGTH])
+            )
+
+        full_summary = ""
+        for p in updated_prompt_list:
+            response = self.client.models.generate_content(
+                model=self._summary_model,
+                config=types.GenerateContentConfig(
+                    system_instruction=f"{primer}",
+                ),
+                contents=text,
+            )
+            try:
+                summary = response.candidates[0].content.parts[0].text
+            except Exception as e:
+                log(f"{type(e)}:{e}\n\n Unable to generate content ====", _print=True)
+                break
+            else:
+                full_summary += summary + "\n"
+        return summary
 
     def generate_audio_text(
         self, audio_file, prompt="Transcribe this audio clip", **kwargs

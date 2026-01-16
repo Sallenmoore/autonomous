@@ -1,7 +1,8 @@
 from autonomous import log
+from autonomous.ai.baseagent import BaseAgent
 from autonomous.model.autoattr import ReferenceAttr, StringAttr
 from autonomous.model.automodel import AutoModel
-from autonomous.ai.baseagent import BaseAgent
+
 from .models.openai import OpenAIModel
 
 
@@ -14,8 +15,10 @@ class TextAgent(BaseAgent):
         default="A helpful AI assistant trained to assist with generating text according to the given requirements."
     )
 
-    def summarize_text(self, text, primer=""):
-        return self.get_client().summarize_text(text, primer)
+    def summarize_text(self, text, primer="", **kwargs):
+        return self.get_client().summarize_text(text, primer, **kwargs)
 
-    def generate(self, messages, additional_instructions=""):
-        return self.get_client().generate_text(messages, additional_instructions)
+    def generate(self, messages, additional_instructions="", **kwargs):
+        return self.get_client().generate_text(
+            messages, additional_instructions, **kwargs
+        )
