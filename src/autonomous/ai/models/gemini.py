@@ -23,6 +23,16 @@ class GeminiAIModel(AutoModel):
     _json_model = "gemini-3-pro-preview"
     _stt_model = "gemini-3-pro-preview"
     _tts_model = "gemini-2.5-flash-preview-tts"
+
+    messages = ListAttr(StringAttr(default=[]))
+    name = StringAttr(default="agent")
+    instructions = StringAttr(
+        default="You are highly skilled AI trained to assist with various tasks."
+    )
+    description = StringAttr(
+        default="A helpful AI assistant trained to assist with various tasks."
+    )
+
     MAX_FILES = 14
     MAX_SUMMARY_TOKEN_LENGTH = 10000
     VOICES = {
@@ -57,15 +67,6 @@ class GeminiAIModel(AutoModel):
         "Sadaltager": ["male"],
         "Sulafar": ["female"],
     }
-
-    messages = ListAttr(StringAttr(default=[]))
-    name = StringAttr(default="agent")
-    instructions = StringAttr(
-        default="You are highly skilled AI trained to assist with various tasks."
-    )
-    description = StringAttr(
-        default="A helpful AI assistant trained to assist with various tasks."
-    )
 
     @property
     def client(self):
@@ -114,8 +115,16 @@ class GeminiAIModel(AutoModel):
         existing_files = self.client.files.list()
         log(f"Existing files: {[f.display_name for f in existing_files]}", _print=True)
         for f in existing_files:
-            result = self.client.files.delete(name=f.name)
-            log(f"Deleting old version of {f.name}: {result}", _print=True)
+            # Delete old files (older than 10 minutes)
+            age_seconds = (
+                (time.time() - f.update_time.timestamp())
+                if f.update_time
+                else (time.time() - f.create_time.timestamp())
+            )
+            log(age_seconds, _print=True)
+            if age_seconds > 900:
+                result = self.client.files.delete(name=f.name)
+                log(f"Deleting old version of {f.name}: {result}", _print=True)
         file_refs = []
         for file_dict in file_list:
             fn = file_dict["name"]
@@ -132,7 +141,10 @@ class GeminiAIModel(AutoModel):
                 time.sleep(1)
                 uploaded_file = self.client.get_file(uploaded_file.name)
             file_refs.append(uploaded_file)
-        return file_refs
+            return file_refs
+
+    def upload(self, file):
+        return self._add_files([file])
 
     def generate_json(self, message, function, additional_instructions="", **kwargs):
         # The API call must use the 'tools' parameter instead of 'response_json_schema'

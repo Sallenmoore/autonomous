@@ -1,8 +1,9 @@
 import json
 
+from autonomous.ai.baseagent import BaseAgent
 from autonomous.model.autoattr import ReferenceAttr, StringAttr
 from autonomous.model.automodel import AutoModel
-from autonomous.ai.baseagent import BaseAgent
+
 from .models.openai import OpenAIModel
 
 
@@ -24,3 +25,6 @@ class JSONAgent(BaseAgent):
         elif not isinstance(result, dict):
             raise ValueError(f"Invalid JSON response from AI model.\n\n{result}")
         return result
+
+    def upload(self, file):
+        return self.get_client().upload(file=file)
