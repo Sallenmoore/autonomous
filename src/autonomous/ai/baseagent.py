@@ -3,24 +3,16 @@ from autonomous.model.autoattr import ReferenceAttr
 from autonomous.model.automodel import AutoModel
 
 from .models.gemini import GeminiAIModel
+from .models.local_model import LocalAIModel
 from .models.openai import OpenAIModel
-
-
-def clear_agents():
-    for agent in OpenAIModel.all():
-        log(f"Deleting {agent.name}")
-        agent.clear_agents()
-        agent.clear_files()
-        agent.delete()
-    return "Success"
 
 
 class BaseAgent(AutoModel):
     meta = {"abstract": True, "allow_inheritance": True, "strict": False}
 
-    client = ReferenceAttr(choices=[GeminiAIModel])
+    client = ReferenceAttr(choices=[LocalAIModel])
 
-    _ai_model = GeminiAIModel
+    _ai_model = LocalAIModel
 
     def delete(self):
         if self.client:
