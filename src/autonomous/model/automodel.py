@@ -8,6 +8,7 @@ from autonomous import log
 from autonomous.db import Document, connect, signals
 from autonomous.db.errors import ValidationError
 from autonomous.db.fields import DateTimeField
+from autonomous.model import db_sync
 
 host = os.getenv("DB_HOST", "db")
 port = os.getenv("DB_PORT", 27017)
@@ -240,6 +241,9 @@ class AutoModel(Document):
         """
         obj = super().save()
         self.pk = obj.pk
+
+        db_sync.request_indexing(self.pk, collection_name=self._get_collection_name())
+
         return self.pk
 
     @classmethod

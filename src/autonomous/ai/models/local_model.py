@@ -3,7 +3,11 @@ import json
 import os
 import random
 
+import numpy as np
+import pymongo
+import redis
 import requests
+from bson.objectid import ObjectId
 from pydub import AudioSegment
 
 from autonomous import log
@@ -12,24 +16,22 @@ from autonomous.model.automodel import AutoModel
 
 
 class LocalAIModel(AutoModel):
-    # Configuration
+    messages = ListAttr(StringAttr(default=[]))
+    name = StringAttr(default="agent")
+    instructions = StringAttr(default="You are a helpful AI.")
+    description = StringAttr(default="A Local AI Model using Ollama and Media AI.")
+
+    # Config
     _ollama_url = os.environ.get("OLLAMA_API_BASE", "http://ollama_internal:11434/api")
     _media_url = os.environ.get("MEDIA_API_BASE", "http://media_ai_internal:5005")
-
-    # Models to use in Ollama
     _text_model = "mistral-nemo"
     _json_model = "mistral-nemo"
 
-    messages = ListAttr(StringAttr(default=[]))
-    name = StringAttr(default="agent")
-    instructions = StringAttr(
-        default="You are highly skilled AI trained to assist with various tasks."
-    )
-    description = StringAttr(
-        default="A helpful AI assistant trained to assist with various tasks."
-    )
+    # DB Connections
+    _mongo_client = pymongo.MongoClient("mongodb://db:27017/")
+    _mongo_db = os.getenv("DB_DB", "default")
+    _redis = redis.Redis(host="cachedb", port=6379, decode_responses=True)
 
-    # Keep your voice list (mapped to random seeds/embeddings in the future)
     VOICES = {
         "Zephyr": ["female"],
         "Puck": ["male"],
@@ -68,11 +70,122 @@ class LocalAIModel(AutoModel):
         Ollama doesn't support 'tools' strictly yet.
         We convert the tool definition into a system prompt instruction.
         """
+        # If the user passes a raw dictionary (like a Gemini tool definition)
+        # we extract the relevant parts for the schema.
         schema = {
             "name": user_function.get("name"),
-            "parameters": user_function.get("parameters"),
+            "description": user_function.get("description", ""),
+            "parameters": user_function.get("parameters", {}),
         }
         return json.dumps(schema, indent=2)
+
+    def get_embedding(self, text):
+        try:
+            res = requests.post(f"{self._media_url}/embeddings", json={"text": text})
+            res.raise_for_status()
+            return res.json()["embedding"]
+        except Exception as e:
+            log(f"Embedding Error: {e}", _print=True)
+            return []
+
+    def build_hybrid_context(self, prompt, focus_object_id=None):
+        """
+        Builds context based on RELATIONAL ASSOCIATIONS + SEMANTIC LORE.
+        """
+
+        # 1. Create a Cache Key based on what defines the "Scene"
+        # We assume 'focus_object_id' + rough prompt length captures the context enough
+        cache_key = f"ctx:{focus_object_id}:{len(prompt) // 50}"
+
+        # 2. Check Cache
+        cached_ctx = self._redis.get(cache_key)
+        if cached_ctx:
+            return cached_ctx
+
+        context_str = ""
+
+        # --- PART 1: MONGODB (Relational Associations) ---
+        # If we are focusing on a specific object, fetch it and its specific refs.
+        if focus_object_id:
+            try:
+                # 1. Fetch the Main Object
+                # Handle both string ID and ObjectId
+                oid = (
+                    ObjectId(focus_object_id)
+                    if isinstance(focus_object_id, str)
+                    else focus_object_id
+                )
+
+                main_obj = self._mongo_db.objects.find_one({"_id": oid})
+
+                if main_obj:
+                    # Start the context with the main object itself
+                    context_str += "### FOCUS OBJECT ###\n"
+                    context_str += prompt
+
+                    # 2. Extract References (Associations)
+                    # 1. Start with the main list
+                    ref_ids = main_obj.get("associations", []) or []
+
+                    # 2. Safely add single fields (if they exist)
+                    if world_id := main_obj.get("world"):
+                        ref_ids.append(world_id)
+
+                    # 3. Safely add lists (ensure they are lists)
+                    ref_ids.extend(main_obj.get("stories", []) or [])
+                    ref_ids.extend(main_obj.get("events", []) or [])
+
+                    if ref_ids:
+                        # Convert all to ObjectIds if they are strings
+                        valid_oids = []
+                        for rid in ref_ids:
+                            try:
+                                valid_oids.append(
+                                    ObjectId(rid) if isinstance(rid, str) else rid
+                                )
+                            except:
+                                pass
+
+                        # 3. Fetch all associated objects in ONE query
+                        if valid_oids:
+                            associated_objs = self._mongo_db.objects.find(
+                                {"_id": {"$in": valid_oids}}
+                            )
+
+                            context_str += "\n### ASSOCIATED REFERENCES ###\n"
+                            for obj in associated_objs:
+                                log(f"Associated Obj: {obj}", _print=True)
+                                context_str += f"- {obj}\n"
+
+                    context_str += "\n"
+            except Exception as e:
+                log(f"Mongo Association Error: {e}", _print=True)
+
+        # --- PART 2: REDIS (Semantic Search) ---
+        # We keep this! It catches "Lore" or "Rules" that aren't explicitly linked in the DB.
+        # e.g., If the sword is "Elven", this finds "Elven History" even if not linked by ID.
+        if len(prompt) > 10:
+            vector = self.get_embedding(prompt)
+            if vector:
+                try:
+                    q = "*=>[KNN 2 @vector $blob AS score]"  # Lowered to 2 to save tokens
+                    params = {"blob": np.array(vector, dtype=np.float32).tobytes()}
+                    results = self._redis.ft("search_index").search(
+                        q, query_params=params
+                    )
+
+                    if results.docs:
+                        context_str += "### RELEVANT LORE ###\n"
+                        for doc in results.docs:
+                            context_str += f"- {doc.content}\n"
+                except Exception as e:
+                    pass
+
+        # 3. Save to Cache (Expire in 60s)
+        # This prevents hammering the DB/Vector engine during a rapid conversation
+        self._redis.set(cache_key, context_str, ex=120)
+
+        return context_str
 
     def generate_json(self, message, function, additional_instructions="", **kwargs):
         """
@@ -81,19 +194,28 @@ class LocalAIModel(AutoModel):
         """
         schema_str = self._convert_tools_to_json_schema(function)
 
-        system_prompt = (
+        focus_pk = kwargs.get("focus_object")
+
+        # Build Relational Context
+        world_context = self.build_hybrid_context(message, focus_object_id=focus_pk)
+
+        # Construct System Prompt
+        full_system_prompt = (
             f"{self.instructions}. {additional_instructions}\n"
             f"You must respond strictly with a valid JSON object matching this schema:\n"
             f"{schema_str}\n"
             f"Do not include markdown formatting or explanations."
+            f"You must strictly adhere to the following context:\n"
+            f"{world_context}"
         )
 
         payload = {
             "model": self._json_model,
             "prompt": message,
-            "system": system_prompt,
+            "system": full_system_prompt,
             "format": "json",  # Force JSON mode
             "stream": False,
+            "keep_alive": "24h",
         }
 
         try:
@@ -112,24 +234,25 @@ class LocalAIModel(AutoModel):
         """
         Standard text generation via Ollama.
         """
+        focus_pk = kwargs.get("focus_object")
+
+        # Build Relational Context
+        world_context = self.build_hybrid_context(message, focus_object_id=focus_pk)
+
+        # Construct System Prompt
+        full_system_prompt = (
+            f"{self.instructions}. {additional_instructions}\n"
+            f"You must strictly adhere to the following context:\n"
+            f"{world_context}"
+        )
+
         payload = {
             "model": self._text_model,
             "prompt": message,
-            "system": f"{self.instructions}. {additional_instructions}",
+            "system": full_system_prompt,
             "stream": False,
+            "keep_alive": "24h",
         }
-
-        # Handle 'files' (Ollama supports images in base64, but not arbitrary files easily yet)
-        # If files are text, you should read them and append to prompt.
-        if file_list := kwargs.get("files"):
-            for file_dict in file_list:
-                fn = file_dict["name"]
-                fileobj = file_dict["file"]
-                if fn.lower().endswith((".txt", ".md", ".json", ".csv")):
-                    content = fileobj.read()
-                    if isinstance(content, bytes):
-                        content = content.decode("utf-8", errors="ignore")
-                    payload["prompt"] += f"\n\nContents of {fn}:\n{content}"
 
         try:
             response = requests.post(f"{self._ollama_url}/generate", json=payload)
@@ -154,6 +277,7 @@ class LocalAIModel(AutoModel):
                 "model": self._text_model,
                 "prompt": f"{primer}:\n\n{chunk}",
                 "stream": False,
+                "keep_alive": "24h",
             }
             try:
                 res = requests.post(f"{self._ollama_url}/generate", json=payload)
@@ -210,7 +334,7 @@ class LocalAIModel(AutoModel):
             log(f"TTS Error: {e}", _print=True)
             return None
 
-    def generate_image(self, prompt, **kwargs):
+    def generate_image(self, prompt, negative_prompt="", **kwargs):
         """
         Generates an image using Local AI.
         If 'files' are provided, performs Image-to-Image generation using the first file as reference.
@@ -218,7 +342,7 @@ class LocalAIModel(AutoModel):
         try:
             # Prepare the multipart data
             # We send the prompt as a form field
-            data = {"prompt": prompt}
+            data = {"prompt": prompt, "negative_prompt": negative_prompt}
             files = {}
 
             # Check if reference images were passed
@@ -233,6 +357,7 @@ class LocalAIModel(AutoModel):
 
                     # Add to the request files
                     # Key must be 'file' to match server.py logic
+                    # TODO: Support multiple images if needed
                     files["file"] = (fn, file_obj, "image/png")
                     break  # We only support 1 reference image for SD Img2Img
 
@@ -265,9 +390,3 @@ class LocalAIModel(AutoModel):
             if any(f.lower() in attribs for f in filters):
                 voices.append(voice)
         return voices
-
-    # Unused methods from original that don't apply to Local AI
-    def upload(self, file):
-        # Local models don't really have a "File Store" API like Gemini.
-        # We handle context by passing text directly in prompt.
-        pass

@@ -39,8 +39,8 @@ rq
 
 ##### AI #####
 ollama
-openai >= 1.42
 google-genai
+sentence-transformers
 
 ##### Parsing #####
 dateparser
