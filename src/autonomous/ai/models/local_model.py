@@ -2,8 +2,6 @@ import io
 import json
 import os
 import random
-import re
-import wave
 
 import requests
 from pydub import AudioSegment
@@ -26,6 +24,9 @@ class LocalAIModel(AutoModel):
     name = StringAttr(default="agent")
     instructions = StringAttr(
         default="You are highly skilled AI trained to assist with various tasks."
+    )
+    description = StringAttr(
+        default="A helpful AI assistant trained to assist with various tasks."
     )
 
     # Keep your voice list (mapped to random seeds/embeddings in the future)

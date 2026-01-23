@@ -23,12 +23,11 @@ class BaseAgent(AutoModel):
         return self.get_client().id
 
     def get_client(self):
-        if self.client is None:
-            self.client = self._ai_model(
-                name=self.name,
-                instructions=self.instructions,
-                description=self.description,
-            )
-            self.client.save()
-            self.save()
+        self.client = self._ai_model(
+            name=self.name,
+            instructions=self.instructions,
+            description=self.description,
+        )
+        self.client.save()
+        self.save()
         return self.client
