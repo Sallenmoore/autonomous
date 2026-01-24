@@ -1,13 +1,13 @@
 import os
-import urllib
+import time
+import urllib.parse
+import uuid
 from datetime import datetime
 
 import numpy as np
 import pymongo
 import redis
 import requests
-from redis.commands.search.field import TagField, TextField, VectorField
-from redis.commands.search.index_definition import IndexDefinition, IndexType
 
 # CONFIGURATION
 db_host = os.getenv("DB_HOST", "db")
@@ -29,7 +29,7 @@ db = mongo[os.getenv("DB_DB")]
 def get_vector(text):
     """Helper to get embedding from your Media AI container"""
     try:
-        resp = requests.post(f"{MEDIA_URL}/embeddings", json={"text": text}, timeout=5)
+        resp = requests.post(f"{MEDIA_URL}/embeddings", json={"text": text}, timeout=30)
         if resp.status_code == 200:
             return resp.json()["embedding"]
     except Exception as e:
@@ -37,12 +37,28 @@ def get_vector(text):
     return None
 
 
-# UPDATE THIS FUNCTION
-def process_single_object_sync(object_id, collection_name):
+def process_single_object_sync(object_id, collection_name, token):
     """
-    Worker now requires collection_name to know where to look.
+    THE WORKER FUNCTION (Runs in Background).
+    It is safe to sleep here because we are not in the web request.
     """
-    print(f"Processing Sync for: {object_id} in {collection_name}")
+    str_id = str(object_id)
+    token_key = f"sync_token:{collection_name}:{str_id}"
+
+    # 1. THE DEBOUNCE WAIT (Happens in background)
+    print(f"Debouncing {str_id} for 5 seconds...")
+    time.sleep(5)
+
+    # 2. THE VERIFICATION
+    # Check if a newer save happened while we slept
+    current_active_token = r.get(token_key)
+
+    if current_active_token != token:
+        print(f"Skipping sync for {str_id}: Superseded by a newer save.")
+        return
+
+    # 3. THE EXECUTION (Embedding generation)
+    print(f"Processing Sync for: {str_id} in {collection_name}")
 
     from bson.objectid import ObjectId
 
@@ -89,26 +105,36 @@ def process_single_object_sync(object_id, collection_name):
         print(f"Successfully Indexed: {doc.get('name')}")
 
 
-# UPDATE THIS FUNCTION
 def request_indexing(object_id, collection_name):
     """
-    Trigger now requires collection_name.
+    THE TRIGGER FUNCTION (Runs in Main App).
+    MUST BE FAST. NO SLEEPING HERE.
     """
+    # Import your Queue Wrapper
+    from autonomous.tasks.autotask import AutoTasks
+
+    # Initialize the Task Runner
+    task_runner = AutoTasks()
+
     str_id = str(object_id)
-    # Include collection in key to avoid collisions between 'User:123' and 'World:123'
-    cooldown_key = f"sync_cooldown:{collection_name}:{str_id}"
+    token_key = f"sync_token:{collection_name}:{str_id}"
 
-    if r.exists(cooldown_key):
-        print(f"Skipping sync for {str_id}: Updated less than 10 mins ago.")
-        return False
+    # 1. GENERATE NEW TOKEN
+    current_token = str(uuid.uuid4())
 
-    r.set(cooldown_key, "1", ex=600)
+    # 2. SAVE TOKEN TO REDIS (Instant)
+    r.set(token_key, current_token, ex=300)
 
+    # 3. ENQUEUE THE TASK (Instant)
+    # CRITICAL CHANGE: We use task_runner.task() instead of calling the function directly.
     try:
-        # PASS THE COLLECTION NAME HERE
-        process_single_object_sync(str_id, collection_name)
+        task_runner.task(
+            process_single_object_sync,  # The function to run later
+            object_id=str_id,
+            collection_name=collection_name,
+            token=current_token,
+        )
         return True
     except Exception as e:
-        print(f"Sync failed: {e}")
-        r.delete(cooldown_key)
+        print(f"Sync Enqueue failed: {e}")
         return False

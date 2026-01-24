@@ -1,12 +1,7 @@
-import importlib
 import os
-import subprocess
-
 from redis import Redis
-from rq import Queue, Worker
-
-from autonomous import log
-
+from rq import Queue
+from rq.job import Job
 
 class AutoTask:
     def __init__(self, job):
@@ -18,127 +13,68 @@ class AutoTask:
 
     @property
     def status(self):
-        status = self.job.get_status()
-        if status in ["running", "queued", "started"]:
-            return "running"
-        return status
-
-    @property
-    def running(self):
-        return self.status == "running"
-
-    @property
-    def finished(self):
-        return self.status == "finished"
-
-    @property
-    def failed(self):
-        return self.status == "failed"
+        return self.job.get_status()
 
     @property
     def result(self):
-        result = self.job.latest_result()
-        result_dict = {
+        # Simplified result fetching
+        return {
             "id": self.id,
-            "return_value": result.return_value if result else None,
+            "return_value": self.job.result,
             "status": self.status,
-            "error": result.exc_string
-            if result and result.type in [result.Type.FAILED, result.Type.STOPPED]
-            else None,
+            "error": self.job.exc_info
         }
-
-        return result_dict
-
-    @property
-    def return_value(self):
-        return self.result.get("return_value")
-
 
 class AutoTasks:
     _connection = None
     queue = None
-    workers = []
-    all_tasks = []
+
+    # Config stays the same
     config = {
-        "host": os.environ.get("REDIS_HOST"),
-        "port": os.environ.get("REDIS_PORT"),
+        "host": os.environ.get("REDIS_HOST", "cachedb"),
+        "port": os.environ.get("REDIS_PORT", 6379),
         "password": os.environ.get("REDIS_PASSWORD"),
         "username": os.environ.get("REDIS_USERNAME"),
         "db": os.environ.get("REDIS_DB", 0),
     }
 
-    def __init__(self, queue="default", num_workers=3):
+    def __init__(self, queue_name="default"):
         if not AutoTasks._connection:
             options = {}
-
-            if AutoTasks.config.get("username"):
-                options["username"] = AutoTasks.config.get("username")
-            if AutoTasks.config.get("username"):
+            if AutoTasks.config.get("password"):
                 options["password"] = AutoTasks.config.get("password")
-            if AutoTasks.config.get("db"):
-                options["db"] = AutoTasks.config.get("db")
 
+            # Create Redis Connection
             AutoTasks._connection = Redis(
                 host=AutoTasks.config.get("host"),
                 port=AutoTasks.config.get("port"),
+                decode_responses=False, # RQ requires bytes, not strings
                 **options,
             )
-        AutoTasks.queue = Queue(queue, connection=AutoTasks._connection)
+
+        # Initialize Queue
+        AutoTasks.queue = Queue(queue_name, connection=AutoTasks._connection)
 
     def task(self, func, *args, **kwargs):
         """
-        :param job: job function
-        :param args: job function args
-        :param kwargs: job function kwargs
-        args and kwargs: use these to explicitly pass arguments and keyword to the underlying job function.
-        _task_<option>:pass options to the task object
-        :return: job
+        Enqueues a job to Redis. Does NOT start a worker.
         """
+        job_timeout = kwargs.pop("_task_job_timeout", 3600)
 
+        # Enqueue the job
+        # func can be a string path or the function object itself
         job = AutoTasks.queue.enqueue(
             func,
-            job_timeout=kwargs.get("_task_job_timeout", 3600),
             args=args,
             kwargs=kwargs,
-        )
-        self.create_worker(func)
-        new_task = AutoTask(job)
-        AutoTasks.all_tasks.append(new_task)
-        return new_task
-
-    def create_worker(self, func):
-        # Get the module containing the target_function
-        module = func.__module__
-
-        # Get the file path of the module
-        module_path = importlib.import_module(module).__file__
-
-        # Set the PYTHONPATH environment variable
-        pythonpath = os.path.dirname(module_path)
-        env = os.environ.copy()
-        env["PYTHONPATH"] = pythonpath
-
-        rq_user_pass = f"{self.config['username']}:{self.config['password']}"
-        rq_url = f"{self.config['host']}:{self.config['port']}"
-        rq_db = self.config["db"]
-        rq_worker_command = (
-            f"rq worker --url redis://{rq_user_pass}@{rq_url}/{rq_db} --burst"
+            job_timeout=job_timeout
         )
 
-        worker = subprocess.Popen(rq_worker_command, shell=True, env=env)
-        self.workers.append(worker)
-        return worker
+        return AutoTask(job)
 
-    # get job given its id
     def get_task(self, job_id):
-        # breakpoint()
-        task = AutoTasks.queue.fetch_job(job_id)
-        return AutoTask(task)
-
-    # get job given its id
-    def get_tasks(self):
-        return [AutoTask(w) for w in Worker.all(queue=AutoTasks.queue)]
-
-    def clear(self):
-        AutoTasks.queue.empty()
-        AutoTasks.all_tasks = []
+        try:
+            job = Job.fetch(job_id, connection=AutoTasks._connection)
+            return AutoTask(job)
+        except Exception:
+            return None

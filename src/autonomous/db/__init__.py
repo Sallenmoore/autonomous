@@ -5,6 +5,7 @@
 # `from autonomous.db import *` and then `connect('testdb')`.
 from autonomous.db import (
     connection,
+    db_sync,
     document,
     errors,
     fields,

@@ -8,7 +8,7 @@ from autonomous import log
 from autonomous.db import Document, connect, signals
 from autonomous.db.errors import ValidationError
 from autonomous.db.fields import DateTimeField
-from autonomous.model import db_sync
+from autonomous.db import db_sync
 
 host = os.getenv("DB_HOST", "db")
 port = os.getenv("DB_PORT", 27017)
