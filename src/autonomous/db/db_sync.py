@@ -8,7 +8,7 @@ import numpy as np
 import pymongo
 import redis
 import requests
-
+from autonomous.taskrunner.autotasks import AutoTasks, TaskPriority
 # CONFIGURATION
 db_host = os.getenv("DB_HOST", "db")
 db_port = os.getenv("DB_PORT", 27017)
@@ -46,8 +46,8 @@ def process_single_object_sync(object_id, collection_name, token):
     token_key = f"sync_token:{collection_name}:{str_id}"
 
     # 1. THE DEBOUNCE WAIT (Happens in background)
-    print(f"Debouncing {str_id} for 5 seconds...")
-    time.sleep(5)
+    print(f"Debouncing {str_id} for 2 seconds...")
+    time.sleep(2)
 
     # 2. THE VERIFICATION
     # Check if a newer save happened while we slept
@@ -111,8 +111,6 @@ def request_indexing(object_id, collection_name):
     MUST BE FAST. NO SLEEPING HERE.
     """
     print("Requesting Indexing...")
-    # Import your Queue Wrapper
-    from autonomous.tasks.autotask import AutoTasks
 
     # Initialize the Task Runner
     task_runner = AutoTasks()
@@ -133,6 +131,7 @@ def request_indexing(object_id, collection_name):
             object_id=str_id,
             collection_name=collection_name,
             token=current_token,
+            priority=TaskPriority.LOW
         )
         return True
     except Exception as e:
