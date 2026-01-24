@@ -110,6 +110,7 @@ def request_indexing(object_id, collection_name):
     THE TRIGGER FUNCTION (Runs in Main App).
     MUST BE FAST. NO SLEEPING HERE.
     """
+    print("Requesting Indexing...")
     # Import your Queue Wrapper
     from autonomous.tasks.autotask import AutoTasks
 
@@ -126,7 +127,6 @@ def request_indexing(object_id, collection_name):
     r.set(token_key, current_token, ex=300)
 
     # 3. ENQUEUE THE TASK (Instant)
-    # CRITICAL CHANGE: We use task_runner.task() instead of calling the function directly.
     try:
         task_runner.task(
             process_single_object_sync,  # The function to run later

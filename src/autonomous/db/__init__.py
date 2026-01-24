@@ -13,6 +13,7 @@ from autonomous.db import (
     signals,
 )
 from autonomous.db.connection import *  # noqa: F401
+from autonomous.db.db_sync import *  # noqa: F401
 from autonomous.db.document import *  # noqa: F401
 from autonomous.db.errors import *  # noqa: F401
 from autonomous.db.fields import *  # noqa: F401
@@ -29,14 +30,11 @@ __all__ = (
 )
 
 
-VERSION = (0, 29, 0)
+VERSION = (0, 30, 0)
 
 
 def get_version():
-    """Return the VERSION as a string.
-
-    For example, if `VERSION == (0, 10, 7)`, return '0.10.7'.
-    """
+    """Return the VERSION as a string."""
     return ".".join(map(str, VERSION))
 
 

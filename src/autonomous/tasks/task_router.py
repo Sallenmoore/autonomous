@@ -1,5 +1,5 @@
 import re
-import tasks
+
 
 class TaskRouterBase:
     """
@@ -8,7 +8,6 @@ class TaskRouterBase:
     """
 
     # Format: (Regex Pattern, Function Object)
-
 
     @classmethod
     def resolve(cls, path):
@@ -21,6 +20,5 @@ class TaskRouterBase:
             if match:
                 return func, match.groupdict()
         return None, None
-
 
     ROUTES = []
