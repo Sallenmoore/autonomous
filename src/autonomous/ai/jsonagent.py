@@ -1,14 +1,16 @@
 import json
+import os
 
 from autonomous.ai.baseagent import BaseAgent
-from autonomous.model.autoattr import ReferenceAttr, StringAttr
-from autonomous.model.automodel import AutoModel
-
-from .models.openai import OpenAIModel
+from autonomous.model.autoattr import StringAttr
 
 
 class JSONAgent(BaseAgent):
     name = StringAttr(default="jsonagent")
+
+    # Force this agent to use Gemini
+    provider = StringAttr(default="gemini")
+
     instructions = StringAttr(
         default="You are highly skilled AI trained to assist with generating JSON formatted data."
     )
@@ -16,15 +18,19 @@ class JSONAgent(BaseAgent):
         default="A helpful AI assistant trained to assist with generating JSON formatted data."
     )
 
-    def generate(self, messages, function, additional_instructions="", **kwargs):
-        result = self.get_client().generate_json(
-            messages, function, additional_instructions, **kwargs
+    def generate(
+        self, message, function, additional_instructions="", uri="", context=""
+    ):
+        result = self.get_client(
+            os.environ.get("JSON_AI_AGENT", self.provider)
+        ).generate_json(
+            message, function, additional_instructions, uri=uri, context=context
         )
         if isinstance(result, str):
-            result = json.loads(result)
+            try:
+                result = json.loads(result)
+            except json.JSONDecodeError:
+                raise ValueError(f"Invalid JSON response from AI model.\n\n{result}")
         elif not isinstance(result, dict):
             raise ValueError(f"Invalid JSON response from AI model.\n\n{result}")
         return result
-
-    def upload(self, file):
-        return self.get_client().upload(file=file)

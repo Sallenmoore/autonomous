@@ -8,19 +8,20 @@ import numpy as np
 import pymongo
 import redis
 import requests
+
 from autonomous.taskrunner.autotasks import AutoTasks, TaskPriority
+
 # CONFIGURATION
 db_host = os.getenv("DB_HOST", "db")
 db_port = os.getenv("DB_PORT", 27017)
 password = urllib.parse.quote_plus(str(os.getenv("DB_PASSWORD")))
 username = urllib.parse.quote_plus(str(os.getenv("DB_USERNAME")))
-MEDIA_URL = "http://media_ai_internal:5005"
-REDIS_HOST = os.getenv("REDIS_HOST", "cachedb")
 MONGO_URI = f"mongodb://{username}:{password}@{db_host}:{db_port}/?authSource=admin"
-
+MEDIA_URL = os.getenv("MEDIA_API_BASE_URL", "http://media_ai:5005")
+REDIS_HOST = os.getenv("REDIS_HOST", "cachedb")
+REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 # DB SETUP
-r = redis.Redis(host=REDIS_HOST, port=6379, decode_responses=True)
-
+r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 mongo = pymongo.MongoClient(MONGO_URI)
 db = mongo[os.getenv("DB_DB")]
 # connect(host=f"mongodb://{username}:{password}@{host}:{port}/{dbname}?authSource=admin")
@@ -46,8 +47,8 @@ def process_single_object_sync(object_id, collection_name, token):
     token_key = f"sync_token:{collection_name}:{str_id}"
 
     # 1. THE DEBOUNCE WAIT (Happens in background)
-    print(f"Debouncing {str_id} for 2 seconds...")
-    time.sleep(2)
+    print(f"Debouncing {str_id} for 5 seconds...")
+    time.sleep(5)
 
     # 2. THE VERIFICATION
     # Check if a newer save happened while we slept
@@ -131,7 +132,7 @@ def request_indexing(object_id, collection_name):
             object_id=str_id,
             collection_name=collection_name,
             token=current_token,
-            priority=TaskPriority.LOW
+            priority=TaskPriority.LOW,
         )
         return True
     except Exception as e:

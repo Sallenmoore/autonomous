@@ -24,7 +24,7 @@ inittests: cleantests
 	pip install --upgrade -r ./requirements.txt
 	pip install --upgrade -r ./requirements_dev.txt
 	pip install -e .
-	cd tests && sudo docker compose up -d --build && sudo docker compose logs -f
+	cd tests && sudo docker compose up -d --build
 
 cleantests: clean
 	cd tests && sudo docker compose down --remove-orphans

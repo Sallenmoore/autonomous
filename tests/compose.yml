@@ -1,27 +1,44 @@
 services:
-  db:
+  test_db:
     image: mongo:latest
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: test
-    ports:
-      - 27017:27017
-  mongo-express:
-    image: mongo-express
-    ports:
-      - 8081:8081
-    environment:
-      ME_CONFIG_MONGODB_ADMINUSERNAME: root
-      ME_CONFIG_MONGODB_ADMINPASSWORD: test
-      ME_CONFIG_MONGODB_URL: mongodb://root:test@db:27017/
-      ME_CONFIG_BASICAUTH: false
-  taskdb:
+    container_name: test_db
+    env_file: .testenv
+    ports: # <--- ADD THIS
+      - "2701:27017"
+  test_cachedb:
     image: redis/redis-stack-server:latest
-    container_name: test_taskdb
+    container_name: test_cachedb
+    env_file: .testenv
+    ports: # <--- ADD THIS
+      - "2702:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
-    ports:
-      - 6379:6379
+  test_ollama:
+    image: ollama/ollama:latest
+    container_name: test_ollama_internal
+    env_file: .testenv
+    ports: # <--- ADD THIS
+      - "2703:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+  test_media_ai:
+    build:
+      context: ./local_ai
+    container_name: test_media_ai_internal
+    env_file: .testenv
+    ports: # <--- ADD THIS
+      - "2704:5005"
+    volumes:
+      - ./model_cache:/app/ov_model_cache
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5005/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 100
+      start_period: 40s
 networks:
   default:
     name: test_net
+
+volumes:
+  ollama_data:

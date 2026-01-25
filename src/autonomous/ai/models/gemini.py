@@ -1,4 +1,5 @@
 import io
+import json
 import os
 import random
 import re
@@ -32,6 +33,7 @@ class GeminiAIModel(AutoModel):
     description = StringAttr(
         default="A helpful AI assistant trained to assist with various tasks."
     )
+    file_refs = ListAttr(StringAttr(default=[]))
 
     MAX_FILES = 14
     MAX_SUMMARY_TOKEN_LENGTH = 10000
@@ -111,56 +113,69 @@ class GeminiAIModel(AutoModel):
         buffer.seek(0)
         return buffer
 
-    def _add_files(self, file_list):
-        existing_files = self.client.files.list()
-        log(f"Existing files: {[f.display_name for f in existing_files]}", _print=True)
-        for f in existing_files:
-            # Delete old files (older than 10 minutes)
-            age_seconds = (
-                (time.time() - f.update_time.timestamp())
-                if f.update_time
-                else (time.time() - f.create_time.timestamp())
-            )
-            log(age_seconds, _print=True)
-            if age_seconds > 900:
-                result = self.client.files.delete(name=f.name)
-                log(f"Deleting old version of {f.name}: {result}", _print=True)
-        file_refs = []
-        for file_dict in file_list:
-            fn = file_dict["name"]
-            fileobj = file_dict["file"]
-            log(f"Uploading new {fn}...", _print=True)
+    def _add_context(self, context):
+        # Create in-memory file
+        context_data = (
+            json.dumps(context, indent=2) if isinstance(context, dict) else str(context)
+        )
+
+        f = io.BytesIO(context_data.encode("utf-8"))
+        f.name = f"context-{self.pk}"
+        return self._add_files([{"name": f.name, "file": f}])
+
+    def _add_files(self, file_list, mime_type="application/json"):
+        uploaded_files = []
+        for f in file_list[: self.MAX_FILES]:
+            fn = f["name"]
+            try:
+                result = self.client.files.delete(name=fn)
+            except Exception as e:
+                pass
+                # log(f"No existing file to delete for {fn}: {e}", _print=True)
+            else:
+                pass
+                # log(f"Deleting old version of {fn}: {result}", _print=True)
+
+            # If the content is raw bytes, wrap it in BytesIO
+            file_content = f["file"]
+            if isinstance(file_content, bytes):
+                fileobj = io.BytesIO(file_content)
+            else:
+                fileobj = file_content
             uploaded_file = self.client.files.upload(
-                file=fileobj.name,
-                config={"mime_type": "application/json", "display_name": fn},
+                file=fileobj,
+                config={"mime_type": mime_type, "display_name": fn},
             )
-            # 4. Wait for processing (Usually instant for JSON, critical for Video/PDF)
+            uploaded_files.append(uploaded_file)
 
             # This ensures the file is 'ACTIVE' before you use it in a prompt.
             while uploaded_file.state.name == "PROCESSING":
-                time.sleep(1)
+                time.sleep(0.5)
                 uploaded_file = self.client.get_file(uploaded_file.name)
-            file_refs.append(uploaded_file)
-            return file_refs
+        self.file_refs = [f.name for f in self.client.files.list()]  # Update file_refs
+        self.save()
+        return uploaded_files
 
-    def upload(self, file):
-        return self._add_files([file])
-
-    def generate_json(self, message, function, additional_instructions="", **kwargs):
-        # The API call must use the 'tools' parameter instead of 'response_json_schema'
+    def generate_json(
+        self, message, function, additional_instructions="", uri="", context={}
+    ):
         function_definition = self._add_function(function)
 
         contents = [message]
-        if uri := kwargs.get("uri"):
+        if context:
+            contents.extend(self._add_context(context))
+            additional_instructions += (
+                f"\nUse the uploaded context file for reference: context-{self.pk}\n"
+            )
+
+        if uri:
             contents.append(
                 Part.from_uri(
                     file_uri=uri,
                     mime_type="application/json",
                 ),
             )
-
-        if files := kwargs.get("files"):
-            contents += self._add_files(files)
+            additional_instructions += "\nUse the provided uri file for reference\n"
 
         response = self.client.models.generate_content(
             model=self._json_model,
@@ -192,18 +207,21 @@ class GeminiAIModel(AutoModel):
             log(f"==== Failed to parse ToolCall response: {e} ====")
             return {}
 
-    def generate_text(self, message, additional_instructions="", **kwargs):
+    def generate_text(self, message, additional_instructions="", uri="", context={}):
         contents = [message]
-        if uri := kwargs.get("uri"):
+        if context:
+            contents.extend(self._add_context(context))
+            additional_instructions += (
+                f"\nUse the uploaded context file for reference: context-{self.pk}\n"
+            )
+
+        if uri:
             contents.append(
                 Part.from_uri(
                     file_uri=uri,
                     mime_type="application/json",
                 ),
             )
-
-        if files := kwargs.get("files"):
-            contents += self._add_files(files)
 
         response = self.client.models.generate_content(
             model=self._text_model,
@@ -217,7 +235,7 @@ class GeminiAIModel(AutoModel):
         # log("=================== END REPORT ===================", _print=True)
         return response.text
 
-    def summarize_text(self, text, primer="", **kwargs):
+    def summarize_text(self, text, primer=""):
         primer = primer or self.instructions
 
         updated_prompt_list = []
@@ -248,14 +266,17 @@ class GeminiAIModel(AutoModel):
                 full_summary += summary + "\n"
         return summary
 
-    def generate_audio_text(
-        self, audio_file, prompt="Transcribe this audio clip", **kwargs
+    def generate_transcription(
+        self,
+        audio_file,
+        prompt="Transcribe this audio clip",
+        display_name="audio.mp3",
     ):
         myfile = self.client.files.upload(
             file=io.BytesIO(audio_file),
             config={
                 "mime_type": "audio/mp3",
-                "display_name": kwargs.get("display_name", "audio.mp3"),
+                "display_name": display_name,
             },
         )
 
@@ -277,7 +298,7 @@ class GeminiAIModel(AutoModel):
                 voices.append(voice)
         return voices
 
-    def generate_audio(self, prompt, voice=None, **kwargs):
+    def generate_audio(self, prompt, voice=None):
         voice = voice or random.choice(self.list_voices())
         try:
             response = self.client.models.generate_content(
@@ -318,22 +339,20 @@ class GeminiAIModel(AutoModel):
             # You can return a default empty byte string or re-raise the exception
             raise e
 
-    def generate_image(self, prompt, **kwargs):
+    def generate_image(
+        self,
+        prompt,
+        negative_prompt="",
+        files=None,
+        aspect_ratio="3:4",
+        image_size="2K",
+    ):
         image = None
         contents = [prompt]
 
-        if kwargs.get("files"):
-            counter = 0
-            for fn, f in kwargs.get("files").items():
-                media = io.BytesIO(f)
-                myfile = self.client.files.upload(
-                    file=media,
-                    config={"mime_type": "image/webp", "display_name": fn},
-                )
-                contents += [myfile]
-                counter += 1
-                if counter >= self.MAX_FILES:
-                    break
+        if files:
+            filerefs = self._add_files(files, mime_type="image/webp")
+            contents.extend(filerefs)
 
         try:
             # log(self._image_model, contents, _print=True)
@@ -364,8 +383,8 @@ class GeminiAIModel(AutoModel):
                         ),
                     ],
                     image_config=types.ImageConfig(
-                        aspect_ratio=kwargs.get("aspect_ratio", "3:4"),
-                        image_size=kwargs.get("image_size", "2K"),
+                        aspect_ratio=aspect_ratio,
+                        image_size=image_size,
                     ),
                 ),
             )
