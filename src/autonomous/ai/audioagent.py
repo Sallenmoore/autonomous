@@ -30,7 +30,6 @@ class AudioAgent(BaseAgent):
         ).generate_transcription(
             audio,
             prompt=prompt,
-            display_name=display_name,
         )
 
     def available_voices(self, filters=[]):

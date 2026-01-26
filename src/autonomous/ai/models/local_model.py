@@ -193,7 +193,6 @@ class LocalAIModel(AutoModel):
         self,
         prompt,
         voice=None,
-        display_name="audio.mp3",
     ):
         voice = voice or random.choice(list(self.VOICES.keys()))
         try:
