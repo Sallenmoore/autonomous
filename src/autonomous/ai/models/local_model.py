@@ -39,17 +39,39 @@ class LocalAIModel(AutoModel):
         return json.dumps(schema, indent=2)
 
     def _clean_json_response(self, text):
-        """Helper to strip markdown artifacts from JSON responses."""
+        """
+        Robust cleaner for Llama 3 outputs.
+        It handles markdown blocks, chatter before/after, and malformed endings.
+        """
         text = text.strip()
-        # Remove ```json ... ``` or just ``` ... ``` wrapper
-        if text.startswith("```"):
-            # Find the first newline to skip the language tag (e.g., "json")
-            first_newline = text.find("\n")
-            if first_newline != -1:
-                text = text[first_newline + 1 :]
-            # Remove the closing backticks
-            if text.endswith("```"):
-                text = text[:-3]
+
+        # 1. Strip Markdown Code Blocks (```json ... ```)
+        if "```" in text:
+            import re
+
+            # Regex to capture content inside ```json ... ``` or just ``` ... ```
+            # flags=re.DOTALL allows . to match newlines
+            pattern = r"```(?:json)?\s*(\{.*?\})\s*```"
+            match = re.search(pattern, text, re.DOTALL)
+            if match:
+                text = match.group(1)
+            else:
+                # Fallback: simple finding if regex fails due to weird chars
+                start = text.find("```")
+                end = text.rfind("```")
+                # Adjust start to skip the "json" part if present
+                first_newline = text.find("\n", start)
+                if first_newline != -1 and first_newline < end:
+                    text = text[first_newline:end]
+
+        # 2. Heuristic extraction: Find the first '{' and the last '}'
+        # This fixes cases where Llama says "Here is the JSON: { ... }"
+        start_idx = text.find("{")
+        end_idx = text.rfind("}")
+
+        if start_idx != -1 and end_idx != -1:
+            text = text[start_idx : end_idx + 1]
+
         return text.strip()
 
     def generate_json(
@@ -57,51 +79,60 @@ class LocalAIModel(AutoModel):
     ):
         schema_str = self._convert_tools_to_json_schema(function)
 
-        # 1. Base System Prompt with Context Anchoring
+        # 1. Improved System Prompt
+        # We explicitly warn about nested quotes, which is the #1 killer of complex JSON
         full_system_prompt = (
             f"{self.instructions}. {additional_instructions}\n"
             f"You are a strict JSON generator. Output ONLY a valid JSON object matching this schema:\n"
             f"{schema_str}\n"
-            f"IMPORTANT: Do not include markdown formatting (like ```json), introductions, or explanations.\n"
+            f"IMPORTANT RULES:\n"
+            f"1. Do not include markdown formatting or explanations.\n"
+            f"2. DOUBLE CHECK nested quotes inside strings. Escape them properly.\n"
+            f"3. Ensure all arrays and objects are closed.\n"
         )
 
         if context:
             full_system_prompt += (
                 f"\n\n### GROUND TRUTH CONTEXT ###\n"
-                f"You must strictly adhere to the following context. "
-                f"If this context contradicts your internal knowledge (e.g., physics, facts), "
-                f"YOU MUST FOLLOW THE CONTEXT.\n"
+                f"Adhere strictly to this context:\n"
                 f"{json.dumps(context, indent=2)}"
             )
         elif uri:
             full_system_prompt += f"Use the following URI for reference: {uri}"
 
-        # 3. Send to Ollama with JSON Mode
+        # 3. Payload with INCREASED CONTEXT and LOWER TEMPERATURE
         payload = {
             "model": self._json_model,
             "messages": [
                 {"role": "system", "content": full_system_prompt},
                 {"role": "user", "content": message},
             ],
-            "format": "json",  # <--- CRITICAL: Forces valid JSON output
+            "format": "json",
             "stream": False,
             "keep_alive": "24h",
+            "options": {
+                "num_ctx": 8192,  # <--- Prevents cutoff on large schemas
+                "temperature": 0.2,  # <--- Increases structural stability
+            },
         }
 
+        log("==== LocalAI JSON Payload ====", payload, _print=True)
+        result_text = ""
         try:
             # print(f"==== {self._ollama_url}: LocalAI JSON Payload ====")
             response = requests.post(f"{self._ollama_url}/chat", json=payload)
+            log(response)
             response.raise_for_status()
 
             result_text = response.json().get("message", {}).get("content", "{}")
 
-            # Clean up potential markdown artifacts
+            # Clean
             clean_text = self._clean_json_response(result_text)
 
             # Parse
             result_dict = json.loads(clean_text)
 
-            # Unwrap if the model nested it inside "parameters" (common Llama quirk)
+            # Unwrap
             if "parameters" in result_dict and isinstance(
                 result_dict["parameters"], dict
             ):
@@ -111,8 +142,16 @@ class LocalAIModel(AutoModel):
             return result_dict
 
         except Exception as e:
+            # If it fails, print the RAW text so you can see WHERE it broke.
             log(f"==== LocalAI JSON Error: {e} ====", _print=True)
-            raise e
+            if result_text:
+                log(
+                    f"--- FAILED RAW OUTPUT ---\n{result_text}\n-----------------------",
+                    _print=True,
+                )
+
+            # Returning empty prevents the whole app from dying on one bad generation.
+            return {}
 
     def generate_text(self, message, additional_instructions="", uri="", context={}):
         # 1. Base System Prompt
