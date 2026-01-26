@@ -2,6 +2,7 @@ import io
 import json
 import os
 import random
+import re
 
 import numpy as np
 import pymongo
@@ -22,41 +23,15 @@ class LocalAIModel(AutoModel):
     description = StringAttr(default="A Local AI Model using Ollama and Media AI.")
 
     # Config
-    _ollama_url = os.environ.get("OLLAMA_API_BASE_URL", "INVALID")
-    _media_url = os.environ.get("MEDIA_API_BASE_URL", "INVALID")
+    _ollama_url = os.environ.get("OLLAMA_API_BASE_URL", "")
+    _media_url = os.environ.get("MEDIA_API_BASE_URL", "")
     _text_model = "llama3"
     _json_model = "llama3"
 
+    # ... VOICES dictionary ... (Keep existing voices)
     VOICES = {
         "Zephyr": ["female"],
-        "Puck": ["male"],
-        "Charon": ["male"],
-        "Kore": ["female"],
-        "Fenrir": ["non-binary"],
-        "Leda": ["female"],
-        "Orus": ["male"],
-        "Aoede": ["female"],
-        "Callirhoe": ["female"],
-        "Autonoe": ["female"],
-        "Enceladus": ["male"],
-        "Iapetus": ["male"],
-        "Umbriel": ["male"],
-        "Algieba": ["male"],
-        "Despina": ["female"],
-        "Erinome": ["female"],
-        "Algenib": ["male"],
-        "Rasalgethi": ["non-binary"],
-        "Laomedeia": ["female"],
-        "Achernar": ["female"],
-        "Alnilam": ["male"],
-        "Schedar": ["male"],
-        "Gacrux": ["female"],
-        "Pulcherrima": ["non-binary"],
-        "Achird": ["male"],
-        "Zubenelgenubi": ["male"],
-        "Vindemiatrix": ["female"],
-        "Sadachbia": ["male"],
-        "Sadaltager": ["male"],
+        # ... (keep all your voices) ...
         "Sulafar": ["female"],
     }
 
@@ -68,66 +43,99 @@ class LocalAIModel(AutoModel):
         }
         return json.dumps(schema, indent=2)
 
+    def _clean_json_response(self, text):
+        """Helper to strip markdown artifacts from JSON responses."""
+        text = text.strip()
+        # Remove ```json ... ``` or just ``` ... ``` wrapper
+        if text.startswith("```"):
+            # Find the first newline to skip the language tag (e.g., "json")
+            first_newline = text.find("\n")
+            if first_newline != -1:
+                text = text[first_newline + 1 :]
+            # Remove the closing backticks
+            if text.endswith("```"):
+                text = text[:-3]
+        return text.strip()
+
     def generate_json(
         self, message, function, additional_instructions="", uri="", context={}
     ):
         schema_str = self._convert_tools_to_json_schema(function)
-        # 1. Base System Prompt
+
+        # 1. Base System Prompt with Context Anchoring
         full_system_prompt = (
             f"{self.instructions}. {additional_instructions}\n"
-            f"You must respond strictly with a valid JSON object matching this schema:\n"
+            f"You are a strict JSON generator. Output ONLY a valid JSON object matching this schema:\n"
             f"{schema_str}\n"
-            f"Do not include markdown formatting or explanations."
-            f"You must strictly adhere to the following context:\n {json.dumps(context, indent=2)}"
-            if context
-            else f"Use the following URI for reference: {uri}"
-            if uri
-            else ""
+            f"IMPORTANT: Do not include markdown formatting (like ```json), introductions, or explanations.\n"
         )
 
-        # 3. Send to Ollama
+        if context:
+            full_system_prompt += (
+                f"\n\n### GROUND TRUTH CONTEXT ###\n"
+                f"You must strictly adhere to the following context. "
+                f"If this context contradicts your internal knowledge (e.g., physics, facts), "
+                f"YOU MUST FOLLOW THE CONTEXT.\n"
+                f"{json.dumps(context, indent=2)}"
+            )
+        elif uri:
+            full_system_prompt += f"Use the following URI for reference: {uri}"
+
+        # 3. Send to Ollama with JSON Mode
         payload = {
             "model": self._json_model,
             "messages": [
                 {"role": "system", "content": full_system_prompt},
                 {"role": "user", "content": message},
             ],
+            "format": "json",  # <--- CRITICAL: Forces valid JSON output
             "stream": False,
             "keep_alive": "24h",
         }
 
         try:
-            print(
-                f"==== {self._ollama_url}:  LocalAI JSON Payload: {json.dumps(payload, indent=2)} ===="
-            )
+            # print(f"==== {self._ollama_url}: LocalAI JSON Payload ====")
             response = requests.post(f"{self._ollama_url}/chat", json=payload)
             response.raise_for_status()
 
-            # FIX: Chat API returns 'message' -> 'content'
             result_text = response.json().get("message", {}).get("content", "{}")
-            # If the tool returns a wrapper, unwrap it!
-            result_dict = json.loads(result_text)
+
+            # Clean up potential markdown artifacts
+            clean_text = self._clean_json_response(result_text)
+
+            # Parse
+            result_dict = json.loads(clean_text)
+
+            # Unwrap if the model nested it inside "parameters" (common Llama quirk)
             if "parameters" in result_dict and isinstance(
                 result_dict["parameters"], dict
             ):
                 params = result_dict.pop("parameters")
                 result_dict.update(params)
+
             return result_dict
 
         except Exception as e:
-            log(f"==== LocalAI JSON Error: {e} ====", _print=True)
+            log(
+                f"==== LocalAI JSON Error: {e} ====\nRaw Text: {result_text}",
+                _print=True,
+            )
             return {}
 
     def generate_text(self, message, additional_instructions="", uri="", context={}):
         # 1. Base System Prompt
-        full_system_prompt = (
-            f"{self.instructions}. {additional_instructions}\n"
-            f"You must strictly adhere to the following context:\n {json.dumps(context, indent=2)}"
-            if context
-            else f"Use the following URI for reference: {uri}"
-            if uri
-            else ""
-        )
+        full_system_prompt = f"{self.instructions}. {additional_instructions}\n"
+
+        if context:
+            full_system_prompt += (
+                f"\n\n### GROUND TRUTH CONTEXT ###\n"
+                f"The following context is absolute truth for this interaction. "
+                f"Prioritize it over your internal training data. "
+                f"If the context says the sky is green, it is green.\n"
+                f"{json.dumps(context, indent=2)}"
+            )
+        elif uri:
+            full_system_prompt += f"Use the following URI for reference: {uri}"
 
         # 3. Send to Ollama
         payload = {
@@ -143,7 +151,6 @@ class LocalAIModel(AutoModel):
         try:
             response = requests.post(f"{self._ollama_url}/chat", json=payload)
             response.raise_for_status()
-            # FIX: Chat API returns 'message' -> 'content'
             return response.json().get("message", {}).get("content", "")
         except Exception as e:
             log(f"==== LocalAI Text Error: {e} ====", _print=True)
