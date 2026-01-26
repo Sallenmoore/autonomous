@@ -112,7 +112,9 @@ class LocalAIModel(AutoModel):
             "keep_alive": "24h",
             "options": {
                 "num_ctx": 8192,  # <--- Prevents cutoff on large schemas
-                "temperature": 0.2,  # <--- Increases structural stability
+                "temperature": 0.8,  # <--- INCREASED from 0.2 to 0.8 for creativity
+                "top_p": 0.9,  # <--- Adds nuance to word choice
+                "repeat_penalty": 1.1,  # <--- Prevents it from saying "rust" 5 times
             },
         }
 
