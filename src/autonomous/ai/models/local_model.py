@@ -2,13 +2,8 @@ import io
 import json
 import os
 import random
-import re
 
-import numpy as np
-import pymongo
-import redis
 import requests
-from bson.objectid import ObjectId
 from pydub import AudioSegment
 
 from autonomous import log
@@ -208,6 +203,27 @@ class LocalAIModel(AutoModel):
             log(f"TTS Error: {e}", _print=True)
             return None
 
+    # ... inside LocalAIModel class ...
+
+    def _get_dimensions(self, aspect_ratio):
+        """
+        Maps abstract aspect ratios to optimal SDXL resolutions.
+        SDXL performs best at ~1024x1024 total pixels.
+        """
+        resolutions = {
+            "1:1": (1024, 1024),
+            "3:4": (896, 1152),
+            "4:3": (1152, 896),
+            "16:9": (1216, 832),
+            "2K": (2048, 1080),
+            "4K": (3840, 2160),
+            "9:16": (832, 1216),
+            "3:2": (1216, 832),
+            "2:3": (832, 1216),
+        }
+        # Default to 1:1 (1024x1024) if unknown
+        return resolutions.get(aspect_ratio, (1024, 1024))
+
     def generate_image(
         self,
         prompt,
@@ -216,32 +232,55 @@ class LocalAIModel(AutoModel):
         aspect_ratio="3:4",
         image_size="2K",
     ):
+        # 1. CLIP Token Limit Fix (Auto-Summarize)
+        if len(prompt) > 300:
+            log("⚠️ Prompt exceeds CLIP limit. rewriting...", _print=True)
+            summary_instruction = (
+                "Convert the description into a comma-separated Stable Diffusion prompt. "
+                "Keep visual elements and style. Under 50 words."
+            )
+            new_prompt = self.generate_text(
+                message=prompt, additional_instructions=summary_instruction, context={}
+            )
+            if new_prompt and len(new_prompt) > 10:
+                prompt = new_prompt
+
+        # 2. Resolution Calculation
+        width, height = self._get_dimensions(aspect_ratio)
+
+        # 3. Construct Payload
+        # We send both the abstract params (for logging/metadata)
+        # and the concrete pixels (for the engine).
+        data = {
+            "prompt": prompt,
+            "negative_prompt": negative_prompt,
+            "aspect_ratio": aspect_ratio,
+            "width": width,  # <--- Calculated Pixel Width
+            "height": height,  # <--- Calculated Pixel Height
+        }
+
         try:
-            data = {"prompt": prompt, "negative_prompt": negative_prompt}
+            # Handle Files (Dict -> List of Tuples for requests)
             img_files = {}
-            if files:
+            if files and isinstance(files, dict):
                 for fn, f_bytes in files.items():
                     if isinstance(f_bytes, bytes):
                         file_obj = io.BytesIO(f_bytes)
                     else:
                         file_obj = f_bytes
                     img_files["file"] = (fn, file_obj, "image/png")
+
+            # Send Request
+            if img_files:
                 response = requests.post(
                     f"{self._media_url}/generate-image", data=data, files=img_files
                 )
             else:
                 response = requests.post(f"{self._media_url}/generate-image", data=data)
+
             response.raise_for_status()
             return response.content
+
         except Exception as e:
             log(f"Image Gen Error: {e}", _print=True)
             return None
-
-    def list_voices(self, filters=[]):
-        if not filters:
-            return list(self.VOICES.keys())
-        voices = []
-        for voice, attribs in self.VOICES.items():
-            if any(f.lower() in attribs for f in filters):
-                voices.append(voice)
-        return voices
