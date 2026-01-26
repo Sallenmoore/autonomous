@@ -116,11 +116,8 @@ class LocalAIModel(AutoModel):
             return result_dict
 
         except Exception as e:
-            log(
-                f"==== LocalAI JSON Error: {e} ====\nRaw Text: {result_text}",
-                _print=True,
-            )
-            return {}
+            log(f"==== LocalAI JSON Error: {e} ====", _print=True)
+            raise e
 
     def generate_text(self, message, additional_instructions="", uri="", context={}):
         # 1. Base System Prompt
@@ -192,7 +189,12 @@ class LocalAIModel(AutoModel):
             log(f"STT Error: {e}", _print=True)
             return ""
 
-    def generate_audio(self, prompt, voice=None):
+    def generate_audio(
+        self,
+        prompt,
+        voice=None,
+        display_name="audio.mp3",
+    ):
         voice = voice or random.choice(list(self.VOICES.keys()))
         try:
             payload = {"text": prompt, "voice": voice}
