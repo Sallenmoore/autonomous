@@ -1,6 +1,7 @@
 import io
 import os
 import shutil
+
 import soundfile as sf
 import torch
 from datasets import load_dataset
@@ -31,7 +32,9 @@ print("Loading Stable Diffusion (T2I)...")
 if os.path.exists(local_model_path) and len(os.listdir(local_model_path)) > 0:
     try:
         print(f"Loading from local cache: {local_model_path}")
-        t2i_pipe = OVStableDiffusionPipeline.from_pretrained(local_model_path, device="CPU")
+        t2i_pipe = OVStableDiffusionPipeline.from_pretrained(
+            local_model_path, device="CPU"
+        )
         print("Successfully loaded from cache.")
     except Exception as e:
         print(f"Cache corrupted or incomplete: {e}")
@@ -45,7 +48,7 @@ if os.path.exists(local_model_path) and len(os.listdir(local_model_path)) > 0:
                 elif os.path.isdir(file_path):
                     shutil.rmtree(file_path)
             except Exception as e:
-                print(f'Failed to delete {file_path}. Reason: {e}')
+                print(f"Failed to delete {file_path}. Reason: {e}")
 
         # Re-download immediately
         t2i_pipe = OVStableDiffusionPipeline.from_pretrained(base_model_id, export=True)
@@ -90,6 +93,7 @@ speaker_embeddings = {
     "default": torch.tensor(embeddings_dataset[7306]["xvector"]).unsqueeze(0),
 }
 
+
 @app.route("/health", methods=["GET"])
 def health():
     # If the models are loaded, this returns 200
@@ -109,9 +113,7 @@ def transcribe():
 def generate_image():
     # 1. Get Prompt
     prompt = request.form.get("prompt")
-    negative_prompt = request.form.get(
-        "negative_prompt", "blurry, low quality, text, watermark, deformed, ugly"
-    )
+    negative_prompt = request.form.get("negative_prompt", "")
 
     if not prompt:
         return jsonify({"error": "No prompt provided"}), 400
