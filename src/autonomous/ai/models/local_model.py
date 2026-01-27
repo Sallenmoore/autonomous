@@ -134,7 +134,7 @@ class LocalAIModel(AutoModel):
             },
         }
 
-        log("==== LocalAI JSON Payload ====", payload, _print=True)
+        # log("==== LocalAI JSON Payload ====", payload, _print=True)
 
         result_text = ""
         try:

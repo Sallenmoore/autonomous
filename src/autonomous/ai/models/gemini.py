@@ -314,22 +314,22 @@ class GeminiAIModel(AutoModel):
         # Logic Mapping
         # Keys match what your App sends in ttrpgbase.py
         if aspect_ratio_input == "2KPortrait":
-            ratio = "9:16"
+            ratio = "3:4"
             size = "2K"  # <--- THIS WAS MISSING BEFORE
         elif aspect_ratio_input == "Portrait":
-            ratio = "9:16"
-            size = "1K"
+            ratio = "3:4"
+            size = "2K"
         elif aspect_ratio_input == "Landscape":
             ratio = "16:9"
-            size = "1K"
+            size = "2K"
         elif aspect_ratio_input == "4K":
             ratio = "16:9"
             size = "4K"
         elif aspect_ratio_input == "4KPortrait":
-            ratio = "9:16"
+            ratio = "3:4"
             size = "4K"
         elif aspect_ratio_input == "2K":
-            ratio = "1:1"
+            ratio = "16:9"
             size = "2K"
 
         # Pass-through for standard inputs
