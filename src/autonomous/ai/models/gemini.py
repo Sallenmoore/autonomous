@@ -24,7 +24,7 @@ class GeminiAIModel(AutoModel):
     _summary_model = "gemini-1.5-flash"
     _json_model = "gemini-1.5-pro"
     _stt_model = "gemini-1.5-pro"
-    _image_model = "imagen-3.0-generate-001"
+    _image_model = "gemini-3-pro-image-preview"
     _tts_model = "gemini-2.0-flash-exp"
 
     messages = ListAttr(StringAttr(default=[]))
