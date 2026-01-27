@@ -21,7 +21,7 @@ class ImageAgent(BaseAgent):
         self,
         prompt,
         negative_prompt="",
-        aspect_ratio="2KPortrait",
+        aspect_ratio="Portrait",
         files=None,
     ):
         return self.get_client(
