@@ -268,7 +268,9 @@ class LocalAIModel(AutoModel):
             "4:3": (1152, 896),
             "16:9": (1216, 832),
             "2K": (2048, 1080),
+            "2KPortrait": (1080, 2048),
             "4K": (3840, 2160),
+            "4KPortrait": (2160, 3840),
             "9:16": (832, 1216),
             "3:2": (1216, 832),
             "2:3": (832, 1216),
@@ -277,25 +279,20 @@ class LocalAIModel(AutoModel):
         return resolutions.get(aspect_ratio, (1024, 1024))
 
     def generate_image(
-        self,
-        prompt,
-        negative_prompt="",
-        files=None,
-        aspect_ratio="3:4",
-        image_size="2K",
+        self, prompt, negative_prompt="", files=None, aspect_ratio="2KPortrait"
     ):
-        # 1. CLIP Token Limit Fix (Auto-Summarize)
-        if len(prompt) > 300:
-            log("⚠️ Prompt exceeds CLIP limit. rewriting...", _print=True)
-            summary_instruction = (
-                "Convert the description into a comma-separated Stable Diffusion prompt. "
-                "Keep visual elements and style. Under 50 words."
-            )
-            new_prompt = self.generate_text(
-                message=prompt, additional_instructions=summary_instruction, context={}
-            )
-            if new_prompt and len(new_prompt) > 10:
-                prompt = new_prompt
+        # # 1. CLIP Token Limit Fix (Auto-Summarize)
+        # if len(prompt) > 800:
+        #     log("⚠️ Prompt exceeds CLIP limit. rewriting...", _print=True)
+        #     summary_instruction = (
+        #         "Convert the description into a comma-separated Stable Diffusion prompt. "
+        #         "Keep visual elements and style. Under 50 words."
+        #     )
+        #     new_prompt = self.generate_text(
+        #         message=prompt, additional_instructions=summary_instruction, context={}
+        #     )
+        #     if new_prompt and len(new_prompt) > 10:
+        #         prompt = new_prompt
 
         # 2. Resolution Calculation
         width, height = self._get_dimensions(aspect_ratio)
@@ -312,25 +309,28 @@ class LocalAIModel(AutoModel):
         }
 
         try:
-            # Handle Files (Dict -> List of Tuples for requests)
-            img_files = {}
+            # Handle Files (Corrected List Logic)
+            # requests.post expects a list of tuples for multiple files with same key
+            files_list = []
             if files and isinstance(files, dict):
                 for fn, f_bytes in files.items():
                     if isinstance(f_bytes, bytes):
                         file_obj = io.BytesIO(f_bytes)
                     else:
                         file_obj = f_bytes
-                    img_files["file"] = (fn, file_obj, "image/png")
+                    # Appending to list instead of overwriting dict key
+                    files_list.append(("files", (fn, file_obj, "image/png")))
 
             # Send Request
-            if img_files:
+            if files_list:
                 response = requests.post(
-                    f"{self._media_url}/generate-image", data=data, files=img_files
+                    f"{self._media_url}/generate-image", data=data, files=files_list
                 )
             else:
                 response = requests.post(f"{self._media_url}/generate-image", data=data)
 
             response.raise_for_status()
+            log("==== LocalAI Image Payload ====", data, _print=True)
             return response.content
 
         except Exception as e:
