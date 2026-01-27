@@ -75,32 +75,48 @@ class LocalAIModel(AutoModel):
         return text.strip()
 
     def generate_json(
-        self, message, function, additional_instructions="", uri="", context={}
+        self,
+        message,
+        function=None,
+        system_prompt=None,
+        uri="",
+        context={},
     ):
-        schema_str = self._convert_tools_to_json_schema(function)
+        # 1. Determine System Prompt Strategy
+        if system_prompt:
+            # STRATEGY A: Custom System Prompt (Highest Priority)
+            full_system_prompt = system_prompt
+        elif function:
+            # STRATEGY B: Strict Schema Enforcement (Default)
+            schema_str = self._convert_tools_to_json_schema(function)
 
-        # 1. Improved System Prompt
-        # We explicitly warn about nested quotes, which is the #1 killer of complex JSON
-        full_system_prompt = (
-            f"{self.instructions}. {additional_instructions}\n"
-            f"You are a strict JSON generator. Output ONLY a valid JSON object matching this schema:\n"
-            f"{schema_str}\n"
-            f"IMPORTANT RULES:\n"
-            f"1. Do not include markdown formatting or explanations.\n"
-            f"2. DOUBLE CHECK nested quotes inside strings. Escape them properly.\n"
-            f"3. Ensure all arrays and objects are closed.\n"
-        )
+            full_system_prompt = (
+                f"{self.instructions}.\n"
+                f"You are a strict JSON generator. Output ONLY a valid JSON object matching this schema:\n"
+                f"{schema_str}\n"
+                f"IMPORTANT RULES:\n"
+                f"1. Do not include markdown formatting or explanations.\n"
+                f"2. DOUBLE CHECK nested quotes inside strings. Escape them properly.\n"
+                f"3. Ensure all arrays and objects are closed.\n"
+            )
+        else:
+            # STRATEGY C: Fallback
+            full_system_prompt = (
+                f"{self.instructions}.\n"
+                f"You are a strict JSON generator. Output valid JSON."
+            )
 
+        # 2. Add Context (Applies to all strategies)
         if context:
             full_system_prompt += (
                 f"\n\n### GROUND TRUTH CONTEXT ###\n"
                 f"Adhere strictly to this context:\n"
                 f"{json.dumps(context, indent=2)}"
             )
-        elif uri:
+        if uri:
             full_system_prompt += f"Use the following URI for reference: {uri}"
 
-        # 3. Payload with INCREASED CONTEXT and LOWER TEMPERATURE
+        # 3. Payload Construction
         payload = {
             "model": self._json_model,
             "messages": [
@@ -111,30 +127,28 @@ class LocalAIModel(AutoModel):
             "stream": False,
             "keep_alive": "24h",
             "options": {
-                "num_ctx": 8192,  # <--- Prevents cutoff on large schemas
-                "temperature": 0.8,  # <--- INCREASED from 0.2 to 0.8 for creativity
-                "top_p": 0.9,  # <--- Adds nuance to word choice
-                "repeat_penalty": 1.1,  # <--- Prevents it from saying "rust" 5 times
+                "num_ctx": 8192,
+                "temperature": 0.8,  # Keep high for creativity
+                "top_p": 0.9,
+                "repeat_penalty": 1.1,
             },
         }
 
         log("==== LocalAI JSON Payload ====", payload, _print=True)
+
         result_text = ""
         try:
-            # print(f"==== {self._ollama_url}: LocalAI JSON Payload ====")
             response = requests.post(f"{self._ollama_url}/chat", json=payload)
             log(response)
             response.raise_for_status()
 
             result_text = response.json().get("message", {}).get("content", "{}")
 
-            # Clean
+            # Clean & Parse
             clean_text = self._clean_json_response(result_text)
-
-            # Parse
             result_dict = json.loads(clean_text)
 
-            # Unwrap
+            # Unwrap (Handle cases where model wraps in 'parameters' key)
             if "parameters" in result_dict and isinstance(
                 result_dict["parameters"], dict
             ):
@@ -144,15 +158,12 @@ class LocalAIModel(AutoModel):
             return result_dict
 
         except Exception as e:
-            # If it fails, print the RAW text so you can see WHERE it broke.
             log(f"==== LocalAI JSON Error: {e} ====", _print=True)
             if result_text:
                 log(
                     f"--- FAILED RAW OUTPUT ---\n{result_text}\n-----------------------",
                     _print=True,
                 )
-
-            # Returning empty prevents the whole app from dying on one bad generation.
             return {}
 
     def generate_text(self, message, additional_instructions="", uri="", context={}):
