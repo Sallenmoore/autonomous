@@ -77,34 +77,19 @@ class LocalAIModel(AutoModel):
     def generate_json(
         self,
         message,
-        function=None,
         system_prompt=None,
         uri="",
         context={},
     ):
-        # 1. Determine System Prompt Strategy
-        if system_prompt:
-            # STRATEGY A: Custom System Prompt (Highest Priority)
-            full_system_prompt = system_prompt
-        elif function:
-            # STRATEGY B: Strict Schema Enforcement (Default)
-            schema_str = self._convert_tools_to_json_schema(function)
-
-            full_system_prompt = (
-                f"{self.instructions}.\n"
-                f"You are a strict JSON generator. Output ONLY a valid JSON object matching this schema:\n"
-                f"{schema_str}\n"
-                f"IMPORTANT RULES:\n"
-                f"1. Do not include markdown formatting or explanations.\n"
-                f"2. DOUBLE CHECK nested quotes inside strings. Escape them properly.\n"
-                f"3. Ensure all arrays and objects are closed.\n"
-            )
-        else:
-            # STRATEGY C: Fallback
-            full_system_prompt = (
-                f"{self.instructions}.\n"
-                f"You are a strict JSON generator. Output valid JSON."
-            )
+        system_prompt = system_prompt or self.instructions
+        full_system_prompt = (
+            f"{system_prompt}.\n"
+            f"You are a strict JSON generator. Output ONLY a valid JSON object matching the given schema.\n"
+            f"IMPORTANT RULES:\n"
+            f"1. Do not include markdown formatting or explanations.\n"
+            f"2. DOUBLE CHECK nested quotes inside strings. Escape them properly.\n"
+            f"3. Ensure all arrays and objects are closed.\n"
+        )
 
         # 2. Add Context (Applies to all strategies)
         if context:
@@ -128,7 +113,7 @@ class LocalAIModel(AutoModel):
             "keep_alive": "24h",
             "options": {
                 "num_ctx": 8192,
-                "temperature": 0.8,  # Keep high for creativity
+                "temperature": 0.9,  # Keep high for creativity
                 "top_p": 0.9,
                 "repeat_penalty": 1.1,
             },
