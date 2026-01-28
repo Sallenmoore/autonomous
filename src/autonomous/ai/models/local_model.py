@@ -199,8 +199,10 @@ class LocalAIModel(AutoModel):
                 "keep_alive": "24h",
             }
             try:
+                log(f"Payload sent: {payload}...", _print=True)
                 res = requests.post(f"{self._ollama_url}/chat", json=payload)
                 full_summary += res.json().get("message", {}).get("content", "") + "\n"
+                log(f"Chunk summarized: {full_summary}.", _print=True)
             except Exception as e:
                 log(f"Summary Error: {e}", _print=True)
                 break
