@@ -6,11 +6,14 @@ export
 
 all: test clean package
 
+# Define the interpreter (usually python3)
+PYTHON = python3
+
 package: clean
-	python -m pip install --upgrade build twine setuptools wheel
-	python -m build
-	twine check dist/*
-	twine upload dist/* --skip-existing --verbose
+	$(PYTHON) -m pip install --upgrade build twine setuptools wheel
+	$(PYTHON) -m build
+	$(PYTHON) -m twine check dist/*
+	$(PYTHON) -m twine upload dist/* --skip-existing --verbose
 
 ###### CLEANING #######
 
