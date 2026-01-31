@@ -38,15 +38,7 @@ class MockAIModel(AutoModel):
         log(f"⚡ [MOCK] Generating JSON for prompt: {message[:50]}...", _print=True)
 
         # 1. Default Mock Object
-        mock_response = {
-            "name": "The Mockingbird Tavern",
-            "description": "A glitchy, holographic tavern that only exists in offline mode. The ale tastes like static.",
-            "backstory": "Created by a developer at 30,000 feet, this tavern serves as a placeholder for real content. It was built on the ruins of a NullReferenceException.",
-            "appearance": "Wireframe walls with textures that haven't loaded yet.",
-            "secrets": "If you look closely at the bartender, you can see he is just a looping IF statement.",
-            "tags": ["offline", "dev-mode", "test"],
-            "type": "Location",
-        }
+        mock_response = {}
 
         # 2. Heuristic: If the user provided a context with 'name', use it.
         # This makes the mock feel slightly responsive.
