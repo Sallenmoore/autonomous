@@ -4,6 +4,7 @@ import os
 import random
 
 import requests
+from PIL import Image
 from pydub import AudioSegment
 
 from autonomous import log
@@ -119,7 +120,7 @@ class LocalAIModel(AutoModel):
             },
         }
 
-        # log("==== LocalAI JSON Payload ====", payload, _print=True)
+        log("==== LocalAI JSON Payload ====", payload, _print=True)
 
         result_text = ""
         try:
@@ -139,7 +140,7 @@ class LocalAIModel(AutoModel):
             ):
                 params = result_dict.pop("parameters")
                 result_dict.update(params)
-
+            log("==== LocalAI JSON Result ====", result_dict, _print=True)
             return result_dict
 
         except Exception as e:
@@ -242,64 +243,63 @@ class LocalAIModel(AutoModel):
             log(f"TTS Error: {e}", _print=True)
             return None
 
-    # ... inside LocalAIModel class ...
-
     def _get_dimensions(self, aspect_ratio):
         """
-        Maps abstract aspect ratios to optimal SDXL resolutions.
-        SDXL performs best at ~1024x1024 total pixels.
+        Returns a tuple: ((base_w, base_h), (target_w, target_h))
+
+        1. base_*: The resolution sent to SDXL (approx 1024x1024).
+        2. target_*: The final resolution to resize/upscale to.
         """
-        resolutions = {
+        # Standard SDXL buckets (approx 1MP)
+        # We use these for the initial generation to ensure good composition.
+        sdxl_base = {
             "1:1": (1024, 1024),
-            "3:4": (896, 1152),
-            "4:3": (1152, 896),
-            "16:9": (1216, 832),
-            "2K": (2048, 1080),
-            "2KPortrait": (1080, 2048),
-            "Portrait": (1080, 2048),
-            "4K": (3840, 2160),
-            "Landscape": (3840, 2160),
-            "4KPortrait": (2160, 3840),
-            "9:16": (832, 1216),
-            "3:2": (1216, 832),
-            "2:3": (832, 1216),
+            "Portrait": (896, 1152),  # 3:4
+            "Landscape": (1216, 832),  # 3:2 or 16:9 approx
         }
-        # Default to 1:1 (1024x1024) if unknown
-        return resolutions.get(aspect_ratio, (1024, 1024))
+
+        # The Logic: Define the target, map it to the closest SDXL base
+        # Format: "Key": ((Base_W, Base_H), (Target_W, Target_H))
+        resolutions = {
+            # Standard
+            "1:1": (sdxl_base["1:1"], (1024, 1024)),
+            "3:4": (sdxl_base["Portrait"], (896, 1152)),
+            "4:3": ((1152, 896), (1152, 896)),
+            # High Res (The logic changes here)
+            "16:9": (sdxl_base["Landscape"], (1216, 832)),
+            "9:16": ((832, 1216), (832, 1216)),
+            # 2K Tier
+            "2K": (
+                sdxl_base["Landscape"],
+                (2048, 1152),
+            ),  # Base is 1216x832 -> Upscale to 2K
+            "2KPortrait": ((832, 1216), (1152, 2048)),
+            # 4K Tier (The generated image will be upscaled ~3x)
+            "4K": (sdxl_base["Landscape"], (3840, 2160)),
+            "4KPortrait": ((832, 1216), (2160, 3840)),
+        }
+
+        # Default to 1:1 if unknown
+        return resolutions.get(aspect_ratio, (sdxl_base["1:1"], (1024, 1024)))
 
     def generate_image(
         self, prompt, negative_prompt="", files=None, aspect_ratio="2KPortrait"
     ):
-        # # 1. CLIP Token Limit Fix (Auto-Summarize)
-        # if len(prompt) > 800:
-        #     log("⚠️ Prompt exceeds CLIP limit. rewriting...", _print=True)
-        #     summary_instruction = (
-        #         "Convert the description into a comma-separated Stable Diffusion prompt. "
-        #         "Keep visual elements and style. Under 50 words."
-        #     )
-        #     new_prompt = self.generate_text(
-        #         message=prompt, additional_instructions=summary_instruction, context={}
-        #     )
-        #     if new_prompt and len(new_prompt) > 10:
-        #         prompt = new_prompt
+        # 1. Resolution Calculation
+        (base_w, base_h), (target_w, target_h) = self._get_dimensions(aspect_ratio)
 
-        # 2. Resolution Calculation
-        width, height = self._get_dimensions(aspect_ratio)
-
-        # 3. Construct Payload
-        # We send both the abstract params (for logging/metadata)
-        # and the concrete pixels (for the engine).
+        # 2. Construct Base Generation Payload
+        # We tell the AI to generate the smaller, stable size first.
         data = {
             "prompt": prompt,
             "negative_prompt": negative_prompt,
             "aspect_ratio": aspect_ratio,
-            "width": width,  # <--- Calculated Pixel Width
-            "height": height,  # <--- Calculated Pixel Height
+            "width": base_w,
+            "height": base_h,
         }
 
         try:
-            # Handle Files (Corrected List Logic)
-            # requests.post expects a list of tuples for multiple files with same key
+            # Handle Input Files (for Img2Img)
             files_list = []
             if files and isinstance(files, dict):
                 for fn, f_bytes in files.items():
@@ -307,20 +307,45 @@ class LocalAIModel(AutoModel):
                         file_obj = io.BytesIO(f_bytes)
                     else:
                         file_obj = f_bytes
-                    # Appending to list instead of overwriting dict key
                     files_list.append(("files", (fn, file_obj, "image/png")))
 
-            # Send Request
+            # 3. Step 1: Generate Base Image
+            url = f"{self._media_url}/generate-image"
             if files_list:
-                response = requests.post(
-                    f"{self._media_url}/generate-image", data=data, files=files_list
-                )
+                response = requests.post(url, data=data, files=files_list)
             else:
-                response = requests.post(f"{self._media_url}/generate-image", data=data)
+                response = requests.post(url, data=data)
 
             response.raise_for_status()
-            log("==== LocalAI Image Payload ====", data, _print=True)
-            return response.content
+            image_content = response.content
+
+            # 4. Step 2: Upscale (If necessary)
+            if (base_w, base_h) != (target_w, target_h):
+                log(
+                    f"Requesting AI Upscale: {base_w}x{base_h} -> {target_w}x{target_h}...",
+                    _print=True,
+                )
+
+                # Prepare payload for the /upscale route
+                upscale_data = {
+                    "prompt": prompt,  # Reuse prompt to guide texture generation
+                    "width": target_w,  # Explicitly tell server the target size
+                    "height": target_h,
+                }
+
+                # Send the image we just generated back to the server as a file
+                upscale_files = {
+                    "file": ("generated.png", io.BytesIO(image_content), "image/png")
+                }
+
+                upscale_response = requests.post(
+                    f"{self._media_url}/upscale", data=upscale_data, files=upscale_files
+                )
+                upscale_response.raise_for_status()
+                image_content = upscale_response.content
+
+            log("==== LocalAI Image Generation Complete ====", data, _print=True)
+            return image_content
 
         except Exception as e:
             log(f"Image Gen Error: {e}", _print=True)
