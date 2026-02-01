@@ -262,25 +262,22 @@ class LocalAIModel(AutoModel):
         # Format: "Key": ((Base_W, Base_H), (Target_W, Target_H))
         resolutions = {
             # Standard
-            "1:1": (sdxl_base["1:1"], (1024, 1024)),
-            "3:4": (sdxl_base["Portrait"], (896, 1152)),
-            "4:3": ((1152, 896), (1152, 896)),
+            "1:1": ((832, 832), (1024, 1024)),
+            "3:4": ((832, 1152), (1664, 2304)),
+            "4:3": ((1152, 832), (2304, 1664)),
             # High Res (The logic changes here)
-            "16:9": (sdxl_base["Landscape"], (1216, 832)),
-            "9:16": ((832, 1216), (832, 1216)),
+            "16:9": ((1216, 832), (2048, 1152)),
+            "9:16": ((832, 1216), (1152, 2048)),
             # 2K Tier
-            "2K": (
-                sdxl_base["Landscape"],
-                (2048, 1152),
-            ),  # Base is 1216x832 -> Upscale to 2K
+            "2K": ((1216, 832), (2048, 1152)),  # Base is 1216x832 -> Upscale to 2K
             "2KPortrait": ((832, 1216), (1152, 2048)),
             # 4K Tier (The generated image will be upscaled ~3x)
-            "4K": (sdxl_base["Landscape"], (3840, 2160)),
+            "4K": ((1216, 832), (3840, 2160)),
             "4KPortrait": ((832, 1216), (2160, 3840)),
         }
 
         # Default to 1:1 if unknown
-        return resolutions.get(aspect_ratio, (sdxl_base["1:1"], (1024, 1024)))
+        return resolutions.get(aspect_ratio, ((832, 832), (1024, 1024)))
 
     def generate_image(
         self, prompt, negative_prompt="", files=None, aspect_ratio="2KPortrait"
