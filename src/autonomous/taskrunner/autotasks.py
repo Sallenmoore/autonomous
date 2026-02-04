@@ -3,6 +3,7 @@ from enum import Enum
 
 from redis import Redis
 from rq import Queue
+from rq.command import send_stop_job_command
 from rq.job import Job
 
 
@@ -127,3 +128,7 @@ class AutoTasks:
             # Filter out None values in case a job expired between fetch and get
             tasks[status] = [job for job in jobs if job]
         return tasks
+
+    def kill(self, pk):
+        # job = self.get_task(pk)
+        send_stop_job_command(AutoTasks._connection, pk)
