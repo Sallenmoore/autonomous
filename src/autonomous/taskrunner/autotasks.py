@@ -1,14 +1,17 @@
 import os
 from enum import Enum
+
 from redis import Redis
 from rq import Queue
 from rq.job import Job
+
 
 # 1. Define Priorities clearly
 class TaskPriority(Enum):
     HIGH = "high"
     DEFAULT = "default"
     LOW = "low"
+
 
 class AutoTask:
     def __init__(self, job):
@@ -28,8 +31,9 @@ class AutoTask:
             "id": self.id,
             "return_value": self.job.result,
             "status": self.status,
-            "error": self.job.exc_info
+            "error": self.job.exc_info,
         }
+
 
 class AutoTasks:
     _connection = None
@@ -76,12 +80,7 @@ class AutoTasks:
         q = self._get_queue(queue_name)
 
         # 4. Enqueue
-        job = q.enqueue(
-            func,
-            args=args,
-            kwargs=kwargs,
-            job_timeout=job_timeout
-        )
+        job = q.enqueue(func, args=args, kwargs=kwargs, job_timeout=job_timeout)
 
         return AutoTask(job)
 
@@ -91,3 +90,40 @@ class AutoTasks:
             return AutoTask(job)
         except Exception:
             return None
+
+    def get_tasks(self):
+
+        high_queue = Queue("high", connection=self._connection)
+        default_queue = Queue("default", connection=self._connection)
+        low_queue = Queue("low", connection=self._connection)
+
+        registries = {
+            "started": [
+                high_queue.started_job_registry,
+                default_queue.started_job_registry,
+                low_queue.started_job_registry,
+            ],
+            "finished": [
+                high_queue.finished_job_registry,
+                default_queue.finished_job_registry,
+                low_queue.finished_job_registry,
+            ],
+            "failed": [
+                high_queue.failed_job_registry,
+                default_queue.failed_job_registry,
+                low_queue.failed_job_registry,
+            ],
+            "queued": [high_queue, default_queue, low_queue],
+        }
+
+        tasks = {}
+        for status, regs in registries.items():
+            all_job_ids = []
+            for reg in regs:
+                all_job_ids.extend(reg.get_job_ids())
+            # Use a set to remove duplicate job_ids if a job is in multiple registries
+            unique_job_ids = sorted(list(set(all_job_ids)), reverse=True)
+            jobs = Job.fetch_many(unique_job_ids, connection=self._connection)
+            # Filter out None values in case a job expired between fetch and get
+            tasks[status] = [job for job in jobs if job]
+        return tasks

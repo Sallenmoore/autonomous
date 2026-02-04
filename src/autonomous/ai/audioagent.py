@@ -8,7 +8,7 @@ from autonomous.model.autoattr import StringAttr
 class AudioAgent(BaseAgent):
     name = StringAttr(default="audioagent")
 
-    provider = StringAttr(default="gemini")
+    provider = StringAttr(default="local")
 
     instructions = StringAttr(
         default="You are highly skilled AI trained to assist with generating audio files."

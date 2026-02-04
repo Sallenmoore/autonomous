@@ -24,10 +24,36 @@ class LocalAIModel(AutoModel):
     _text_model = "llama3"
     _json_model = "llama3"
 
-    # ... VOICES dictionary ... (Keep existing voices)
     VOICES = {
         "Zephyr": ["female"],
-        # ... (keep all your voices) ...
+        "Puck": ["male"],
+        "Charon": ["male"],
+        "Kore": ["female"],
+        "Fenrir": ["non-binary"],
+        "Leda": ["female"],
+        "Orus": ["male"],
+        "Aoede": ["female"],
+        "Callirhoe": ["female"],
+        "Autonoe": ["female"],
+        "Enceladus": ["male"],
+        "Iapetus": ["male"],
+        "Umbriel": ["male"],
+        "Algieba": ["male"],
+        "Despina": ["female"],
+        "Erinome": ["female"],
+        "Algenib": ["male"],
+        "Rasalgethi": ["non-binary"],
+        "Laomedeia": ["female"],
+        "Achernar": ["female"],
+        "Alnilam": ["male"],
+        "Schedar": ["male"],
+        "Gacrux": ["female"],
+        "Pulcherrima": ["non-binary"],
+        "Achird": ["male"],
+        "Zubenelgenubi": ["male"],
+        "Vindemiatrix": ["female"],
+        "Sadachbia": ["male"],
+        "Sadaltager": ["male"],
         "Sulafar": ["female"],
     }
 
@@ -219,10 +245,20 @@ class LocalAIModel(AutoModel):
             files = {"file": ("audio.mp3", f_obj, "audio/mpeg")}
             response = requests.post(f"{self._media_url}/transcribe", files=files)
             response.raise_for_status()
+            log(f"Transcription response: {response.json()}", _print=True)
             return response.json().get("text", "")
         except Exception as e:
             log(f"STT Error: {e}", _print=True)
             return ""
+
+    def list_voices(self, filters=[]):
+        if not filters:
+            return list(self.VOICES.keys())
+        voices = []
+        for voice, attribs in self.VOICES.items():
+            if any(f.lower() in attribs for f in filters):
+                voices.append(voice)
+        return voices
 
     def generate_audio(
         self,
