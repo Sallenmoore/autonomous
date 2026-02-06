@@ -180,24 +180,23 @@ class LocalAIModel(AutoModel):
 
     def generate_text(self, message, additional_instructions="", uri="", context={}):
         # 1. Base System Prompt
-        full_system_prompt = f"{self.instructions}. {additional_instructions}\n"
 
         if context:
-            full_system_prompt += (
+            additional_instructions += (
                 f"\n\n### GROUND TRUTH CONTEXT ###\n"
                 f"The following context is absolute truth for this interaction. "
                 f"Prioritize it over your internal training data. "
                 f"If the context says the sky is green, it is green.\n"
                 f"{json.dumps(context, indent=2)}"
             )
-        elif uri:
-            full_system_prompt += f"Use the following URI for reference: {uri}"
+        if uri:
+            additional_instructions += f"\nUse the following URI for reference: {uri}"
 
         # 3. Send to Ollama
         payload = {
             "model": self._text_model,
             "messages": [
-                {"role": "system", "content": full_system_prompt},
+                {"role": "system", "content": additional_instructions},
                 {"role": "user", "content": message},
             ],
             "stream": False,
@@ -243,10 +242,26 @@ class LocalAIModel(AutoModel):
             else:
                 f_obj = audio_file
             files = {"file": ("audio.mp3", f_obj, "audio/mpeg")}
+
             response = requests.post(f"{self._media_url}/transcribe", files=files)
             response.raise_for_status()
             log(f"Transcription response: {response.json()}", _print=True)
-            return response.json().get("text", "")
+            response_text = response.json().get("text", "")
+            prompt = prompt.replace(";;RAW_TRANSCRIPT_HERE", response_text)
+            log(
+                "==== TRANSCRIPTION PROMPT ====",
+                prompt,
+                f"TOKENS: {len(prompt.split())}",
+            )
+            system_prompt = """
+You are an expert Scribe and Editor. Your task is to transform a raw, automated audio transcript into a clean, readable script format.
+
+GUIDELINES:
+**Speaker Identification**: Use the Context to guess who is speaking to the best of your ability.
+**Cleanup**: Remove verbal tics (um, uh, like, you know) and stuttering. Fix punctuation. Remove tangent conversations not relevant to the topic, such as "What did you do last weekend?", "Hand me some chips", etc.
+**NO PREAMBLE**: Output ONLY the Markdown formatted script. Do not add introductory or concluding remarks.
+"""
+            return self.generate_text(prompt, additional_instructions=system_prompt)
         except Exception as e:
             log(f"STT Error: {e}", _print=True)
             return ""
