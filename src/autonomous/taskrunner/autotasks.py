@@ -130,5 +130,7 @@ class AutoTasks:
         return tasks
 
     def kill(self, pk):
-        # job = self.get_task(pk)
-        send_stop_job_command(AutoTasks._connection, pk)
+        job = self.get_task(pk)
+        if job.status == "started":
+            send_stop_job_command(AutoTasks._connection, pk)
+        job.delete()
