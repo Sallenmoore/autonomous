@@ -35,6 +35,9 @@ class AutoTask:
             "error": self.job.exc_info,
         }
 
+    def delete(self):
+        self.job.delete()
+
 
 class AutoTasks:
     _connection = None
