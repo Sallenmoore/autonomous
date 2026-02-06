@@ -14,8 +14,6 @@ package: clean
 	$(PYTHON) -m build
 	$(PYTHON) -m twine check dist/*
 	$(PYTHON) -m twine upload dist/* --skip-existing --verbose
-	git commit -am "Bump autonomous version to new version"
-	git push
 
 ###### CLEANING #######
 
