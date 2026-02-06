@@ -27,6 +27,14 @@ class AutoTask:
         return self.job.get_status()
 
     @property
+    def func_name(self):
+        return self.job.func_name
+
+    @property
+    def enqueued_at(self):
+        return self.job.enqueued_at
+
+    @property
     def result(self):
         return {
             "id": self.id,
@@ -129,11 +137,11 @@ class AutoTasks:
             unique_job_ids = sorted(list(set(all_job_ids)), reverse=True)
             jobs = Job.fetch_many(unique_job_ids, connection=self._connection)
             # Filter out None values in case a job expired between fetch and get
-            tasks[status] = [job for job in jobs if job]
+            tasks[status] = [AutoTask(job) for job in jobs if job]
         return tasks
 
     def kill(self, pk):
         job = self.get_task(pk)
         if job.status == "started":
-            send_stop_job_command(AutoTasks._connection, pk)
+            send_stop_job_command(AutoTasks._connection, job.id)
         job.delete()

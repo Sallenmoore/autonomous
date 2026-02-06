@@ -178,7 +178,9 @@ class LocalAIModel(AutoModel):
                 )
             return {}
 
-    def generate_text(self, message, additional_instructions="", uri="", context={}):
+    def generate_text(
+        self, message, additional_instructions="", uri="", context={}, temperature=0.9
+    ):
         # 1. Base System Prompt
 
         if context:
@@ -201,6 +203,15 @@ class LocalAIModel(AutoModel):
             ],
             "stream": False,
             "keep_alive": "24h",
+            "options": {
+                "num_ctx": 8192,
+                # 1. ELIMINATE CREATIVITY
+                "temperature": temperature,
+                # 2. PREVENT CUTOFFS
+                "num_predict": -1,
+                # 3. PREVENT LOOPS
+                "repeat_penalty": 1.1,
+            },
         }
 
         try:
@@ -261,7 +272,11 @@ GUIDELINES:
 **Cleanup**: Remove verbal tics (um, uh, like, you know) and stuttering. Fix punctuation. Remove tangent conversations not relevant to the topic, such as "What did you do last weekend?", "Hand me some chips", etc.
 **NO PREAMBLE**: Output ONLY the Markdown formatted script. Do not add introductory or concluding remarks.
 """
-            return self.generate_text(prompt, additional_instructions=system_prompt)
+            result = self.generate_text(
+                prompt, additional_instructions=system_prompt, temperature=0.1
+            )
+            log(result)
+            return result
         except Exception as e:
             log(f"STT Error: {e}", _print=True)
             return ""
