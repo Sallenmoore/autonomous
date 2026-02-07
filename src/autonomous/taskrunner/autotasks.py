@@ -2,7 +2,7 @@ import os
 from enum import Enum
 
 from redis import Redis
-from rq import Queue
+from rq import Queue, get_current_job
 from rq.command import send_stop_job_command
 from rq.job import Job
 
@@ -12,6 +12,8 @@ class TaskPriority(Enum):
     HIGH = "high"
     DEFAULT = "default"
     LOW = "low"
+    IMAGE = "image"
+    AUDIO = "audio"
 
 
 class AutoTask:
@@ -31,20 +33,59 @@ class AutoTask:
         return self.job.func_name
 
     @property
+    def timeout(self):
+        return self.job.timeout
+
+    @property
     def enqueued_at(self):
         return self.job.enqueued_at
 
     @property
+    def started_at(self):
+        return self.job.started_at
+
+    @property
+    def ended_at(self):
+        return self.job.ended_at
+
+    @property
+    def retries_left(self):
+        return self.job.retries_left
+
+    @property
+    def is_failed(self):
+        return self.job.is_failed
+
+    @property
+    def is_finished(self):
+        return self.job.is_failed
+
+    @property
+    def kwargs(self):
+        return self.job.kwargs
+
+    @property
+    def origin(self):
+        return self.job.origin
+
+    @property
+    def exc_info(self):
+        return self.job.exc_info
+
+    @property
     def result(self):
-        return {
-            "id": self.id,
-            "return_value": self.job.result,
-            "status": self.status,
-            "error": self.job.exc_info,
-        }
+        return self.job.result
 
     def delete(self):
         self.job.delete()
+
+    def meta(self, key=None, value=None):
+        if value:
+            self.job.meta[key] = value
+            self.job.save_meta()
+        if key:
+            return self.job.meta.get(key, "")
+        return self.job.meta
 
 
 class AutoTasks:
@@ -82,7 +123,7 @@ class AutoTasks:
         Enqueues a job.
         kwarg 'priority' determines the queue (default: 'default').
         """
-        job_timeout = kwargs.pop("_task_job_timeout", 3600)
+        job_timeout = kwargs.pop("_task_job_timeout", 7200)
 
         # 2. Extract Priority (support Enum or string)
         priority = kwargs.pop("priority", TaskPriority.DEFAULT)
@@ -96,10 +137,14 @@ class AutoTasks:
 
         return AutoTask(job)
 
+    def get_current_task(self):
+        if job := get_current_job():
+            return AutoTask(job)
+
     def get_task(self, job_id):
         try:
-            job = Job.fetch(job_id, connection=AutoTasks._connection)
-            return AutoTask(job)
+            if job := Job.fetch(job_id, connection=AutoTasks._connection):
+                return AutoTask(job)
         except Exception:
             return None
 
@@ -108,24 +153,32 @@ class AutoTasks:
         high_queue = Queue("high", connection=self._connection)
         default_queue = Queue("default", connection=self._connection)
         low_queue = Queue("low", connection=self._connection)
+        audio_queue = Queue("audio", connection=self._connection)
+        image_queue = Queue("image", connection=self._connection)
 
         registries = {
             "started": [
                 high_queue.started_job_registry,
                 default_queue.started_job_registry,
                 low_queue.started_job_registry,
+                audio_queue.started_job_registry,
+                image_queue.started_job_registry,
             ],
             "finished": [
                 high_queue.finished_job_registry,
                 default_queue.finished_job_registry,
                 low_queue.finished_job_registry,
+                audio_queue.finished_job_registry,
+                image_queue.finished_job_registry,
             ],
             "failed": [
                 high_queue.failed_job_registry,
                 default_queue.failed_job_registry,
                 low_queue.failed_job_registry,
+                audio_queue.failed_job_registry,
+                image_queue.failed_job_registry,
             ],
-            "queued": [high_queue, default_queue, low_queue],
+            "queued": [high_queue, default_queue, low_queue, audio_queue, image_queue],
         }
 
         tasks = {}

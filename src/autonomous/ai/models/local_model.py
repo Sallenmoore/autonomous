@@ -21,6 +21,8 @@ class LocalAIModel(AutoModel):
     # Config
     _ollama_url = os.environ.get("OLLAMA_API_BASE_URL", "")
     _media_url = os.environ.get("MEDIA_API_BASE_URL", "")
+    _audio_url = os.environ.get("MEDIA_AUDIO_API_BASE_URL", "")
+    _image_url = os.environ.get("MEDIA_IMAGE_API_BASE_URL", "")
     _text_model = "llama3"
     _json_model = "llama3"
 
@@ -254,15 +256,19 @@ class LocalAIModel(AutoModel):
                 f_obj = audio_file
             files = {"file": ("audio.mp3", f_obj, "audio/mpeg")}
 
-            response = requests.post(f"{self._media_url}/transcribe", files=files)
+            response = requests.post(f"{self._audio_url}/transcribe", files=files)
             response.raise_for_status()
             log(f"Transcription response: {response.json()}", _print=True)
             response_text = response.json().get("text", "")
-            prompt = prompt.replace(";;RAW_TRANSCRIPT_HERE", response_text)
+            if ";;RAW_TRANSCRIPT_HERE" in prompt:
+                prompt = prompt.replace(";;RAW_TRANSCRIPT_HERE", response_text)
+            else:
+                prompt += f"\nRAW TRANSCRIPT\n\n{response_text}"
             log(
                 "==== TRANSCRIPTION PROMPT ====",
                 prompt,
                 f"TOKENS: {len(prompt.split())}",
+                _print=True,
             )
             system_prompt = """
 You are an expert Scribe and Editor. Your task is to transform a raw, automated audio transcript into a clean, readable script format.
@@ -275,7 +281,7 @@ GUIDELINES:
             result = self.generate_text(
                 prompt, additional_instructions=system_prompt, temperature=0.1
             )
-            log(result)
+            log(f"FINAL TRANSCRIPTION CHUNK: {result}", _print=True)
             return result
         except Exception as e:
             log(f"STT Error: {e}", _print=True)
@@ -373,7 +379,7 @@ GUIDELINES:
                     files_list.append(("files", (fn, file_obj, "image/png")))
 
             # 3. Step 1: Generate Base Image
-            url = f"{self._media_url}/generate-image"
+            url = f"{self._image_url}/generate-image"
             if files_list:
                 response = requests.post(url, data=data, files=files_list)
             else:
@@ -402,7 +408,7 @@ GUIDELINES:
                 }
 
                 upscale_response = requests.post(
-                    f"{self._media_url}/upscale", data=upscale_data, files=upscale_files
+                    f"{self._image_url}/upscale", data=upscale_data, files=upscale_files
                 )
                 upscale_response.raise_for_status()
                 image_content = upscale_response.content
