@@ -19,7 +19,7 @@ class JSONAgent(BaseAgent):
     )
 
     def generate(self, message, system_prompt="", uri="", context=""):
-        self.add_to_job_meta("prompt", message)
+        # self.add_to_job_meta("prompt", message)
         result = self.get_client(
             os.environ.get("JSON_AI_AGENT", self.provider)
         ).generate_json(message, system_prompt=system_prompt, uri=uri, context=context)

@@ -1,6 +1,7 @@
 from autonomous import log
 from autonomous.model.autoattr import ReferenceAttr, StringAttr
 from autonomous.model.automodel import AutoModel
+from autonomous.taskrunner.autotasks import AutoTasks
 
 from .models.gemini import GeminiAIModel
 from .models.local_model import LocalAIModel
@@ -49,7 +50,6 @@ class BaseAgent(AutoModel):
 
         return self.client
 
-    def add_to_job_meta(self, k, v):
-        if job := AutoTasks.get_current_task():
-            job.meta(k, v)
-
+    # def add_to_job_meta(self, k, v):
+    #     if job := AutoTasks.get_current_task():
+    #         job.meta(k, v)

@@ -69,10 +69,6 @@ class AutoTask:
         return self.job.is_failed
 
     @property
-    def kwargs(self):
-        return self.job.kwargs
-
-    @property
     def origin(self):
         return self.job.origin
 
