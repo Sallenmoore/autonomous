@@ -254,7 +254,7 @@ class LocalAIModel(AutoModel):
                 f_obj = io.BytesIO(audio_file)
             else:
                 f_obj = audio_file
-            files = {"file": ("audio.mp3", f_obj, "audio/mpeg")}
+            files = {"file": ("audio.opus", f_obj, "audio/ogg")}
 
             response = requests.post(f"{self._audio_url}/transcribe", files=files)
             response.raise_for_status()
@@ -308,9 +308,9 @@ GUIDELINES:
             response.raise_for_status()
             wav_bytes = response.content
             audio = AudioSegment.from_file(io.BytesIO(wav_bytes), format="wav")
-            mp3_buffer = io.BytesIO()
-            audio.export(mp3_buffer, format="mp3")
-            return mp3_buffer.getvalue()
+            audio_buffer = io.BytesIO()
+            audio.export(audio_buffer, format="opus")
+            return audio_buffer.getvalue()
         except Exception as e:
             log(f"TTS Error: {e}", _print=True)
             return None
