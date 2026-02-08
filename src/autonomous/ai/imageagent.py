@@ -24,6 +24,7 @@ class ImageAgent(BaseAgent):
         aspect_ratio="Portrait",
         files=None,
     ):
+        self.add_to_job_meta("prompt", prompt)
         return self.get_client(
             os.environ.get("IMAGE_AI_AGENT", self.provider)
         ).generate_image(

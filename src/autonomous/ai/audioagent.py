@@ -25,6 +25,7 @@ class AudioAgent(BaseAgent):
     def transcribe(
         self, audio, prompt="Transcribe this audio clip", display_name="audio.mp3"
     ):
+        self.add_to_job_meta('prompt', prompt)
         return self.get_client(
             os.environ.get("TRANSCRIBE_AI_AGENT", self.provider)
         ).generate_transcription(

@@ -25,6 +25,14 @@ class AutoTask:
         return self.job.id
 
     @property
+    def args(self):
+        return self.job.args
+
+    @property
+    def kwargs(self):
+        return self.job.kwargs
+
+    @property
     def status(self):
         return self.job.get_status()
 

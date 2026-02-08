@@ -23,6 +23,7 @@ class TextAgent(BaseAgent):
         ).summarize_text(text, primer=primer)
 
     def generate(self, message, additional_instructions="", uri="", context=""):
+        self.add_to_job_meta("prompt", message)
         return self.get_client(
             os.environ.get("TEXT_AI_AGENT", self.provider)
         ).generate_text(message, additional_instructions, uri=uri, context=context)
