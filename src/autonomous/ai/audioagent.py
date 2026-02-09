@@ -23,7 +23,11 @@ class AudioAgent(BaseAgent):
         ).generate_audio(prompt, voice=voice)
 
     def transcribe(
-        self, audio, prompt="Transcribe this audio clip", display_name="audio.opus"
+        self,
+        audio,
+        prompt="Transcribe this audio clip",
+        display_name="audio.opus",
+        whisper_context="",
     ):
         # self.add_to_job_meta('prompt', prompt)
         return self.get_client(

@@ -3,6 +3,7 @@ import json
 import os
 import random
 
+import markdown
 import requests
 from PIL import Image
 from pydub import AudioSegment
@@ -207,7 +208,7 @@ class LocalAIModel(AutoModel):
             "keep_alive": "24h",
             "options": {
                 "num_ctx": 8192,
-                # 1. ELIMINATE CREATIVITY
+                # 1. CREATIVITY
                 "temperature": temperature,
                 # 2. PREVENT CUTOFFS
                 "num_predict": -1,
@@ -248,29 +249,33 @@ class LocalAIModel(AutoModel):
 
         return full_summary
 
-    def generate_transcription(self, audio_file, prompt=""):
-        try:
-            if isinstance(audio_file, bytes):
-                f_obj = io.BytesIO(audio_file)
-            else:
-                f_obj = audio_file
-            files = {"file": ("audio.opus", f_obj, "audio/ogg")}
+    def generate_transcription(self, audio_file, prompt="", whisper_context=""):
+        if isinstance(audio_file, bytes):
+            f_obj = io.BytesIO(audio_file)
+        else:
+            f_obj = audio_file
 
-            response = requests.post(f"{self._audio_url}/transcribe", files=files)
-            response.raise_for_status()
-            log(f"Transcription response: {response.json()}", _print=True)
-            response_text = response.json().get("text", "")
-            if ";;RAW_TRANSCRIPT_HERE" in prompt:
-                prompt = prompt.replace(";;RAW_TRANSCRIPT_HERE", response_text)
-            else:
-                prompt += f"\nRAW TRANSCRIPT\n\n{response_text}"
-            log(
-                "==== TRANSCRIPTION PROMPT ====",
-                prompt,
-                f"TOKENS: {len(prompt.split())}",
-                _print=True,
-            )
-            system_prompt = """
+        files = {"file": ("audio.opus", f_obj, "audio/ogg")}
+
+        # Whisper uses this to "continue" the sentence style.
+        data = {"prompt": whisper_context} if whisper_context else {}
+
+        response = requests.post(
+            f"{self._audio_url}/transcribe",
+            files=files,
+            data=data,
+        )
+        response.raise_for_status()
+
+        response_text = response.json().get("text", "")
+        full_llm_prompt = f"{prompt}\n\nPREVIOUS CONTEXT: {whisper_context}\n\nRAW TRANSCRIPT:\n{response_text}"
+        log(
+            "==== TRANSCRIPTION PROMPT ====",
+            full_llm_prompt,
+            f"TOKENS: {len(full_llm_prompt.split())}",
+            _print=True,
+        )
+        system_prompt = """
 You are an expert Scribe and Editor. Your task is to transform a raw, automated audio transcript into a clean, readable script format.
 
 GUIDELINES:
@@ -278,14 +283,15 @@ GUIDELINES:
 **Cleanup**: Remove verbal tics (um, uh, like, you know) and stuttering. Fix punctuation. Remove tangent conversations not relevant to the topic, such as "What did you do last weekend?", "Hand me some chips", etc.
 **NO PREAMBLE**: Output ONLY the Markdown formatted script. Do not add introductory or concluding remarks.
 """
+        try:
             result = self.generate_text(
-                prompt, additional_instructions=system_prompt, temperature=0.1
+                full_llm_prompt, additional_instructions=system_prompt, temperature=0.1
             )
             log(f"FINAL TRANSCRIPTION CHUNK: {result}", _print=True)
-            return result
+            return markdown.markdown(result)
         except Exception as e:
             log(f"STT Error: {e}", _print=True)
-            return ""
+            raise e
 
     def list_voices(self, filters=[]):
         if not filters:
