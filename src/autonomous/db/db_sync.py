@@ -47,7 +47,6 @@ def process_single_object_sync(object_id, collection_name, token):
     token_key = f"sync_token:{collection_name}:{str_id}"
 
     # 1. THE DEBOUNCE WAIT (Happens in background)
-    print(f"Debouncing {str_id} for 5 seconds...")
     time.sleep(5)
 
     # 2. THE VERIFICATION
@@ -59,7 +58,7 @@ def process_single_object_sync(object_id, collection_name, token):
         return
 
     # 3. THE EXECUTION (Embedding generation)
-    print(f"Processing Sync for: {str_id} in {collection_name}")
+    # print(f"Processing Sync for: {str_id} in {collection_name}")
 
     from bson.objectid import ObjectId
 
@@ -76,13 +75,14 @@ def process_single_object_sync(object_id, collection_name, token):
     if not doc:
         print(f"Object {object_id} not found in collection '{collection_name}'")
         # Optional: Remove from Redis index if it exists
-        r.delete(f"lore:{object_id}")
+        r.delete(f"{collection_name}:{object_id}")
         return
 
     # 2. Construct Searchable Text
     # (Existing logic...)
     searchable_text = (
-        f"{doc.get('name', '')}: {doc.get('description', '')} {doc.get('history', '')}"
+        f"{doc.get('name', '')}: {doc.get('history', '')}"
+        f"Related: {', '.join([a.name for a in doc.get('associations')[:20]]) if doc.get('associations') else ''}"
     )
 
     if len(searchable_text) < 10:
