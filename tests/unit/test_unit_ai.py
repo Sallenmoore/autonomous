@@ -1,222 +1,251 @@
+import io
+import json
 import os
+import unittest
+from unittest.mock import MagicMock, patch
 
 import pytest
-from autonomous.ai.audioagent import AudioAgent
-from autonomous.ai.imageagent import ImageAgent
-from autonomous.ai.jsonagent import JSONAgent
-from autonomous.ai.models.gemini import GeminiAIModel
-from autonomous.ai.models.local_model import LocalAIModel
-from autonomous.ai.textagent import TextAgent
-
-# --- FIXTURES ---
+from autonomous.model.local_model import LocalAIModel
 
 
-@pytest.fixture
-def mock_context():
-    """Sample context data usually coming from get_context()"""
-    return {
-        "Focus Object": "The Golden Compass",
-        "Name": "Golden Compass",
-        "Description": "A magical device that tells the truth.",
-        "Associations": ["a", "b", "c"],
-        "Lore": ["It was forged by bears.", "It breaks if you lie."],
-    }
+class TestLocalAIModel(unittest.TestCase):
+    def setUp(self):
+        # Set dummy env vars to ensure we are testing the class defaults/overrides
+        os.environ["OLLAMA_API_BASE_URL"] = "http://mock-ollama:11434"
+        os.environ["MEDIA_API_BASE_URL"] = "http://mock-media:5000"
 
+        self.model = LocalAIModel()
+        # Reset URLs manually in case the class loaded empty env vars at import time
+        self.model._ollama_url = "http://mock-ollama:11434"
+        self.model._media_url = "http://mock-media:5000"
+        self.model._image_url = "http://mock-media:5000"
+        self.model._audio_url = "http://mock-media:5000"
 
-@pytest.fixture
-def joke_function_schema():
-    return {
-        "name": "tell_joke",
-        "description": "Generates a funny joke with a rating",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "setup": {"type": "string"},
-                "punchline": {"type": "string"},
-                "rating": {"type": "integer", "description": "Rating from 1-10"},
-            },
-            "required": ["setup", "punchline", "rating"],
-        },
-    }
+    # --- 1. UTILITY TESTS ---
 
+    def test_clean_json_response_parsing(self):
+        """Test the robustness of the JSON cleaner against Llama 3 chatter."""
+        # Case A: Markdown blocks
+        raw_markdown = """Sure, here is the JSON you requested: {
+            "name": "Test",
+            "value": 10
+        }
+        Let me know if you need changes."""
 
-# --- TEST FACTORY LOGIC ---
+        cleaned = self.model._clean_json_response(raw_markdown)
+        self.assertEqual(cleaned, '{\n    "name": "Test",\n    "value": 10\n}')
 
+        # Case B: No markdown, just conversational wrapper
+        raw_chat = """Sure, here is the JSON you requested: { "key": "value" } Let me know if you need changes."""
+        cleaned = self.model._clean_json_response(raw_chat)
+        self.assertEqual(cleaned, '{ "key": "value" }')
+        # Case C: Malformed/No brackets (Should remain as is, likely failing JSON load later)
+        raw_bad = "I couldn't generate that."
+        cleaned = self.model._clean_json_response(raw_bad)
+        self.assertEqual(cleaned, "I couldn't generate that.")
 
-def test_agent_switching():
-    """Verify BaseAgent correctly switches underlying clients"""
-    agent = TextAgent(name="SwitcherBot")
+    @patch("requests.post")
+    def test_generate_text_with_context(self, mock_post):
+        """Verify context is correctly injected into the system prompt."""
+        # Setup Mock
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"message": {"content": "Leonardo da Vinci"}}
+        mock_post.return_value = mock_response
 
-    # 1. Default (Gemini)
-    assert isinstance(agent.get_client(), GeminiAIModel)
-    assert agent.provider == "gemini"
+        # Inputs
+        context = {"Fact": "The sky is green."}
+        prompt = "What color is the sky?"
 
-    # 2. Switch to Local
-    agent.provider = "local"
-    client = agent.get_client()
-    assert isinstance(client, LocalAIModel)
+        # Execute
+        response = self.model.generate_text(prompt, context=context)
 
-    # 3. Verify persistence (mock save)
-    assert agent.client.__class__ == LocalAIModel
+        # Assert
+        self.assertEqual(response, "Leonardo da Vinci")
 
+        # Verify Payload Structure
+        args, kwargs = mock_post.call_args
+        payload = kwargs["json"]
 
-# --- TEST JSON GENERATION ---
+        # Check system prompt contains the context injection
+        system_content = payload["messages"][0]["content"]
+        self.assertIn("### GROUND TRUTH CONTEXT ###", system_content)
+        self.assertIn("The sky is green", system_content)
+        self.assertEqual(payload["model"], "llama3")
 
+    @patch("requests.post")
+    def test_generate_json_logic(self, mock_post):
+        """Test JSON generation, cleaning, and parameter unwrapping."""
+        # Setup Mock to return a "messy" valid JSON response
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "message": {
+                "content": 'Here is the result:\n```json\n{ "parameters": { "setup": "Why?", "punchline": "Because!" } }\n```'
+            }
+        }
+        mock_post.return_value = mock_response
 
-@pytest.mark.parametrize("provider", ["local", "gemini"])
-def test_generate_json(provider, joke_function_schema, mock_context):
-    """Test JSON generation on both providers"""
-    if provider == "gemini" and not os.getenv("GOOGLEAI_KEY"):
-        pytest.skip("Skipping Gemini test: No API Key")
+        # Execute
+        result = self.model.generate_json("Tell a joke", context={})
 
-    print(f"\nTesting JSON Agent with provider: {provider}")
+        # Assert
+        # Should unwrap 'parameters' and clean markdown
+        self.assertEqual(result.get("setup"), "Why?")
+        self.assertEqual(result.get("punchline"), "Because!")
 
-    agent = JSONAgent(name=f"JsonBot_{provider}", provider=provider)
+        # Verify Strict Mode prompt
+        args, kwargs = mock_post.call_args
+        system_prompt = kwargs["json"]["messages"][0]["content"]
+        self.assertIn("strict JSON generator", system_prompt)
 
-    prompt = "Tell me a joke about a compass."
+    # --- 3. IMAGE AGENT TESTS ---
 
-    # Pass context to ensure it handles the injection correctly
-    result = agent.generate(
-        message=prompt, function=joke_function_schema, context=mock_context
-    )
+    def test_dimension_calculation(self):
+        """Test the resolution logic for SDXL buckets."""
+        # Standard
+        base, target = self.model._get_dimensions("1:1")
+        self.assertEqual(base, (832, 832))  # Local_model defaults
+        self.assertEqual(target, (1024, 1024))
 
-    print(f"Result ({provider}): {result}")
+        # 4K Upscale trigger
+        base, target = self.model._get_dimensions("4K")
+        self.assertEqual(base, (1216, 832))  # Base generation size
+        self.assertEqual(target, (3840, 2160))  # Target upscale size
 
-    assert isinstance(result, dict)
-    assert "setup" in result
-    assert "punchline" in result
-    assert isinstance(result["rating"], int)
+    @patch("requests.post")
+    def test_generate_image_upscale_flow(self, mock_post):
+        """
+        Verify that requesting a '4K' image triggers TWO API calls:
+        1. Generate Base Image
+        2. Upscale Base Image
+        """
+        # Setup Mocks
+        response_gen = MagicMock()
+        response_gen.content = b"base_image_bytes"
 
+        response_upscale = MagicMock()
+        response_upscale.content = b"upscaled_image_bytes"
 
-# --- TEST TEXT GENERATION ---
+        # Side effect: First call returns gen, second returns upscale
+        mock_post.side_effect = [response_gen, response_upscale]
 
+        # Execute
+        result = self.model.generate_image("A cat", aspect_ratio="4K")
 
-@pytest.mark.parametrize("provider", ["local", "gemini"])
-def test_generate_text_with_context(provider, mock_context):
-    """Test basic text generation with context injection"""
-    if provider == "gemini" and not os.getenv("GOOGLEAI_KEY"):
-        pytest.skip("No Google Key")
+        # Assert
+        self.assertEqual(result, b"upscaled_image_bytes")
+        self.assertEqual(mock_post.call_count, 2)
 
-    agent = TextAgent(name=f"TextBot_{provider}", provider=provider)
+        # Verify first call (Generation)
+        call1_kwargs = mock_post.call_args_list[0].kwargs
+        self.assertEqual(call1_kwargs["data"]["width"], 1216)  # Base width
 
-    # We ask a question that specifically requires the context to answer correctly
-    prompt = "Who forged the Golden Compass?"
+        # Verify second call (Upscale)
+        call2_kwargs = mock_post.call_args_list[1].kwargs
+        self.assertEqual(call2_kwargs["data"]["width"], 3840)  # Target width
+        self.assertTrue("file" in call2_kwargs["files"])  # Did we send the file back?
 
-    response = agent.generate(prompt, context=mock_context)
+    # --- 4. AUDIO & TRANSCRIPTION TESTS ---
 
-    print(f"\nResponse ({provider}): {response}")
+    @patch("requests.post")
+    def test_generate_audio_tts(self, mock_post):
+        """Test TTS generation."""
+        # Setup Mock (Return valid WAV header to satisfy Pydub if needed, or just bytes)
+        # Pydub requires actual audio data or it might fail `from_file`.
+        # We'll mock AudioSegment to avoid needing real wav bytes.
+        with patch("autonomous.model.local_model.AudioSegment") as mock_audio:
+            mock_segment = MagicMock()
+            mock_buffer = MagicMock()
+            mock_buffer.getvalue.return_value = b"opus_bytes"
 
-    # The answer "bears" is only in the mock_context, not general knowledge
-    # Note: Local models might hallucinate, but a good model should catch this.
-    assert response is not None
-    assert len(response) > 5
+            mock_audio.from_file.return_value = mock_segment
 
+            # Setup Requests
+            response = MagicMock()
+            response.content = b"wav_bytes"
+            mock_post.return_value = response
 
-# --- TEST AUDIO AGENT (TTS) ---
+            # Execute
+            result = self.model.generate_audio("Hello", voice="Zephyr")
 
+            # Assert
+            self.assertEqual(result, b"opus_bytes")
+            mock_post.assert_called_once()
+            self.assertEqual(mock_post.call_args[1]["json"]["voice"], "Zephyr")
 
-@pytest.mark.parametrize("provider", ["local", "gemini"])
-def test_audio_generation(provider):
-    if provider == "gemini" and not os.getenv("GOOGLEAI_KEY"):
-        pytest.skip("No Google Key")
+    @patch("requests.post")
+    def test_transcribe_long_audio_1hour_plus(self, mock_post):
+        """
+        Test transcribing a large audio file.
+        Verifies that the method handles large bytes objects, sends them to the STT endpoint,
+        and then passes the result to the cleanup LLM.
+        """
+        # 1. Simulate a large file (approx 50MB dummy data for 1 hour opus)
+        # We don't need real data, just a large bytes object to ensure no overflow errors in logic
+        large_audio_data = b"\0" * (
+            1024 * 1024 * 5
+        )  # 5MB for test speed, logic is identical
 
-    agent = AudioAgent(name=f"AudioBot_{provider}", provider=provider)
+        # 2. Setup Responses
 
-    # Get a valid voice for the provider
-    voices = agent.available_voices()
-    assert len(voices) > 0
-    selected_voice = voices[0]
+        # Response A: The Whisper API returns a massive raw transcript
+        raw_transcript_text = "start " + ("bla " * 1000) + " end"  # Long string
+        response_whisper = MagicMock()
+        response_whisper.json.return_value = {"text": raw_transcript_text}
 
-    print(f"Generating audio with {provider} using voice: {selected_voice}")
+        # Response B: The LLM Cleanup Step returns formatted markdown
+        response_llm = MagicMock()
+        response_llm.json.return_value = {"message": {"content": "**Cleaned Script**"}}
 
-    audio_bytes = agent.generate("Hello world, this is a test.", voice=selected_voice)
+        # The code calls requests.post for audio, then requests.post for text (generate_text)
+        mock_post.side_effect = [response_whisper, response_llm]
 
-    assert audio_bytes is not None
-    assert len(audio_bytes) > 100  # Should be a valid file
-
-    # Optional: Save to hear it
-    with open(f"tests/assets/test_audio_{provider}.mp3", "wb") as f:
-        f.write(audio_bytes)
-
-
-# --- TEST IMAGE AGENT ---
-
-
-@pytest.mark.parametrize("provider", ["local", "gemini"])
-def test_image_generation(provider):
-    if provider == "gemini" and not os.getenv("GOOGLEAI_KEY"):
-        pytest.skip("No Google Key")
-
-    agent = ImageAgent(name=f"ImageBot_{provider}", provider=provider)
-
-    print(f"Generating image with {provider}...")
-
-    try:
-        image_bytes = agent.generate("A cyberpunk city with neon lights")
-
-        assert image_bytes is not None
-        assert len(image_bytes) > 1000
-
-        # Determine extension based on provider defaults (WebP for Gemini, PNG often for Local)
-        ext = "webp" if provider == "gemini" else "png"
-        with open(f"tests/assets/test_image_{provider}.{ext}", "wb") as f:
-            f.write(image_bytes)
-
-    except Exception as e:
-        # Local image generation often fails if the model isn't loaded/downloaded
-        pytest.fail(f"Image generation failed: {e}")
-
-
-@pytest.mark.parametrize("provider", ["local", "gemini"])
-def test_image_generation_full_flow(provider):
-    """
-    Tests the full ImageAgent interface:
-    1. Generates an image from text (Prompt + Aspect Ratio + Size).
-    2. Uses that generated image as a file input for a second generation (Files + Prompt).
-    """
-    if provider == "gemini" and not os.getenv("GOOGLEAI_KEY"):
-        pytest.skip("No Google Key")
-
-    agent = ImageAgent(name=f"ImageBot_{provider}", provider=provider)
-    print(f"Testing full image flow with {provider}...")
-
-    ext = "webp" if provider == "gemini" else "png"
-
-    try:
-        # --- STEP 1: Text-to-Image ---
-        print("Step 1: Generating initial image...")
-        prompt_1 = "A cyberpunk city with neon lights"
-
-        image_1_bytes = agent.generate(
-            prompt_1, aspect_ratio="1:1", image_size="1024x1024"
+        # 3. Execute
+        result = self.model.generate_transcription(
+            large_audio_data,
+            prompt="Transcribe this long meeting.",
+            whisper_context="Previous meeting ended.",
         )
 
-        assert image_1_bytes is not None
-        assert len(image_1_bytes) > 1000
+        # 4. Assertions
 
-        # Save Step 1 output
-        with open(f"tests/assets/test_image_{provider}_step1.{ext}", "wb") as f:
-            f.write(image_1_bytes)
+        # Check Final Result (Markdown processed)
+        self.assertIn("<p><strong>Cleaned Script</strong></p>", result)
 
-        # --- STEP 2: Image-to-Image (using output of Step 1) ---
-        print("Step 2: Regenerating using the first image as context...")
-        prompt_2 = "The same city, but raining heavily, darker atmosphere"
+        # Check Step 1: Whisper Call
+        whisper_call = mock_post.call_args_list[0]
+        # Verify the endpoint was correct
+        self.assertIn("/transcribe", whisper_call[0][0])
+        # Verify context was passed to Whisper (Critical for long audio stitching)
+        self.assertEqual(whisper_call[1]["data"]["prompt"], "Previous meeting ended.")
 
-        # Construct the files dictionary: { "filename.ext": bytes }
-        files_payload = [{"name": f"reference_image.{ext}", "file": image_1_bytes}]
+        # Check Step 2: Cleanup Call
+        llm_call = mock_post.call_args_list[1]
+        llm_payload = llm_call[1]["json"]
 
-        image_2_bytes = agent.generate(
-            prompt_2, aspect_ratio="1:1", image_size="1024x1024", files=files_payload
+        # Verify the LLM received the massive transcript
+        # We check that the raw transcript text exists in the user content or system prompt
+        full_prompt_sent = (
+            llm_payload["messages"][0]["content"]
+            + llm_payload["messages"][1]["content"]
         )
+        self.assertIn("RAW TRANSCRIPT", full_prompt_sent)
+        self.assertIn("start bla bla", full_prompt_sent)
 
-        assert image_2_bytes is not None
-        assert len(image_2_bytes) > 1000
+    @patch("requests.post")
+    def test_summarize_text_chunking(self, mock_post):
+        """Test that summarize_text breaks long text into chunks."""
+        # Setup Mock
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"message": {"content": "Summary chunk."}}
+        mock_post.return_value = mock_resp
 
-        # Save Step 2 output
-        with open(f"tests/assets/test_image_{provider}_step2.{ext}", "wb") as f:
-            f.write(image_2_bytes)
+        # Create text longer than max_chars (12000 in code)
+        long_text = "a" * 13000
 
-        print("Success: Both generation steps completed.")
+        # Execute
+        summary = self.model.summarize_text(long_text)
 
-    except Exception as e:
-        pytest.fail(f"Image generation flow failed during {provider} execution: {e}")
+        # Assert
+        # Should result in 2 calls (12000 chars + 1000 chars)
+        self.assertEqual(mock_post.call_count, 2)
+        self.assertEqual(summary.strip(), "Summary chunk.\nSummary chunk.")

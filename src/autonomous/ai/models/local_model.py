@@ -24,8 +24,8 @@ class LocalAIModel(AutoModel):
     _media_url = os.environ.get("MEDIA_API_BASE_URL", "")
     _audio_url = os.environ.get("MEDIA_AUDIO_API_BASE_URL", "")
     _image_url = os.environ.get("MEDIA_IMAGE_API_BASE_URL", "")
-    _text_model = "llama3"
-    _json_model = "llama3"
+    _text_model = os.environ.get("OLLAMA_TEXT_MODEL", "")
+    _json_model = os.environ.get("OLLAMA_JSON_MODEL", "")
 
     VOICES = {
         "Zephyr": ["female"],
@@ -233,7 +233,7 @@ class LocalAIModel(AutoModel):
         full_summary = ""
         for chunk in chunks:
             payload = {
-                "model": "llama3",
+                "model": self._text_model,
                 "messages": [{"role": "user", "content": f"{primer}:\n\n{chunk}"}],
                 "stream": False,
                 "keep_alive": "24h",
