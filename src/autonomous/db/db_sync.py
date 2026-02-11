@@ -9,6 +9,7 @@ import pymongo
 import redis
 import requests
 
+from autonomous import log
 from autonomous.taskrunner.autotasks import AutoTasks, TaskPriority
 
 # CONFIGURATION
@@ -80,9 +81,10 @@ def process_single_object_sync(object_id, collection_name, token):
 
     # 2. Construct Searchable Text
     # (Existing logic...)
+    log(doc.get("associations"))
     searchable_text = (
         f"{doc.get('name', '')}: {doc.get('history', '')}"
-        f"Related: {', '.join([a.name for a in doc.get('associations')[:20]]) if doc.get('associations') else ''}"
+        f"Related: {', '.join([str(a) for a in doc['associations'][:20]]) if doc.get('associations') else ''}"
     )
 
     if len(searchable_text) < 10:

@@ -3,12 +3,10 @@ import urllib.parse
 from datetime import datetime
 
 import bson
-
 from autonomous import log
-from autonomous.db import Document, connect, signals
+from autonomous.db import Document, connect, db_sync, signals
 from autonomous.db.errors import ValidationError
 from autonomous.db.fields import DateTimeField
-from autonomous.db import db_sync
 
 host = os.getenv("DB_HOST", "db")
 port = os.getenv("DB_PORT", 27017)
@@ -232,7 +230,7 @@ class AutoModel(Document):
         """
         sender.auto_pre_save(sender, document, **kwargs)
 
-    def save(self):
+    def save(self, sync=False):
         """
         Save this model to the database.
 
@@ -242,7 +240,10 @@ class AutoModel(Document):
         obj = super().save()
         self.pk = obj.pk
 
-        db_sync.request_indexing(self.pk, collection_name=self._get_collection_name())
+        if sync:
+            db_sync.request_indexing(
+                self.pk, collection_name=self._get_collection_name()
+            )
 
         return self.pk
 
