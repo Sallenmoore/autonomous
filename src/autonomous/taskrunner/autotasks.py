@@ -62,11 +62,11 @@ class AutoTask:
 
     @property
     def is_failed(self):
-        return self.job.is_failed
+        return self.job.status() == "failed"
 
     @property
     def is_finished(self):
-        return self.job.is_failed
+        return self.job.status() == "finished"
 
     @property
     def origin(self):
