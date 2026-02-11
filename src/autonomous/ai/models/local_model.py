@@ -24,8 +24,8 @@ class LocalAIModel(AutoModel):
     _media_url = os.environ.get("MEDIA_API_BASE_URL", "")
     _audio_url = os.environ.get("MEDIA_AUDIO_API_BASE_URL", "")
     _image_url = os.environ.get("MEDIA_IMAGE_API_BASE_URL", "")
-    _text_model = os.environ.get("OLLAMA_TEXT_MODEL", "")
-    _json_model = os.environ.get("OLLAMA_JSON_MODEL", "")
+    _text_model = os.environ.get("OLLAMA_TEXT_MODEL", "gemma2:27b")
+    _json_model = os.environ.get("OLLAMA_JSON_MODEL", "hermes3")
 
     VOICES = {
         "Zephyr": ["female"],
