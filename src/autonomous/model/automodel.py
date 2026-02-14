@@ -3,10 +3,11 @@ import urllib.parse
 from datetime import datetime
 
 import bson
-from autonomous import log
 from autonomous.db import Document, connect, db_sync, signals
 from autonomous.db.errors import ValidationError
 from autonomous.db.fields import DateTimeField
+
+from autonomous import log
 
 host = os.getenv("DB_HOST", "db")
 port = os.getenv("DB_PORT", 27017)
@@ -136,7 +137,7 @@ class AutoModel(Document):
             result = cls.objects.get(id=pk)
             # log(result)
         except cls.DoesNotExist as e:
-            log(f"Model {cls.__name__} with pk {pk} not found : {e}")
+            # log(f"Model {cls.__name__} with pk {pk} not found : {e}")
             return None
         except ValidationError as e:
             # traceback.print_stack(limit=5)
