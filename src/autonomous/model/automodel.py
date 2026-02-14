@@ -239,7 +239,6 @@ class AutoModel(Document):
             int: The primary key (pk) of the saved model.
         """
         obj = super().save()
-        self.pk = obj.pk
 
         if sync:
             db_sync.request_indexing(
