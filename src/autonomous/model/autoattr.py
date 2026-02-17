@@ -1,4 +1,5 @@
-from autonomous import log
+import re
+
 from autonomous.db.fields import (
     BooleanField,
     DateTimeField,
@@ -15,16 +16,22 @@ from autonomous.db.fields import (
     StringField,
 )
 
+from autonomous import log
+
 
 class StringAttr(StringField):
     pass
 
 
 class IntAttr(IntField):
-    pass
-    # def __set__(self, instance, owner):
-    #     results = super().__get__(instance, owner)
-    #     return results
+    def __set__(self, instance, value):
+        if isinstance(value, str):
+            value = value.replace(",", "")
+            if value.isdigit():
+                value = int(value)
+            elif num_str := re.search(r"\d+", value):
+                value = int(num_str.group())
+        return super().__set__(instance, value) or {}
 
 
 class FloatAttr(FloatField):
@@ -85,6 +92,19 @@ class ListAttr(ListField):
                     # log(f"Object Not Found: {results[i]}")
         return results
 
+    def __set__(self, instance, value):
+        new_value = value
+        if isinstance(value, str):
+            if "," in value:
+                new_value = [v.strip() for v in value.split(",")]
+            elif ";" in value:
+                new_value = [v.strip() for v in value.split(";")]
+            elif value:
+                new_value = [value]
+            else:
+                new_value = []
+        super().__set__(instance, new_value)
+
 
 class DictAttr(DictField):
     def __get__(self, instance, owner):
@@ -100,15 +120,8 @@ class DictAttr(DictField):
             results[key] = lazy_obj
         return results
 
-    # def __set__(self, instance, value):
-    #     import traceback
-
-    #     traceback.print_stack()
-
-    #     log(value, instance.player_messages, _print=True)
-    #     result = super().__set__(instance, value) or {}
-    #     log(value, instance.player_messages, _print=True)
-    #     return result
+    def __set__(self, instance, value):
+        return super().__set__(instance, value) or {}
 
 
 class EnumAttr(EnumField):

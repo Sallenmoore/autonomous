@@ -34,7 +34,6 @@ def myfailedtask(a, b):
     return int(a) + str(b)
 
 
-# @pytest.mark.skip(reason="dumb")
 def test_connection():
     config = {
         "host": os.environ.get("REDIS_HOST", ""),
@@ -50,7 +49,6 @@ def test_connection():
     assert r.get("key1")
 
 
-# @pytest.mark.skip(reason="OpenAI API is not free")
 class TestAutoTasks:
     def test_autotask_connection(self):
         tasks = AutoTasks()
