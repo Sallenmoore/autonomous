@@ -29,9 +29,9 @@ class IntAttr(IntField):
             value = value.replace(",", "")
             if value.isdigit():
                 value = int(value)
-            elif num_str := re.search(r"\d+", value):
+            elif num_str := re.search(r"-?\d+", value):
                 value = int(num_str.group())
-        return super().__set__(instance, value) or {}
+        super().__set__(instance, value)
 
 
 class FloatAttr(FloatField):
@@ -121,7 +121,7 @@ class DictAttr(DictField):
         return results
 
     def __set__(self, instance, value):
-        return super().__set__(instance, value) or {}
+        super().__set__(instance, value)
 
 
 class EnumAttr(EnumField):

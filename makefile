@@ -37,5 +37,5 @@ TESTING=test_unit_ai
 test:
 	python -m pytest -k $(TESTING)
 
-tests:
+tests: inittests
 	python -m pytest
