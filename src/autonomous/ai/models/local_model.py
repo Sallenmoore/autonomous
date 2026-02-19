@@ -104,12 +104,28 @@ class LocalAIModel(AutoModel):
 
         return text.strip()
 
+    def _evaluate_response(instruction, content, goal):
+        eval_prompt = {
+            "model": os.environ.get("OLLAMA_TEXT_MODEL", "gemma2:27b"),
+            "messages": [
+                {
+                    "role": "user",
+                    "content": f"Evaluate the original instruction and goal in regards to the output produced.\n\nGoal: {goal}\nInstruction: {instruction}\n\nOutput:\n{content}\n\n Write an improved prompt that will get the output closer to the stated goal. Only output the complete improved prompt. Do not preface it with any message.",
+                }
+            ],
+            "stream": False,
+        }
+        res_eval = requests.post("http://ollama:11434/api/chat", json=eval_prompt)
+
+        return res_eval.json().get("message", {}).get("content", "")
+
     def generate_json(
         self,
         message,
         system_prompt=None,
         uri="",
         context={},
+        evaluation=False,
     ):
         system_prompt = system_prompt or self.instructions
         full_system_prompt = (
@@ -169,6 +185,25 @@ class LocalAIModel(AutoModel):
             ):
                 params = result_dict.pop("parameters")
                 result_dict.update(params)
+            if evaluation:
+                eval_res = self._evaluate_response(
+                    message, response, full_system_prompt
+                )
+                log(f"Evaluation:\n {eval_res}")
+                payload["messages"][1]["content"] = eval_res
+                response = requests.post(f"{self._ollama_url}/chat", json=payload)
+                response.raise_for_status()
+                result_text = response.json().get("message", {}).get("content", "{}")
+                # Clean & Parse
+                clean_text = self._clean_json_response(result_text)
+                result_dict = json.loads(clean_text)
+
+                # Unwrap (Handle cases where model wraps in 'parameters' key)
+                if "parameters" in result_dict and isinstance(
+                    result_dict["parameters"], dict
+                ):
+                    params = result_dict.pop("parameters")
+                    result_dict.update(params)
             log("==== LocalAI JSON Result ====", result_dict, _print=True)
             return result_dict
 
@@ -182,7 +217,13 @@ class LocalAIModel(AutoModel):
             return {}
 
     def generate_text(
-        self, message, additional_instructions="", uri="", context={}, temperature=0.9
+        self,
+        message,
+        additional_instructions="",
+        uri="",
+        context={},
+        temperature=0.9,
+        evaluation=False,
     ):
         # 1. Base System Prompt
 
@@ -220,6 +261,14 @@ class LocalAIModel(AutoModel):
         try:
             response = requests.post(f"{self._ollama_url}/chat", json=payload)
             response.raise_for_status()
+            if evaluation:
+                eval_res = self._evaluate_response(
+                    message, response, additional_instructions
+                )
+                log(f"Evaluation:\n {eval_res}")
+                payload["messages"][1]["content"] = eval_res
+                response = requests.post(f"{self._ollama_url}/chat", json=payload)
+                response.raise_for_status()
             return response.json().get("message", {}).get("content", "")
         except Exception as e:
             log(f"==== LocalAI Text Error: {e} ====", _print=True)
@@ -249,7 +298,9 @@ class LocalAIModel(AutoModel):
 
         return full_summary
 
-    def generate_transcription(self, audio_file, prompt="", whisper_context=""):
+    def generate_transcription(
+        self, audio_file, prompt="", whisper_context="", evaluation=False
+    ):
         if isinstance(audio_file, bytes):
             f_obj = io.BytesIO(audio_file)
         else:
@@ -287,6 +338,16 @@ GUIDELINES:
             result = self.generate_text(
                 full_llm_prompt, additional_instructions=system_prompt, temperature=0.1
             )
+            if evaluation:
+                eval_res = self._evaluate_response(
+                    full_llm_prompt, result, system_prompt
+                )
+                log(f"Evaluation:\n {eval_res}")
+                result = self.generate_text(
+                    eval_res,
+                    additional_instructions=system_prompt,
+                    temperature=0.1,
+                )
             log(f"FINAL TRANSCRIPTION CHUNK: {result}", _print=True)
             return markdown.markdown(result)
         except Exception as e:

@@ -28,14 +28,12 @@ class AudioAgent(BaseAgent):
         prompt="Transcribe this audio clip",
         display_name="audio.opus",
         whisper_context="",
+        evaluation=False,
     ):
         # self.add_to_job_meta('prompt', prompt)
         return self.get_client(
             os.environ.get("TRANSCRIBE_AI_AGENT", self.provider)
-        ).generate_transcription(
-            audio,
-            prompt=prompt,
-        )
+        ).generate_transcription(audio, prompt=prompt, evaluation=evaluation)
 
     def available_voices(self, filters=[]):
         return self.get_client().list_voices(filters=filters)
