@@ -95,10 +95,10 @@ class ListAttr(ListField):
     def __set__(self, instance, value):
         new_value = value
         if isinstance(value, str):
-            if "," in value:
-                new_value = [v.strip() for v in value.split(",")]
-            elif ";" in value:
+            if ";" in value:
                 new_value = [v.strip() for v in value.split(";")]
+            elif "," in value:
+                new_value = [v.strip() for v in value.split(",")]
             elif value:
                 new_value = [value]
             else:
