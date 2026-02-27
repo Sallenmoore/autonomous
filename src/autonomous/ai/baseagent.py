@@ -50,6 +50,6 @@ class BaseAgent(AutoModel):
 
         return self.client
 
-    # def add_to_job_meta(self, k, v):
-    #     if job := AutoTasks.get_current_task():
-    #         job.meta(k, v)
+    def add_to_job_meta(self, k, v):
+        if job := AutoTasks.get_current_task():
+            job.meta(k, v)

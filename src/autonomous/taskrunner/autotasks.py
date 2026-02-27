@@ -1,3 +1,4 @@
+import json
 import os
 from enum import Enum
 
@@ -83,13 +84,13 @@ class AutoTask:
     def delete(self):
         self.job.delete()
 
-    def meta(self, key=None, value=None):
-        if value:
-            self.job.meta[key] = value
+    def meta(self, key, value=None):
+        if key and value is not None:
+            self.job.meta[key] = (
+                json.dumps(value, indent=2) if isinstance(value, dict) else str(value)
+            )
             self.job.save_meta()
-        if key:
-            return self.job.meta.get(key, "")
-        return self.job.meta
+        return self.job.meta.get(key, "")
 
 
 class AutoTasks:

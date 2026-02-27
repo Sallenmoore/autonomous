@@ -30,4 +30,5 @@ class JSONAgent(BaseAgent):
                 raise ValueError(f"Invalid JSON response from AI model.\n\n{result}")
         elif not isinstance(result, dict):
             raise ValueError(f"Invalid JSON response from AI model.\n\n{result}")
+        self.add_to_job_meta("Last JSON", result)
         return result

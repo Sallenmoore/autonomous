@@ -18,12 +18,16 @@ class TextAgent(BaseAgent):
     )
 
     def summarize_text(self, text, primer=""):
-        return self.get_client(
+        result = self.get_client(
             os.environ.get("SUMMARY_AI_AGENT", self.provider)
         ).summarize_text(text, primer=primer)
+        self.add_to_job_meta("Last SUMMARY", result)
+        return result
 
     def generate(self, message, additional_instructions="", uri="", context=""):
         # self.add_to_job_meta("prompt", message)
-        return self.get_client(
+        result = self.get_client(
             os.environ.get("TEXT_AI_AGENT", self.provider)
         ).generate_text(message, additional_instructions, uri=uri, context=context)
+        self.add_to_job_meta("Last TEXT", result)
+        return result
