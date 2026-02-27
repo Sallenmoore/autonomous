@@ -84,13 +84,17 @@ class AutoTask:
     def delete(self):
         self.job.delete()
 
-    def meta(self, key, value=None):
-        if key and value is not None:
-            self.job.meta[key] = (
-                json.dumps(value, indent=2) if isinstance(value, dict) else str(value)
-            )
-            self.job.save_meta()
-        return self.job.meta.get(key, "")
+    def meta(self, key=None, value=None):
+        if key:
+            if value:
+                self.job.meta[key] = (
+                    json.dumps(value, indent=2)
+                    if isinstance(value, dict)
+                    else str(value)
+                )
+                self.job.save_meta()
+            return self.job.meta.get(key, "")
+        return self.job.meta
 
 
 class AutoTasks:
