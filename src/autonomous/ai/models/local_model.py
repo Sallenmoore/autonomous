@@ -104,7 +104,7 @@ class LocalAIModel(AutoModel):
 
         return text.strip()
 
-    def _evaluate_response(instruction, content, goal):
+    def _evaluate_response(self, instruction, content, goal):
         eval_prompt = {
             "model": os.environ.get("OLLAMA_TEXT_MODEL", "gemma2:27b"),
             "messages": [
