@@ -75,6 +75,10 @@ class AutoModel(Document):
     def _auto_post_init(cls, sender, document, **kwargs):
         sender.auto_post_init(sender, document, **kwargs)
 
+    @property
+    def path(self):
+        return f"{self.model_name().lower()}/{self.pk}"
+
     def model_name(self, qualified=False):
         """
         Get the fully qualified name of this model.
