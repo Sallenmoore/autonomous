@@ -298,21 +298,27 @@ class LocalAIModel(AutoModel):
 
         return full_summary
 
-    def generate_transcription(self, audio_file, prompt=""):
+    def generate_transcription(self, audio_file, prompt="", beam_size=5):
         if isinstance(audio_file, bytes):
             f_obj = io.BytesIO(audio_file)
         else:
             f_obj = audio_file
 
         files = {"file": ("audio.opus", f_obj, "audio/ogg")}
+        data = {"prompt": prompt, "beam_size": beam_size}
 
-        response = requests.post(
-            f"{self._audio_url}/transcribe",
-            files=files,
-            data={"prompt": prompt},
-        )
-        response.raise_for_status()
-        return response.content
+        try:
+            response = requests.post(
+                f"{self._audio_url}/transcribe",
+                files=files,
+                data=data,
+            )
+            response.raise_for_status()
+            # Return the structured JSON dict containing 'segments'
+            return response.json()
+        except Exception as e:
+            log(f"Transcription API Error: {e}", _print=True)
+            return {"segments": [], "text": ""}
 
     def list_voices(self, filters=[]):
         if not filters:
