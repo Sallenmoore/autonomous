@@ -88,7 +88,7 @@ class AutoTask:
         if args:
             return {k: v for k, v in self.job.meta.items() if k in args}
         if kwargs:
-            for k, v in kwargs:
+            for k, v in kwargs.items():
                 self.job.meta[k] = (
                     json.dumps(v, indent=2) if isinstance(v, dict) else str(v)
                 )
