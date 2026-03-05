@@ -338,7 +338,9 @@ class GeminiAIModel(AutoModel):
 
         return ratio, size
 
-    def generate_image(self, prompt, negative_prompt="", files=None, aspect_ratio="2K"):
+    def generate_image(
+        self, prompt, negative_prompt="", files=None, aspect_ratio="2K", style=""
+    ):
         image = None
         contents = [prompt]
 

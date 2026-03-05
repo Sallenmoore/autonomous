@@ -348,60 +348,87 @@ class LocalAIModel(AutoModel):
             log(f"TTS Error: {e}", _print=True)
             return None
 
-    def _get_dimensions(self, aspect_ratio):
+    def _get_dimensions(self, aspect_ratio, style=""):
         """
         Returns a tuple: ((base_w, base_h), (target_w, target_h))
-
-        1. base_*: The resolution sent to SDXL (approx 1024x1024).
-        2. target_*: The final resolution to resize/upscale to.
+        Dynamically adjusts the base resolution depending on the target AI model
+        to prevent anatomical hallucinations.
         """
-        # Standard SDXL buckets (approx 1MP)
-        # We use these for the initial generation to ensure good composition.
-        sdxl_base = {
+        # 1. Determine which engine the server will auto-route to
+        is_sdxl = style in ["atlas", "battlemap"]
+
+        # 2. Base generation sizes (Engine specific)
+        if is_sdxl:
+            base_sizes = {
+                "1:1": (1024, 1024),
+                "3:4": (896, 1152),
+                "4:3": (1152, 896),
+                "16:9": (1216, 832),
+                "9:16": (832, 1216),
+            }
+        else:
+            # DreamShaper (SD 1.5) must stay near 512x512 to prevent extra limbs
+            base_sizes = {
+                "1:1": (512, 512),
+                "3:4": (512, 768),
+                "4:3": (768, 512),
+                "16:9": (912, 512),
+                "9:16": (512, 912),
+            }
+
+        # 3. Target final sizes (Upscale goals)
+        target_sizes = {
             "1:1": (1024, 1024),
-            "Portrait": (896, 1152),  # 3:4
-            "Landscape": (1216, 832),  # 3:2 or 16:9 approx
+            "3:4": (1664, 2304),
+            "4:3": (2304, 1664),
+            "16:9": (2048, 1152),
+            "9:16": (1152, 2048),
+            "2K": (2048, 1152),
+            "2KPortrait": (1152, 2048),
+            "4K": (3840, 2160),
+            "4KPortrait": (2160, 3840),
         }
 
-        # The Logic: Define the target, map it to the closest SDXL base
-        # Format: "Key": ((Base_W, Base_H), (Target_W, Target_H))
-        resolutions = {
-            # Standard
-            "1:1": ((832, 832), (1024, 1024)),
-            "3:4": ((832, 1152), (1664, 2304)),
-            "4:3": ((1152, 832), (2304, 1664)),
-            # High Res (The logic changes here)
-            "16:9": ((1216, 832), (2048, 1152)),
-            "9:16": ((832, 1216), (1152, 2048)),
-            # 2K Tier
-            "2K": ((1216, 832), (2048, 1152)),  # Base is 1216x832 -> Upscale to 2K
-            "2KPortrait": ((832, 1216), (1152, 2048)),
-            # 4K Tier (The generated image will be upscaled ~3x)
-            "4K": ((1216, 832), (3840, 2160)),
-            "4KPortrait": ((832, 1216), (2160, 3840)),
+        # Map complex aspect ratios to their core shapes for the base generation
+        shape_mapper = {
+            "2K": "16:9",
+            "2KPortrait": "9:16",
+            "4K": "16:9",
+            "4KPortrait": "9:16",
         }
 
-        # Default to 1:1 if unknown
-        return resolutions.get(aspect_ratio, ((832, 832), (1024, 1024)))
+        core_shape = shape_mapper.get(aspect_ratio, aspect_ratio)
+
+        base_w, base_h = base_sizes.get(core_shape, base_sizes["1:1"])
+        target_w, target_h = target_sizes.get(aspect_ratio, target_sizes["1:1"])
+
+        return (base_w, base_h), (target_w, target_h)
 
     def generate_image(
-        self, prompt, negative_prompt="", files=None, aspect_ratio="2KPortrait"
+        self,
+        prompt,
+        negative_prompt="",
+        files=None,
+        aspect_ratio="2KPortrait",
+        style="",
     ):
-        # 1. Resolution Calculation
-        (base_w, base_h), (target_w, target_h) = self._get_dimensions(aspect_ratio)
+        # Pass style to ensure we get the right base dimensions for the engine
+        # log("ASPECT RATIO", aspect_ratio, _print=True)
+        (base_w, base_h), (target_w, target_h) = self._get_dimensions(
+            aspect_ratio, style
+        )
+        # log("TARGET", (target_w, target_h), _print=True)
 
-        # 2. Construct Base Generation Payload
-        # We tell the AI to generate the smaller, stable size first.
         data = {
             "prompt": prompt,
             "negative_prompt": negative_prompt,
-            "aspect_ratio": aspect_ratio,
             "width": base_w,
             "height": base_h,
+            "style": style,
         }
 
         try:
-            # Handle Input Files (for Img2Img)
+            # Handle Input Files (for Img2Img and Compositing)
             files_list = []
             if files and isinstance(files, dict):
                 for fn, f_bytes in files.items():
@@ -409,9 +436,11 @@ class LocalAIModel(AutoModel):
                         file_obj = io.BytesIO(f_bytes)
                     else:
                         file_obj = f_bytes
-                    files_list.append(("files", (fn, file_obj, "image/png")))
+                        file_obj.seek(0)  # CRITICAL FIX: Reset pointer before sending
 
-            # 3. Step 1: Generate Base Image
+                    files_list.append(("files", (fn, file_obj, "image/webp")))
+
+            # Step 1: Generate Base Image
             url = f"{self._image_url}/generate-image"
             if files_list:
                 response = requests.post(url, data=data, files=files_list)
@@ -421,23 +450,20 @@ class LocalAIModel(AutoModel):
             response.raise_for_status()
             image_content = response.content
 
-            # 4. Step 2: Upscale (If necessary)
             if (base_w, base_h) != (target_w, target_h):
                 log(
                     f"Requesting AI Upscale: {base_w}x{base_h} -> {target_w}x{target_h}...",
                     _print=True,
                 )
 
-                # Prepare payload for the /upscale route
                 upscale_data = {
-                    "prompt": prompt,  # Reuse prompt to guide texture generation
-                    "width": target_w,  # Explicitly tell server the target size
+                    "prompt": prompt,
+                    "width": target_w,
                     "height": target_h,
                 }
 
-                # Send the image we just generated back to the server as a file
                 upscale_files = {
-                    "file": ("generated.png", io.BytesIO(image_content), "image/png")
+                    "file": ("generated.webp", io.BytesIO(image_content), "image/webp")
                 }
 
                 upscale_response = requests.post(
