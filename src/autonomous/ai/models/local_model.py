@@ -410,7 +410,7 @@ class LocalAIModel(AutoModel):
         negative_prompt="",
         files=None,
         aspect_ratio="2KPortrait",
-        style="",
+        style="composite",
     ):
         # Pass style to ensure we get the right base dimensions for the engine
         # log("ASPECT RATIO", aspect_ratio, _print=True)

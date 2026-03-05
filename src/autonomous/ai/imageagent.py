@@ -23,7 +23,7 @@ class ImageAgent(BaseAgent):
         negative_prompt="",
         files=None,
         aspect_ratio="2KPortrait",
-        style="",
+        style="composite",
     ):
         # self.add_to_job_meta("prompt", prompt)
         return self.get_client(
