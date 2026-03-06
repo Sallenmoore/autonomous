@@ -40,12 +40,12 @@ class AudioAgent(BaseAgent):
             return ""
 
         # Stitch raw segments into a single block with timestamps
-        raw_text = "\n".join(
+        raw_text = "\n\n".join(
             [f"[{s['start']}s - {s['end']}s] {s['text']}" for s in segments]
         )
 
         # 2. Format as Screenplay via LLM
-        log("Formatting chunk via LLM...", _print=True)
+        log(f"Formatting the following chunk via LLM: {raw_text}", _print=True)
         llm_prompt = f"""
 You are an expert TTRPG Scribe. Rewrite the following raw, automated audio transcript into a clean, readable screenplay format.
 
@@ -69,7 +69,7 @@ GUIDELINES:
             context={"Campaign Context": system_context},
             temperature=0.3,  # Low temp for high accuracy/formatting adherence
         )
-
+        log(f"Transcription Chunk Result: {screenplay_chunk}", _print=True)
         return screenplay_chunk
 
     def available_voices(self, filters=[]):

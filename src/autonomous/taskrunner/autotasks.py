@@ -92,7 +92,7 @@ class AutoTask:
                 self.job.meta[k] = (
                     json.dumps(v, indent=2) if isinstance(v, dict) else str(v)
                 )
-            self.job.save_meta()
+        self.job.save_meta()
         return self.job.meta
 
 
