@@ -20,7 +20,6 @@ class ImageAgent(BaseAgent):
     def generate(
         self,
         prompt,
-        negative_prompt="",
         files=None,
         aspect_ratio="2KPortrait",
         style=None,
@@ -31,7 +30,23 @@ class ImageAgent(BaseAgent):
         ).generate_image(
             prompt,
             aspect_ratio=aspect_ratio,
-            negative_prompt=negative_prompt,
             files=files,
+            style=style,
+        )
+
+    def upscale(
+        self,
+        prompt,
+        image_content=None,
+        aspect_ratio="2KPortrait",
+        style=None,
+    ):
+        # self.add_to_job_meta("prompt", prompt)
+        return self.get_client(
+            os.environ.get("IMAGE_AI_AGENT", self.provider)
+        ).upscale_image(
+            prompt,
+            image_content=image_content,
+            aspect_ratio=aspect_ratio,
             style=style,
         )

@@ -11,6 +11,7 @@ from pydub import AudioSegment
 from autonomous import log
 from autonomous.model.autoattr import ListAttr, StringAttr
 from autonomous.model.automodel import AutoModel
+from autonomous.taskrunner.autotasks import AutoTasks
 
 
 class LocalAIModel(AutoModel):
@@ -169,6 +170,8 @@ class LocalAIModel(AutoModel):
 
         result_text = ""
         try:
+            if current_job := AutoTasks().get_current_task():
+                current_job.meta(payload=payload)
             response = requests.post(f"{self._ollama_url}/chat", json=payload)
             log(response)
             response.raise_for_status()
@@ -259,6 +262,8 @@ class LocalAIModel(AutoModel):
         }
 
         try:
+            if current_job := AutoTasks().get_current_task():
+                current_job.meta(payload=payload)
             response = requests.post(f"{self._ollama_url}/chat", json=payload)
             response.raise_for_status()
             if evaluation:
@@ -289,6 +294,8 @@ class LocalAIModel(AutoModel):
             }
             try:
                 log(f"Payload sent: {payload}...", _print=True)
+                if current_job := AutoTasks().get_current_task():
+                    current_job.meta(payload=payload)
                 res = requests.post(f"{self._ollama_url}/chat", json=payload)
                 full_summary += res.json().get("message", {}).get("content", "") + "\n"
                 log(f"Chunk summarized: {full_summary}.", _print=True)
@@ -308,6 +315,8 @@ class LocalAIModel(AutoModel):
         data = {"prompt": prompt, "beam_size": beam_size}
 
         try:
+            if current_job := AutoTasks().get_current_task():
+                current_job.meta(data=data)
             response = requests.post(
                 f"{self._audio_url}/transcribe",
                 files=files,
@@ -337,6 +346,8 @@ class LocalAIModel(AutoModel):
         voice = voice or random.choice(list(self.VOICES.keys()))
         try:
             payload = {"text": prompt, "voice": voice}
+            if current_job := AutoTasks().get_current_task():
+                current_job.meta(payload=payload)
             response = requests.post(f"{self._media_url}/tts", json=payload)
             response.raise_for_status()
             wav_bytes = response.content
@@ -372,8 +383,8 @@ class LocalAIModel(AutoModel):
                 "1:1": (512, 512),
                 "3:4": (512, 768),
                 "4:3": (768, 512),
-                "16:9": (912, 512),
-                "9:16": (512, 912),
+                "16:9": (768, 512),
+                "9:16": (512, 768),
             }
 
         # 3. Target final sizes (Upscale goals)
@@ -407,7 +418,6 @@ class LocalAIModel(AutoModel):
     def generate_image(
         self,
         prompt,
-        negative_prompt="",
         files=None,
         aspect_ratio="2KPortrait",
         style=None,
@@ -421,7 +431,6 @@ class LocalAIModel(AutoModel):
 
         data = {
             "prompt": prompt,
-            "negative_prompt": negative_prompt,
             "width": base_w,
             "height": base_h,
             "style": style,
@@ -442,6 +451,8 @@ class LocalAIModel(AutoModel):
 
             # Step 1: Generate Base Image
             url = f"{self._image_url}/generate-image"
+            if current_job := AutoTasks().get_current_task():
+                current_job.meta(generation_data=json.dumps(data, indent=2))
             if files_list:
                 response = requests.post(url, data=data, files=files_list)
             else:
@@ -450,31 +461,40 @@ class LocalAIModel(AutoModel):
             response.raise_for_status()
             image_content = response.content
 
-            if (base_w, base_h) != (target_w, target_h):
-                log(
-                    f"Requesting AI Upscale: {base_w}x{base_h} -> {target_w}x{target_h}...",
-                    _print=True,
-                )
-
-                upscale_data = {
-                    "prompt": prompt,
-                    "width": target_w,
-                    "height": target_h,
-                }
-
-                upscale_files = {
-                    "file": ("generated.webp", io.BytesIO(image_content), "image/webp")
-                }
-
-                upscale_response = requests.post(
-                    f"{self._image_url}/upscale", data=upscale_data, files=upscale_files
-                )
-                upscale_response.raise_for_status()
-                image_content = upscale_response.content
-
-            log("==== LocalAI Image Generation Complete ====", data, _print=True)
+            log("==== LocalAI Image Generation Complete ====", data)
             return image_content
 
         except Exception as e:
             log(f"Image Gen Error: {e}", _print=True)
             return None
+
+    def upscale_image(
+        self, prompt, image_content, aspect_ratio="2KPortrait", style=None
+    ):
+        (base_w, base_h), (target_w, target_h) = self._get_dimensions(
+            aspect_ratio, style
+        )
+        if (base_w, base_h) != (target_w, target_h):
+            log(f"Requesting AI Upscale: {base_w}x{base_h} -> {target_w}x{target_h}...")
+
+            upscale_data = {
+                "prompt": prompt,
+                "width": target_w,
+                "height": target_h,
+            }
+
+            upscale_files = {
+                "file": ("generated.webp", io.BytesIO(image_content), "image/webp")
+            }
+
+            if current_job := AutoTasks().get_current_task():
+                current_job.meta(
+                    upscale_prompt=prompt,
+                    upscale_target_size=(target_w, target_h),
+                    upscale_original_size=(base_w, base_h),
+                )
+            upscale_response = requests.post(
+                f"{self._image_url}/upscale", data=upscale_data, files=upscale_files
+            )
+            upscale_response.raise_for_status()
+            return upscale_response.content
