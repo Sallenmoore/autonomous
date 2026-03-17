@@ -329,21 +329,11 @@ class LocalAIModel(AutoModel):
             log(f"Transcription API Error: {e}", _print=True)
             return {"segments": [], "text": ""}
 
-    def list_voices(self, filters=[]):
-        if not filters:
-            return list(self.VOICES.keys())
-        voices = []
-        for voice, attribs in self.VOICES.items():
-            if any(f.lower() in attribs for f in filters):
-                voices.append(voice)
-        return voices
-
     def generate_audio(
         self,
         prompt,
-        voice=None,
+        voice="",
     ):
-        voice = voice or random.choice(list(self.VOICES.keys()))
         try:
             payload = {"text": prompt, "voice": voice}
             if current_job := AutoTasks().get_current_task():

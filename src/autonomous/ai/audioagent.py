@@ -71,6 +71,3 @@ GUIDELINES:
         )
         log(f"Transcription Chunk Result: {screenplay_chunk}", _print=True)
         return screenplay_chunk
-
-    def available_voices(self, filters=[]):
-        return self.get_client().list_voices(filters=filters)

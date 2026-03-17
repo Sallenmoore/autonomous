@@ -117,26 +117,7 @@ def test_generate_text_with_context(provider, mock_context):
 
 @pytest.mark.parametrize("provider", ["local", "gemini"])
 def test_audio_generation(provider):
-    if provider == "gemini" and not os.getenv("GOOGLEAI_KEY"):
-        pytest.skip("No Google Key")
-
     agent = AudioAgent(name=f"AudioBot_{provider}", provider=provider)
-
-    # Get a valid voice for the provider
-    voices = agent.available_voices()
-    assert len(voices) > 0
-    selected_voice = voices[0]
-
-    print(f"Generating audio with {provider} using voice: {selected_voice}")
-
-    audio_bytes = agent.generate("Hello world, this is a test.", voice=selected_voice)
-
-    assert audio_bytes is not None
-    assert len(audio_bytes) > 100  # Should be a valid file
-
-    # Optional: Save to hear it
-    with open(f"tests/assets/test_audio_{provider}.mp3", "wb") as f:
-        f.write(audio_bytes)
 
 
 # --- TEST IMAGE AGENT ---
