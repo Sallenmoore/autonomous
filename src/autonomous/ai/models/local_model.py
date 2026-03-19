@@ -28,39 +28,6 @@ class LocalAIModel(AutoModel):
     _text_model = os.environ.get("OLLAMA_TEXT_MODEL", "gemma2:27b")
     _json_model = os.environ.get("OLLAMA_JSON_MODEL", "hermes3")
 
-    VOICES = {
-        "Zephyr": ["female"],
-        "Puck": ["male"],
-        "Charon": ["male"],
-        "Kore": ["female"],
-        "Fenrir": ["non-binary"],
-        "Leda": ["female"],
-        "Orus": ["male"],
-        "Aoede": ["female"],
-        "Callirhoe": ["female"],
-        "Autonoe": ["female"],
-        "Enceladus": ["male"],
-        "Iapetus": ["male"],
-        "Umbriel": ["male"],
-        "Algieba": ["male"],
-        "Despina": ["female"],
-        "Erinome": ["female"],
-        "Algenib": ["male"],
-        "Rasalgethi": ["non-binary"],
-        "Laomedeia": ["female"],
-        "Achernar": ["female"],
-        "Alnilam": ["male"],
-        "Schedar": ["male"],
-        "Gacrux": ["female"],
-        "Pulcherrima": ["non-binary"],
-        "Achird": ["male"],
-        "Zubenelgenubi": ["male"],
-        "Vindemiatrix": ["female"],
-        "Sadachbia": ["male"],
-        "Sadaltager": ["male"],
-        "Sulafar": ["female"],
-    }
-
     def _convert_tools_to_json_schema(self, user_function):
         schema = {
             "name": user_function.get("name"),
@@ -338,7 +305,7 @@ class LocalAIModel(AutoModel):
             payload = {"text": prompt, "voice": voice}
             if current_job := AutoTasks().get_current_task():
                 current_job.meta(payload=payload)
-            response = requests.post(f"{self._media_url}/tts", json=payload)
+            response = requests.post(f"{self._audio_url}/tts", json=payload)
             response.raise_for_status()
             wav_bytes = response.content
             audio = AudioSegment.from_file(io.BytesIO(wav_bytes), format="wav")
