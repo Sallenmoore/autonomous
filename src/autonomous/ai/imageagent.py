@@ -7,8 +7,7 @@ from autonomous.model.autoattr import StringAttr
 class ImageAgent(BaseAgent):
     name = StringAttr(default="imageagent")
 
-    # Force this agent to use Gemini
-    provider = StringAttr(default="gemini")
+    provider = StringAttr(default="local")
 
     instructions = StringAttr(
         default="You are highly skilled AI trained to assist with generating images."
