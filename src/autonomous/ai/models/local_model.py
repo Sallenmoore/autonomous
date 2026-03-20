@@ -375,6 +375,7 @@ class LocalAIModel(AutoModel):
     def generate_image(
         self,
         prompt,
+        negative_prompt="",
         files=None,
         aspect_ratio="2KPortrait",
         style=None,
@@ -388,6 +389,7 @@ class LocalAIModel(AutoModel):
 
         data = {
             "prompt": prompt,
+            "negative_prompt": negative_prompt,
             "width": base_w,
             "height": base_h,
             "style": style,

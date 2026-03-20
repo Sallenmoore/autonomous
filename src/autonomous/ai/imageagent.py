@@ -19,6 +19,7 @@ class ImageAgent(BaseAgent):
     def generate(
         self,
         prompt,
+        negative_prompt="blurry, low quality, distorted, deformed, disfigured, poorly drawn",
         files=None,
         aspect_ratio="2KPortrait",
         style=None,
@@ -28,6 +29,7 @@ class ImageAgent(BaseAgent):
             os.environ.get("IMAGE_AI_AGENT", self.provider)
         ).generate_image(
             prompt,
+            negative_prompt=negative_prompt,
             aspect_ratio=aspect_ratio,
             files=files,
             style=style,
