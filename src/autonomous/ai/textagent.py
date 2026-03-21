@@ -9,7 +9,7 @@ class TextAgent(BaseAgent):
     name = StringAttr(default="textagent")
 
     # Force this agent to use Gemini
-    provider = StringAttr(default="gemini")
+    provider = StringAttr(default="local")
     instructions = StringAttr(
         default="You are highly skilled AI trained to assist with generating text according to the given requirements."
     )

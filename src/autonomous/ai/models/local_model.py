@@ -338,10 +338,10 @@ class LocalAIModel(AutoModel):
             # DreamShaper (SD 1.5) must stay near 512x512 to prevent extra limbs
             base_sizes = {
                 "1:1": (512, 512),
-                "3:4": (512, 683),
-                "4:3": (683, 512),
-                "16:9": (683, 512),
-                "9:16": (512, 683),
+                "3:4": (512, 680),
+                "4:3": (680, 512),
+                "16:9": (680, 512),
+                "9:16": (512, 680),
             }
 
         # 3. Target final sizes (Upscale goals)
@@ -380,19 +380,29 @@ class LocalAIModel(AutoModel):
         aspect_ratio="2KPortrait",
         style=None,
     ):
-        # Pass style to ensure we get the right base dimensions for the engine
-        # log("ASPECT RATIO", aspect_ratio, _print=True)
+        # 1. Normalize the style parameter into a strict JSON string payload
+        # and extract the core style name for internal routing.
+        if isinstance(style, dict):
+            style_str_payload = json.dumps(style)
+            core_style_name = style.get("style", "")
+        elif isinstance(style, str):
+            style_str_payload = json.dumps({"style": style})
+            core_style_name = style
+        else:
+            style_str_payload = "{}"
+            core_style_name = ""
+
+        # Pass core_style_name to ensure we get the right base dimensions for the engine
         (base_w, base_h), (target_w, target_h) = self._get_dimensions(
-            aspect_ratio, style
+            aspect_ratio, core_style_name
         )
-        # log("TARGET", (target_w, target_h), _print=True)
 
         data = {
             "prompt": prompt,
             "negative_prompt": negative_prompt,
             "width": base_w,
             "height": base_h,
-            "style": style,
+            "style": style_str_payload,  # Guaranteed to be a valid JSON string
         }
 
         try:
@@ -412,6 +422,7 @@ class LocalAIModel(AutoModel):
             url = f"{self._image_url}/generate-image"
             if current_job := AutoTasks().get_current_task():
                 current_job.meta(generation_data=json.dumps(data, indent=2))
+
             if files_list:
                 response = requests.post(url, data=data, files=files_list)
             else:
@@ -430,9 +441,15 @@ class LocalAIModel(AutoModel):
     def upscale_image(
         self, prompt, image_content, aspect_ratio="2KPortrait", style=None
     ):
-        (base_w, base_h), (target_w, target_h) = self._get_dimensions(
-            aspect_ratio, style
+        # Extract core style name for dimension checking to prevent dict vs string errors
+        core_style_name = (
+            style.get("style", "") if isinstance(style, dict) else (style or "")
         )
+
+        (base_w, base_h), (target_w, target_h) = self._get_dimensions(
+            aspect_ratio, core_style_name
+        )
+
         if (base_w, base_h) != (target_w, target_h):
             log(f"Requesting AI Upscale: {base_w}x{base_h} -> {target_w}x{target_h}...")
 
