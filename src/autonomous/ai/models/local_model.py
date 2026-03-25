@@ -331,8 +331,8 @@ class LocalAIModel(AutoModel):
                 "1:1": (1024, 1024),
                 "3:4": (896, 1195),
                 "4:3": (1195, 896),
-                "16:9": (1109, 832),
-                "9:16": (832, 1109),
+                "16:9": (1104, 832),
+                "9:16": (832, 1104),
             }
         else:
             # DreamShaper (SD 1.5) must stay near 512x512 to prevent extra limbs
