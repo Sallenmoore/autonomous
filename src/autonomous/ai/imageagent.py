@@ -24,10 +24,10 @@ class ImageAgent(BaseAgent):
         aspect_ratio="2KPortrait",
         style=None,
     ):
-        # self.add_to_job_meta("prompt", prompt)
-        return self.get_client(
-            os.environ.get("IMAGE_AI_AGENT", self.provider)
-        ).generate_image(
+        self.add_to_job_meta("prompt", prompt)
+        self.add_to_job_meta("provider", self.provider)
+        print("provider", self.provider)
+        return self.get_client(self.provider).generate_image(
             prompt,
             negative_prompt=negative_prompt,
             aspect_ratio=aspect_ratio,

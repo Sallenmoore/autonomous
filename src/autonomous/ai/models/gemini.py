@@ -24,7 +24,7 @@ class GeminiAIModel(AutoModel):
     _summary_model = "gemini-1.5-flash"
     _json_model = "gemini-1.5-pro"
     _stt_model = "gemini-1.5-pro"
-    _image_model = "gemini-3-pro-image-preview"
+    _image_model = "gemini-3.1-flash-image-preview"
     _tts_model = "gemini-2.0-flash-exp"
 
     messages = ListAttr(StringAttr(default=[]))
@@ -342,7 +342,13 @@ class GeminiAIModel(AutoModel):
         self, prompt, negative_prompt="", files=None, aspect_ratio="2K", style=""
     ):
         image = None
-        contents = [prompt]
+        style_str_payload = ""
+        if isinstance(style, dict):
+            style_str_payload = json.dumps(style)
+        elif isinstance(style, str):
+            style_str_payload = json.dumps({"style": style})
+
+        contents = [f"{prompt}. {style_str_payload}"]
 
         if files:
             filerefs = self._add_files(files, mime_type="image/webp")
@@ -360,7 +366,48 @@ class GeminiAIModel(AutoModel):
                     safety_settings=self.SAFETY_SETTINGS,
                     image_config=types.ImageConfig(
                         aspect_ratio=valid_ratio,
-                        image_size=valid_size,  # Now passing "2K" or "4K" correctly
+                        image_size=valid_size,
+                    ),
+                ),
+            )
+
+            # 3. Extract Image Data
+            if response.candidates and response.candidates[0].content.parts:
+                for part in response.candidates[0].content.parts:
+                    if part.inline_data:
+                        image = part.inline_data.data
+                        break
+
+            if not image:
+                raise ValueError(
+                    f"API returned Success but no image data found. Response: {response}"
+                )
+
+        except Exception as e:
+            log(f"==== Error: Unable to create image ====\n\n{e}", _print=True)
+            raise e
+
+        return image
+
+    def upscale_image(self, prompt, file, aspect_ratio="2KPortrait", style=None):
+        image = None
+        contents = [f"{style}. {prompt}."]
+        filerefs = self._add_files(file, mime_type="image/webp")
+        contents.extend(filerefs)
+
+        try:
+            # 1. Resolve Aspect Ratio AND Size
+            valid_ratio, valid_size = self._get_image_config(aspect_ratio)
+
+            # 2. Call API with correct parameters
+            response = self.client.models.generate_content(
+                model=self._image_model,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    safety_settings=self.SAFETY_SETTINGS,
+                    image_config=types.ImageConfig(
+                        aspect_ratio=valid_ratio,
+                        image_size=valid_size,
                     ),
                 ),
             )

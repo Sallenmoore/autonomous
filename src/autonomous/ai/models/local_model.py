@@ -323,7 +323,7 @@ class LocalAIModel(AutoModel):
         to prevent anatomical hallucinations.
         """
         # 1. Determine which engine the server will auto-route to
-        is_sdxl = style in ["atlas", "battlemap"]
+        is_sdxl = any(a in style for a in ["atlas", "battlemap"])
 
         # 2. Base generation sizes (Engine specific)
         if is_sdxl:

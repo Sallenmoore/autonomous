@@ -20,7 +20,7 @@ class BaseAgent(AutoModel):
     client = ReferenceAttr(choices=[LocalAIModel, GeminiAIModel])
 
     # 4. Add a provider field (default to local, can be overridden per agent)
-    provider = StringAttr(default="gemini")
+    provider = StringAttr(default="local")
 
     def delete(self):
         if self.client:
