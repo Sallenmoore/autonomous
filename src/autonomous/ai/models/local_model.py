@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import random
 
 import requests
 from pydub import AudioSegment
@@ -404,26 +405,23 @@ class LocalAIModel(AutoModel):
 
         try:
             # Handle Input Files (for Img2Img and Compositing)
-            files_list = []
+            file_obj = None
             if files and isinstance(files, dict):
-                for fn, f_bytes in files.items():
-                    if isinstance(f_bytes, bytes):
-                        file_obj = io.BytesIO(f_bytes)
-                    else:
-                        file_obj = f_bytes
-                        file_obj.seek(0)  # CRITICAL FIX: Reset pointer before sending
+                fn, f_bytes = random.choice(files.items())
+                if isinstance(f_bytes, bytes):
+                    file_data = io.BytesIO(f_bytes)
+                else:
+                    file_data = f_bytes
+                    file_data.seek(0)
 
-                    files_list.append(("files", (fn, file_obj, "image/webp")))
+                file_obj = (fn, file_data, "image/webp")
 
             # Step 1: Generate Base Image
             url = f"{self._image_url}/generate-image"
             if current_job := AutoTasks().get_current_task():
                 current_job.meta(generation_data=json.dumps(data, indent=2))
 
-            if files_list:
-                response = requests.post(url, data=data, files=files_list)
-            else:
-                response = requests.post(url, data=data)
+            response = requests.post(url, data=data, file=file_obj)
 
             response.raise_for_status()
             image_content = response.content
