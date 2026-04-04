@@ -1,11 +1,8 @@
 import io
 import json
 import os
-import random
 
-import markdown
 import requests
-from PIL import Image
 from pydub import AudioSegment
 
 from autonomous import log
@@ -126,7 +123,7 @@ class LocalAIModel(AutoModel):
             "stream": False,
             "keep_alive": "24h",
             "options": {
-                "num_ctx": 8192,
+                "num_ctx": 65536,
                 "temperature": 0.9,  # Keep high for creativity
                 "top_p": 0.9,
                 "repeat_penalty": 1.1,
@@ -218,7 +215,7 @@ class LocalAIModel(AutoModel):
             "stream": False,
             "keep_alive": "24h",
             "options": {
-                "num_ctx": 8192,
+                "num_ctx": 65536,
                 # 1. CREATIVITY
                 "temperature": temperature,
                 # 2. PREVENT CUTOFFS
