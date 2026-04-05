@@ -13,8 +13,6 @@ class TaskPriority(Enum):
     HIGH = "high"
     DEFAULT = "default"
     LOW = "low"
-    IMAGE = "image"
-    AUDIO = "audio"
 
 
 class AutoTask:
@@ -161,32 +159,24 @@ class AutoTasks:
         high_queue = Queue("high", connection=self._connection)
         default_queue = Queue("default", connection=self._connection)
         low_queue = Queue("low", connection=self._connection)
-        audio_queue = Queue("audio", connection=self._connection)
-        image_queue = Queue("image", connection=self._connection)
 
         registries = {
             "started": [
                 high_queue.started_job_registry,
                 default_queue.started_job_registry,
                 low_queue.started_job_registry,
-                audio_queue.started_job_registry,
-                image_queue.started_job_registry,
             ],
             "finished": [
                 high_queue.finished_job_registry,
                 default_queue.finished_job_registry,
                 low_queue.finished_job_registry,
-                audio_queue.finished_job_registry,
-                image_queue.finished_job_registry,
             ],
             "failed": [
                 high_queue.failed_job_registry,
                 default_queue.failed_job_registry,
                 low_queue.failed_job_registry,
-                audio_queue.failed_job_registry,
-                image_queue.failed_job_registry,
             ],
-            "queued": [high_queue, default_queue, low_queue, audio_queue, image_queue],
+            "queued": [high_queue, default_queue, low_queue],
         }
 
         tasks = {}

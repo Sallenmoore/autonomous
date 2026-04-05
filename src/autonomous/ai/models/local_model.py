@@ -407,7 +407,7 @@ class LocalAIModel(AutoModel):
             # Handle Input Files (for Img2Img and Compositing)
             file_obj = None
             if files and isinstance(files, dict):
-                fn, f_bytes = random.choice(files.items())
+                fn, f_bytes = random.choice(list(files.items()))
                 if isinstance(f_bytes, bytes):
                     file_data = io.BytesIO(f_bytes)
                 else:
@@ -430,7 +430,7 @@ class LocalAIModel(AutoModel):
             return image_content
 
         except Exception as e:
-            log(f"Image Gen Error: {e}", _print=True)
+            log(f"Image Gen Error: {type(e)} - {e}", _print=True)
             return None
 
     def upscale_image(
