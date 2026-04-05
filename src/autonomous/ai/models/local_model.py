@@ -23,8 +23,9 @@ class LocalAIModel(AutoModel):
     _media_url = os.environ.get("MEDIA_API_BASE_URL", "")
     _audio_url = os.environ.get("MEDIA_AUDIO_API_BASE_URL", "")
     _image_url = os.environ.get("MEDIA_IMAGE_API_BASE_URL", "")
-    _text_model = os.environ.get("OLLAMA_TEXT_MODEL", "gemma2:27b")
+    _text_model = os.environ.get("OLLAMA_TEXT_MODEL", "gemma4")
     _json_model = os.environ.get("OLLAMA_JSON_MODEL", "hermes3")
+    _context_limit = os.environ.get("OLLAMA_CONTEXT_LIMIT", 32768)
 
     def _convert_tools_to_json_schema(self, user_function):
         schema = {
@@ -85,6 +86,18 @@ class LocalAIModel(AutoModel):
 
         return res_eval.json().get("message", {}).get("content", "")
 
+    def flush_memory(self, model_name):
+        """Forces Ollama to immediately unload the model from system RAM."""
+        log(f"Flushing {model_name} from memory to free resources...", _print=True)
+        try:
+            # Sending keep_alive=0 triggers an immediate VRAM/RAM eviction
+            requests.post(
+                f"{self._ollama_url}/generate",
+                json={"model": model_name, "keep_alive": 0},
+            )
+        except Exception as e:
+            log(f"Failed to flush memory: {e}", _print=True)
+
     def generate_json(
         self,
         message,
@@ -92,6 +105,7 @@ class LocalAIModel(AutoModel):
         uri="",
         context={},
         evaluation=False,
+        flush=True,
     ):
         system_prompt = system_prompt or self.instructions
         full_system_prompt = (
@@ -124,7 +138,7 @@ class LocalAIModel(AutoModel):
             "stream": False,
             "keep_alive": "24h",
             "options": {
-                "num_ctx": 65536,
+                "num_ctx": self._context_limit,
                 "temperature": 0.9,  # Keep high for creativity
                 "top_p": 0.9,
                 "repeat_penalty": 1.1,
@@ -136,6 +150,7 @@ class LocalAIModel(AutoModel):
         )
 
         result_text = ""
+        result_dict = {}
         try:
             if current_job := AutoTasks().get_current_task():
                 current_job.meta(payload=payload)
@@ -174,9 +189,7 @@ class LocalAIModel(AutoModel):
                 ):
                     params = result_dict.pop("parameters")
                     result_dict.update(params)
-            log("==== LocalAI JSON Result ====", result_dict, _print=True)
-            return result_dict
-
+            # log("==== LocalAI JSON Result ====", result_dict, _print=True)
         except Exception as e:
             log(f"==== LocalAI JSON Error: {e} ====", _print=True)
             if result_text:
@@ -184,7 +197,10 @@ class LocalAIModel(AutoModel):
                     f"--- FAILED RAW OUTPUT ---\n{result_text}\n-----------------------",
                     _print=True,
                 )
-            return {}
+        finally:
+            if flush:
+                self.flush_memory(model=self._json_model)
+        return result_dict
 
     def generate_text(
         self,
@@ -194,9 +210,8 @@ class LocalAIModel(AutoModel):
         context={},
         temperature=0.9,
         evaluation=False,
+        flush=True,
     ):
-        # 1. Base System Prompt
-
         if context:
             additional_instructions += (
                 f"\n\n### GROUND TRUTH CONTEXT ###\n"
@@ -216,9 +231,9 @@ class LocalAIModel(AutoModel):
                 {"role": "user", "content": message},
             ],
             "stream": False,
-            "keep_alive": "24h",
+            "keep_alive": "1m",
             "options": {
-                "num_ctx": 65536,
+                "num_ctx": self._context_limit,
                 # 1. CREATIVITY
                 "temperature": temperature,
                 # 2. PREVENT CUTOFFS
@@ -227,7 +242,7 @@ class LocalAIModel(AutoModel):
                 "repeat_penalty": 1.1,
             },
         }
-
+        result = "Error generating text."
         try:
             if current_job := AutoTasks().get_current_task():
                 current_job.meta(payload=payload)
@@ -241,14 +256,17 @@ class LocalAIModel(AutoModel):
                 payload["messages"][1]["content"] = eval_res
                 response = requests.post(f"{self._ollama_url}/chat", json=payload)
                 response.raise_for_status()
-            return response.json().get("message", {}).get("content", "")
+            result = response.json().get("message", {}).get("content", "")
         except Exception as e:
             log(f"==== LocalAI Text Error: {e} ====", _print=True)
-            return "Error generating text."
+        finally:
+            if flush:
+                self.flush_memory(model=self._text_model)
+        return result
 
     def summarize_text(self, text, primer=""):
         primer = primer or "Summarize the following text concisely."
-        max_chars = 12000
+        max_chars = self._context_limit * 4
         chunks = [text[i : i + max_chars] for i in range(0, len(text), max_chars)]
 
         full_summary = ""
@@ -269,7 +287,6 @@ class LocalAIModel(AutoModel):
             except Exception as e:
                 log(f"Summary Error: {e}", _print=True)
                 break
-
         return full_summary
 
     def generate_transcription(self, audio_file, prompt="", beam_size=5):
@@ -280,7 +297,6 @@ class LocalAIModel(AutoModel):
 
         files = {"file": ("audio.opus", f_obj, "audio/ogg")}
         data = {"prompt": prompt, "beam_size": beam_size}
-
         try:
             if current_job := AutoTasks().get_current_task():
                 current_job.meta(data=data)
@@ -296,11 +312,7 @@ class LocalAIModel(AutoModel):
             log(f"Transcription API Error: {e}", _print=True)
             return {"segments": [], "text": ""}
 
-    def generate_audio(
-        self,
-        prompt,
-        voice="",
-    ):
+    def generate_audio(self, prompt, voice=""):
         try:
             payload = {"text": prompt, "voice": voice}
             if current_job := AutoTasks().get_current_task():
