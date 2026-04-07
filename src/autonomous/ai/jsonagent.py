@@ -18,13 +18,11 @@ class JSONAgent(BaseAgent):
         default="A helpful AI assistant trained to assist with generating JSON formatted data."
     )
 
-    def generate(self, message, system_prompt="", uri="", context="", flush=True):
+    def generate(self, message, system_prompt="", uri="", context=""):
         # self.add_to_job_meta("prompt", message)
         result = self.get_client(
             os.environ.get("JSON_AI_AGENT", self.provider)
-        ).generate_json(
-            message, system_prompt=system_prompt, uri=uri, context=context, flush=flush
-        )
+        ).generate_json(message, system_prompt=system_prompt, uri=uri, context=context)
         if isinstance(result, str):
             try:
                 result = json.loads(result)

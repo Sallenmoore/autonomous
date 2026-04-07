@@ -23,8 +23,7 @@ class LocalAIModel(AutoModel):
     _media_url = os.environ.get("MEDIA_API_BASE_URL", "")
     _audio_url = os.environ.get("MEDIA_AUDIO_API_BASE_URL", "")
     _image_url = os.environ.get("MEDIA_IMAGE_API_BASE_URL", "")
-    _text_model = os.environ.get("OLLAMA_TEXT_MODEL", "gemma4")
-    _json_model = os.environ.get("OLLAMA_JSON_MODEL", "hermes3")
+    _text_model = os.environ.get("OLLAMA_MODEL", "gemma4:26b")
     _context_limit = os.environ.get("OLLAMA_CONTEXT_LIMIT", 32768)
 
     def _convert_tools_to_json_schema(self, user_function):
@@ -73,7 +72,7 @@ class LocalAIModel(AutoModel):
 
     def _evaluate_response(self, instruction, content, goal):
         eval_prompt = {
-            "model": os.environ.get("OLLAMA_TEXT_MODEL", "gemma2:27b"),
+            "model": os.environ.get("OLLAMA_TEXT_MODEL", "gemma4:26b"),
             "messages": [
                 {
                     "role": "user",
@@ -99,13 +98,7 @@ class LocalAIModel(AutoModel):
             log(f"Failed to flush memory: {e}", _print=True)
 
     def generate_json(
-        self,
-        message,
-        system_prompt=None,
-        uri="",
-        context={},
-        evaluation=False,
-        flush=True,
+        self, message, system_prompt=None, uri="", context={}, evaluation=False
     ):
         system_prompt = system_prompt or self.instructions
         full_system_prompt = (
@@ -129,14 +122,13 @@ class LocalAIModel(AutoModel):
 
         # 3. Payload Construction
         payload = {
-            "model": self._json_model,
+            "model": self._text_model,
             "messages": [
                 {"role": "system", "content": full_system_prompt},
                 {"role": "user", "content": message},
             ],
             "format": "json",
             "stream": False,
-            "keep_alive": "24h",
             "options": {
                 "num_ctx": self._context_limit,
                 "temperature": 0.9,  # Keep high for creativity
@@ -169,27 +161,7 @@ class LocalAIModel(AutoModel):
                 result_dict["parameters"], dict
             ):
                 params = result_dict.pop("parameters")
-                result_dict.update(params)
-            if evaluation:
-                eval_res = self._evaluate_response(
-                    message, response, full_system_prompt
-                )
-                log(f"Evaluation:\n {eval_res}")
-                payload["messages"][1]["content"] = eval_res
-                response = requests.post(f"{self._ollama_url}/chat", json=payload)
-                response.raise_for_status()
-                result_text = response.json().get("message", {}).get("content", "{}")
-                # Clean & Parse
-                clean_text = self._clean_json_response(result_text)
-                result_dict = json.loads(clean_text)
-
-                # Unwrap (Handle cases where model wraps in 'parameters' key)
-                if "parameters" in result_dict and isinstance(
-                    result_dict["parameters"], dict
-                ):
-                    params = result_dict.pop("parameters")
-                    result_dict.update(params)
-            # log("==== LocalAI JSON Result ====", result_dict, _print=True)
+            result_dict.update(params)
         except Exception as e:
             log(f"==== LocalAI JSON Error: {e} ====", _print=True)
             if result_text:
@@ -197,9 +169,6 @@ class LocalAIModel(AutoModel):
                     f"--- FAILED RAW OUTPUT ---\n{result_text}\n-----------------------",
                     _print=True,
                 )
-        finally:
-            if flush:
-                self.flush_memory(model=self._json_model)
         return result_dict
 
     def generate_text(
@@ -210,7 +179,6 @@ class LocalAIModel(AutoModel):
         context={},
         temperature=0.9,
         evaluation=False,
-        flush=True,
     ):
         if context:
             additional_instructions += (
@@ -259,9 +227,6 @@ class LocalAIModel(AutoModel):
             result = response.json().get("message", {}).get("content", "")
         except Exception as e:
             log(f"==== LocalAI Text Error: {e} ====", _print=True)
-        finally:
-            if flush:
-                self.flush_memory(model=self._text_model)
         return result
 
     def summarize_text(self, text, primer=""):
@@ -275,7 +240,6 @@ class LocalAIModel(AutoModel):
                 "model": self._text_model,
                 "messages": [{"role": "user", "content": f"{primer}:\n\n{chunk}"}],
                 "stream": False,
-                "keep_alive": "24h",
             }
             try:
                 log(f"Payload sent: {payload}...", _print=True)
@@ -435,7 +399,7 @@ class LocalAIModel(AutoModel):
             if current_job := AutoTasks().get_current_task():
                 current_job.meta(generation_data=json.dumps(data, indent=2))
 
-            response = requests.post(url, data=data, file=file_obj)
+            response = requests.post(url, data=data, files={"file": file_obj})
 
             response.raise_for_status()
             image_content = response.content
