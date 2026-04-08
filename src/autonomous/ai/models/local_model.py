@@ -147,11 +147,11 @@ class LocalAIModel(AutoModel):
             if current_job := AutoTasks().get_current_task():
                 current_job.meta(payload=payload)
             response = requests.post(f"{self._ollama_url}/chat", json=payload)
-            log(response)
+            log(response, _print=True)
             response.raise_for_status()
 
             result_text = response.json().get("message", {}).get("content", "{}")
-
+            log(result_text, _print=True)
             # Clean & Parse
             clean_text = self._clean_json_response(result_text)
             result_dict = json.loads(clean_text)
@@ -161,14 +161,14 @@ class LocalAIModel(AutoModel):
                 result_dict["parameters"], dict
             ):
                 params = result_dict.pop("parameters")
-            result_dict.update(params)
+                result_dict.update(params)
         except Exception as e:
-            log(f"==== LocalAI JSON Error: {e} ====", _print=True)
-            if result_text:
-                log(
-                    f"--- FAILED RAW OUTPUT ---\n{result_text}\n-----------------------",
-                    _print=True,
-                )
+            log(
+                f"==== LocalAI JSON Error: {e} ====",
+                response,
+                f"--- FAILED RAW OUTPUT ---\n{result_text}\n-----------------------",
+                _print=True,
+            )
         return result_dict
 
     def generate_text(
