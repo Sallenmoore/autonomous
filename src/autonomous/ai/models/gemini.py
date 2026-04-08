@@ -138,7 +138,7 @@ class GeminiAIModel(AutoModel):
 
     def _add_files(self, file_list, mime_type="application/json"):
         uploaded_files = []
-        for f in file_list.items()[: self.MAX_FILES]:
+        for f in list(file_list.items())[: self.MAX_FILES]:
             fn = f["name"]
             try:
                 self.client.files.delete(name=fn)
