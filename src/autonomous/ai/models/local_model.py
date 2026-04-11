@@ -24,7 +24,7 @@ class LocalAIModel(AutoModel):
     _audio_url = os.environ.get("MEDIA_AUDIO_API_BASE_URL", "")
     _image_url = os.environ.get("MEDIA_IMAGE_API_BASE_URL", "")
     _text_model = os.environ.get("OLLAMA_MODEL", "gemma4:26b")
-    _context_limit = os.environ.get("OLLAMA_CONTEXT_LIMIT", 32768)
+    _context_limit = os.environ.get("OLLAMA_CONTEXT_LIMIT", 4096)
 
     def _convert_tools_to_json_schema(self, user_function):
         schema = {
@@ -110,22 +110,23 @@ class LocalAIModel(AutoModel):
             f"3. Ensure all arrays and objects are closed.\n"
         )
 
-        # 2. Add Context (Applies to all strategies)
+        # 2. Construct User Message (Move context here for caching)
+        user_message = message
         if context:
-            full_system_prompt += (
+            user_message += (
                 f"\n\n### GROUND TRUTH CONTEXT ###\n"
                 f"Adhere strictly to this context:\n"
                 f"{json.dumps(context, indent=2)}"
             )
         if uri:
-            full_system_prompt += f"Use the following URI for reference: {uri}"
+            user_message += f"Use the following URI for reference: {uri}"
 
         # 3. Payload Construction
         payload = {
             "model": self._text_model,
             "messages": [
                 {"role": "system", "content": full_system_prompt},
-                {"role": "user", "content": message},
+                {"role": "user", "content": user_message},
             ],
             "format": "json",
             "stream": False,
