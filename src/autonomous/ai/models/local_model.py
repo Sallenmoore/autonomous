@@ -24,7 +24,7 @@ class LocalAIModel(AutoModel):
     _audio_url = os.environ.get("MEDIA_AUDIO_API_BASE_URL", "")
     _image_url = os.environ.get("MEDIA_IMAGE_API_BASE_URL", "")
     _text_model = os.environ.get("OLLAMA_MODEL", "gemma4:26b")
-    _context_limit = os.environ.get("OLLAMA_CONTEXT_LIMIT", 32768)
+    _context_limit = int(os.environ.get("OLLAMA_CONTEXT_LIMIT", 32768))
 
     def _convert_tools_to_json_schema(self, user_function):
         schema = {
@@ -81,7 +81,7 @@ class LocalAIModel(AutoModel):
             ],
             "stream": False,
         }
-        res_eval = requests.post("http://ollama:11434/api/chat", json=eval_prompt)
+        res_eval = requests.post(f"{self._ollama_url}/chat", json=eval_prompt)
 
         return res_eval.json().get("message", {}).get("content", "")
 
@@ -132,8 +132,9 @@ class LocalAIModel(AutoModel):
             "stream": False,
             "options": {
                 "num_ctx": self._context_limit,
-                "temperature": 0.9,  # Keep high for creativity
-                "top_p": 0.9,
+                "temperature": 0.7,
+                "top_p": 0.95,
+                "top_k": 64,
                 "repeat_penalty": 1.1,
             },
         }
@@ -178,7 +179,7 @@ class LocalAIModel(AutoModel):
         additional_instructions="",
         uri="",
         context={},
-        temperature=0.9,
+        temperature=1.0,
         evaluation=False,
     ):
         if context:
@@ -203,11 +204,10 @@ class LocalAIModel(AutoModel):
             "keep_alive": "1m",
             "options": {
                 "num_ctx": self._context_limit,
-                # 1. CREATIVITY
                 "temperature": temperature,
-                # 2. PREVENT CUTOFFS
+                "top_p": 0.95,
+                "top_k": 64,
                 "num_predict": -1,
-                # 3. PREVENT LOOPS
                 "repeat_penalty": 1.1,
             },
         }
@@ -239,7 +239,10 @@ class LocalAIModel(AutoModel):
         for chunk in chunks:
             payload = {
                 "model": self._text_model,
-                "messages": [{"role": "user", "content": f"{primer}:\n\n{chunk}"}],
+                "messages": [
+                    {"role": "system", "content": primer},
+                    {"role": "user", "content": chunk},
+                ],
                 "stream": False,
             }
             try:
