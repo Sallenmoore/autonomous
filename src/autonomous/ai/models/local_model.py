@@ -24,7 +24,7 @@ class LocalAIModel(AutoModel):
     _audio_url = os.environ.get("MEDIA_AUDIO_API_BASE_URL", "")
     _image_url = os.environ.get("MEDIA_IMAGE_API_BASE_URL", "")
     _text_model = os.environ.get("OLLAMA_MODEL", "gemma4:26b")
-    _context_limit = os.environ.get("OLLAMA_CONTEXT_LIMIT", 4096)
+    _context_limit = os.environ.get("OLLAMA_CONTEXT_LIMIT", 32768)
 
     def _convert_tools_to_json_schema(self, user_function):
         schema = {
