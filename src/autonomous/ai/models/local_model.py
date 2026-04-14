@@ -101,8 +101,9 @@ class LocalAIModel(AutoModel):
         self, message, system_prompt=None, uri="", context={}, evaluation=False
     ):
         system_prompt = system_prompt or self.instructions
+        system_prompt = system_prompt.rstrip(". ") + "."
         full_system_prompt = (
-            f"{system_prompt}.\n"
+            f"{system_prompt}\n"
             f"You are a strict JSON generator. Output ONLY a valid JSON object matching the given schema.\n"
             f"IMPORTANT RULES:\n"
             f"1. Do not include markdown formatting or explanations.\n"
@@ -132,6 +133,7 @@ class LocalAIModel(AutoModel):
             "stream": False,
             "options": {
                 "num_ctx": self._context_limit,
+                "num_predict": -1,
                 "temperature": 0.7,
                 "top_p": 0.95,
                 "top_k": 64,
@@ -179,7 +181,7 @@ class LocalAIModel(AutoModel):
         additional_instructions="",
         uri="",
         context={},
-        temperature=1.0,
+        temperature=0.7,
         evaluation=False,
     ):
         if context:
@@ -244,6 +246,13 @@ class LocalAIModel(AutoModel):
                     {"role": "user", "content": chunk},
                 ],
                 "stream": False,
+                "options": {
+                    "num_ctx": self._context_limit,
+                    "num_predict": -1,
+                    "temperature": 0.5,
+                    "top_p": 0.9,
+                    "repeat_penalty": 1.1,
+                },
             }
             try:
                 log(f"Payload sent: {payload}...", _print=True)
