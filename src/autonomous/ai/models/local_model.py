@@ -203,7 +203,7 @@ class LocalAIModel(AutoModel):
                 {"role": "user", "content": message},
             ],
             "stream": False,
-            "keep_alive": "1m",
+            "keep_alive": "10m",
             "options": {
                 "num_ctx": self._context_limit,
                 "temperature": temperature,
