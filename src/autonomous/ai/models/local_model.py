@@ -2,6 +2,7 @@ import io
 import json
 import os
 import random
+import time
 
 import requests
 from pydub import AudioSegment
@@ -25,6 +26,13 @@ class LocalAIModel(AutoModel):
     _image_url = os.environ.get("MEDIA_IMAGE_API_BASE_URL", "")
     _text_model = os.environ.get("OLLAMA_MODEL", "gemma4:26b")
     _context_limit = int(os.environ.get("OLLAMA_CONTEXT_LIMIT", 32768))
+
+    # Timeouts (seconds) — CPU-only Ollama is slow; these prevent indefinite hangs
+    _retry_sleep = int(os.environ.get("OLLAMA_RETRY_SLEEP", 30))       # sleep between JSON retries
+    _json_timeout = int(os.environ.get("OLLAMA_JSON_TIMEOUT", 600))    # 10 min
+    _text_timeout = int(os.environ.get("OLLAMA_TEXT_TIMEOUT", 900))    # 15 min
+    _summary_timeout = int(os.environ.get("OLLAMA_SUMMARY_TIMEOUT", 300))   # 5 min/chunk
+    _media_timeout = int(os.environ.get("MEDIA_REQUEST_TIMEOUT", 300))  # 5 min
 
     def _convert_tools_to_json_schema(self, user_function):
         schema = {
@@ -81,7 +89,7 @@ class LocalAIModel(AutoModel):
             ],
             "stream": False,
         }
-        res_eval = requests.post(f"{self._ollama_url}/chat", json=eval_prompt)
+        res_eval = requests.post(f"{self._ollama_url}/chat", json=eval_prompt, timeout=self._text_timeout)
 
         return res_eval.json().get("message", {}).get("content", "")
 
@@ -93,6 +101,7 @@ class LocalAIModel(AutoModel):
             requests.post(
                 f"{self._ollama_url}/generate",
                 json={"model": model_name, "keep_alive": 0},
+                timeout=30,
             )
         except Exception as e:
             log(f"Failed to flush memory: {e}", _print=True)
@@ -104,14 +113,16 @@ class LocalAIModel(AutoModel):
         system_prompt = system_prompt.rstrip(". ") + "."
         full_system_prompt = (
             f"{system_prompt}\n"
-            f"You are a strict JSON generator. Output ONLY a valid JSON object matching the given schema.\n"
-            f"IMPORTANT RULES:\n"
-            f"1. Do not include markdown formatting or explanations.\n"
-            f"2. DOUBLE CHECK nested quotes inside strings. Escape them properly.\n"
-            f"3. Ensure all arrays and objects are closed.\n"
+            f"OUTPUT FORMAT RULES — NON-NEGOTIABLE:\n"
+            f"Your entire response MUST be a single valid JSON object.\n"
+            f"- Begin your response with the character {{ and end with }}\n"
+            f"- No text, prose, or explanation before or after the JSON\n"
+            f"- No markdown code blocks (no ```)\n"
+            f"- Escape all quotes inside string values with \\\\\n"
+            f"- Ensure every array and object is properly closed\n"
         )
 
-        # 2. Construct User Message (Move context here for caching)
+        # 2. Construct User Message
         user_message = message
         if context:
             user_message += (
@@ -120,20 +131,26 @@ class LocalAIModel(AutoModel):
                 f"{json.dumps(context, indent=2)}"
             )
         if uri:
-            user_message += f"Use the following URI for reference: {uri}"
+            user_message += f"\nUse the following URI for reference: {uri}"
+        # Closing instruction placed immediately before generation — improves JSON compliance
+        user_message += "\n\nRespond with ONLY the completed JSON object:"
 
         # 3. Payload Construction
+        # NOTE: `format: json` (grammar-constrained sampling) is intentionally
+        # omitted here. On CPU-only Ollama with a large model, constrained
+        # sampling burns the token budget rejecting tokens and returns empty.
+        # Instead, we rely on the system prompt instruction ("Output ONLY valid
+        # JSON") and _clean_json_response() to extract valid JSON from free output.
         payload = {
             "model": self._text_model,
             "messages": [
                 {"role": "system", "content": full_system_prompt},
                 {"role": "user", "content": user_message},
             ],
-            "format": "json",
             "stream": False,
             "options": {
                 "num_ctx": self._context_limit,
-                "num_predict": -1,
+                "num_predict": 4096,
                 "temperature": 0.7,
                 "top_p": 0.95,
                 "top_k": 64,
@@ -145,34 +162,46 @@ class LocalAIModel(AutoModel):
             "==== LocalAI JSON Payload ====", json.dumps(payload, indent=2), _print=True
         )
 
-        result_text = ""
+        _max_retries = 2
         result_dict = {}
-        try:
-            if current_job := AutoTasks().get_current_task():
-                current_job.meta(payload=payload)
-            response = requests.post(f"{self._ollama_url}/chat", json=payload)
-            log(response, _print=True)
-            response.raise_for_status()
+        for _attempt in range(_max_retries + 1):
+            result_text = ""
+            response = None
+            try:
+                if current_job := AutoTasks().get_current_task():
+                    current_job.meta(payload=payload)
+                response = requests.post(f"{self._ollama_url}/chat", json=payload, timeout=self._json_timeout)
+                log(response, _print=True)
+                response.raise_for_status()
 
-            result_text = response.json().get("message", {}).get("content", "{}")
-            log(result_text, _print=True)
-            # Clean & Parse
-            clean_text = self._clean_json_response(result_text)
-            result_dict = json.loads(clean_text)
+                result_text = response.json().get("message", {}).get("content", "{}")
+                log(result_text, _print=True)
+                if not result_text.strip():
+                    raise ValueError("Ollama returned empty content")
 
-            # Unwrap (Handle cases where model wraps in 'parameters' key)
-            if "parameters" in result_dict and isinstance(
-                result_dict["parameters"], dict
-            ):
-                params = result_dict.pop("parameters")
-                result_dict.update(params)
-        except Exception as e:
-            log(
-                f"==== LocalAI JSON Error: {e} ====",
-                response,
-                f"--- FAILED RAW OUTPUT ---\n{result_text}\n-----------------------",
-                _print=True,
-            )
+                # Clean & Parse
+                clean_text = self._clean_json_response(result_text)
+                result_dict = json.loads(clean_text)
+
+                # Unwrap (Handle cases where model wraps in 'parameters' key)
+                if "parameters" in result_dict and isinstance(
+                    result_dict["parameters"], dict
+                ):
+                    params = result_dict.pop("parameters")
+                    result_dict.update(params)
+
+                break  # success
+            except Exception as e:
+                log(
+                    f"==== LocalAI JSON Error (attempt {_attempt + 1}/{_max_retries + 1}): {e} ====",
+                    response,
+                    f"--- FAILED RAW OUTPUT ---\n{result_text}\n-----------------------",
+                    _print=True,
+                )
+                if _attempt < _max_retries:
+                    log(f"Retrying JSON generation...", _print=True)
+                    time.sleep(self._retry_sleep)
+
         return result_dict
 
     def generate_text(
@@ -217,7 +246,7 @@ class LocalAIModel(AutoModel):
         try:
             if current_job := AutoTasks().get_current_task():
                 current_job.meta(payload=payload)
-            response = requests.post(f"{self._ollama_url}/chat", json=payload)
+            response = requests.post(f"{self._ollama_url}/chat", json=payload, timeout=self._text_timeout)
             response.raise_for_status()
             if evaluation:
                 eval_res = self._evaluate_response(
@@ -225,7 +254,7 @@ class LocalAIModel(AutoModel):
                 )
                 log(f"Evaluation:\n {eval_res}")
                 payload["messages"][1]["content"] = eval_res
-                response = requests.post(f"{self._ollama_url}/chat", json=payload)
+                response = requests.post(f"{self._ollama_url}/chat", json=payload, timeout=self._text_timeout)
                 response.raise_for_status()
             result = response.json().get("message", {}).get("content", "")
         except Exception as e:
@@ -248,7 +277,7 @@ class LocalAIModel(AutoModel):
                 "stream": False,
                 "options": {
                     "num_ctx": self._context_limit,
-                    "num_predict": -1,
+                    "num_predict": 1024,
                     "temperature": 0.5,
                     "top_p": 0.9,
                     "repeat_penalty": 1.1,
@@ -258,7 +287,7 @@ class LocalAIModel(AutoModel):
                 log(f"Payload sent: {payload}...", _print=True)
                 if current_job := AutoTasks().get_current_task():
                     current_job.meta(payload=payload)
-                res = requests.post(f"{self._ollama_url}/chat", json=payload)
+                res = requests.post(f"{self._ollama_url}/chat", json=payload, timeout=self._summary_timeout)
                 full_summary += res.json().get("message", {}).get("content", "") + "\n"
                 log(f"Chunk summarized: {full_summary}.", _print=True)
             except Exception as e:
@@ -281,6 +310,7 @@ class LocalAIModel(AutoModel):
                 f"{self._audio_url}/transcribe",
                 files=files,
                 data=data,
+                timeout=self._media_timeout,
             )
             response.raise_for_status()
             # Return the structured JSON dict containing 'segments'
@@ -294,7 +324,7 @@ class LocalAIModel(AutoModel):
             payload = {"text": prompt, "voice": voice}
             if current_job := AutoTasks().get_current_task():
                 current_job.meta(payload=payload)
-            response = requests.post(f"{self._audio_url}/tts", json=payload)
+            response = requests.post(f"{self._audio_url}/tts", json=payload, timeout=self._media_timeout)
             response.raise_for_status()
             wav_bytes = response.content
             audio = AudioSegment.from_file(io.BytesIO(wav_bytes), format="wav")
@@ -412,7 +442,7 @@ class LocalAIModel(AutoModel):
             if current_job := AutoTasks().get_current_task():
                 current_job.meta(generation_data=json.dumps(data, indent=2))
 
-            response = requests.post(url, data=data, files={"file": file_obj})
+            response = requests.post(url, data=data, files={"file": file_obj}, timeout=self._media_timeout)
 
             response.raise_for_status()
             image_content = response.content
@@ -456,7 +486,8 @@ class LocalAIModel(AutoModel):
                     upscale_original_size=(base_w, base_h),
                 )
             upscale_response = requests.post(
-                f"{self._image_url}/upscale", data=upscale_data, files=upscale_files
+                f"{self._image_url}/upscale", data=upscale_data, files=upscale_files,
+                timeout=self._media_timeout,
             )
             upscale_response.raise_for_status()
             return upscale_response.content
