@@ -167,8 +167,9 @@ class GeminiAIModel(AutoModel):
         return uploaded_files
 
     def generate_json(
-        self, message, function, additional_instructions="", uri="", context={}
+        self, message, function, additional_instructions="", uri="", context=None
     ):
+        context = context or {}
         function_definition = self._add_function(function)
         contents = [message]
 
@@ -208,7 +209,8 @@ class GeminiAIModel(AutoModel):
             log(f"==== Failed to parse ToolCall response: {e} ====")
             return {}
 
-    def generate_text(self, message, additional_instructions="", uri="", context={}):
+    def generate_text(self, message, additional_instructions="", uri="", context=None):
+        context = context or {}
         contents = [message]
         if context:
             contents.extend(self._add_context(context))
@@ -266,7 +268,7 @@ class GeminiAIModel(AutoModel):
         )
         return response.text
 
-    def list_voices(self, filters=[]):
+    def list_voices(self, filters=None):
         if not filters:
             return list(self.VOICES.keys())
         voices = []

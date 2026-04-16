@@ -5,6 +5,29 @@ recent first.
 
 ## Unreleased
 
+### Mutable default args replaced with None sentinel (Item 3)
+
+**What changed.** The AI-model entry points no longer use mutable literals
+(`context={}`, `filters=[]`) as default values. Defaults are now `None`, and
+each function normalizes to a fresh empty container internally.
+
+Affected signatures:
+
+- `LocalAIModel.generate_json(..., context=None, ...)`
+- `LocalAIModel.generate_text(..., context=None, ...)`
+- `MockAIModel.generate_json(..., context=None)`
+- `MockAIModel.generate_text(..., context=None)`
+- `GeminiAIModel.generate_json(..., context=None)`
+- `GeminiAIModel.generate_text(..., context=None)`
+- `GeminiAIModel.list_voices(filters=None)`
+
+**Why.** A shared mutable default dict persists across calls. If one caller
+mutated `context`, every subsequent caller would observe the mutation —
+intermittent, rare, hard-to-debug failures.
+
+**Migration.** Zero code changes needed. Passing `context={}` / `filters=[]`
+still works identically; only the default changed.
+
 ### Storage paths come from env vars (Item 2)
 
 **What changed.** `LocalStorage(path=...)` and `ImageStorage(path=...)` no
