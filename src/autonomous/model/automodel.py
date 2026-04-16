@@ -9,13 +9,47 @@ from autonomous.db.fields import DateTimeField
 
 from autonomous import log
 
-host = os.getenv("DB_HOST", "db")
-port = os.getenv("DB_PORT", 27017)
-password = urllib.parse.quote_plus(str(os.getenv("DB_PASSWORD")))
-username = urllib.parse.quote_plus(str(os.getenv("DB_USERNAME")))
-dbname = os.getenv("DB_DB")
-# log(f"Connecting to MongoDB at {host}:{port} with {username}:{password} for {dbname}")
-connect(host=f"mongodb://{username}:{password}@{host}:{port}/{dbname}?authSource=admin")
+_connected: bool = False
+
+
+def connect_from_env(**overrides) -> str:
+    """Open the default MongoDB connection using env vars.
+
+    Reads ``DB_HOST`` / ``DB_PORT`` / ``DB_USERNAME`` / ``DB_PASSWORD`` /
+    ``DB_DB`` and calls ``autonomous.db.connect``. Idempotent: subsequent
+    calls are no-ops. Returns the URI that was passed to ``connect``.
+
+    Any of the settings may be overridden via keyword args (``host``,
+    ``port``, ``username``, ``password``, ``db``) for tests or alternate
+    deployments.
+    """
+    global _connected
+    host = overrides.get("host", os.getenv("DB_HOST", "db"))
+    port = overrides.get("port", os.getenv("DB_PORT", 27017))
+    password = urllib.parse.quote_plus(
+        str(overrides.get("password", os.getenv("DB_PASSWORD")))
+    )
+    username = urllib.parse.quote_plus(
+        str(overrides.get("username", os.getenv("DB_USERNAME")))
+    )
+    dbname = overrides.get("db", os.getenv("DB_DB"))
+    uri = f"mongodb://{username}:{password}@{host}:{port}/{dbname}?authSource=admin"
+    connect(host=uri)
+    _connected = True
+    return uri
+
+
+def _ensure_connected() -> None:
+    """Auto-connect on first ORM operation if the consumer hasn't yet.
+
+    Keeps the zero-configuration ergonomics the container-app pattern relies
+    on (env vars are already set) without running MongoDB I/O at import time.
+    Consumers that want explicit control should call ``connect_from_env`` (or
+    ``autonomous.db.connect`` directly) at startup.
+    """
+    if _connected:
+        return
+    connect_from_env()
 
 
 class AutoModel(Document):
@@ -128,6 +162,7 @@ class AutoModel(Document):
         Returns:
             AutoModel or None: The retrieved AutoModel instance, or None if not found.
         """
+        _ensure_connected()
 
         if isinstance(pk, str):
             try:
@@ -164,6 +199,7 @@ class AutoModel(Document):
         Returns:
             AutoModel or None: The retrieved AutoModel instance, or None if not found.
         """
+        _ensure_connected()
         pipeline = [{"$sample": {"size": 1}}]
 
         result = cls.objects.aggregate(pipeline)
@@ -178,6 +214,7 @@ class AutoModel(Document):
         Returns:
             list: A list of AutoModel instances.
         """
+        _ensure_connected()
         return list(cls.objects())
 
     @classmethod
@@ -191,6 +228,7 @@ class AutoModel(Document):
         Returns:
             list: A list of AutoModel instances that match the search criteria.
         """
+        _ensure_connected()
         new_kwargs = {}
         for k, v in kwargs.items():
             if isinstance(v, str):
@@ -219,6 +257,7 @@ class AutoModel(Document):
         Returns:
             AutoModel or None: The first matching AutoModel instance, or None if not found.
         """
+        _ensure_connected()
         return cls.objects(**kwargs).first()
 
     @classmethod
@@ -242,6 +281,7 @@ class AutoModel(Document):
         Returns:
             int: The primary key (pk) of the saved model.
         """
+        _ensure_connected()
         obj = super().save()
 
         if sync:
@@ -269,6 +309,7 @@ class AutoModel(Document):
         """
         Delete this model from the database.
         """
+        _ensure_connected()
         return super().delete()
 
 
