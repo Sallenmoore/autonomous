@@ -5,6 +5,52 @@ recent first.
 
 ## Unreleased
 
+### Optional dependencies moved to extras (Item 9)
+
+**What changed.** ``requirements.txt`` shrank to just the deps that
+``autonomous`` imports unconditionally (``python-dotenv``, ``pymongo``,
+``blinker``, ``Authlib``, ``requests``). Everything else moved into named
+extras configured under
+``[tool.setuptools.dynamic.optional-dependencies]`` in ``pyproject.toml``:
+
+| Extra | Adds | Used by |
+|-------|------|---------|
+| ``tasks`` | ``redis``, ``rq`` | ``autonomous.taskrunner.AutoTasks`` |
+| ``images`` | ``pillow`` | ``autonomous.storage.ImageStorage`` |
+| ``ai`` | ``google-genai``, ``pydub`` | ``autonomous.ai.models.gemini`` + audio |
+| ``github`` | ``PyGithub``, ``pygit2`` | ``autonomous.apis.version_control.*`` |
+| ``server`` | ``gunicorn`` | production WSGI server |
+| ``all`` | (every other extra) | catch-all |
+
+Each lives in its own ``requirements-<extra>.txt`` so it's still easy to
+``pip install -r requirements-tasks.txt`` standalone.
+
+Dropped from runtime entirely (no imports anywhere):
+``setuptools`` (build-only), ``Flask``, ``jsmin``, ``ollama`` (the
+client; the URL is hit via ``requests``), ``sentence-transformers``,
+``dateparser``, ``python-slugify``.
+
+**Why.** A 25-dep core dragged in a Postgres-sized install for users who
+only wanted the ORM. Splitting into extras shrinks ``pip install
+autonomous-app`` from ~1.5GB (sentence-transformers + torch + cuda
+wheels) to a handful of MB; consumers opt into what they actually use.
+
+**Migration.**
+
+- If you used ``ImageStorage``, install ``autonomous-app[images]``.
+- If you used ``AutoTasks``, install ``autonomous-app[tasks]``.
+- If you used ``GeminiAIModel``, install ``autonomous-app[ai]``.
+- If you used ``autonomous.apis.version_control.*``, install
+  ``autonomous-app[github]``.
+- Or: ``pip install autonomous-app[all]`` for the previous behaviour.
+- Drop ``flask``, ``jsmin``, ``ollama``, ``sentence-transformers``,
+  ``dateparser``, ``python-slugify`` from your own ``requirements.txt``
+  if you don't import them yourself.
+
+A new ``tests/unit/test_unit_packaging.py`` will fail CI if a future
+change accidentally lists an unused dep in core, drops one of the extras
+files, or forgets to register a new extra in ``pyproject.toml``.
+
 ### `auth_required` no longer writes on every request (Item 8)
 
 **What changed.** The `@AutoAuth.auth_required()` decorator stopped

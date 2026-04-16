@@ -1,0 +1,3 @@
+# Production WSGI server. autonomous itself is framework-agnostic; this
+# is here only as a convenience install for projects that pick gunicorn.
+gunicorn

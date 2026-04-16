@@ -32,7 +32,27 @@ version = {attr = "autonomous.__version__"}
 dependencies = {file = ["requirements.txt"]}
 
 [tool.setuptools.dynamic.optional-dependencies]
-dev = {file = ["requirements_dev.txt"]}
+# Per-feature extras. Install with:
+#   pip install autonomous-app[tasks]            # background queue
+#   pip install autonomous-app[images]           # ImageStorage / PIL
+#   pip install autonomous-app[ai]               # Gemini + audio adapters
+#   pip install autonomous-app[github]           # GitHub API integration
+#   pip install autonomous-app[server]           # gunicorn convenience
+#   pip install autonomous-app[all]              # everything
+#   pip install autonomous-app[dev]              # tests / lint / build
+dev    = {file = ["requirements_dev.txt"]}
+tasks  = {file = ["requirements-tasks.txt"]}
+images = {file = ["requirements-images.txt"]}
+ai     = {file = ["requirements-ai.txt"]}
+github = {file = ["requirements-github.txt"]}
+server = {file = ["requirements-server.txt"]}
+all    = {file = [
+    "requirements-tasks.txt",
+    "requirements-images.txt",
+    "requirements-ai.txt",
+    "requirements-github.txt",
+    "requirements-server.txt",
+]}
 
 [tool.setuptools.packages.find]
 # All the following settings are optional:
