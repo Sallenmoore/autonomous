@@ -3,11 +3,15 @@ import io
 import os
 import shutil
 import uuid
+from pathlib import Path
 
 from PIL import Image, UnidentifiedImageError
 
 from autonomous import log
-from autonomous.storage.localstorage import _default_storage_path
+from autonomous.storage.localstorage import (
+    _default_storage_path,
+    _sanitize_relative,
+)
 
 
 def _default_image_path() -> str:
@@ -24,6 +28,19 @@ class ImageStorage:
 
     def __init__(self, path: str | None = None):
         self.base_path = path if path is not None else _default_image_path()
+        self._base_resolved = Path(self.base_path).resolve()
+
+    def _safe_join(self, *parts: str) -> str:
+        cleaned = [_sanitize_relative(p) for p in parts if p]
+        joined = Path(self.base_path, *cleaned).resolve()
+        try:
+            joined.relative_to(self._base_resolved)
+        except ValueError as exc:
+            raise ValueError(
+                f"Resolved path {joined} escapes image storage root "
+                f"{self._base_resolved}"
+            ) from exc
+        return str(joined)
 
     def scan_storage(self, path=None):
         for root, dirs, files in os.walk(path or self.base_path):
@@ -120,20 +137,20 @@ class ImageStorage:
         return result_url
 
     def get_path(self, asset_id):
-        if asset_id:
-            return os.path.join(self.base_path, f"{asset_id}")
-        else:
+        if not asset_id:
             return self.base_path
+        return self._safe_join(asset_id)
 
     def search(self, folder="", **kwargs):
         imgs = []
-        for f in os.listdir(f"{self.base_path}/{folder}"):
-            # log(f"{self.base_path}/{folder}", f)
-            img_key = self._get_key(
-                f"{folder}",
-                pkey=f,
-            )
-            # log(img_key)
+        try:
+            search_path = self._safe_join(folder) if folder else self.base_path
+        except ValueError:
+            return imgs
+        if not os.path.isdir(search_path):
+            return imgs
+        for f in os.listdir(search_path):
+            img_key = self._get_key(folder, pkey=f)
             imgs.append(img_key)
         return imgs
 

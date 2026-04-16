@@ -5,6 +5,42 @@ recent first.
 
 ## Unreleased
 
+### Storage layers reject path traversal (Item 7)
+
+**What changed.** ``LocalStorage`` and ``ImageStorage`` now sanitize every
+user-supplied ``folder`` and ``asset_id`` before joining it under the
+storage root.
+
+- New helper ``_sanitize_relative(part)``: rejects absolute paths and any
+  fragment whose normalized form contains a ``..`` segment. ``"a/../b"``
+  collapses to ``"b"`` and is fine; ``"../etc"`` and ``"/etc/passwd"``
+  raise ``ValueError``.
+- New per-instance helper ``_safe_join(*parts)``: joins under the resolved
+  ``base_path`` and asserts the resolved result is the base or a
+  descendant. Anything else raises ``ValueError``.
+- All public file-system entry points use ``_safe_join``:
+  ``LocalStorage.save / get / get_path / search / move / remove``,
+  ``ImageStorage.get_path / search``.
+
+Read-side methods (``get``, ``remove``, ``search``) swallow the
+``ValueError`` and return ``None`` / ``False`` / ``[]`` so a malformed
+asset reference doesn't crash a request. Write-side methods (``save``,
+``move``) raise so the caller sees the bad input.
+
+**Why.** A user-supplied ``folder="../../etc"`` or
+``asset_id="../../etc/passwd"`` previously concatenated straight onto the
+storage root, letting an attacker (or a buggy upstream) read or
+overwrite arbitrary files outside the storage tree.
+
+**Migration.**
+
+- If your app passed only safe, app-controlled folders, zero changes.
+- If you ever passed user input as ``folder`` or ``asset_id``, callers
+  that previously got back garbage now get ``ValueError`` (writes) or
+  empty results (reads). Catch it at the boundary you accept user input.
+- ``"...etc"`` and other names that merely *look* like ``..`` are still
+  accepted — the check is on path *segments*, not prefix.
+
 ### OAuth state is now validated against the session (Items 6 & 19)
 
 **What changed.** ``AutoAuth.authenticate()`` rotates ``self.state`` on
