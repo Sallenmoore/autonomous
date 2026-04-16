@@ -1,7 +1,13 @@
+from __future__ import annotations
+
 import os
 import shutil
 import uuid
 from pathlib import Path
+from typing import Any
+
+#: Asset metadata returned by ``get`` / ``save``.
+AssetRef = dict[str, str]
 
 
 def _default_storage_path() -> str:
@@ -59,7 +65,8 @@ class LocalStorage:
             ) from exc
         return str(joined)
 
-    def get(self, asset_id):
+    def get(self, asset_id: str) -> AssetRef | None:
+        """Return ``{"asset_id", "url"}`` if the asset exists, else ``None``."""
         try:
             path = self._safe_join(asset_id)
         except ValueError:
@@ -68,21 +75,30 @@ class LocalStorage:
             return {"asset_id": asset_id, "url": self.geturl(asset_id)}
         return None
 
-    def _get_key(self, folder="", ext="", filename=None):
+    def _get_key(
+        self, folder: str = "", ext: str = "", filename: str | None = None
+    ) -> str:
         folder = _sanitize_relative(folder)
         if filename:
             filename = _sanitize_relative(filename)
             return f"{folder}{'/' if folder else ''}{filename}"
         return f"{folder}{'/' if folder else ''}{uuid.uuid4()}.{ext.strip('.')}"
 
-    def geturl(self, asset_id):
+    def geturl(self, asset_id: str) -> str:
+        """Render the public URL for ``asset_id``."""
         return f"{self.base_url}/{asset_id}"
 
-    def get_path(self, asset_id):
+    def get_path(self, asset_id: str) -> str:
+        """Resolve ``asset_id`` to an absolute filesystem path."""
         return self._safe_join(asset_id)
 
-    def search(self, **kwargs):
-        files = []
+    def search(self, **kwargs: Any) -> list[AssetRef | None]:
+        """List assets under ``folder=...`` or look up a single ``asset_id=...``.
+
+        Traversal attempts return ``[]`` rather than raising, so a
+        malformed query doesn't crash the request.
+        """
+        files: list[AssetRef | None] = []
         if folder := kwargs.get("folder"):
             try:
                 folder_path = self._safe_join(folder)
@@ -104,7 +120,8 @@ class LocalStorage:
                 files.append(self.get(asset_id))
         return files
 
-    def save(self, file, file_type, folder=""):
+    def save(self, file: bytes, file_type: str, folder: str = "") -> AssetRef:
+        """Write ``file`` bytes under ``folder`` and return the asset ref."""
         folder = _sanitize_relative(folder)
         target_dir = self._safe_join(folder) if folder else self.base_path
         os.makedirs(target_dir, exist_ok=True)
@@ -114,7 +131,8 @@ class LocalStorage:
             asset.write(file)
         return {"asset_id": asset_id, "url": self.geturl(asset_id)}
 
-    def move(self, asset_id, folder):
+    def move(self, asset_id: str, folder: str) -> AssetRef | bool:
+        """Move ``asset_id`` into ``folder``; return the new asset ref or False."""
         folder = _sanitize_relative(folder)
         new_asset_id = self._get_key(folder, asset_id.split(".")[-1])
         old_path = self._safe_join(asset_id)
@@ -125,7 +143,8 @@ class LocalStorage:
             return self.get(new_asset_id)
         return False
 
-    def remove(self, asset_id):
+    def remove(self, asset_id: str) -> bool:
+        """Delete ``asset_id``. Returns True on success, False otherwise."""
         try:
             file_path = self._safe_join(asset_id)
         except ValueError:

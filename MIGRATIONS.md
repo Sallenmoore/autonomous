@@ -5,6 +5,36 @@ recent first.
 
 ## Unreleased
 
+### Public surface is now type-hinted (Item 11)
+
+**What changed.** Added type annotations and ``from __future__ import
+annotations`` to the project's user-facing classes:
+
+- ``autonomous.model.automodel.AutoModel`` — ``get / random / all / find /
+  search / save / delete / model_name / get_model / load_model``, plus a
+  ``PrimaryKey`` alias and ``-> Self | None`` returns where appropriate.
+- ``autonomous.storage.localstorage.LocalStorage`` — every public method,
+  with a new ``AssetRef`` alias for the ``{"asset_id", "url"}`` dict.
+- ``autonomous.storage.imagestorage.ImageStorage`` — every public method,
+  including ``Iterator[str]`` for ``scan_storage``.
+- ``autonomous.auth.autoauth.AutoAuth`` — ``__init__``, ``current_user``,
+  ``authenticate``, ``handle_response``, ``auth_required``, plus the
+  internal ``_touch_user`` / ``_refresh_session_user`` / ``_build_session``.
+
+The ``autonomous.web`` module was already typed in earlier items.
+
+A guard test (``tests/unit/test_unit_type_hints.py``) inspects each
+public method via ``inspect.signature`` and fails CI if a future change
+silently drops a return / argument annotation.
+
+**Why.** Hints make IDE autocomplete useful, give mypy / pyright something
+to chew on, and serve as machine-checkable documentation.
+
+**Migration.** Zero code changes. ``from __future__ import annotations``
+keeps everything as strings at runtime, so even runtime ``isinstance``
+checks against the annotation values are unaffected. Subclasses that
+override these methods are not forced to add annotations.
+
 ### ImageStorage cache: mtime invalidation, atomic write, safe failure (Item 10)
 
 **What changed.**

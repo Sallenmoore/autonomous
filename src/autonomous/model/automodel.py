@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 import os
 import urllib.parse
 from datetime import datetime
+from typing import TYPE_CHECKING, Any, Self
 
 import bson
 from pymongo import errors as pymongo_errors
@@ -10,6 +13,10 @@ from autonomous.db.errors import ValidationError
 from autonomous.db.fields import DateTimeField
 
 from autonomous import log
+
+if TYPE_CHECKING:
+    PrimaryKey = bson.ObjectId | str | dict | int | None
+
 
 _connected: bool = False
 
@@ -112,22 +119,24 @@ class AutoModel(Document):
         sender.auto_post_init(sender, document, **kwargs)
 
     @property
-    def path(self):
+    def path(self) -> str:
         return f"{self.model_name().lower()}/{self.pk}"
 
-    def model_name(self, qualified=False):
-        """
-        Get the fully qualified name of this model.
-
-        Returns:
-            str: The fully qualified name of this model.
-        """
+    def model_name(self, qualified: bool = False) -> str:
+        """Return the model's class name (or the qualified ``module.Class``)."""
         return (
             f"{self.__module__}.{self._class_name}" if qualified else self._class_name
         )
 
     @classmethod
-    def get_model(cls, model, pk=None):
+    def get_model(
+        cls, model: str | type[AutoModel], pk: PrimaryKey = None
+    ) -> AutoModel | type[AutoModel] | None:
+        """Look up a registered ``AutoModel`` subclass by name (or pass-through).
+
+        With ``pk`` supplied, fetches and returns the instance. Otherwise
+        returns the class itself.
+        """
         try:
             Model = cls.load_model(model)
         except ValueError:
@@ -135,17 +144,16 @@ class AutoModel(Document):
         return Model.get(pk) if Model and pk else Model
 
     @classmethod
-    def load_model(cls, model):
+    def load_model(cls, model: str | type[AutoModel]) -> type[AutoModel]:
+        """Resolve ``model`` (string name or class) to an ``AutoModel`` subclass."""
         if not isinstance(model, str):
             return model
 
         subclasses = AutoModel.__subclasses__()
-        visited_subclasses = []
+        visited_subclasses: list[type[AutoModel]] = []
         while subclasses:
-            # log(subclasses, _print=True)
             subclass = subclasses.pop()
             if "_meta" in subclass.__dict__ and not subclass._meta.get("abstract"):
-                # log(f"Checking {subclass.__name__}", _print=True)
                 if subclass.__name__.lower() == model.lower():
                     return subclass
             if subclass not in visited_subclasses:
@@ -154,15 +162,13 @@ class AutoModel(Document):
         raise ValueError(f"Model {model} not found")
 
     @classmethod
-    def get(cls, pk):
-        """
-        Get a model by primary key.
+    def get(cls, pk: PrimaryKey) -> Self | None:
+        """Get a single model instance by primary key.
 
-        Args:
-            pk (int): The primary key of the model to retrieve.
-
-        Returns:
-            AutoModel or None: The retrieved AutoModel instance, or None if not found.
+        Returns ``None`` if the document doesn't exist or ``pk`` can't be
+        coerced to a valid ``ObjectId``. Re-raises pymongo
+        ``OperationFailure`` / ``ConnectionFailure`` so DB outages don't
+        get silently swallowed.
         """
         _ensure_connected()
 
@@ -190,16 +196,8 @@ class AutoModel(Document):
             return result
 
     @classmethod
-    def random(cls):
-        """
-        Get a model by primary key.
-
-        Args:
-            pk (int): The primary key of the model to retrieve.
-
-        Returns:
-            AutoModel or None: The retrieved AutoModel instance, or None if not found.
-        """
+    def random(cls) -> Self | None:
+        """Return a single random instance of this model, or ``None`` if empty."""
         _ensure_connected()
         pipeline = [{"$sample": {"size": 1}}]
 
@@ -208,33 +206,29 @@ class AutoModel(Document):
         return cls._from_son(random_document) if random_document else None
 
     @classmethod
-    def all(cls):
-        """
-        Get all models of this type.
-
-        Returns:
-            list: A list of AutoModel instances.
-        """
+    def all(cls) -> list[Self]:
+        """Return every instance of this model. Use ``search`` for filtering."""
         _ensure_connected()
         return list(cls.objects())
 
     @classmethod
-    def search(cls, _order_by=None, _limit=None, **kwargs):
-        """
-        Search for models containing the keyword values.
+    def search(
+        cls,
+        _order_by: tuple[str, ...] | list[str] | None = None,
+        _limit: int | list[int] | None = None,
+        **kwargs: Any,
+    ) -> list[Self]:
+        """Case-insensitive substring search across the supplied fields.
 
-        Args:
-            **kwargs: Keyword arguments to search for (dict).
-
-        Returns:
-            list: A list of AutoModel instances that match the search criteria.
+        String values become ``__icontains`` queries; non-string values
+        become exact matches. ``_order_by`` is forwarded to mongoengine;
+        ``_limit`` accepts either a slice end or a ``[start, end]`` pair.
         """
         _ensure_connected()
-        new_kwargs = {}
+        new_kwargs: dict[str, Any] = {}
         for k, v in kwargs.items():
             if isinstance(v, str):
-                new_k = f"{k}__icontains"
-                new_kwargs[new_k] = v
+                new_kwargs[f"{k}__icontains"] = v
             else:
                 new_kwargs[k] = v
         results = cls.objects(**new_kwargs)
@@ -248,16 +242,8 @@ class AutoModel(Document):
         return list(results)
 
     @classmethod
-    def find(cls, **kwargs):
-        """
-        Find the first model containing the keyword values and return it.
-
-        Args:
-            **kwargs: Keyword arguments to search for (dict).
-
-        Returns:
-            AutoModel or None: The first matching AutoModel instance, or None if not found.
-        """
+    def find(cls, **kwargs: Any) -> Self | None:
+        """Return the first instance matching ``**kwargs``, or ``None``."""
         _ensure_connected()
         return cls.objects(**kwargs).first()
 
@@ -275,15 +261,14 @@ class AutoModel(Document):
         """
         sender.auto_pre_save(sender, document, **kwargs)
 
-    def save(self, sync=False):
-        """
-        Save this model to the database.
+    def save(self, sync: bool = False) -> Any:
+        """Persist this document and return its primary key.
 
-        Returns:
-            int: The primary key (pk) of the saved model.
+        With ``sync=True`` the new ``pk`` is also enqueued for vector
+        re-indexing via ``autonomous.db.db_sync``.
         """
         _ensure_connected()
-        obj = super().save()
+        super().save()
 
         if sync:
             db_sync.request_indexing(
@@ -306,10 +291,8 @@ class AutoModel(Document):
         """
         sender.auto_post_save(sender, document, **kwargs)
 
-    def delete(self):
-        """
-        Delete this model from the database.
-        """
+    def delete(self) -> None:
+        """Delete this document from the database."""
         _ensure_connected()
         return super().delete()
 

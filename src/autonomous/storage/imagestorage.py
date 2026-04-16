@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 import glob
 import io
 import os
 import shutil
 import uuid
 from pathlib import Path
+from typing import Iterator
 
 from PIL import Image, UnidentifiedImageError
 
@@ -42,18 +45,18 @@ class ImageStorage:
             ) from exc
         return str(joined)
 
-    def scan_storage(self, path=None):
-        for root, dirs, files in os.walk(path or self.base_path):
+    def scan_storage(self, path: str | None = None) -> Iterator[str]:
+        """Yield the absolute path of every ``orig.webp`` under ``path``."""
+        for root, _dirs, files in os.walk(path or self.base_path):
             for file in files:
                 if file == "orig.webp":
                     yield os.path.join(root, file)
 
     @classmethod
-    def _get_key(cls, folder="", pkey=None):
+    def _get_key(cls, folder: str = "", pkey: str | None = None) -> str:
         if folder and not folder.endswith("/"):
             folder = f"{folder}/"
-        folder = f"{folder.replace('/', '.')}{pkey or uuid.uuid4()}"
-        return f"{folder}"
+        return f"{folder.replace('/', '.')}{pkey or uuid.uuid4()}"
 
     def _resize_image(self, asset_id, max_size=1024):
         # log("Resizing image", asset_id, max_size)
@@ -88,7 +91,8 @@ class ImageStorage:
             img.save(img_byte_arr, format="WEBP")
             return img_byte_arr.getvalue()
 
-    def save(self, file, folder="", crop=False):
+    def save(self, file: bytes, folder: str = "", crop: bool = False) -> str:
+        """Convert ``file`` bytes to WebP, persist as ``orig.webp``, return id."""
         asset_id = self._get_key(folder)
         os.makedirs(self.get_path(asset_id), exist_ok=True)
         file_path = f"{self.get_path(asset_id)}/orig.webp"
@@ -97,7 +101,12 @@ class ImageStorage:
             asset.write(file)
         return asset_id
 
-    def get_url(self, asset_id, size="orig", full_url=False):
+    def get_url(
+        self,
+        asset_id: str | None,
+        size: str | int = "orig",
+        full_url: bool = False,
+    ) -> str | None:
         """Return a URL for ``asset_id`` at the requested ``size``.
 
         Variants are cached on disk under the asset directory as
@@ -182,13 +191,15 @@ class ImageStorage:
         base = os.environ.get("APP_BASE_URL", "").rstrip("/")
         return f"{base}{path}" if base else path
 
-    def get_path(self, asset_id):
+    def get_path(self, asset_id: str | None) -> str:
+        """Return the directory holding ``asset_id`` (or the base path)."""
         if not asset_id:
             return self.base_path
         return self._safe_join(asset_id)
 
-    def search(self, folder="", **kwargs):
-        imgs = []
+    def search(self, folder: str = "", **kwargs) -> list[str]:
+        """Return the asset_ids found directly under ``folder``."""
+        imgs: list[str] = []
         try:
             search_path = self._safe_join(folder) if folder else self.base_path
         except ValueError:
@@ -200,16 +211,19 @@ class ImageStorage:
             imgs.append(img_key)
         return imgs
 
-    def remove(self, asset_id):
+    def remove(self, asset_id: str | None) -> bool:
+        """Currently a no-op stub. Returns False until implemented."""
         if not asset_id:
             return False
         file_path = self.get_path(asset_id)
         if os.path.isdir(file_path):
             print(f"Removing {file_path}")
-            # return shutil.rmtree(file_path, ignore_errors=True)
+            # TODO(item 22 follow-up): wire shutil.rmtree(file_path,
+            # ignore_errors=True) once consumers can confirm it's safe.
         return False
 
-    def clear_cached(self, asset_id):
+    def clear_cached(self, asset_id: str) -> bool:
+        """Delete every cached variant for ``asset_id``, leaving ``orig.webp``."""
         file_path = self.get_path(asset_id)
         if os.path.isdir(file_path):
             for file in glob.glob(os.path.join(file_path, "*")):

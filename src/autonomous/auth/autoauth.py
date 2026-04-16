@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 import uuid
 from datetime import datetime
 from functools import wraps
+from typing import Any, Callable
 
 import requests
 from authlib.integrations.base_client.errors import MismatchingStateError
@@ -8,6 +11,9 @@ from authlib.integrations.requests_client import OAuth2Auth, OAuth2Session
 
 from autonomous.auth.user import User
 from autonomous.web import get_session, redirect
+
+#: Decorator returned by :meth:`AutoAuth.auth_required`.
+ViewFunc = Callable[..., Any]
 
 
 class AutoAuth:
@@ -24,15 +30,15 @@ class AutoAuth:
 
     def __init__(
         self,
-        client_id,
-        client_secret,
-        issuer,
-        redirect_uri,
-        scope,
-        token_endpoint,
-        state=None,
+        client_id: str,
+        client_secret: str,
+        issuer: str,
+        redirect_uri: str,
+        scope: str | list[str],
+        token_endpoint: str,
+        state: str | None = None,
     ):
-        self.state = state or uuid.uuid4().hex
+        self.state: str = state or uuid.uuid4().hex
         self.client_id = client_id
         self.client_secret = client_secret
         self.issuer = issuer
@@ -41,7 +47,7 @@ class AutoAuth:
         self.scope = scope
         self._build_session()
 
-    def _build_session(self):
+    def _build_session(self) -> None:
         self.session = OAuth2Session(
             self.client_id,
             client_secret=self.client_secret,
@@ -52,7 +58,7 @@ class AutoAuth:
         )
 
     @classmethod
-    def current_user(cls, pk=None):
+    def current_user(cls, pk: Any = None) -> User:
         session = get_session()
         if pk:
             user = cls.user_class.get(pk)
@@ -65,7 +71,7 @@ class AutoAuth:
             user = cls.user_class.get_guest()
         return user
 
-    def authenticate(self):
+    def authenticate(self) -> tuple[str, str]:
         """
         Begin the OAuth flow.
 
@@ -85,7 +91,9 @@ class AutoAuth:
         get_session()[self.state_session_key] = state
         return uri, state
 
-    def handle_response(self, response, state=None):
+    def handle_response(
+        self, response: str, state: str | None = None
+    ) -> tuple[dict, dict]:
         """
         Complete the OAuth flow.
 
@@ -122,7 +130,7 @@ class AutoAuth:
         return userinfo.json(), token
 
     @classmethod
-    def _touch_user(cls, user) -> None:
+    def _touch_user(cls, user: User) -> None:
         """Persist ``user.last_login`` at most once per throttle window.
 
         Avoids a Mongo write on every authenticated request. The first
@@ -140,7 +148,7 @@ class AutoAuth:
             user.save()
 
     @staticmethod
-    def _refresh_session_user(session, user) -> None:
+    def _refresh_session_user(session: Any, user: User) -> None:
         """Write the user JSON to the session only if it differs.
 
         Saves the per-request serialization cost when nothing about the
@@ -151,7 +159,9 @@ class AutoAuth:
             session["user"] = payload
 
     @classmethod
-    def auth_required(cls, guest=False, admin=False):
+    def auth_required(
+        cls, guest: bool = False, admin: bool = False
+    ) -> Callable[[ViewFunc], ViewFunc]:
         """
         Decorator that enforces authentication before invoking the view.
 
