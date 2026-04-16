@@ -5,6 +5,30 @@ recent first.
 
 ## Unreleased
 
+### Storage paths come from env vars (Item 2)
+
+**What changed.** `LocalStorage(path=...)` and `ImageStorage(path=...)` no
+longer have hardcoded string defaults in the signature. If `path` is omitted
+they consult env vars:
+
+| Class | Env var | Fallback |
+|------|---------|----------|
+| `LocalStorage` | `STORAGE_PATH` | `static` |
+| `ImageStorage` | `STORAGE_IMAGE_PATH` | `<STORAGE_PATH>/images` |
+
+`LocalStorage.base_url` also stopped rendering `None/...` when
+`APP_BASE_URL` is unset; it now falls back to a site-relative `"/<path>"`.
+
+**Why.** Hardcoding `"static"` tied every deployment to the same on-disk
+layout. The env-var indirection lets you point at a mounted volume, a
+per-environment bucket mount, or a test tmpdir without subclassing.
+
+**Migration.** If you always passed `path=` explicitly, nothing changes. If
+you relied on the string default `"static"` / `"static/images"`, nothing
+changes either — that's still the fallback. If you set `APP_BASE_URL=""` and
+depended on the old `"None/..."` URL shape, update your consumers to handle
+`"/..."`.
+
 ### Flask is no longer a dependency (already landed)
 
 - `flask` is gone from `requirements.txt`. If you relied on it being pulled in

@@ -7,13 +7,23 @@ import uuid
 from PIL import Image, UnidentifiedImageError
 
 from autonomous import log
+from autonomous.storage.localstorage import _default_storage_path
+
+
+def _default_image_path() -> str:
+    """Resolve the default image root: ``STORAGE_IMAGE_PATH`` env, else
+    ``<STORAGE_PATH>/images``."""
+    override = os.getenv("STORAGE_IMAGE_PATH")
+    if override:
+        return override
+    return f"{_default_storage_path()}/images"
 
 
 class ImageStorage:
     _sizes = {"thumbnail": 100, "small": 300, "medium": 600, "large": 1000}
 
-    def __init__(self, path="static/images"):
-        self.base_path = path
+    def __init__(self, path: str | None = None):
+        self.base_path = path if path is not None else _default_image_path()
 
     def scan_storage(self, path=None):
         for root, dirs, files in os.walk(path or self.base_path):

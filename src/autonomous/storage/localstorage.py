@@ -3,10 +3,16 @@ import shutil
 import uuid
 
 
+def _default_storage_path() -> str:
+    """Resolve the default storage root: ``STORAGE_PATH`` env, else ``static``."""
+    return os.getenv("STORAGE_PATH", "static")
+
+
 class LocalStorage:
-    def __init__(self, path="static"):
-        self.base_path = path
-        self.base_url = f"{os.getenv('APP_BASE_URL')}/{self.base_path}"
+    def __init__(self, path: str | None = None):
+        self.base_path = path if path is not None else _default_storage_path()
+        base_url = os.getenv("APP_BASE_URL", "")
+        self.base_url = f"{base_url.rstrip('/')}/{self.base_path}" if base_url else f"/{self.base_path}"
 
     def get(self, asset_id):
         if os.path.isfile(self.get_path(asset_id)):
