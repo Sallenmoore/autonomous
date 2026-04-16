@@ -5,6 +5,44 @@ recent first.
 
 ## Unreleased
 
+### `AutoTasks` opens Redis lazily; supports injection (Item 12)
+
+**What changed.**
+
+- ``AutoTasks()`` no longer opens a Redis socket in ``__init__``. The
+  process-wide ``AutoTasks._process_connection`` is built lazily on the
+  first method that needs it (``task``, ``get_task``, ``get_tasks``,
+  ``kill``, etc.).
+- The ``config`` class attribute (which froze env vars at class-definition
+  time) is gone. Env vars are read fresh inside ``_build_connection`` —
+  so changing ``REDIS_HOST`` between import and first call works.
+- New constructor kwargs: ``AutoTasks(redis_client=...)`` injects an
+  arbitrary client (great for tests, multi-cluster apps).
+  ``AutoTasks(host=..., port=..., password=..., username=..., db=...)``
+  builds a per-instance client without affecting the singleton.
+- New ``AutoTasks.reset_connection()`` classmethod drops the singleton
+  so it gets rebuilt on the next call. Test helper.
+- ``self._connection`` is now a property that returns whichever
+  connection is appropriate (instance > singleton > lazy build).
+
+**Why.** The class-attribute ``config = {... os.environ.get(...) ...}``
+ran at import. Tests had to either spin up Redis or monkeypatch the
+class. Multi-tenant deployments couldn't change config without restart.
+
+**Migration.**
+
+- If you imported ``AutoTasks`` in a process that doesn't have Redis
+  available (e.g. a CLI tool that only uses the ORM), zero changes —
+  the import is now silent.
+- If you read ``AutoTasks.config`` directly, that attribute is gone;
+  use the env vars or the new constructor kwargs.
+- If you assigned to ``AutoTasks._connection`` to inject a fake in
+  tests, switch to ``AutoTasks(redis_client=fake)`` (or set
+  ``AutoTasks._process_connection = fake`` if you really need
+  process-wide override).
+- Direct ``tasks._connection`` reads still work — the property returns
+  the right thing.
+
 ### Public surface is now type-hinted (Item 11)
 
 **What changed.** Added type annotations and ``from __future__ import
