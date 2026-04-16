@@ -3,6 +3,7 @@ from datetime import datetime
 from functools import wraps
 
 import requests
+from authlib.integrations.base_client.errors import MismatchingStateError
 from authlib.integrations.requests_client import OAuth2Auth, OAuth2Session
 
 from autonomous.auth.user import User
@@ -12,6 +13,10 @@ from autonomous.web import get_session, redirect
 class AutoAuth:
     user_class: type[User] = User
     login_url: str = "/auth/login"
+    #: Session key under which the issued OAuth ``state`` value is stored
+    #: between :meth:`authenticate` and :meth:`handle_response`. Override on
+    #: a subclass if multiple providers might collide in the same session.
+    state_session_key: str = "oauth_state"
 
     def __init__(
         self,
@@ -29,10 +34,14 @@ class AutoAuth:
         self.issuer = issuer
         self.redirect_uri = redirect_uri
         self.token_endpoint = token_endpoint
+        self.scope = scope
+        self._build_session()
+
+    def _build_session(self):
         self.session = OAuth2Session(
             self.client_id,
             client_secret=self.client_secret,
-            scope=scope,
+            scope=self.scope,
             redirect_uri=self.redirect_uri,
             token_endpoint=self.token_endpoint,
             state=self.state,
@@ -54,16 +63,57 @@ class AutoAuth:
 
     def authenticate(self):
         """
-        Returns (uri, state). Callers redirect the user to ``uri``.
+        Begin the OAuth flow.
+
+        Rotates ``self.state`` on every call so each redirect carries a
+        fresh, unguessable nonce, then stores it in the active session under
+        :attr:`state_session_key`. :meth:`handle_response` reads it back to
+        defeat CSRF on the callback.
+
+        Returns:
+            tuple: ``(authorization_url, state)``. Callers redirect the user
+            to ``authorization_url``; ``state`` is also returned for callers
+            that want to pin it themselves.
         """
+        self.state = uuid.uuid4().hex
+        self._build_session()
         uri, state = self.session.create_authorization_url(self.issuer)
+        get_session()[self.state_session_key] = state
         return uri, state
 
     def handle_response(self, response, state=None):
-        token = self.session.fetch_token(
-            authorization_response=response,
-            state=state,
-        )
+        """
+        Complete the OAuth flow.
+
+        If ``state`` is not provided, the value stored by
+        :meth:`authenticate` is read from the session. A missing or
+        mismatched state raises
+        :class:`authlib.integrations.base_client.errors.MismatchingStateError`,
+        which is the authlib idiom for a CSRF-likely callback.
+
+        On success the session key is cleared so a replayed callback cannot
+        be re-validated.
+        """
+        session = get_session()
+        if state is None:
+            state = session.get(self.state_session_key)
+        if not state:
+            raise MismatchingStateError()
+
+        try:
+            token = self.session.fetch_token(
+                authorization_response=response,
+                state=state,
+            )
+        finally:
+            # Burn the state whether the exchange succeeded or raised; a
+            # replayed callback must not be re-validated and a fresh
+            # authenticate() will mint a new one.
+            try:
+                del session[self.state_session_key]
+            except (KeyError, TypeError):
+                pass
+
         userinfo = requests.get(self.req_uri, auth=OAuth2Auth(token))
         return userinfo.json(), token
 

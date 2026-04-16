@@ -5,6 +5,39 @@ recent first.
 
 ## Unreleased
 
+### OAuth state is now validated against the session (Items 6 & 19)
+
+**What changed.** ``AutoAuth.authenticate()`` rotates ``self.state`` on
+every call and stores the issued nonce in the active session under
+``state_session_key`` (default ``"oauth_state"``).
+``AutoAuth.handle_response()`` reads it back, refuses callbacks with no
+stored state, and clears the session entry whether the exchange succeeded
+or failed (so a replayed callback can't be re-validated).
+
+If the caller passes ``state=`` explicitly, that value still wins —
+backward compatible with apps that already round-tripped state through
+their own session.
+
+**Why.** Previously the issued state was generated once in ``__init__``,
+overwritten on every ``authenticate()``, and never enforced on the
+callback. An attacker could send a victim a crafted callback URL and the
+library would happily exchange the code for a token under the victim's
+session — classic OAuth login CSRF.
+
+**Migration.**
+
+- If you bound a session store via ``autonomous.web.bind_session(...)`` (or
+  the Flask snippet in the README), zero code changes — state moves
+  through that store automatically.
+- If you stored the state yourself between ``authenticate()`` and
+  ``handle_response()``, keep doing it; pass ``state=`` to
+  ``handle_response`` and the session lookup is bypassed.
+- If you do not bind a session, ``handle_response()`` raises
+  ``MismatchingStateError``. Bind a session at startup, or store and pass
+  the state explicitly.
+- Subclasses with multiple providers in one app should override
+  ``state_session_key`` to keep providers' state from colliding.
+
 ### Narrowed exception catches + bare `raise` (Items 5 & 14)
 
 **What changed.** Broad `except Exception` blocks in first-party code were
