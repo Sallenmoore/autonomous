@@ -5,6 +5,44 @@ recent first.
 
 ## Unreleased
 
+### ImageStorage cache: mtime invalidation, atomic write, safe failure (Item 10)
+
+**What changed.**
+
+- ``ImageStorage.get_url(asset_id, size=...)`` now compares the cached
+  variant's mtime against the original. If the original is newer (e.g.
+  after ``rotate``/``flip``, or after a manual replacement), the variant
+  is regenerated automatically.
+- The variant write goes through a sibling ``.tmp`` + ``os.replace`` so
+  a half-written file can't be served if two requests race.
+- After regeneration the variant's mtime is pinned to the original's, so
+  the freshness comparison stays stable across sub-second writes and
+  clocks that don't tick.
+- ``full_url=True`` now works for ``size="orig"`` and for already-cached
+  variants, not just the post-resize branch.
+- A failed resize logs and returns ``None``. **It no longer calls
+  ``self.remove(asset_id)``**, which previously wiped the entire asset
+  on a single bad call.
+- ``get_url("")`` still returns ``""``; ``get_url(None)`` and
+  ``get_url("../etc/passwd")`` return ``None`` (item 7's traversal
+  hardening was already in place).
+
+**Why.** The old code never invalidated, so any in-place edit of the
+original left stale variants forever (or until ``clear_cached`` was
+called manually). The destructive failure mode was a footgun — one
+corrupted source took down the whole asset.
+
+**Migration.**
+
+- If you relied on ``get_url`` returning a relative URL even when
+  ``APP_BASE_URL`` was set and ``full_url=True``, that was a bug; the
+  full URL is now returned consistently.
+- If you relied on ``get_url`` deleting the asset on resize failure (an
+  odd thing to rely on), call ``storage.remove(asset_id)`` yourself.
+- Manual variant clearing via ``clear_cached`` still works but is no
+  longer required after ``rotate`` / ``flip`` — mtime invalidation
+  handles it.
+
 ### Optional dependencies moved to extras (Item 9)
 
 **What changed.** ``requirements.txt`` shrank to just the deps that

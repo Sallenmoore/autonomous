@@ -98,43 +98,89 @@ class ImageStorage:
         return asset_id
 
     def get_url(self, asset_id, size="orig", full_url=False):
-        # log(f"Getting image: {asset_id}.{size}")
+        """Return a URL for ``asset_id`` at the requested ``size``.
+
+        Variants are cached on disk under the asset directory as
+        ``<size>.webp``. The cache is invalidated automatically when the
+        original (``orig.webp``) is newer than the cached variant — so
+        callers that rotate / flip / replace the original don't have to
+        manually clear stale variants.
+
+        Returns ``""`` for a falsy ``asset_id``, ``None`` if the original
+        is missing, otherwise the URL string.
+        """
         if not asset_id:
             return ""
-        original_path = f"{self.get_path(asset_id)}"
-        # log(f"Getting image: {asset_id}", original_path)
-        if not os.path.exists(original_path):
-            log(f"Original image not found: {original_path}")
+        try:
+            original_dir = self.get_path(asset_id)
+        except ValueError:
             return None
-        file_path = f"{original_path}/{size}.webp"
-        # log(file_path)
-        result_url = f"/{file_path}"
-        # log(
-        #     f"{asset_id}",
-        #     size,
-        #     os.path.exists(original_path),
-        #     os.path.exists(file_path),
-        # )
-        if size != "orig" and not os.path.exists(file_path):
-            # If the file doesn't exist, create it
-            if result := self._resize_image(asset_id, size):
-                with open(file_path, "wb") as asset:
-                    asset.write(result)
-                result_url = (
-                    f"/{file_path}"
-                    if not full_url
-                    else f"{os.environ.get('APP_BASE_URL', '')}/{file_path}"
-                )
-            else:
-                log(
-                    f"Error resizing image: {asset_id}",
-                    size,
-                    os.path.exists(original_path),
-                    os.path.exists(file_path),
-                )
-                self.remove(asset_id)
-        # log(f"Returning image: {result_url}")
-        return result_url
+        original_file = os.path.join(original_dir, "orig.webp")
+        if not os.path.isfile(original_file):
+            log(f"Original image not found: {original_dir}")
+            return None
+
+        variant_file = os.path.join(original_dir, f"{size}.webp")
+        if size != "orig":
+            if not self._variant_is_fresh(variant_file, original_file):
+                if not self._regenerate_variant(asset_id, size, variant_file):
+                    return None
+        else:
+            variant_file = original_file
+
+        return self._build_url(variant_file, full_url=full_url)
+
+    @staticmethod
+    def _variant_is_fresh(variant_file: str, original_file: str) -> bool:
+        """A cached variant is fresh iff it exists and is newer than orig."""
+        if not os.path.isfile(variant_file):
+            return False
+        try:
+            return os.path.getmtime(variant_file) >= os.path.getmtime(original_file)
+        except OSError:
+            return False
+
+    def _regenerate_variant(
+        self, asset_id: str, size, variant_file: str
+    ) -> bool:
+        """Resize the original and write it to ``variant_file`` atomically.
+
+        Returns True on success, False if the resize failed (in which case
+        we leave the original alone — the previous code wiped the whole
+        asset on a single resize failure).
+
+        The new variant's mtime is set to match the original's, so the
+        freshness check (``variant.mtime >= orig.mtime``) keeps passing
+        across multiple regenerations within the same second and across
+        clocks that don't tick during the write.
+        """
+        result = self._resize_image(asset_id, size)
+        if not result:
+            log(f"Error resizing image: asset_id={asset_id} size={size}")
+            return False
+        # Atomic-ish: write to a sibling, then rename. Avoids a half-written
+        # file being served if two requests race.
+        tmp = f"{variant_file}.tmp"
+        with open(tmp, "wb") as fh:
+            fh.write(result)
+        os.replace(tmp, variant_file)
+        # Pin the variant's mtime to the original's so the freshness
+        # comparison reads as "fresh" until the original is touched again.
+        original = os.path.join(os.path.dirname(variant_file), "orig.webp")
+        try:
+            orig_mtime = os.path.getmtime(original)
+            os.utime(variant_file, (orig_mtime, orig_mtime))
+        except OSError:
+            pass
+        return True
+
+    def _build_url(self, file_path: str, full_url: bool = False) -> str:
+        """Render a URL from a filesystem path, honoring ``APP_BASE_URL``."""
+        path = f"/{file_path}"
+        if not full_url:
+            return path
+        base = os.environ.get("APP_BASE_URL", "").rstrip("/")
+        return f"{base}{path}" if base else path
 
     def get_path(self, asset_id):
         if not asset_id:
