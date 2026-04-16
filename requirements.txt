@@ -4,8 +4,6 @@
 
 ##### Frameworks #####
 
-Flask
-
 ##### Debugging, Logging, and Documentation #####
 
 ##### System #####

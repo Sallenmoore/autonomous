@@ -1,18 +1,17 @@
-import json
 import uuid
 from datetime import datetime
 from functools import wraps
 
 import requests
 from authlib.integrations.requests_client import OAuth2Auth, OAuth2Session
-from flask import redirect, session, url_for
 
-from autonomous import log
 from autonomous.auth.user import User
+from autonomous.web import get_session, redirect
 
 
 class AutoAuth:
     user_class: type[User] = User
+    login_url: str = "/auth/login"
 
     def __init__(
         self,
@@ -24,9 +23,6 @@ class AutoAuth:
         token_endpoint,
         state=None,
     ):
-        """
-        Initializes the OpenIDAuth object with the client ID, client secret, and issuer URL.
-        """
         self.state = state or uuid.uuid4().hex
         self.client_id = client_id
         self.client_secret = client_secret
@@ -44,9 +40,7 @@ class AutoAuth:
 
     @classmethod
     def current_user(cls, pk=None):
-        """
-        Returns the current user.
-        """
+        session = get_session()
         if pk:
             user = cls.user_class.get(pk)
         elif session.get("user"):
@@ -60,61 +54,45 @@ class AutoAuth:
 
     def authenticate(self):
         """
-        Initiates the authentication process.
-        Returns a redirect URL which should be used to redirect the user to the OpenID provider for authentication.
+        Returns (uri, state). Callers redirect the user to ``uri``.
         """
         uri, state = self.session.create_authorization_url(self.issuer)
-        # log(uri, state)
         return uri, state
 
     def handle_response(self, response, state=None):
-        """
-        Handles the authentication response from the OpenID provider.
-        The response should be a dictionary containing the OpenID provider's response.
-        """
         token = self.session.fetch_token(
             authorization_response=response,
             state=state,
         )
-        # log(token)
-
         userinfo = requests.get(self.req_uri, auth=OAuth2Auth(token))
         return userinfo.json(), token
 
     @classmethod
     def auth_required(cls, guest=False, admin=False):
         """
-        If you decorate a view with this, it will ensure that the current user is
-        logged in and authenticated before calling the actual view. For
-        example:
+        Decorator that enforces authentication before invoking the view.
 
-            @app.route('/post')
-            @auth_required
-            def post():
-                pass
-
-        - params:
-          - func: The view function to decorate.
-            - type: function
+        Unauthenticated / disallowed users receive a :class:`Response` 302 to
+        ``cls.login_url``. Consumers that use Flask can assign
+        ``AutoAuth.login_url = url_for("auth.login")`` at startup; the returned
+        Response object is WSGI-callable and can be returned from any view.
         """
 
         def wrap(func):
             @wraps(func)
             def decorated_view(*args, **kwargs):
-                # log(session.get("user"))
+                session = get_session()
                 user = cls.current_user()
                 if not user:
-                    return redirect(url_for("auth.login"))
-                elif user.state == "authenticated":
+                    return redirect(cls.login_url)
+                if user.state == "authenticated":
                     user.last_login = datetime.now()
-                    # log(user)
                     user.save()
                 session["user"] = user.to_json()
-                # log(guest, user.is_guest)
                 if not guest and user.is_guest:
-                    return redirect(url_for("auth.login"))
+                    return redirect(cls.login_url)
                 if admin and not user.is_admin:
-                    return redirect(url_for("auth.login"))
+                    return redirect(cls.login_url)
                 return func(*args, **kwargs)
 
             return decorated_view
