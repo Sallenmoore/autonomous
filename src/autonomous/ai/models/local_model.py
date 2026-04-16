@@ -29,9 +29,9 @@ class LocalAIModel(AutoModel):
 
     # Timeouts (seconds) — CPU-only Ollama is slow; these prevent indefinite hangs
     _retry_sleep = int(os.environ.get("OLLAMA_RETRY_SLEEP", 30))       # sleep between JSON retries
-    _json_timeout = int(os.environ.get("OLLAMA_JSON_TIMEOUT", 600))    # 10 min
+    _json_timeout = int(os.environ.get("OLLAMA_JSON_TIMEOUT", 1200))   # 20 min
     _text_timeout = int(os.environ.get("OLLAMA_TEXT_TIMEOUT", 900))    # 15 min
-    _summary_timeout = int(os.environ.get("OLLAMA_SUMMARY_TIMEOUT", 300))   # 5 min/chunk
+    _summary_timeout = int(os.environ.get("OLLAMA_SUMMARY_TIMEOUT", 600))   # 10 min/chunk
     _media_timeout = int(os.environ.get("MEDIA_REQUEST_TIMEOUT", 300))  # 5 min
 
     def _convert_tools_to_json_schema(self, user_function):
@@ -69,12 +69,17 @@ class LocalAIModel(AutoModel):
                     text = text[first_newline:end]
 
         # 2. Heuristic extraction: Find the first '{' and the last '}'
-        # This fixes cases where Llama says "Here is the JSON: { ... }"
+        # This fixes cases where the model says "Here is the JSON: { ... }"
         start_idx = text.find("{")
         end_idx = text.rfind("}")
 
         if start_idx != -1 and end_idx != -1:
             text = text[start_idx : end_idx + 1]
+        elif text.strip():
+            # Model returned JSON fields without the {} wrapper — add it.
+            # e.g. '"name": "Aria", "desc": "..."' → '{"name": "Aria", "desc": "..."}'
+            stripped = text.strip().rstrip(",")
+            text = "{" + stripped + "}"
 
         return text.strip()
 
@@ -111,15 +116,10 @@ class LocalAIModel(AutoModel):
     ):
         system_prompt = system_prompt or self.instructions
         system_prompt = system_prompt.rstrip(". ") + "."
-        full_system_prompt = (
+        system_prompt = (
             f"{system_prompt}\n"
-            f"OUTPUT FORMAT RULES — NON-NEGOTIABLE:\n"
             f"Your entire response MUST be a single valid JSON object.\n"
-            f"- Begin your response with the character {{ and end with }}\n"
-            f"- No text, prose, or explanation before or after the JSON\n"
-            f"- No markdown code blocks (no ```)\n"
-            f"- Escape all quotes inside string values with \\\\\n"
-            f"- Ensure every array and object is properly closed\n"
+            f"Start with {{ and end with }}. No markdown, no prose."
         )
 
         # 2. Construct User Message
@@ -132,8 +132,7 @@ class LocalAIModel(AutoModel):
             )
         if uri:
             user_message += f"\nUse the following URI for reference: {uri}"
-        # Closing instruction placed immediately before generation — improves JSON compliance
-        user_message += "\n\nRespond with ONLY the completed JSON object:"
+        user_message += "\n\nRespond with ONLY a valid JSON object. No markdown, no prose."
 
         # 3. Payload Construction
         # NOTE: `format: json` (grammar-constrained sampling) is intentionally
@@ -144,13 +143,17 @@ class LocalAIModel(AutoModel):
         payload = {
             "model": self._text_model,
             "messages": [
-                {"role": "system", "content": full_system_prompt},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message},
             ],
             "stream": False,
+            # Disable extended reasoning/thinking mode for Gemma4.
+            # Without this, the model burns all num_predict tokens on internal
+            # chain-of-thought and returns empty JSON output.
+            "think": False,
             "options": {
                 "num_ctx": self._context_limit,
-                "num_predict": 4096,
+                "num_predict": 1024,
                 "temperature": 0.7,
                 "top_p": 0.95,
                 "top_k": 64,
@@ -200,6 +203,10 @@ class LocalAIModel(AutoModel):
                 )
                 if _attempt < _max_retries:
                     log(f"Retrying JSON generation...", _print=True)
+                    if not result_text.strip():
+                        # Empty response — model is stuck. Flush KV cache so next
+                        # request gets a clean load rather than a corrupted state.
+                        self.flush_memory(self._text_model)
                     time.sleep(self._retry_sleep)
 
         return result_dict
@@ -233,6 +240,7 @@ class LocalAIModel(AutoModel):
             ],
             "stream": False,
             "keep_alive": "10m",
+            "think": False,
             "options": {
                 "num_ctx": self._context_limit,
                 "temperature": temperature,
@@ -275,6 +283,7 @@ class LocalAIModel(AutoModel):
                     {"role": "user", "content": chunk},
                 ],
                 "stream": False,
+                "think": False,
                 "options": {
                     "num_ctx": self._context_limit,
                     "num_predict": 1024,
