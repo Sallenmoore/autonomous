@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from .logger import log
+from .logger import get_logger, log
 
 
 def init(**overrides) -> str:

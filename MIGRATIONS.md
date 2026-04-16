@@ -5,6 +5,42 @@ recent first.
 
 ## Unreleased
 
+### Logger is lazy + proxied; file I/O is optional (Item 4)
+
+**What changed.**
+
+- Importing `autonomous.logger` (or `from autonomous import log`) no longer
+  creates a `logs/` directory or touches the filesystem. Path setup is
+  deferred to the first actual `log(...)` call.
+- Constructing a `Logger()` likewise has no side effects.
+- The module-level `log` is now a proxy (`_DefaultLoggerProxy`) that lazily
+  instantiates the real `Logger` on first use. All attribute access and calls
+  delegate to the underlying instance, so ``from autonomous import log`` and
+  ``log.enable(False)`` / ``log.set_level("DEBUG")`` continue to work.
+- New factory `autonomous.get_logger(name="gunicorn.error")` returns an
+  independent `Logger` for tests and subsystems that want isolation.
+- New env var `LOG_TO_FILES=0` disables the archive/current-run file writes
+  without having to subclass. Per-call `logger.enable_file_logging(False)`
+  does the same at runtime.
+- File write errors (read-only disk, permission denied) no longer crash the
+  caller — the handler swallows `OSError`.
+
+**Why.** The old code ran `os.makedirs("logs")` at import and opened two
+files on every call, which broke test isolation, tripped up read-only
+filesystems, and made importing the ORM / auth layers depend on CWD being
+writable.
+
+**Migration.** Zero code changes required for normal use. A few edge cases:
+
+- If you relied on `logs/` existing simply because you imported the package,
+  call `log("startup")` once or `os.makedirs("logs", exist_ok=True)`
+  yourself.
+- If you patched `autonomous.logger.log` in tests (replacing it with a mock),
+  that still works because the proxy is at the same attribute name.
+- If you want a per-test or per-subsystem logger that you can disable
+  independently, use `from autonomous import get_logger` rather than sharing
+  the default.
+
 ### Mutable default args replaced with None sentinel (Item 3)
 
 **What changed.** The AI-model entry points no longer use mutable literals
