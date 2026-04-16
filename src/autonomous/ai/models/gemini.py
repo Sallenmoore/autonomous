@@ -142,7 +142,8 @@ class GeminiAIModel(AutoModel):
             fn = f["name"]
             try:
                 self.client.files.delete(name=fn)
-            except Exception:
+            except genai.errors.APIError:
+                # file may not exist, is still propagating, or is already gone
                 pass
 
             file_content = f["file"]
@@ -205,7 +206,7 @@ class GeminiAIModel(AutoModel):
             else:
                 log(f"Response: {response.text}", _print=True)
                 return {}
-        except Exception as e:
+        except (AttributeError, IndexError, KeyError, TypeError) as e:
             log(f"==== Failed to parse ToolCall response: {e} ====")
             return {}
 
@@ -250,7 +251,7 @@ class GeminiAIModel(AutoModel):
             try:
                 summary = response.candidates[0].content.parts[0].text
                 full_summary += summary + "\n"
-            except Exception as e:
+            except (AttributeError, IndexError, genai.errors.APIError) as e:
                 log(f"Summary Error: {e}", _print=True)
                 break
         return full_summary
@@ -300,9 +301,9 @@ class GeminiAIModel(AutoModel):
             mp3_buffer = io.BytesIO()
             audio_segment.export(mp3_buffer, format="mp3")
             return mp3_buffer.getvalue()
-        except Exception as e:
+        except (genai.errors.APIError, OSError, ValueError) as e:
             log(f"==== Audio Gen Error: {e} ====", _print=True)
-            raise e
+            raise
 
     def _get_image_config(self, aspect_ratio_input):
         """
@@ -385,9 +386,9 @@ class GeminiAIModel(AutoModel):
                     f"API returned Success but no image data found. Response: {response}"
                 )
 
-        except Exception as e:
+        except (genai.errors.APIError, ValueError, OSError) as e:
             log(f"==== Error: Unable to create image ====\n\n{e}", _print=True)
-            raise e
+            raise
 
         return image
 
@@ -426,8 +427,8 @@ class GeminiAIModel(AutoModel):
                     f"API returned Success but no image data found. Response: {response}"
                 )
 
-        except Exception as e:
+        except (genai.errors.APIError, ValueError, OSError) as e:
             log(f"==== Error: Unable to create image ====\n\n{e}", _print=True)
-            raise e
+            raise
 
         return image

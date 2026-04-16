@@ -4,6 +4,7 @@ import urllib.parse
 import uuid
 from datetime import datetime
 
+import bson
 import numpy as np
 import pymongo
 import redis
@@ -53,7 +54,7 @@ def get_vector(text):
         )
         if resp.status_code == 200:
             return resp.json()["embedding"]
-    except Exception as e:
+    except (requests.RequestException, ValueError, KeyError) as e:
         print(f"Vector Gen Failed: {e}")
     return None
 
@@ -85,7 +86,7 @@ def process_single_object_sync(object_id, collection_name, token):
     try:
         oid = ObjectId(object_id)
         doc = db[collection_name].find_one({"_id": oid})
-    except Exception:
+    except (bson.errors.InvalidId, TypeError):
         doc = db[collection_name].find_one({"_id": object_id})
 
     if not doc:
@@ -151,6 +152,6 @@ def request_indexing(object_id, collection_name):
             priority=TaskPriority.LOW,
         )
         return True
-    except Exception as e:
+    except (redis.RedisError, ConnectionError) as e:
         print(f"Sync Enqueue failed: {e}")
         return False

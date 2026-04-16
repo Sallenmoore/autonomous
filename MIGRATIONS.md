@@ -5,6 +5,34 @@ recent first.
 
 ## Unreleased
 
+### Narrowed exception catches + bare `raise` (Items 5 & 14)
+
+**What changed.** Broad `except Exception` blocks in first-party code were
+tightened to the specific errors each site actually expects:
+
+| File | Site | New catch |
+|------|------|-----------|
+| `model/automodel.py` `AutoModel.get` | DB failure | `pymongo.errors.OperationFailure`, `pymongo.errors.ConnectionFailure` (bare `raise`, no more `raise e`) |
+| `db/db_sync.py` `get_vector` | embedding HTTP | `requests.RequestException`, `ValueError`, `KeyError` |
+| `db/db_sync.py` oid coercion | bson parse | `bson.errors.InvalidId`, `TypeError` |
+| `db/db_sync.py` `request_indexing` | enqueue | `redis.RedisError`, `ConnectionError` |
+| `taskrunner/autotasks.py` `get_task` | fetch | `rq.exceptions.NoSuchJobError`, `redis.RedisError` |
+| `ai/models/local_model.py` `flush_memory`, `generate_text`, `generate_json` retry, `summarize_text`, `generate_transcription`, `generate_audio`, `generate_image` | HTTP / JSON / audio | combinations of `requests.RequestException`, `json.JSONDecodeError`, `ValueError`, `OSError`, `KeyError` |
+| `ai/models/gemini.py` 5 sites | Google genai | `google.genai.errors.APIError` + relevant parse errors; stopped `raise e`ing |
+
+Rule applied: catch only expected failures; re-raise with a bare `raise`
+(preserves the original traceback); let unexpected errors (`AttributeError`
+from typos, `MemoryError`, `KeyboardInterrupt`) propagate.
+
+**Why.** Broad catches hid bugs and destroyed tracebacks via `raise e`. The
+retry loop in `generate_json` also slept 30 s on any error — including
+transient programming errors — masking regressions during development.
+
+**Migration.** If your code deliberately raised unusual types from callbacks
+inside `AutoModel.get`, `LocalAIModel.generate_*`, or `GeminiAIModel.generate_*`
+and relied on the library silently logging them, those now propagate. Catch
+them at your call site instead.
+
 ### Logger is lazy + proxied; file I/O is optional (Item 4)
 
 **What changed.**

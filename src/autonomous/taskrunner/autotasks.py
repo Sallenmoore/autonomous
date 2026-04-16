@@ -2,9 +2,11 @@ import json
 import os
 from enum import Enum
 
+import redis
 from redis import Redis
 from rq import Queue, get_current_job
 from rq.command import send_stop_job_command
+from rq.exceptions import NoSuchJobError
 from rq.job import Job
 
 
@@ -151,7 +153,7 @@ class AutoTasks:
         try:
             if job := Job.fetch(job_id, connection=AutoTasks._connection):
                 return AutoTask(job)
-        except Exception:
+        except (NoSuchJobError, redis.RedisError):
             return None
 
     def get_tasks(self):

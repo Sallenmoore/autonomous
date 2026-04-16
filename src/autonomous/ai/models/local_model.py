@@ -108,7 +108,7 @@ class LocalAIModel(AutoModel):
                 json={"model": model_name, "keep_alive": 0},
                 timeout=30,
             )
-        except Exception as e:
+        except requests.RequestException as e:
             log(f"Failed to flush memory: {e}", _print=True)
 
     def generate_json(
@@ -195,7 +195,12 @@ class LocalAIModel(AutoModel):
                     result_dict.update(params)
 
                 break  # success
-            except Exception as e:
+            except (
+                requests.RequestException,
+                json.JSONDecodeError,
+                ValueError,
+                KeyError,
+            ) as e:
                 log(
                     f"==== LocalAI JSON Error (attempt {_attempt + 1}/{_max_retries + 1}): {e} ====",
                     response,
@@ -267,7 +272,7 @@ class LocalAIModel(AutoModel):
                 response = requests.post(f"{self._ollama_url}/chat", json=payload, timeout=self._text_timeout)
                 response.raise_for_status()
             result = response.json().get("message", {}).get("content", "")
-        except Exception as e:
+        except (requests.RequestException, json.JSONDecodeError, ValueError) as e:
             log(f"==== LocalAI Text Error: {e} ====", _print=True)
         return result
 
@@ -301,7 +306,7 @@ class LocalAIModel(AutoModel):
                 res = requests.post(f"{self._ollama_url}/chat", json=payload, timeout=self._summary_timeout)
                 full_summary += res.json().get("message", {}).get("content", "") + "\n"
                 log(f"Chunk summarized: {full_summary}.", _print=True)
-            except Exception as e:
+            except (requests.RequestException, json.JSONDecodeError, ValueError) as e:
                 log(f"Summary Error: {e}", _print=True)
                 break
         return full_summary
@@ -326,7 +331,7 @@ class LocalAIModel(AutoModel):
             response.raise_for_status()
             # Return the structured JSON dict containing 'segments'
             return response.json()
-        except Exception as e:
+        except (requests.RequestException, json.JSONDecodeError, ValueError) as e:
             log(f"Transcription API Error: {e}", _print=True)
             return {"segments": [], "text": ""}
 
@@ -342,7 +347,7 @@ class LocalAIModel(AutoModel):
             audio_buffer = io.BytesIO()
             audio.export(audio_buffer, format="opus")
             return audio_buffer.getvalue()
-        except Exception as e:
+        except (requests.RequestException, OSError, ValueError) as e:
             log(f"TTS Error: {e}", _print=True)
             return None
 
@@ -461,7 +466,7 @@ class LocalAIModel(AutoModel):
             log("==== LocalAI Image Generation Complete ====", data)
             return image_content
 
-        except Exception as e:
+        except (requests.RequestException, OSError, ValueError) as e:
             log(f"Image Gen Error: {type(e)} - {e}", _print=True)
             return None
 

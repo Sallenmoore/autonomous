@@ -3,6 +3,8 @@ import urllib.parse
 from datetime import datetime
 
 import bson
+from pymongo import errors as pymongo_errors
+
 from autonomous.db import Document, connect, db_sync, signals
 from autonomous.db.errors import ValidationError
 from autonomous.db.fields import DateTimeField
@@ -172,19 +174,18 @@ class AutoModel(Document):
         elif isinstance(pk, dict) and "$oid" in pk:
             pk = bson.ObjectId(pk["$oid"])
         try:
-            # log(pk, type(pk))
             result = cls.objects.get(id=pk)
-            # log(result)
-        except cls.DoesNotExist as e:
-            # log(f"Model {cls.__name__} with pk {pk} not found : {e}")
+        except cls.DoesNotExist:
             return None
         except ValidationError as e:
-            # traceback.print_stack(limit=5)
             log(f"Model Validation failure {cls.__name__} [{pk}]: {e}")
             return None
-        except Exception as e:
-            log(f"Error getting model {cls.__name__} with pk {pk}: {e}", _print=True)
-            raise e
+        except (pymongo_errors.OperationFailure, pymongo_errors.ConnectionFailure) as e:
+            log(
+                f"DB error getting model {cls.__name__} with pk {pk}: {e}",
+                _print=True,
+            )
+            raise
         else:
             return result
 
