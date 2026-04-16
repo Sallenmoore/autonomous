@@ -17,6 +17,10 @@ class AutoAuth:
     #: between :meth:`authenticate` and :meth:`handle_response`. Override on
     #: a subclass if multiple providers might collide in the same session.
     state_session_key: str = "oauth_state"
+    #: Minimum interval between ``last_login`` DB writes from
+    #: :meth:`auth_required`. Set to 0 to write on every authenticated
+    #: request (the legacy behaviour).
+    last_login_throttle_seconds: int = 60
 
     def __init__(
         self,
@@ -118,6 +122,35 @@ class AutoAuth:
         return userinfo.json(), token
 
     @classmethod
+    def _touch_user(cls, user) -> None:
+        """Persist ``user.last_login`` at most once per throttle window.
+
+        Avoids a Mongo write on every authenticated request. The first
+        request after the throttle interval pays the cost; intervening
+        ones are free.
+        """
+        if cls.last_login_throttle_seconds <= 0:
+            user.last_login = datetime.now()
+            user.save()
+            return
+        now = datetime.now()
+        last = getattr(user, "last_login", None)
+        if last is None or (now - last).total_seconds() >= cls.last_login_throttle_seconds:
+            user.last_login = now
+            user.save()
+
+    @staticmethod
+    def _refresh_session_user(session, user) -> None:
+        """Write the user JSON to the session only if it differs.
+
+        Saves the per-request serialization cost when nothing about the
+        user has changed.
+        """
+        payload = user.to_json()
+        if session.get("user") != payload:
+            session["user"] = payload
+
+    @classmethod
     def auth_required(cls, guest=False, admin=False):
         """
         Decorator that enforces authentication before invoking the view.
@@ -136,9 +169,8 @@ class AutoAuth:
                 if not user:
                     return redirect(cls.login_url)
                 if user.state == "authenticated":
-                    user.last_login = datetime.now()
-                    user.save()
-                session["user"] = user.to_json()
+                    cls._touch_user(user)
+                cls._refresh_session_user(session, user)
                 if not guest and user.is_guest:
                     return redirect(cls.login_url)
                 if admin and not user.is_admin:

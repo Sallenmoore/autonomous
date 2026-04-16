@@ -5,6 +5,40 @@ recent first.
 
 ## Unreleased
 
+### `auth_required` no longer writes on every request (Item 8)
+
+**What changed.** The `@AutoAuth.auth_required()` decorator stopped
+hammering the database and the session on every authenticated request:
+
+- ``user.last_login`` is persisted at most once per
+  ``cls.last_login_throttle_seconds`` (default ``60``). Subsequent
+  requests within the window read the existing user but skip
+  ``user.save()``.
+- ``session["user"] = user.to_json()`` only runs if the rendered JSON
+  differs from what's already in the session.
+- New class attribute ``last_login_throttle_seconds`` controls the
+  interval. Set it to ``0`` to restore the legacy "save on every
+  request" behaviour.
+- New helpers ``AutoAuth._touch_user(user)`` and
+  ``AutoAuth._refresh_session_user(session, user)`` extracted for
+  subclasses that need to override the policy.
+
+**Why.** The old code did one Mongo write and one session write per
+authed pageview. For a busy app that's hundreds of pointless writes per
+second; in dev it floods the save signals. ``last_login`` doesn't need
+second-level granularity.
+
+**Migration.**
+
+- If your app relies on ``last_login`` being current to the second, set
+  ``AutoAuth.last_login_throttle_seconds = 0`` (or to a smaller window).
+- If you observed side effects of ``user.save()`` firing on every
+  request (cache invalidation, audit hooks), they now fire at most once
+  per minute. Consider moving them to explicit triggers.
+- If you store derived data in the session under ``"user"`` and rely on
+  it being rewritten every request, push that data through a separate
+  session key (or override ``_refresh_session_user``).
+
 ### Storage layers reject path traversal (Item 7)
 
 **What changed.** ``LocalStorage`` and ``ImageStorage`` now sanitize every
