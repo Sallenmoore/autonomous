@@ -5,6 +5,42 @@ recent first.
 
 ## Unreleased
 
+### `Response.body` accepts iterables for streaming (Item 16)
+
+**What changed.** ``autonomous.web.response.Response`` now accepts any
+iterable of ``bytes`` / ``str`` chunks as ``body``, in addition to the
+existing ``bytes`` / ``str`` whole-payload form.
+
+- A single ``bytes`` / ``str`` body is yielded as one chunk (legacy).
+- A ``list``, ``tuple``, generator, or other iterable is consumed
+  chunk-by-chunk; each ``str`` chunk is utf-8-encoded.
+- File streaming idiom: ``Response(body=iter(lambda: fh.read(8192), b""))``.
+- Empty ``b""`` body still yields one ``b""`` chunk so WSGI servers
+  see a finite iterable.
+- Both ``__iter__`` and the WSGI callable ``__call__(environ,
+  start_response)`` route through the new ``iter_chunks()`` method, so
+  any consumer that does ``list(response)`` or ``b"".join(response)``
+  continues to work.
+
+**Why.** The previous Response materialized the whole body in memory.
+Serving a multi-GB file or proxying an upstream response forced the
+entire payload through the heap. Iterables let the WSGI server flush
+chunks incrementally — chunked transfer encoding kicks in
+automatically when ``Content-Length`` is absent and the iterable yields
+more than one chunk.
+
+**Migration.**
+
+- If you stored the WSGI body and asserted ``body == [b"..."]`` in a
+  test, switch to ``list(body) == [b"..."]`` — ``__call__`` now returns
+  a generator, not a list.
+- If you constructed ``Response(body=...)`` with a generator before
+  (the old code only iterated the body once and lost everything past
+  the first ``yield``), it now works correctly.
+- Generator bodies are single-pass — calling ``list(response)`` twice
+  on the same response yields ``[]`` the second time. This matches
+  WSGI semantics; previously the bug was masked by the materialization.
+
 ### `SignedCookieSession` gains optional expiry + issuer binding (Item 15)
 
 **What changed.** ``SignedCookieSession`` now accepts two optional

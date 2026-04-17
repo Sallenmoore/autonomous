@@ -41,7 +41,7 @@ class TestResponse:
             captured["status"] = status
             captured["headers"] = headers
 
-        body = r({}, start_response)
+        body = list(r({}, start_response))
         assert captured["status"] == "201 Created"
         assert ("Location", "/x") in captured["headers"]
         assert body == [b"hi"]
@@ -49,6 +49,69 @@ class TestResponse:
     def test_iterable(self):
         chunks = list(Response(body=b"abc"))
         assert chunks == [b"abc"]
+
+
+class TestResponseStreaming:
+    """Item 16: ``body`` accepts an iterable for chunked / streamed delivery."""
+
+    def test_iterable_of_bytes_streams_each_chunk(self):
+        r = Response(body=[b"one", b"two", b"three"])
+        assert list(r) == [b"one", b"two", b"three"]
+
+    def test_str_chunks_are_utf8_encoded(self):
+        r = Response(body=["alpha", "beta"])
+        assert list(r) == [b"alpha", b"beta"]
+
+    def test_generator_body_streams(self):
+        def make():
+            for i in range(3):
+                yield f"chunk-{i}"
+
+        r = Response(body=make())
+        assert list(r) == [b"chunk-0", b"chunk-1", b"chunk-2"]
+
+    def test_file_like_via_iter_sentinel(self, tmp_path):
+        # Common idiom for streaming a file in WSGI.
+        fp = tmp_path / "big.bin"
+        fp.write_bytes(b"x" * 10)
+        with open(fp, "rb") as fh:
+            r = Response(body=iter(lambda: fh.read(3), b""))
+            chunks = list(r)
+        assert b"".join(chunks) == b"x" * 10
+        assert chunks == [b"xxx", b"xxx", b"xxx", b"x"]
+
+    def test_wsgi_call_uses_streaming_body(self):
+        captured: dict = {}
+
+        def start_response(status, headers):
+            captured["status"] = status
+            captured["headers"] = headers
+
+        r = Response(
+            status=200,
+            headers={"Content-Type": "text/plain"},
+            body=[b"hello-", b"world"],
+        )
+        chunks = list(r({}, start_response))
+        assert captured["status"] == "200 OK"
+        assert ("Content-Type", "text/plain") in captured["headers"]
+        assert chunks == [b"hello-", b"world"]
+
+    def test_empty_bytes_still_yields_one_chunk(self):
+        # WSGI servers want a finite iterable; we always yield at least once.
+        chunks = list(Response(body=b""))
+        assert chunks == [b""]
+
+    def test_generator_consumed_once(self):
+        # Generators are single-pass. Calling iter twice drains the second
+        # iteration. Document that behaviour explicitly.
+        def make():
+            yield b"once"
+
+        r = Response(body=make())
+        assert list(r) == [b"once"]
+        # Second iteration sees an exhausted generator.
+        assert list(r) == []
 
 
 class TestRedirect:
