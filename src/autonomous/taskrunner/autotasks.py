@@ -1,10 +1,15 @@
+from __future__ import annotations
+
 import json
 import os
 from enum import Enum
+from typing import Any
 
+import redis
 from redis import Redis
 from rq import Queue, get_current_job
 from rq.command import send_stop_job_command
+from rq.exceptions import NoSuchJobError
 from rq.job import Job
 
 
@@ -95,70 +100,132 @@ class AutoTask:
 
 
 class AutoTasks:
-    _connection = None
-    # We remove the single 'queue' class attribute because we now have multiple
+    """Thin wrapper around RQ + Redis with priority queues.
 
-    config = {
-        "host": os.environ.get("REDIS_HOST", "cachedb"),
-        "port": os.environ.get("REDIS_PORT", 6379),
-        "password": os.environ.get("REDIS_PASSWORD"),
-        "username": os.environ.get("REDIS_USERNAME"),
-        "db": os.environ.get("REDIS_DB", 0),
-    }
+    Process-wide connection singleton (``AutoTasks._process_connection``)
+    is built lazily on the first method call that needs Redis. Each
+    instance can override the singleton by either passing
+    ``redis_client=`` directly or by passing connection kwargs that get
+    used to build a per-instance client.
 
-    def __init__(self):
-        # Establish connection once (Singleton pattern logic)
-        if not AutoTasks._connection:
-            options = {}
-            if AutoTasks.config.get("password"):
-                options["password"] = AutoTasks.config.get("password")
+    Construction never opens a socket. ``AutoTasks()`` in a unit test
+    that patches RQ does not need Redis up.
+    """
 
-            AutoTasks._connection = Redis(
-                host=AutoTasks.config.get("host"),
-                port=AutoTasks.config.get("port"),
-                decode_responses=False,
-                **options,
+    #: Process-wide singleton built lazily by ``_get_connection``.
+    _process_connection: Redis | None = None
+
+    def __init__(
+        self,
+        redis_client: Redis | None = None,
+        *,
+        host: str | None = None,
+        port: int | None = None,
+        password: str | None = None,
+        username: str | None = None,
+        db: int | None = None,
+    ):
+        # If a client is injected, the instance overrides the singleton.
+        # Useful for tests and multi-cluster apps that want a non-default
+        # connection in a particular code path.
+        self._instance_connection: Redis | None = redis_client
+        # Per-instance overrides applied when the singleton is built.
+        self._overrides: dict[str, Any] = {
+            k: v
+            for k, v in (
+                ("host", host),
+                ("port", port),
+                ("password", password),
+                ("username", username),
+                ("db", db),
             )
+            if v is not None
+        }
 
-    def _get_queue(self, priority_name):
-        """Helper to get or create the queue object for a specific priority"""
-        return Queue(priority_name, connection=AutoTasks._connection)
+    # --- connection management ------------------------------------------------
 
-    def task(self, func, *args, **kwargs):
+    @property
+    def _connection(self) -> Redis:
+        """Compatibility alias used by the rest of the module."""
+        return self._get_connection()
+
+    def _get_connection(self) -> Redis:
+        if self._instance_connection is not None:
+            return self._instance_connection
+        if AutoTasks._process_connection is None:
+            AutoTasks._process_connection = self._build_connection()
+        return AutoTasks._process_connection
+
+    def _build_connection(self) -> Redis:
+        config = {
+            "host": self._overrides.get(
+                "host", os.environ.get("REDIS_HOST", "cachedb")
+            ),
+            "port": int(
+                self._overrides.get("port", os.environ.get("REDIS_PORT", 6379))
+            ),
+            "db": int(
+                self._overrides.get("db", os.environ.get("REDIS_DB", 0))
+            ),
+        }
+        password = self._overrides.get("password", os.environ.get("REDIS_PASSWORD"))
+        if password:
+            config["password"] = password
+        username = self._overrides.get("username", os.environ.get("REDIS_USERNAME"))
+        if username:
+            config["username"] = username
+        return Redis(decode_responses=False, **config)
+
+    @classmethod
+    def reset_connection(cls) -> None:
+        """Drop the process-wide singleton so the next call rebuilds it.
+
+        Test helper. Production callers shouldn't normally need this.
         """
-        Enqueues a job.
-        kwarg 'priority' determines the queue (default: 'default').
+        cls._process_connection = None
+
+    # --- queue / task API -----------------------------------------------------
+
+    def _get_queue(self, priority_name: str) -> Queue:
+        """Return (or build) the Queue for ``priority_name``."""
+        return Queue(priority_name, connection=self._get_connection())
+
+    def task(self, func, *args, **kwargs) -> AutoTask:
+        """Enqueue ``func`` and return an :class:`AutoTask` handle.
+
+        Recognized kwargs:
+          - ``priority`` (``TaskPriority`` or str): queue selector
+          - ``_task_job_timeout`` (int seconds, default 7200)
+
+        All other args/kwargs forward to ``func``.
         """
         job_timeout = kwargs.pop("_task_job_timeout", 7200)
 
-        # 2. Extract Priority (support Enum or string)
         priority = kwargs.pop("priority", TaskPriority.DEFAULT)
         queue_name = priority.value if isinstance(priority, TaskPriority) else priority
 
-        # 3. Get the specific queue
         q = self._get_queue(queue_name)
-
-        # 4. Enqueue
         job = q.enqueue(func, args=args, kwargs=kwargs, job_timeout=job_timeout)
-
         return AutoTask(job)
 
-    def get_current_task(self):
+    def get_current_task(self) -> AutoTask | None:
         if job := get_current_job():
             return AutoTask(job)
+        return None
 
-    def get_task(self, job_id):
+    def get_task(self, job_id: str) -> AutoTask | None:
         try:
-            if job := Job.fetch(job_id, connection=AutoTasks._connection):
+            if job := Job.fetch(job_id, connection=self._get_connection()):
                 return AutoTask(job)
-        except Exception:
+        except (NoSuchJobError, redis.RedisError):
             return None
+        return None
 
-    def get_tasks(self):
-
-        high_queue = Queue("high", connection=self._connection)
-        default_queue = Queue("default", connection=self._connection)
-        low_queue = Queue("low", connection=self._connection)
+    def get_tasks(self) -> dict[str, list[AutoTask]]:
+        connection = self._get_connection()
+        high_queue = Queue("high", connection=connection)
+        default_queue = Queue("default", connection=connection)
+        low_queue = Queue("low", connection=connection)
 
         registries = {
             "started": [
@@ -179,20 +246,19 @@ class AutoTasks:
             "queued": [high_queue, default_queue, low_queue],
         }
 
-        tasks = {}
+        tasks: dict[str, list[AutoTask]] = {}
         for status, regs in registries.items():
-            all_job_ids = []
+            all_job_ids: list[str] = []
             for reg in regs:
                 all_job_ids.extend(reg.get_job_ids())
-            # Use a set to remove duplicate job_ids if a job is in multiple registries
             unique_job_ids = sorted(list(set(all_job_ids)), reverse=True)
-            jobs = Job.fetch_many(unique_job_ids, connection=self._connection)
-            # Filter out None values in case a job expired between fetch and get
+            jobs = Job.fetch_many(unique_job_ids, connection=connection)
             tasks[status] = [AutoTask(job) for job in jobs if job]
         return tasks
 
-    def kill(self, pk):
+    def kill(self, pk: str) -> None:
         job = self.get_task(pk)
-        if job.status == "started":
-            send_stop_job_command(AutoTasks._connection, job.id)
-        job.delete()
+        if job and job.status == "started":
+            send_stop_job_command(self._get_connection(), job.id)
+        if job:
+            job.delete()

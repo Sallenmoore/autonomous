@@ -29,12 +29,13 @@ class MockAIModel(AutoModel):
         "UklGRigAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAEA"
     )
 
-    def generate_json(self, message, system_prompt=None, uri="", context={}):
+    def generate_json(self, message, system_prompt=None, uri="", context=None):
         """
         Returns a rich dummy JSON object.
         It attempts to guess the context based on keys found in the prompt,
         otherwise returns a safe default TTRPG object.
         """
+        context = context or {}
         log(f"⚡ [MOCK] Generating JSON for prompt: {message[:50]}...", _print=True)
 
         # 1. Default Mock Object
@@ -50,7 +51,7 @@ class MockAIModel(AutoModel):
 
         return mock_response
 
-    def generate_text(self, message, additional_instructions="", uri="", context={}):
+    def generate_text(self, message, additional_instructions="", uri="", context=None):
         log(f"⚡ [MOCK] Generating Text...", _print=True)
         return (
             "Lorem ipsum dolor sit amet, consectetur adipiscing elit. "

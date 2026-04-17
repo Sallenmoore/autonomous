@@ -13,7 +13,6 @@ from autonomous.db.base.datastructures import (
     BaseDict,
     BaseList,
     EmbeddedDocumentList,
-    LazyReference,
     StrictDict,
 )
 from autonomous.db.base.fields import ComplexBaseField
@@ -421,7 +420,6 @@ class BaseDocument:
                     # ):
                     #     field._validate(value, clean=clean)
                     # else:
-                    # log(f"Validating {field}:{field.name} with value {value}")
                     field._validate(value)
                 except ValidationError as error:
                     errors[field.name] = error.errors or error
@@ -569,9 +567,7 @@ class BaseDocument:
                     field_name = data._reverse_db_field_map.get(part, part)
                     data = getattr(data, field_name, None)
 
-                if not isinstance(data, LazyReference) and hasattr(
-                    data, "_changed_fields"
-                ):
+                if hasattr(data, "_changed_fields"):
                     if getattr(data, "_is_document", False):
                         continue
 
@@ -641,11 +637,8 @@ class BaseDocument:
     def _get_changed_fields(self):
         """Return a list of all fields that have explicitly been changed."""
         EmbeddedDocument = _import_class("EmbeddedDocument")
-        LazyReferenceField = _import_class("LazyReferenceField")
         ReferenceField = _import_class("ReferenceField")
-        GenericLazyReferenceField = _import_class("GenericLazyReferenceField")
         GenericReferenceField = _import_class("GenericReferenceField")
-        SortedListField = _import_class("SortedListField")
 
         changed_fields = []
         changed_fields += getattr(self, "_changed_fields", [])
@@ -670,19 +663,9 @@ class BaseDocument:
             elif isinstance(data, (list, tuple, dict)):
                 if hasattr(field, "field") and isinstance(
                     field.field,
-                    (
-                        LazyReferenceField,
-                        ReferenceField,
-                        GenericLazyReferenceField,
-                        GenericReferenceField,
-                    ),
+                    (ReferenceField, GenericReferenceField),
                 ):
                     continue
-                elif isinstance(field, SortedListField) and field._ordering:
-                    # if ordering is affected whole list is changed
-                    if any(field._ordering in d._changed_fields for d in data):
-                        changed_fields.append(db_field_name)
-                        continue
 
                 self._nestable_types_changed_fields(changed_fields, key, data)
         return changed_fields
@@ -850,34 +833,18 @@ class BaseDocument:
     @classmethod
     def _build_index_specs(cls, meta_indexes):
         """Generate and merge the full index specs."""
-        geo_indices = cls._geo_indices()
         unique_indices = cls._unique_with_indexes()
         index_specs = [cls._build_index_spec(spec) for spec in meta_indexes]
 
-        def merge_index_specs(index_specs, indices):
-            """Helper method for merging index specs."""
-            if not indices:
-                return index_specs
-
-            # Create a map of index fields to index spec. We're converting
-            # the fields from a list to a tuple so that it's hashable.
+        if unique_indices:
             spec_fields = {tuple(index["fields"]): index for index in index_specs}
-
-            # For each new index, if there's an existing index with the same
-            # fields list, update the existing spec with all data from the
-            # new spec.
-            for new_index in indices:
+            for new_index in unique_indices:
                 candidate = spec_fields.get(tuple(new_index["fields"]))
                 if candidate is None:
                     index_specs.append(new_index)
                 else:
                     candidate.update(new_index)
 
-            return index_specs
-
-        # Merge geo indexes and unique_with indexes into the meta index specs.
-        index_specs = merge_index_specs(index_specs, geo_indices)
-        index_specs = merge_index_specs(index_specs, unique_indices)
         return index_specs
 
     @classmethod
@@ -1010,7 +977,6 @@ class BaseDocument:
             if field.__class__.__name__ in {
                 "EmbeddedDocumentListField",
                 "ListField",
-                "SortedListField",
             }:
                 field = field.field
 
@@ -1024,43 +990,6 @@ class BaseDocument:
                 unique_indexes += doc_cls._unique_with_indexes(field_namespace)
 
         return unique_indexes
-
-    @classmethod
-    def _geo_indices(cls, inspected=None, parent_field=None):
-        inspected = inspected or []
-        geo_indices = []
-        inspected.append(cls)
-
-        geo_field_type_names = (
-            "EmbeddedDocumentField",
-            "GeoPointField",
-            "PointField",
-            "LineStringField",
-            "PolygonField",
-        )
-
-        geo_field_types = tuple(_import_class(field) for field in geo_field_type_names)
-
-        for field in cls._fields.values():
-            if not isinstance(field, geo_field_types):
-                continue
-
-            if hasattr(field, "document_type"):
-                field_cls = field.document_type
-                if field_cls in inspected:
-                    continue
-
-                if hasattr(field_cls, "_geo_indices"):
-                    geo_indices += field_cls._geo_indices(
-                        inspected, parent_field=field.db_field
-                    )
-            elif field._geo_index:
-                field_name = field.db_field
-                if parent_field:
-                    field_name = f"{parent_field}.{field_name}"
-                geo_indices.append({"fields": [(field_name, field._geo_index)]})
-
-        return geo_indices
 
     @classmethod
     def _lookup_field(cls, parts):
@@ -1219,11 +1148,7 @@ class BaseDocument:
             if value is None:
                 return None
             sep = getattr(field, "display_sep", " ")
-            values = (
-                value
-                if field.__class__.__name__ in ("ListField", "SortedListField")
-                else [value]
-            )
+            values = value if field.__class__.__name__ == "ListField" else [value]
             return sep.join(
                 [str(dict(field.choices).get(val, val)) for val in values or []]
             )

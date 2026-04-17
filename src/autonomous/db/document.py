@@ -43,7 +43,6 @@ __all__ = (
     "OperationError",
     "InvalidCollectionError",
     "NotUniqueError",
-    "MapReduceDocument",
 )
 
 
@@ -1102,39 +1101,3 @@ class DynamicEmbeddedDocument(EmbeddedDocument, metaclass=DocumentMetaclass):
         else:
             setattr(self, field_name, None)
 
-
-class MapReduceDocument:
-    """A document returned from a map/reduce query.
-
-    :param collection: An instance of :class:`~pymongo.Collection`
-    :param key: Document/result key, often an instance of
-                :class:`~bson.objectid.ObjectId`. If supplied as
-                an ``ObjectId`` found in the given ``collection``,
-                the object can be accessed via the ``object`` property.
-    :param value: The result(s) for this key.
-    """
-
-    def __init__(self, document, collection, key, value):
-        self._document = document
-        self._collection = collection
-        self.key = key
-        self.value = value
-
-    @property
-    def object(self):
-        """Lazy-load the object referenced by ``self.key``. ``self.key``
-        should be the ``primary_key``.
-        """
-        id_field = self._document()._meta["id_field"]
-        id_field_type = type(id_field)
-
-        if not isinstance(self.key, id_field_type):
-            try:
-                self.key = id_field_type(self.key)
-            except Exception:
-                raise Exception("Could not cast key as %s" % id_field_type.__name__)
-
-        if not hasattr(self, "_key_object"):
-            self._key_object = self._document.objects.with_id(self.key)
-            return self._key_object
-        return self._key_object

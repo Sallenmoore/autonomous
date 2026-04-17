@@ -1,52 +1,65 @@
-import json
+from __future__ import annotations
+
 import uuid
 from datetime import datetime
 from functools import wraps
+from typing import Any, Callable
 
 import requests
+from authlib.integrations.base_client.errors import MismatchingStateError
 from authlib.integrations.requests_client import OAuth2Auth, OAuth2Session
-from flask import redirect, session, url_for
 
-from autonomous import log
 from autonomous.auth.user import User
+from autonomous.web import get_session, redirect
+
+#: Decorator returned by :meth:`AutoAuth.auth_required`.
+ViewFunc = Callable[..., Any]
 
 
 class AutoAuth:
     user_class: type[User] = User
+    login_url: str = "/auth/login"
+    #: Session key under which the issued OAuth ``state`` value is stored
+    #: between :meth:`authenticate` and :meth:`handle_response`. Override on
+    #: a subclass if multiple providers might collide in the same session.
+    state_session_key: str = "oauth_state"
+    #: Minimum interval between ``last_login`` DB writes from
+    #: :meth:`auth_required`. Set to 0 to write on every authenticated
+    #: request (the legacy behaviour).
+    last_login_throttle_seconds: int = 60
 
     def __init__(
         self,
-        client_id,
-        client_secret,
-        issuer,
-        redirect_uri,
-        scope,
-        token_endpoint,
-        state=None,
+        client_id: str,
+        client_secret: str,
+        issuer: str,
+        redirect_uri: str,
+        scope: str | list[str],
+        token_endpoint: str,
+        state: str | None = None,
     ):
-        """
-        Initializes the OpenIDAuth object with the client ID, client secret, and issuer URL.
-        """
-        self.state = state or uuid.uuid4().hex
+        self.state: str = state or uuid.uuid4().hex
         self.client_id = client_id
         self.client_secret = client_secret
         self.issuer = issuer
         self.redirect_uri = redirect_uri
         self.token_endpoint = token_endpoint
+        self.scope = scope
+        self._build_session()
+
+    def _build_session(self) -> None:
         self.session = OAuth2Session(
             self.client_id,
             client_secret=self.client_secret,
-            scope=scope,
+            scope=self.scope,
             redirect_uri=self.redirect_uri,
             token_endpoint=self.token_endpoint,
             state=self.state,
         )
 
     @classmethod
-    def current_user(cls, pk=None):
-        """
-        Returns the current user.
-        """
+    def current_user(cls, pk: Any = None) -> User:
+        session = get_session()
         if pk:
             user = cls.user_class.get(pk)
         elif session.get("user"):
@@ -58,63 +71,120 @@ class AutoAuth:
             user = cls.user_class.get_guest()
         return user
 
-    def authenticate(self):
+    def authenticate(self) -> tuple[str, str]:
         """
-        Initiates the authentication process.
-        Returns a redirect URL which should be used to redirect the user to the OpenID provider for authentication.
+        Begin the OAuth flow.
+
+        Rotates ``self.state`` on every call so each redirect carries a
+        fresh, unguessable nonce, then stores it in the active session under
+        :attr:`state_session_key`. :meth:`handle_response` reads it back to
+        defeat CSRF on the callback.
+
+        Returns:
+            tuple: ``(authorization_url, state)``. Callers redirect the user
+            to ``authorization_url``; ``state`` is also returned for callers
+            that want to pin it themselves.
         """
+        self.state = uuid.uuid4().hex
+        self._build_session()
         uri, state = self.session.create_authorization_url(self.issuer)
-        # log(uri, state)
+        get_session()[self.state_session_key] = state
         return uri, state
 
-    def handle_response(self, response, state=None):
+    def handle_response(
+        self, response: str, state: str | None = None
+    ) -> tuple[dict, dict]:
         """
-        Handles the authentication response from the OpenID provider.
-        The response should be a dictionary containing the OpenID provider's response.
+        Complete the OAuth flow.
+
+        If ``state`` is not provided, the value stored by
+        :meth:`authenticate` is read from the session. A missing or
+        mismatched state raises
+        :class:`authlib.integrations.base_client.errors.MismatchingStateError`,
+        which is the authlib idiom for a CSRF-likely callback.
+
+        On success the session key is cleared so a replayed callback cannot
+        be re-validated.
         """
-        token = self.session.fetch_token(
-            authorization_response=response,
-            state=state,
-        )
-        # log(token)
+        session = get_session()
+        if state is None:
+            state = session.get(self.state_session_key)
+        if not state:
+            raise MismatchingStateError()
+
+        try:
+            token = self.session.fetch_token(
+                authorization_response=response,
+                state=state,
+            )
+        finally:
+            # Burn the state whether the exchange succeeded or raised; a
+            # replayed callback must not be re-validated and a fresh
+            # authenticate() will mint a new one.
+            try:
+                del session[self.state_session_key]
+            except (KeyError, TypeError):
+                pass
 
         userinfo = requests.get(self.req_uri, auth=OAuth2Auth(token))
         return userinfo.json(), token
 
     @classmethod
-    def auth_required(cls, guest=False, admin=False):
+    def _touch_user(cls, user: User) -> None:
+        """Persist ``user.last_login`` at most once per throttle window.
+
+        Avoids a Mongo write on every authenticated request. The first
+        request after the throttle interval pays the cost; intervening
+        ones are free.
         """
-        If you decorate a view with this, it will ensure that the current user is
-        logged in and authenticated before calling the actual view. For
-        example:
+        if cls.last_login_throttle_seconds <= 0:
+            user.last_login = datetime.now()
+            user.save()
+            return
+        now = datetime.now()
+        last = getattr(user, "last_login", None)
+        if last is None or (now - last).total_seconds() >= cls.last_login_throttle_seconds:
+            user.last_login = now
+            user.save()
 
-            @app.route('/post')
-            @auth_required
-            def post():
-                pass
+    @staticmethod
+    def _refresh_session_user(session: Any, user: User) -> None:
+        """Write the user JSON to the session only if it differs.
 
-        - params:
-          - func: The view function to decorate.
-            - type: function
+        Saves the per-request serialization cost when nothing about the
+        user has changed.
+        """
+        payload = user.to_json()
+        if session.get("user") != payload:
+            session["user"] = payload
+
+    @classmethod
+    def auth_required(
+        cls, guest: bool = False, admin: bool = False
+    ) -> Callable[[ViewFunc], ViewFunc]:
+        """
+        Decorator that enforces authentication before invoking the view.
+
+        Unauthenticated / disallowed users receive a :class:`Response` 302 to
+        ``cls.login_url``. Consumers that use Flask can assign
+        ``AutoAuth.login_url = url_for("auth.login")`` at startup; the returned
+        Response object is WSGI-callable and can be returned from any view.
         """
 
         def wrap(func):
             @wraps(func)
             def decorated_view(*args, **kwargs):
-                # log(session.get("user"))
+                session = get_session()
                 user = cls.current_user()
                 if not user:
-                    return redirect(url_for("auth.login"))
-                elif user.state == "authenticated":
-                    user.last_login = datetime.now()
-                    # log(user)
-                    user.save()
-                session["user"] = user.to_json()
-                # log(guest, user.is_guest)
+                    return redirect(cls.login_url)
+                if user.state == "authenticated":
+                    cls._touch_user(user)
+                cls._refresh_session_user(session, user)
                 if not guest and user.is_guest:
-                    return redirect(url_for("auth.login"))
+                    return redirect(cls.login_url)
                 if admin and not user.is_admin:
-                    return redirect(url_for("auth.login"))
+                    return redirect(cls.login_url)
                 return func(*args, **kwargs)
 
             return decorated_view

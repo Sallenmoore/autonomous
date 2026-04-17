@@ -8,14 +8,11 @@ from autonomous.db.base import (
     TopLevelDocumentMetaclass,
     get_document,
 )
-from autonomous.db.base.datastructures import LazyReference
 from autonomous.db.connection import get_db
 from autonomous.db.document import Document, EmbeddedDocument
 from autonomous.db.fields import (
     DictField,
-    # GenericReferenceField,
     ListField,
-    MapField,
     ReferenceField,
 )
 from autonomous.db.queryset import QuerySet
@@ -125,10 +122,7 @@ class DeReference:
             if isinstance(item, (Document, EmbeddedDocument)):
                 for field_name, field in item._fields.items():
                     v = item._data.get(field_name, None)
-                    if isinstance(v, LazyReference):
-                        # LazyReference inherits DBRef but should not be dereferenced here !
-                        continue
-                    elif isinstance(v, DBRef):
+                    if isinstance(v, DBRef):
                         reference_map.setdefault(field.document_type, set()).add(v.id)
                     elif isinstance(v, (dict, SON)) and "_ref" in v:
                         reference_map.setdefault(get_document(v["_cls"]), set()).add(
@@ -145,9 +139,6 @@ class DeReference:
                             ):
                                 key = field_cls
                             reference_map.setdefault(key, set()).update(refs)
-            elif isinstance(item, LazyReference):
-                # LazyReference inherits DBRef but should not be dereferenced here !
-                continue
             elif isinstance(item, DBRef):
                 reference_map.setdefault(item.collection, set()).add(item.id)
             elif isinstance(item, (dict, SON)) and "_ref" in item:
@@ -174,7 +165,7 @@ class DeReference:
                 for key, doc in references.items():
                     object_map[(col_name, key)] = doc
             else:  # Generic reference: use the refs data to convert to document
-                if isinstance(doc_type, (ListField, DictField, MapField)):
+                if isinstance(doc_type, (ListField, DictField)):
                     continue
 
                 refs = [

@@ -1,0 +1,2 @@
+# Image processing for autonomous.storage.ImageStorage
+pillow

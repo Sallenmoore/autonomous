@@ -25,7 +25,6 @@ def _import_class(cls_name):
         "Document",
         "DynamicEmbeddedDocument",
         "EmbeddedDocument",
-        "MapReduceDocument",
     )
 
     # Field Classes
@@ -70,8 +69,8 @@ def _import_class(cls_name):
             )
             module = importlib.import_module(module_name)
             import_classes = [cls_name]
-        except Exception as e:
-            raise Exception(f"{e} \n No import set for: {cls_name}")
+        except (ImportError, AttributeError, ValueError) as e:
+            raise ImportError(f"No import set for: {cls_name}") from e
 
     for cls in import_classes:
         _class_registry_cache[cls] = getattr(module, cls)

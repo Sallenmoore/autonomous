@@ -7,7 +7,7 @@ name = "autonomous-app"
 authors = [
     {name = "Steven A Moore", email = "samoore@binghamton.edu"},
 ]
-description = "Containerized application framework built on Flask with additional libraries and tools for rapid development of web applications."
+description = "Containerized application framework with additional libraries and tools for rapid development of web applications."
 dynamic = ["version", "dependencies"]
 readme = "README.md"
 requires-python = ">=3.12"
@@ -32,7 +32,27 @@ version = {attr = "autonomous.__version__"}
 dependencies = {file = ["requirements.txt"]}
 
 [tool.setuptools.dynamic.optional-dependencies]
-dev = {file = ["requirements_dev.txt"]}
+# Per-feature extras. Install with:
+#   pip install autonomous-app[tasks]            # background queue
+#   pip install autonomous-app[images]           # ImageStorage / PIL
+#   pip install autonomous-app[ai]               # Gemini + audio adapters
+#   pip install autonomous-app[github]           # GitHub API integration
+#   pip install autonomous-app[server]           # gunicorn convenience
+#   pip install autonomous-app[all]              # everything
+#   pip install autonomous-app[dev]              # tests / lint / build
+dev    = {file = ["requirements_dev.txt"]}
+tasks  = {file = ["requirements-tasks.txt"]}
+images = {file = ["requirements-images.txt"]}
+ai     = {file = ["requirements-ai.txt"]}
+github = {file = ["requirements-github.txt"]}
+server = {file = ["requirements-server.txt"]}
+all    = {file = [
+    "requirements-tasks.txt",
+    "requirements-images.txt",
+    "requirements-ai.txt",
+    "requirements-github.txt",
+    "requirements-server.txt",
+]}
 
 [tool.setuptools.packages.find]
 # All the following settings are optional:
@@ -46,10 +66,21 @@ env_files = [
 env_override_existing_values = 1
 addopts = "--cov=autonomous -rx -l -x -s --log-level=INFO --ignore=src --no-cov-on-fail -v --pdb --cov-reset "
 
+# Default ``pytest`` only runs hermetic unit tests. Integration tests
+# (under tests/integration/, marked @pytest.mark.integration) require
+# a live MongoDB + Redis (+ optionally AI backends) and must be invoked
+# explicitly:
+#
+#   pytest tests/integration
+#   pytest -m integration
+#   make test-int
 testpaths = [
-     "tests",
+     "tests/unit",
+]
+markers = [
+    "integration: tests that require live MongoDB / Redis / AI services",
 ]
 pythonpath = [
-    "src/autonomous",
+    "src",
 ]
 log_auto_indent = true
