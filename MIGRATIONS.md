@@ -5,6 +5,44 @@ recent first.
 
 ## Unreleased
 
+### `auto_pre_init` hardened; falsy values preserved; opt-out added (Item 13)
+
+**What changed.** ``AutoModel.auto_pre_init`` (the pre-init signal hook
+that side-loads stored fields when you write ``Model(pk=x)``) is now:
+
+- Defensive against missing / empty ``values`` kwargs.
+- Defensive against malformed primary keys (``Model(pk="not-an-oid")``
+  no longer raises ``InvalidId`` from inside ``__init__``).
+- Defensive against ``OperationFailure`` / ``ConnectionFailure`` from
+  Mongo — the merge is skipped and instantiation continues. The error
+  is logged via ``log()``.
+- **Bug-fix:** the merge condition changed from ``not values.get(k)``
+  (which clobbered legitimate falsy values like ``0``, ``False``, ``""``,
+  ``[]``) to ``k not in values``. The caller's explicit values are
+  always honored.
+
+**New class attribute:** ``auto_load_on_init: bool = True``. Set to
+``False`` on a subclass that doesn't want a Mongo round trip per
+``Model(pk=x)`` construction. The default keeps the existing
+"reload-on-init" pattern intact.
+
+**Why.** The old hook had three real bugs (silent clobber of falsy
+values, raise on bad pk, raise on DB outage) and no opt-out. Combined
+they made ``Model(pk=x, count=0)`` silently lose the explicit ``0``
+overwrite, made bad input crash the constructor, and made every read
+path hit Mongo even in batch jobs that already had the data.
+
+**Migration.**
+
+- If your code used to write ``Model(pk=x, name="")`` expecting the
+  empty string to be ignored, you now get ``""``. If you wanted the
+  stored value, drop the kwarg.
+- ``Model("not-a-real-oid")`` now constructs a fresh instance (no
+  side-load) instead of raising. ``Model.get(...)`` is still the right
+  way to look up by pk if you want None on miss.
+- High-throughput read paths can disable the side-load by setting
+  ``auto_load_on_init = False`` on the subclass.
+
 ### `AutoTasks` opens Redis lazily; supports injection (Item 12)
 
 **What changed.**

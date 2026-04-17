@@ -65,6 +65,12 @@ class AutoModel(Document):
     meta = {"abstract": True, "allow_inheritance": True, "strict": False}
     last_updated = DateTimeField(default=datetime.now)
 
+    #: Side-load behaviour for ``Model(pk=...)``. When True (the default),
+    #: pre-init reads the document from MongoDB and merges any stored
+    #: fields the caller didn't pass. Set to False on a subclass that
+    #: doesn't want a DB hit per construction.
+    auto_load_on_init: bool = True
+
     def __eq__(self, other):
         return str(self.pk) == str(other.pk) if other else False
 
@@ -92,19 +98,54 @@ class AutoModel(Document):
         )
 
     @classmethod
-    def auto_pre_init(cls, sender, document, **kwargs):
-        values = kwargs.pop("values", None)
-        if pk := values.get("pk") or values.get("id"):
-            # Try to load the existing document from the database
-            if existing_doc := sender._get_collection().find_one(
-                {"_id": bson.ObjectId(pk)}
-            ):
-                # Update the current instance with the existing data
-                existing_doc.pop("_id", None)
-                existing_doc.pop("_cls", None)
-                for k, v in existing_doc.items():
-                    if not values.get(k):
-                        values[k] = v
+    def auto_pre_init(cls, sender, document, **kwargs) -> None:
+        """Side-load fields from MongoDB on ``Model(pk=...)`` construction.
+
+        When the caller passes only a primary key (``Model(pk=x)`` /
+        ``Model(id=x)``), this hook fetches the stored document and fills
+        in any field the caller didn't explicitly provide. The caller's
+        kwargs always win — useful for partial updates like
+        ``Model(pk=x, name="new")`` which becomes equivalent to
+        ``Model.get(x); m.name = "new"`` without an extra round trip in
+        userland.
+
+        Bypass entirely by setting ``cls.auto_load_on_init = False``.
+
+        Failure modes that are *not* errors:
+          - ``values`` kwarg missing — nothing to merge into; return
+          - ``pk`` malformed (not a valid ObjectId) — return
+          - document not found in DB — return
+          - DB unavailable — return (logged elsewhere)
+        """
+        if not getattr(sender, "auto_load_on_init", True):
+            return
+        values = kwargs.get("values")
+        if not values:
+            return
+        pk = values.get("pk") or values.get("id")
+        if not pk:
+            return
+        try:
+            oid = bson.ObjectId(pk)
+        except (bson.errors.InvalidId, TypeError):
+            return
+        try:
+            existing_doc = sender._get_collection().find_one({"_id": oid})
+        except (
+            pymongo_errors.OperationFailure,
+            pymongo_errors.ConnectionFailure,
+        ) as exc:
+            log(f"auto_pre_init DB error for {sender.__name__} pk={pk}: {exc}")
+            return
+        if not existing_doc:
+            return
+        existing_doc.pop("_id", None)
+        existing_doc.pop("_cls", None)
+        # Fix: previously used ``not values.get(k)`` which clobbered
+        # legitimate falsy values (0, False, "", []). Compare presence.
+        for k, v in existing_doc.items():
+            if k not in values:
+                values[k] = v
 
     @classmethod
     def _auto_pre_init(cls, sender, document, **kwargs):
