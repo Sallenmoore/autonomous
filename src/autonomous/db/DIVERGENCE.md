@@ -63,8 +63,8 @@ types each site actually expects:
   original chained via `from`.
 - `connection.py` `_create_connection` — catches
   `pymongo.errors.PyMongoError`, `ValueError`, `TypeError`.
-- `fields.py` BinaryField decode, ComplexDateTimeField parse, GridFS
-  get/read/delete, ImageField validate — narrowed per site.
+- `fields.py` GridFS get/read/delete, ImageField validate — narrowed
+  per site.
 - `document.py` DBRef key cast — catches `TypeError`, `ValueError`;
   re-raises as `TypeError`.
 - `queryset/base.py`, `queryset/transform.py` — narrowed to
@@ -73,6 +73,52 @@ types each site actually expects:
 Unexpected errors now propagate with original tracebacks. No observable
 change for well-formed inputs; malformed inputs surface clearer
 exceptions.
+
+### Removed surface area (2026 cleanup, item 23)
+
+The fork no longer ships the following upstream classes/helpers. They
+were unreferenced by `autonomous.model.*`, uncovered by tests, and
+carried compatibility baggage (deprecated Mongo commands, server-side
+JS, geo indexing) that the project does not need:
+
+**Fields** — `URLField`, `LongField`, `DecimalField`,
+`ComplexDateTimeField`, `BinaryField`, `UUIDField`, `Decimal128Field`,
+`SortedListField`, `MapField`, `GenericEmbeddedDocumentField`,
+`GeoPointField`, `PointField`, `LineStringField`, `PolygonField`,
+`MultiPointField`, `MultiLineStringField`, `MultiPolygonField`,
+`SequenceField`, `CachedReferenceField`, `LazyReferenceField`,
+`GenericLazyReferenceField`, `GeoJsonBaseField`.
+
+**Base datastructure** — `LazyReference` (consumer-only proxy for the
+lazy reference fields).
+
+**Documents** — `MapReduceDocument` (MongoDB's mapReduce command is
+deprecated; use the aggregation pipeline via
+`AutoModel.objects.aggregate(...)`).
+
+**QuerySet methods** — `QuerySet.map_reduce()`,
+`QuerySet.item_frequencies()` and their helpers. Aggregation covers
+the only production use.
+
+**Query operators** — geo operators (`within_*`, `near`, `near_sphere`,
+`geo_within*`, `geo_intersects`, `max_distance`, `min_distance`) and
+the `_geo_indices()` classmethod / `_geo_index` field attribute. Index
+specs are now built from `_unique_with_indexes()` alone.
+
+### Deferred removals
+
+Still in the tree but unused by first-party code; removal requires a
+more invasive pass than this cleanup made room for. Do not add new
+callers.
+
+- `DynamicDocument` / `DynamicEmbeddedDocument` and the `_dynamic*`
+  machinery in `base/document.py` (52 touchpoints on
+  `_dynamic` / `_dynamic_fields` / `_dynamic_lock`).
+- `EmbeddedDocument`, `EmbeddedDocumentField`,
+  `EmbeddedDocumentListField`, `EmbeddedDocumentList` — threaded
+  through the metaclass, `dereference.py`, and `base/document.py`.
+- `DynamicField` stays as long as `DynamicDocument` does (its only
+  consumer is the undeclared-field path inside `BaseDocument`).
 
 ### Custom helpers / attributes
 

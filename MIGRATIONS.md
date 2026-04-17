@@ -5,6 +5,74 @@ recent first.
 
 ## Unreleased
 
+### autonomous.db fork — dead surface removal (Item 23)
+
+**What changed.** ~1800 LOC of unreferenced mongoengine carry-over was
+deleted from `src/autonomous/db/`. Nothing in `autonomous.model.*`
+imports these names and no tests covered them, but a subclass reaching
+directly into `autonomous.db.fields` (for example, a custom `AutoModel`
+that declared `from autonomous.db import URLField`) will now fail at
+import. Substitutes below.
+
+**Removed field classes.**
+
+| Removed | Replacement |
+|---------|-------------|
+| `URLField` | `StringField` + your own regex / validator |
+| `LongField` | `IntField` (Python 3's `int` is already 64-bit) |
+| `DecimalField`, `Decimal128Field` | `FloatField` for inexact; store as `StringField` if you need exact precision |
+| `ComplexDateTimeField` | `DateTimeField` (Mongo's BSON datetime has millisecond precision; store a separate microsecond field if you need more) |
+| `BinaryField` | `StringField` with your own `bytes.hex()` / `bytes.fromhex()` round-trip, or hold the bytes outside Mongo in `LocalStorage` |
+| `UUIDField` | `StringField` holding `str(uuid.uuid4())` |
+| `SortedListField` | `ListField` — sort in Python on access |
+| `MapField` | `DictField` — it doesn't enforce a homogeneous value type, but first-party code never depended on that |
+| `GenericEmbeddedDocumentField` | `EmbeddedDocumentField` pinned to the concrete class |
+| `SequenceField` | `ObjectIdField` (the default primary key) |
+| `CachedReferenceField` | `ReferenceField` |
+| `LazyReferenceField`, `GenericLazyReferenceField` | `ReferenceField` / `GenericReferenceField` (always eagerly dereferenced via `ReferenceAttr`) |
+| `GeoPointField`, `PointField`, `LineStringField`, `PolygonField`, `MultiPointField`, `MultiLineStringField`, `MultiPolygonField`, `GeoJsonBaseField` | no replacement — drop geo queries or add geo support back on the caller side |
+
+Also removed:
+
+- `autonomous.db.base.LazyReference` — the proxy returned by the lazy
+  reference fields.
+- `autonomous.db.document.MapReduceDocument` — MongoDB's mapReduce
+  command is deprecated. Use `.objects.aggregate(pipeline)` instead.
+- `QuerySet.map_reduce()`, `QuerySet.item_frequencies()` — both were
+  server-side-JS paths (the `mapReduce` and `eval` commands). The
+  `eval` command was removed in Mongo 4.2; `mapReduce` is deprecated
+  in 5.0. Replace with an aggregation pipeline.
+- Geo query operators: `within_*`, `near`, `near_sphere`, `geo_*`,
+  `max_distance`, `min_distance`. The `_geo_index` / `_geo_indices`
+  index-generation hooks are gone too; indexes now come from explicit
+  `meta = {"indexes": [...]}` plus `_unique_with_indexes`.
+
+**Deferred.** `DynamicDocument` / `DynamicEmbeddedDocument` /
+`EmbeddedDocument` (+ their field descriptors and the related
+datastructures) stay in the tree for now — removing them cleanly
+requires a targeted pass on `base/document.py` and the metaclass. Do
+not add new callers; they'll disappear in a follow-up.
+
+**Why.** The fork was vendored from mongoengine, grew with the project,
+and never had unused surface pruned. Every removed class was either
+zero-consumed, shadowed by a simpler alternative, or wired to a
+deprecated MongoDB command. Narrower public surface means faster
+imports, fewer code paths for bugs to hide in, and a shorter mental
+map for new contributors.
+
+**Migration.**
+
+- Grep your codebase for each name in the table. If you used one, pick
+  the listed replacement (most are one-line substitutions).
+- If you constructed any geo operator via `.filter(field__near=...)`
+  etc., rewrite the query to use an aggregation stage — or restore
+  `GeoJsonBaseField` + its fields out-of-tree if you need them.
+- `QuerySet.map_reduce()` / `QuerySet.item_frequencies()` callers
+  should switch to `AutoModel.objects.aggregate(...)`. See the Mongo
+  aggregation docs for equivalents of the emit/reduce pattern.
+- Fork-level details, including the "what's still deferred" list,
+  live in `src/autonomous/db/DIVERGENCE.md`.
+
 ### `AutoModel.where()` — chainable query API (Item 20)
 
 **What changed.** New classmethod ``AutoModel.where(**kwargs)`` returns
