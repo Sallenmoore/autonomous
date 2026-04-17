@@ -849,34 +849,18 @@ class BaseDocument:
     @classmethod
     def _build_index_specs(cls, meta_indexes):
         """Generate and merge the full index specs."""
-        geo_indices = cls._geo_indices()
         unique_indices = cls._unique_with_indexes()
         index_specs = [cls._build_index_spec(spec) for spec in meta_indexes]
 
-        def merge_index_specs(index_specs, indices):
-            """Helper method for merging index specs."""
-            if not indices:
-                return index_specs
-
-            # Create a map of index fields to index spec. We're converting
-            # the fields from a list to a tuple so that it's hashable.
+        if unique_indices:
             spec_fields = {tuple(index["fields"]): index for index in index_specs}
-
-            # For each new index, if there's an existing index with the same
-            # fields list, update the existing spec with all data from the
-            # new spec.
-            for new_index in indices:
+            for new_index in unique_indices:
                 candidate = spec_fields.get(tuple(new_index["fields"]))
                 if candidate is None:
                     index_specs.append(new_index)
                 else:
                     candidate.update(new_index)
 
-            return index_specs
-
-        # Merge geo indexes and unique_with indexes into the meta index specs.
-        index_specs = merge_index_specs(index_specs, geo_indices)
-        index_specs = merge_index_specs(index_specs, unique_indices)
         return index_specs
 
     @classmethod
@@ -1023,43 +1007,6 @@ class BaseDocument:
                 unique_indexes += doc_cls._unique_with_indexes(field_namespace)
 
         return unique_indexes
-
-    @classmethod
-    def _geo_indices(cls, inspected=None, parent_field=None):
-        inspected = inspected or []
-        geo_indices = []
-        inspected.append(cls)
-
-        geo_field_type_names = (
-            "EmbeddedDocumentField",
-            "GeoPointField",
-            "PointField",
-            "LineStringField",
-            "PolygonField",
-        )
-
-        geo_field_types = tuple(_import_class(field) for field in geo_field_type_names)
-
-        for field in cls._fields.values():
-            if not isinstance(field, geo_field_types):
-                continue
-
-            if hasattr(field, "document_type"):
-                field_cls = field.document_type
-                if field_cls in inspected:
-                    continue
-
-                if hasattr(field_cls, "_geo_indices"):
-                    geo_indices += field_cls._geo_indices(
-                        inspected, parent_field=field.db_field
-                    )
-            elif field._geo_index:
-                field_name = field.db_field
-                if parent_field:
-                    field_name = f"{parent_field}.{field_name}"
-                geo_indices.append({"fields": [(field_name, field._geo_index)]})
-
-        return geo_indices
 
     @classmethod
     def _lookup_field(cls, parts):

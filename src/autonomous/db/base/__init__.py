@@ -26,7 +26,6 @@ __all__ = (
     "BaseField",
     "ComplexBaseField",
     "ObjectIdField",
-    "GeoJsonBaseField",
     # metaclasses
     "DocumentMetaclass",
     "TopLevelDocumentMetaclass",

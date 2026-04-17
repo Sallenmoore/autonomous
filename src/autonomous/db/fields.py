@@ -30,7 +30,6 @@ from autonomous.db.base import (
     BaseDocument,
     BaseField,
     ComplexBaseField,
-    GeoJsonBaseField,
     LazyReference,
     ObjectIdField,
     get_document,
@@ -96,17 +95,9 @@ __all__ = (
     "ImageGridFsProxy",
     "ImproperlyConfigured",
     "ImageField",
-    "GeoPointField",
-    "PointField",
-    "LineStringField",
-    "PolygonField",
     "SequenceField",
     "UUIDField",
     "EnumField",
-    "MultiPointField",
-    "MultiLineStringField",
-    "MultiPolygonField",
-    "GeoJsonBaseField",
     "Decimal128Field",
 )
 
@@ -2282,152 +2273,6 @@ class UUIDField(BaseField):
                 uuid.UUID(value)
             except (ValueError, TypeError, AttributeError) as exc:
                 self.error("Could not convert to UUID: %s" % exc)
-
-
-class GeoPointField(BaseField):
-    """A list storing a longitude and latitude coordinate.
-
-    .. note:: this represents a generic point in a 2D plane and a legacy way of
-        representing a geo point. It admits 2d indexes but not "2dsphere" indexes
-        in MongoDB > 2.4 which are more natural for modeling geospatial points.
-        See :ref:`geospatial-indexes`
-    """
-
-    _geo_index = pymongo.GEO2D
-
-    def validate(self, value):
-        """Make sure that a geo-value is of type (x, y)"""
-        if not isinstance(value, (list, tuple)):
-            self.error("GeoPointField can only accept tuples or lists of (x, y)")
-
-        if not len(value) == 2:
-            self.error("Value (%s) must be a two-dimensional point" % repr(value))
-        elif not isinstance(value[0], (float, int)) or not isinstance(
-            value[1], (float, int)
-        ):
-            self.error("Both values (%s) in point must be float or int" % repr(value))
-
-
-class PointField(GeoJsonBaseField):
-    """A GeoJSON field storing a longitude and latitude coordinate.
-
-    The data is represented as:
-
-    .. code-block:: js
-
-        {'type' : 'Point' ,
-         'coordinates' : [x, y]}
-
-    You can either pass a dict with the full information or a list
-    to set the value.
-
-    Requires mongodb >= 2.4
-    """
-
-    _type = "Point"
-
-
-class LineStringField(GeoJsonBaseField):
-    """A GeoJSON field storing a line of longitude and latitude coordinates.
-
-    The data is represented as:
-
-    .. code-block:: js
-
-        {'type' : 'LineString' ,
-         'coordinates' : [[x1, y1], [x2, y2] ... [xn, yn]]}
-
-    You can either pass a dict with the full information or a list of points.
-
-    Requires mongodb >= 2.4
-    """
-
-    _type = "LineString"
-
-
-class PolygonField(GeoJsonBaseField):
-    """A GeoJSON field storing a polygon of longitude and latitude coordinates.
-
-    The data is represented as:
-
-    .. code-block:: js
-
-        {'type' : 'Polygon' ,
-         'coordinates' : [[[x1, y1], [x1, y1] ... [xn, yn]],
-                          [[x1, y1], [x1, y1] ... [xn, yn]]}
-
-    You can either pass a dict with the full information or a list
-    of LineStrings. The first LineString being the outside and the rest being
-    holes.
-
-    Requires mongodb >= 2.4
-    """
-
-    _type = "Polygon"
-
-
-class MultiPointField(GeoJsonBaseField):
-    """A GeoJSON field storing a list of Points.
-
-    The data is represented as:
-
-    .. code-block:: js
-
-        {'type' : 'MultiPoint' ,
-         'coordinates' : [[x1, y1], [x2, y2]]}
-
-    You can either pass a dict with the full information or a list
-    to set the value.
-
-    Requires mongodb >= 2.6
-    """
-
-    _type = "MultiPoint"
-
-
-class MultiLineStringField(GeoJsonBaseField):
-    """A GeoJSON field storing a list of LineStrings.
-
-    The data is represented as:
-
-    .. code-block:: js
-
-        {'type' : 'MultiLineString' ,
-         'coordinates' : [[[x1, y1], [x1, y1] ... [xn, yn]],
-                          [[x1, y1], [x1, y1] ... [xn, yn]]]}
-
-    You can either pass a dict with the full information or a list of points.
-
-    Requires mongodb >= 2.6
-    """
-
-    _type = "MultiLineString"
-
-
-class MultiPolygonField(GeoJsonBaseField):
-    """A GeoJSON field storing  list of Polygons.
-
-    The data is represented as:
-
-    .. code-block:: js
-
-        {'type' : 'MultiPolygon' ,
-         'coordinates' : [[
-               [[x1, y1], [x1, y1] ... [xn, yn]],
-               [[x1, y1], [x1, y1] ... [xn, yn]]
-           ], [
-               [[x1, y1], [x1, y1] ... [xn, yn]],
-               [[x1, y1], [x1, y1] ... [xn, yn]]
-           ]
-        }
-
-    You can either pass a dict with the full information or a list
-    of Polygons.
-
-    Requires mongodb >= 2.6
-    """
-
-    _type = "MultiPolygon"
 
 
 class LazyReferenceField(BaseField):
