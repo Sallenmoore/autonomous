@@ -61,35 +61,34 @@ class ImageAttr(ImageField):
 class ReferenceAttr(GenericReferenceField):
     def __get__(self, instance, owner):
         try:
-            result = super().__get__(instance, owner)
-        except DoesNotExist as e:
-            # log(f"ReferenceAttr Error: {e}")
+            return super().__get__(instance, owner)
+        except DoesNotExist:
             return None
-        return result
 
 
 class ListAttr(ListField):
     def __get__(self, instance, owner):
         results = super().__get__(instance, owner)
 
-        # sanity check
+        # Defensive: a corrupted document or fresh init can leave the
+        # field in a non-list state; reset to empty so downstream code
+        # doesn't choke on len() / iteration.
         if not isinstance(results, list):
             super().__set__(instance, [])
             results = super().__get__(instance, owner)
 
-        # log(f"ListAttr: {results}")
         if isinstance(self.field, ReferenceAttr):
+            # Drop dangling references in-place (deleted documents leave
+            # ``None`` placeholders the upstream ListField doesn't prune).
             i = 0
             while i < len(results):
                 try:
                     if not results[i]:
-                        # log(f"Removing Object: {results[i]}")
                         results.pop(i)
                     else:
                         i += 1
                 except DoesNotExist:
                     results.pop(i)
-                    # log(f"Object Not Found: {results[i]}")
         return results
 
     def __set__(self, instance, value):

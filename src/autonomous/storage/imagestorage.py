@@ -59,7 +59,6 @@ class ImageStorage:
         return f"{folder.replace('/', '.')}{pkey or uuid.uuid4()}"
 
     def _resize_image(self, asset_id, max_size=1024):
-        # log("Resizing image", asset_id, max_size)
         file_path = f"{self.get_path(asset_id)}/orig.webp"
         try:
             with Image.open(file_path) as img:
@@ -233,15 +232,8 @@ class ImageStorage:
 
     def rotate(self, asset_id, amount=-90):
         file_path = self.get_path(asset_id)
-        log(asset_id)
         with Image.open(f"{file_path}/orig.webp") as img:
-            # Rotate the image 90 degrees
             rotated_img = img.rotate(amount, expand=True)
-            # Save the rotated image
-            log(img, rotated_img)
-            # img = img.copy()
-            # img_byte_arr = io.BytesIO()
-            # img.save(img_byte_arr, )
             self.clear_cached(asset_id)
             rotated_img.save(f"{file_path}/orig.webp", format="WEBP")
         return False
@@ -253,7 +245,6 @@ class ImageStorage:
                 rotated_img = img.transpose(Image.FLIP_LEFT_RIGHT)
             if flipy:
                 rotated_img = img.transpose(Image.FLIP_TOP_BOTTOM)
-            # Save the rotated image
             rotated_img.save(f"{file_path}/orig.webp", format="WEBP")
             self.clear_cached(asset_id)
         return False
