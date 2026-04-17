@@ -5,6 +5,47 @@ recent first.
 
 ## Unreleased
 
+### Unit vs integration test split (Item 21)
+
+**What changed.**
+
+- ``pytest`` with no args now discovers only the hermetic suite under
+  ``tests/unit/`` — no Mongo / Redis / AI services required.
+- Previously-unit tests that actually needed the full service stack
+  (``test_unit_ai.py``, ``test_unit_auth.py``, ``test_unit_automodel.py``,
+  ``test_unit_storage.py``, ``test_unit_tasks.py``) moved to
+  ``tests/integration/`` and were renamed to ``test_int_*.py``.
+- ``tests/integration/conftest.py`` auto-applies the
+  ``@pytest.mark.integration`` marker so ``pytest -m integration`` works.
+- The marker is registered in ``pyproject.toml`` so pytest no longer
+  warns about unknown markers.
+- ``tests/docker-compose.yml`` was added with Mongo + Redis services
+  matching the integration-test env vars. ``tests/.testenv`` ships the
+  matching env defaults so ``pytest`` picks them up.
+- ``Makefile`` targets:
+  - ``make test`` — hermetic unit tests (fast, no services needed)
+  - ``make test-int`` — integration tests (spins up compose stack first)
+  - ``make test-all`` / ``make tests`` — both
+  - ``make inittests`` — bring up the compose stack
+  - ``make cleantests`` — tear it down
+
+**Why.** The unit directory had grown to contain tests that required a
+live Mongo + Redis, forcing every local ``pytest`` invocation to bring
+up Docker or fail. The split makes the cheap tests run in under 3
+seconds on a bare laptop and isolates the integration stack to the one
+target that needs it.
+
+**Migration.**
+
+- If your CI invoked ``pytest`` and assumed it ran everything, switch
+  to ``make test-all`` or ``pytest tests/unit tests/integration``.
+- If you relied on a hand-rolled compose file at ``tests/docker-compose.yml``,
+  the new version expects env vars matching ``tests/.testenv``; diff and
+  merge.
+- Test files moved to ``tests/integration/`` were renamed from
+  ``test_unit_*.py`` to ``test_int_*.py``. Import paths are unchanged;
+  CI patterns that grep for ``test_unit_`` may need updating.
+
 ### Retry helper extracted from local_model.py (Item 17)
 
 **What changed.** New module ``autonomous.ai.retry`` exposes a

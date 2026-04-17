@@ -66,8 +66,19 @@ env_files = [
 env_override_existing_values = 1
 addopts = "--cov=autonomous -rx -l -x -s --log-level=INFO --ignore=src --no-cov-on-fail -v --pdb --cov-reset "
 
+# Default ``pytest`` only runs hermetic unit tests. Integration tests
+# (under tests/integration/, marked @pytest.mark.integration) require
+# a live MongoDB + Redis (+ optionally AI backends) and must be invoked
+# explicitly:
+#
+#   pytest tests/integration
+#   pytest -m integration
+#   make test-int
 testpaths = [
-     "tests",
+     "tests/unit",
+]
+markers = [
+    "integration: tests that require live MongoDB / Redis / AI services",
 ]
 pythonpath = [
     "src",
