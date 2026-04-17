@@ -152,3 +152,146 @@ make tests
 
 1. Update version in `/src/autonomous/__init__.py`
 2. `make package`
+
+---
+
+## Task List
+
+Backlog of known improvements across the framework, sorted from
+highest to lowest overall impact. Each item is tagged with the axis
+it primarily addresses (**security** / **stability** / **functionality**
+/ **efficiency** / **usability**) and a concrete file:line anchor.
+
+1. **[security]** `apis/version_control/GHCallbacks.py:38` —
+   `certificate_check` returns `True` unconditionally, disabling TLS
+   verification for every git operation. Enable verification or make
+   the bypass an explicit, logged opt-in.
+
+2. **[stability]** AI backend signatures drift across
+   `ai/models/local_model.py`, `ai/models/gemini.py`, and
+   `ai/models/mock_model.py`. `generate_json` (`system_prompt` vs
+   `function`), `upscale_image` (`image_content` vs `file`), and
+   `generate_transcription` (structured dict vs raw text) disagree so
+   swapping the backend raises at runtime. Pin signatures on
+   `BaseAgent` and make adapters conform.
+
+3. **[functionality]** `storage/imagestorage.py:224,239,250` —
+   `remove()`, `rotate()`, and `flip()` unconditionally return
+   `False` (TODO stubs). Implement the operations or remove them
+   from the public surface.
+
+4. **[stability]** `apis/version_control/GHRepo.py:97,99` — `commit()`
+   hard-codes "Steven Moore" / "samoore@binghamton.edu" as the
+   committer identity and uses a fixed commit message. Read from
+   config or require args.
+
+5. **[stability]** `auth/autoauth.py:129`, `auth/google.py:22` —
+   userinfo is fetched with `requests.get(...).json()`: no timeout,
+   no retry, no status-code check. Transient network blips propagate
+   as 500s. Wrap in the existing `autonomous.ai.retry.retry` helper
+   with a bounded timeout.
+
+6. **[stability]** `ai/models/gemini.py:162-164` — unbounded `while`
+   loop polling `file.state` with a 0.5s sleep and no cap. Add a
+   max-attempts / wall-clock limit and raise on timeout.
+
+7. **[functionality]** `cli.py` — `createapp()` is a single
+   placeholder. Wire real commands: `autonomous init`,
+   `autonomous docs build`, `autonomous tasks run-worker`.
+
+8. **[functionality]** `model/automodel.py` — no bulk operations.
+   Add `AutoModel.bulk_create(objs)` and `bulk_update(filter, **set)`
+   backed by `insert_many` / `update_many`. Hot write paths currently
+   loop `.save()` per object.
+
+9. **[stability]** `apis/version_control/GHRepo.py:18,36-41` — `path`
+   and `repo.name` are joined onto the on-disk target without
+   traversal validation. Reuse `_sanitize_relative` / `_safe_join`
+   from `storage/localstorage.py`.
+
+10. **[stability]** GitHub APIs have no rate-limit handling. PyGithub
+    raises `RateLimitExceededException` on 403; the wrappers ignore
+    it. Catch, sleep until `reset_at`, retry.
+
+11. **[functionality]** `apis/version_control/GHOrganization.py:31` —
+    `get_repos()` iterates without pagination and silently truncates
+    on orgs with more than 30 repos. Walk the full result set or
+    accept a `page_size` kwarg.
+
+12. **[efficiency]** `model/autoattr.py` `ListAttr.__get__` —
+    reference pruning fetches each referent one at a time (N+1).
+    Batch-resolve via `QuerySet.in_bulk` on the non-`None` pk set.
+
+13. **[stability]** `db/db_sync.py:16-18` — `_redis_client`,
+    `_mongo_client`, `_mongo_db` singletons are created under no
+    lock. Guard with `threading.Lock` or use `functools.lru_cache`
+    on the getter functions.
+
+14. **[stability]** `logger.py:85-88` — handler opens files per call
+    without locking. Concurrent `log()` calls from gunicorn workers
+    interleave. Switch to `logging.handlers.RotatingFileHandler` or
+    add an explicit write lock.
+
+15. **[functionality]** `taskrunner/task_router.py` —
+    `TaskRouterBase.ROUTES` is an empty list; no register decorator,
+    no dispatch primitives. Flesh out as a route-name → callable
+    registry or delete the module.
+
+16. **[efficiency]** `ai/models/local_model.py:264-280` —
+    `generate_text`, `generate_audio`, and `summarize_text` are
+    single bare HTTP attempts. Route through the existing `retry()`
+    helper.
+
+17. **[functionality]** `db/signals.py:51-57` — pre/post init, save,
+    delete only. No `pre_update` / `post_update` hook for partial
+    field changes. Add signals and emit from the `.update()`
+    helpers.
+
+18. **[functionality]** No soft-delete pattern on `AutoModel`. Add
+    an optional `SoftDeleteMixin` with `deleted_at` plus a queryset
+    filter that hides tombstones by default.
+
+19. **[functionality]** `storage/` — no S3 / cloud backend. Extract a
+    minimal `StorageBackend` protocol; implement `S3Storage` as an
+    extras-gated sibling of `LocalStorage`.
+
+20. **[usability]** Hard-coded tuning knobs with no env-var override:
+    `ai/models/local_model.py:32-36` (four timeouts),
+    `storage/imagestorage.py:30` (thumbnail sizes),
+    `storage/imagestorage.py:61,66` (`max_size=1024`),
+    `taskrunner/autotasks.py:202` (7200s job TTL). Promote each to
+    an env-driven default.
+
+21. **[stability]** `ai/models/local_model.py:312-314` —
+    `summarize_text` breaks its loop on the first exception and
+    returns a partial summary silently. Count failures, raise when
+    the whole batch fails, or route through `retry()`.
+
+22. **[efficiency]** `ai/models/gemini.py:144,166` — `_add_files`
+    calls `client.files.list()` once per upload batch to resolve
+    filenames. Use the upload response directly.
+
+23. **[functionality]** Test gaps — zero unit coverage for
+    `apis/*`, `AutoTasks`, `ImageStorage.rotate/flip`, or the
+    optional-dependency stubs in the doc generator. Add hermetic
+    tests that don't require Mongo/Redis.
+
+24. **[usability]** `autonomous/__init__.py` — only re-exports `log`
+    + `init`. Add `AutoModel`, `AutoAuth`, `Response`, `AutoTasks`
+    so consumers can `from autonomous import AutoModel`.
+
+25. **[efficiency]** `db/db_sync.py:73` — hardcoded 5-second sleep in
+    `process_single_object_sync`. Replace with exponential backoff
+    via the `retry()` helper.
+
+26. **[stability]** `ai/agents/imageagent.py:29` — debug
+    `print("provider", self.provider)` left in the code path.
+    Replace with `log(...)` or delete.
+
+27. **[stability]** `utils/markdown.py:70-73` — recursive parser has
+    no depth limit; pathological input can stack-overflow. Add an
+    explicit depth cap (e.g., 128).
+
+28. **[usability]** `apis/version_control/GHVersionControl.py:9-11`
+    — `GHConfig` declares `name: float` / `email: int`; fields are
+    never read anywhere. Fix the types or delete the dataclass.
