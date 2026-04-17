@@ -93,7 +93,6 @@ def query(_doc_cls=None, **kwargs):
                 raise InvalidQueryError(e) from e
             parts = []
 
-            CachedReferenceField = _import_class("CachedReferenceField")
             GenericReferenceField = _import_class("GenericReferenceField")
 
             cleaned_fields = []
@@ -102,9 +101,6 @@ def query(_doc_cls=None, **kwargs):
                 if isinstance(field, str):
                     parts.append(field)
                     append_field = False
-                # Handle CachedReferenceField
-                elif isinstance(field, CachedReferenceField) and fields[-1] == field:
-                    parts.append("%s._id" % field.db_field)
                 else:
                     parts.append(field.db_field)
 
@@ -118,9 +114,6 @@ def query(_doc_cls=None, **kwargs):
             singular_ops += STRING_OPERATORS
             if op in singular_ops:
                 value = field.prepare_query_value(op, value)
-
-                if isinstance(field, CachedReferenceField) and value:
-                    value = value["_id"]
 
             elif op in ("in", "nin", "all", "near") and not isinstance(value, dict):
                 # Raise an error if the in/nin/all/near param is not iterable.
