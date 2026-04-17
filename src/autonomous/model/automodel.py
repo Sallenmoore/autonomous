@@ -72,13 +72,19 @@ class AutoModel(Document):
     auto_load_on_init: bool = True
 
     def __eq__(self, other):
-        return str(self.pk) == str(other.pk) if other else False
+        if not other or not hasattr(other, "pk"):
+            return False
+        return str(self.pk) == str(other.pk)
 
     def __lt__(self, other):
-        return str(self.pk) < str(other.pk) if other else False
+        if not other or not hasattr(other, "pk"):
+            return NotImplemented
+        return str(self.pk) < str(other.pk)
 
     def __gt__(self, other):
-        return not (str(self.pk) < str(other.pk)) if other else False
+        if not other or not hasattr(other, "pk"):
+            return NotImplemented
+        return str(self.pk) > str(other.pk)
 
     def __le__(self, other):
         return self < other or self == other
@@ -164,10 +170,15 @@ class AutoModel(Document):
         return f"{self.model_name().lower()}/{self.pk}"
 
     def model_name(self, qualified: bool = False) -> str:
-        """Return the model's class name (or the qualified ``module.Class``)."""
-        return (
-            f"{self.__module__}.{self._class_name}" if qualified else self._class_name
-        )
+        """Return the model's class name (or the qualified ``module.Class``).
+
+        Uses the Python class name rather than the mongoengine ``_class_name``
+        discriminator so subclasses of non-abstract documents report their own
+        name (``ChildModel``) instead of the parent-qualified form
+        (``RealModel.ChildModel``) that mongoengine writes into ``_cls``.
+        """
+        name = type(self).__name__
+        return f"{self.__module__}.{name}" if qualified else name
 
     @classmethod
     def get_model(

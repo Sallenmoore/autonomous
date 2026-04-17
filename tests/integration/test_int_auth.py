@@ -163,7 +163,9 @@ class TestAuthRequired:
         assert response.headers["Location"] == auth_cls.login_url
 
     def test_passes_through_authenticated_user(self, auth_cls, bound_session):
-        _FakeUserClass.current = _FakeUser(pk=1, state="authenticated")
+        fake = _FakeUser(pk=1, state="authenticated")
+        _FakeUserClass.current = fake
+        bound_session["user"] = fake.to_json()
 
         @auth_cls.auth_required()
         def view():
@@ -187,9 +189,11 @@ class TestAuthRequired:
         assert response.headers["Location"] == auth_cls.login_url
 
     def test_admin_only_allows_admin(self, auth_cls, bound_session):
-        _FakeUserClass.current = _FakeUser(
+        fake = _FakeUser(
             pk=1, state="authenticated", role="admin", is_admin=True
         )
+        _FakeUserClass.current = fake
+        bound_session["user"] = fake.to_json()
 
         @auth_cls.auth_required(admin=True)
         def view():
