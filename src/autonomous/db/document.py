@@ -1131,8 +1131,10 @@ class MapReduceDocument:
         if not isinstance(self.key, id_field_type):
             try:
                 self.key = id_field_type(self.key)
-            except Exception:
-                raise Exception("Could not cast key as %s" % id_field_type.__name__)
+            except (TypeError, ValueError) as exc:
+                raise TypeError(
+                    "Could not cast key as %s" % id_field_type.__name__
+                ) from exc
 
         if not hasattr(self, "_key_object"):
             self._key_object = self._document.objects.with_id(self.key)

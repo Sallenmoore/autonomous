@@ -421,7 +421,6 @@ class BaseDocument:
                     # ):
                     #     field._validate(value, clean=clean)
                     # else:
-                    # log(f"Validating {field}:{field.name} with value {value}")
                     field._validate(value)
                 except ValidationError as error:
                     errors[field.name] = error.errors or error

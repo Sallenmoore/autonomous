@@ -5,6 +5,55 @@ recent first.
 
 ## Unreleased
 
+### autonomous.db fork cleanup (Item 22)
+
+**What changed.** Focused pass over the vendored-then-forked
+mongoengine tree at `src/autonomous/db/`. Not a re-sync with upstream;
+concrete wins only.
+
+- Narrowed every broad `except Exception` in first-party-ish code to
+  the concrete errors each site actually expects (15 sites):
+  - `base/fields.py` ObjectIdField to_python / to_mongo / validate,
+    change-detection comparison (tz-naive vs tz-aware TypeError only).
+  - `common.py` `_import_class` — catches `(ImportError, AttributeError,
+    ValueError)`; re-raises as `ImportError` with `from e`.
+  - `connection.py` `_create_connection` — catches
+    `(pymongo.errors.PyMongoError, ValueError, TypeError)`.
+  - `fields.py` BinaryField decode, ComplexDateTimeField parse, GridFS
+    get/read/delete, ImageField validate — narrowed per site.
+  - `document.py` DBRef key cast — catches `(TypeError, ValueError)`;
+    re-raises as `TypeError`.
+  - `queryset/base.py` sort translation, `queryset/transform.py` field
+    lookup — catch `(LookupError, AttributeError)`.
+- Removed 15 `# log(...)` debug stubs from `db/fields.py`,
+  `db/base/fields.py`, `db/base/document.py`, `db/base/datastructures.py`.
+- Dropped an unused `# EmbeddedDocumentList` import comment and a stale
+  `# from autonomous.db.common import _import_class` comment.
+- Added `src/autonomous/db/DIVERGENCE.md` documenting why the fork
+  exists, every behavior delta vs upstream mongoengine that users rely
+  on, and the rule for adding future divergence.
+
+**Why.** The fork is maintained independently of upstream (per the
+project owner) and had accumulated broad catches, dead comments, and no
+written record of what the fork's guarantees are. Narrowing the
+catches preserves tracebacks for unexpected errors. DIVERGENCE.md makes
+the fork survivable across maintainers.
+
+**Migration.**
+
+- If you caught exotic errors (`MemoryError`, `KeyboardInterrupt`,
+  `AssertionError`) leaking from within these call sites because the
+  library swallowed them, those now propagate. Catch at your call site.
+- Error subtypes within the expected categories still behave the same —
+  an `InvalidId` still ends up as a `ValidationError` via
+  `ObjectIdField.validate`, etc.
+
+**Explicitly deferred** (audit suggested, not done here): type
+annotations on the `Document` / `QuerySet` / `Field` public surface
+(item #6 in the audit), `DocumentMetaclass` simplification (#11), and
+GridFS handle-leak audit (#14). All three risk destabilizing
+mongoengine's metaclass magic and deserve their own focused passes.
+
 ### Unit vs integration test split (Item 21)
 
 **What changed.**

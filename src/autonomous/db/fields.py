@@ -36,8 +36,6 @@ from autonomous.db.base import (
     get_document,
 )
 from autonomous.db.base.utils import LazyRegexCompiler
-
-# from autonomous.db.common import _import_class
 from autonomous.db.connection import DEFAULT_CONNECTION_NAME, get_db
 from autonomous.db.document import Document, EmbeddedDocument
 from autonomous.db.errors import (
@@ -50,7 +48,7 @@ from autonomous.db.queryset.base import BaseQuerySet
 from autonomous.db.queryset.transform import STRING_OPERATORS
 
 try:
-    from PIL import Image, ImageOps
+    from PIL import Image, ImageOps, UnidentifiedImageError
 
     if hasattr(Image, "Resampling"):
         LANCZOS = Image.Resampling.LANCZOS
@@ -59,6 +57,9 @@ try:
 except ImportError:
     # pillow is optional so may not be installed
     Image = None
+
+    class UnidentifiedImageError(Exception):  # type: ignore[no-redef]
+        """Shim so ImageField's except tuple is valid when Pillow is absent."""
     ImageOps = None
 
 
@@ -132,12 +133,13 @@ class StringField(BaseField):
             return value
         try:
             value = value.decode("utf-8")
-        except Exception:
+        except (UnicodeDecodeError, AttributeError):
+            # Non-utf8 bytes or a type without .decode — leave as-is so
+            # downstream validate() can complain clearly.
             pass
         return value
 
     def validate(self, value):
-        # log("Validating StringField", value)
         if not isinstance(value, str):
             self.error("StringField only accepts string values")
 
@@ -697,7 +699,10 @@ class ComplexDateTimeField(StringField):
         original_value = value
         try:
             return self._convert_from_string(value)
-        except Exception:
+        except (ValueError, TypeError, IndexError, AttributeError):
+            # Not a string in the expected ComplexDateTimeField format —
+            # return the untouched input so the caller (typically
+            # validate()) can raise a clearer error.
             return original_value
 
     def to_mongo(self, value):
@@ -939,7 +944,6 @@ class ListField(ComplexBaseField):
 
     def validate(self, value):
         """Make sure that a list of valid fields is being used."""
-        # log(value)
         if not isinstance(value, (list, tuple, BaseQuerySet)):
             self.error("Only lists and tuples may be used in a list field")
 
@@ -1493,7 +1497,6 @@ class GenericReferenceField(BaseField):
                     get_document(value.get("_cls")), value.get("_ref")
                 )
             except DoesNotExist:
-                # log(f"{value} DoesNotExist")
                 return
 
         if isinstance(value, Document):
@@ -1511,13 +1514,11 @@ class GenericReferenceField(BaseField):
                 )
         else:
             value = value.__class__.__name__
-        # log(value, type(value))
         super()._validate_choices(value)
 
     @staticmethod
     def _lazy_load_ref(ref_cls, dbref):
         dereferenced_son = ref_cls._get_db().dereference(dbref)
-        # log(dereferenced_son)
         if dereferenced_son is None:
             raise DoesNotExist(f"Trying to dereference unknown document {dbref}")
 
@@ -1798,7 +1799,7 @@ class GridFSProxy:
             if self.gridout is None:
                 self.gridout = self.fs.get(self.grid_id)
             return self.gridout
-        except Exception:
+        except gridfs.errors.NoFile:
             # File has been deleted
             return None
 
@@ -1837,11 +1838,11 @@ class GridFSProxy:
         gridout = self.get()
         if gridout is None:
             return None
-        else:
-            try:
-                return gridout.read(size)
-            except Exception:
-                return ""
+        try:
+            return gridout.read(size)
+        except (gridfs.errors.CorruptGridFile, OSError):
+            # Corrupt chunk or closed underlying cursor — treat as empty.
+            return ""
 
     def delete(self):
         # Delete file from GridFS, FileField still remains
@@ -1898,11 +1899,13 @@ class FileField(BaseField):
         ) or isinstance(value, (bytes, str)):
             # using "FileField() = file/string" notation
             grid_file = instance._data.get(self.name)
-            # If a file already exists, delete it
+            # If a file already exists, best-effort delete. A missing
+            # underlying GridFS object is fine; anything else is fine
+            # too because we're about to overwrite the slot anyway.
             if grid_file:
                 try:
                     grid_file.delete()
-                except Exception:
+                except gridfs.errors.NoFile:
                     pass
 
             # Create a new proxy object as we don't already have one
@@ -1962,8 +1965,8 @@ class ImageGridFsProxy(GridFSProxy):
         try:
             img = Image.open(file_obj)
             img_format = img.format
-        except Exception as e:
-            raise ValidationError("Invalid image: %s" % e)
+        except (UnidentifiedImageError, OSError, ValueError) as e:
+            raise ValidationError("Invalid image: %s" % e) from e
 
         # Progressive JPEG
         # TODO: fixme, at least unused, at worst bad implementation
@@ -2480,7 +2483,6 @@ class LazyReferenceField(BaseField):
         return self.document_type_obj
 
     def build_lazyref(self, value):
-        # log("build_lazyref", value)
         if isinstance(value, LazyReference):
             if value.passthrough != self.passthrough:
                 value = LazyReference(
@@ -2504,7 +2506,6 @@ class LazyReferenceField(BaseField):
 
     def __get__(self, instance, owner):
         """Descriptor to allow lazy dereferencing."""
-        # log("__get__", instance, owner)
         if instance is None:
             # Document class being used rather than a document object
             return self
@@ -2512,7 +2513,6 @@ class LazyReferenceField(BaseField):
         value = self.build_lazyref(instance._data.get(self.name))
         if value:
             instance._data[self.name] = value
-        # log("get", instance, self.name, value)
         return super().__get__(instance, owner)
 
     def to_mongo(self, value):
@@ -2610,7 +2610,6 @@ class GenericLazyReferenceField(GenericReferenceField):
             value, value.document_type, "!!!! Need to CHange LazyReference to this !!!!"
         )
         if isinstance(value, LazyReference):
-            # log(value, value.document_type)
             mro = [cls.__name__ for cls in value.document_type.mro()]
             for choice in self.choices:
                 if choice in mro:

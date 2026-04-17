@@ -4,15 +4,12 @@ import threading
 import weakref
 
 import pymongo
+import bson
 from bson import SON, DBRef, ObjectId
 
 from autonomous import log
 from autonomous.db.base.common import UPDATE_OPERATORS
-from autonomous.db.base.datastructures import (
-    BaseDict,
-    BaseList,
-    # EmbeddedDocumentList,
-)
+from autonomous.db.base.datastructures import BaseDict, BaseList
 from autonomous.db.common import _import_class
 from autonomous.db.errors import DeprecatedError, ValidationError
 
@@ -199,9 +196,9 @@ class BaseField:
                 )
                 if value_has_changed:
                     instance._mark_as_changed(self.name)
-            except Exception:
-                # Some values can't be compared and throw an error when we
-                # attempt to do so (e.g. tz-naive and tz-aware datetimes).
+            except TypeError:
+                # Some values can't be compared and throw TypeError when we
+                # attempt to do so (e.g. tz-naive vs tz-aware datetimes).
                 # Mark the field as changed in such cases.
                 instance._mark_as_changed(self.name)
 
@@ -276,7 +273,6 @@ class BaseField:
             self._validate_choices(value)
 
         # check validation argument
-        # log(f"Validating {self.name} with value {value}: {self.validation}")
         if self.validation is not None:
             if callable(self.validation):
                 try:
@@ -330,7 +326,6 @@ class ComplexBaseField(BaseField):
     @staticmethod
     def _lazy_load_refs(instance, name, ref_values, *, max_depth):
         _dereference = _import_class("DeReference")()
-        # log("_lazy_load_refs", _dereference)
         # MARK: PROBLEM
         documents = _dereference(
             ref_values,
@@ -344,7 +339,6 @@ class ComplexBaseField(BaseField):
     def __set__(self, instance, value):
         # Some fields e.g EnumField are converted upon __set__
         # So it is fair to mimic the same behavior when using e.g ListField(EnumField)
-        # log(f"Setting  {self.name}[{instance}] with value {value}")
         EnumField = _import_class("EnumField")
         if self.field and isinstance(self.field, EnumField):
             if isinstance(value, (list, tuple)):
@@ -574,7 +568,9 @@ class ObjectIdField(BaseField):
         try:
             if not isinstance(value, ObjectId):
                 value = ObjectId(value)
-        except Exception:
+        except (bson.errors.InvalidId, TypeError):
+            # Leave the value untouched so validate() can surface a
+            # clearer error on the bad input.
             pass
         return value
 
@@ -584,7 +580,7 @@ class ObjectIdField(BaseField):
 
         try:
             return ObjectId(str(value))
-        except Exception as e:
+        except (bson.errors.InvalidId, TypeError) as e:
             self.error(str(e))
 
     def prepare_query_value(self, op, value):
@@ -595,7 +591,7 @@ class ObjectIdField(BaseField):
     def validate(self, value):
         try:
             ObjectId(str(value))
-        except Exception:
+        except (bson.errors.InvalidId, TypeError):
             self.error("Invalid ObjectID")
 
 

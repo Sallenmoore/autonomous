@@ -1965,8 +1965,10 @@ class BaseQuerySet:
             key = key.replace("__", ".")
             try:
                 key = self._document._translate_field_name(key)
-            except Exception:
-                # TODO this exception should be more specific
+            except (LookupError, AttributeError):
+                # Key doesn't map to a declared field (e.g. a dynamic
+                # document field or a sort expression that targets a
+                # subdocument). Fall through with the untranslated key.
                 pass
 
             key_list.append((key, direction))

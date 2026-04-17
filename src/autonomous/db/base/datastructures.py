@@ -20,7 +20,6 @@ def mark_as_changed_wrapper(parent_method):
 
     def wrapper(self, *args, **kwargs):
         # Can't use super() in the decorator.
-        # log(args, kwargs)
         result = parent_method(self, *args, **kwargs)
         self._mark_as_changed()
         return result
@@ -162,7 +161,6 @@ class BaseList(list):
         return self
 
     def __setitem__(self, key, value):
-        # log(key, value)
         changed_key = key
         if isinstance(key, slice):
             # In case of slice, we don't bother to identify the exact elements being updated
