@@ -1,0 +1,40 @@
+# Integration-test service stack.
+#
+# Run:
+#   make inittests    # brings this up
+#   make test-int     # runs pytest tests/integration against it
+#   make cleantests   # tears it down
+#
+# The services match the env vars the library reads at runtime:
+#   DB_HOST, DB_PORT, DB_DB, DB_USERNAME, DB_PASSWORD (mongo)
+#   REDIS_HOST, REDIS_PORT                              (redis)
+#
+# Put those in tests/.testenv (see pyproject `env_files`) so pytest
+# picks them up automatically.
+
+services:
+  db:
+    image: mongo:7
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${DB_USERNAME:-autonomous}
+      MONGO_INITDB_ROOT_PASSWORD: ${DB_PASSWORD:-testpw}
+      MONGO_INITDB_DATABASE: ${DB_DB:-autonomous_test}
+    ports:
+      - "${DB_PORT:-27017}:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  cachedb:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10

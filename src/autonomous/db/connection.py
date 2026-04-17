@@ -1,5 +1,6 @@
 import warnings
 
+import pymongo
 from pymongo import MongoClient, ReadPreference, uri_parser
 from pymongo.common import _UUID_REPRESENTATIONS
 from pymongo.database_shared import _check_name
@@ -375,8 +376,10 @@ def _create_connection(alias, mongo_client_class, **connection_settings):
     """
     try:
         return mongo_client_class(**connection_settings)
-    except Exception as e:
-        raise ConnectionFailure(f"Cannot connect to database {alias} :\n{e}")
+    except (pymongo.errors.PyMongoError, ValueError, TypeError) as e:
+        raise ConnectionFailure(
+            f"Cannot connect to database {alias} :\n{e}"
+        ) from e
 
 
 def _find_existing_connection(connection_settings):

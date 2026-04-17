@@ -1,50 +1,23 @@
 ##################################
-#           PRODUCTION           #
+#       CORE RUNTIME DEPS        #
 ##################################
+#
+# Anything imported unconditionally by a top-level autonomous module lives
+# here. Provider-specific or workload-specific dependencies live in the
+# extras configured under [project.optional-dependencies] in pyproject.toml.
+#
+# Install everything with:   pip install autonomous-app[all]
+# Install a feature group:   pip install autonomous-app[ai,tasks]
 
-##### Frameworks #####
-
-Flask
-
-##### Debugging, Logging, and Documentation #####
-
-##### System #####
-
-setuptools
+# Configuration
 python-dotenv
+
+# Mongo ORM
+pymongo
 blinker
 
-##### Storage #####
-pymongo
-PyGithub
-pygit2
-pillow
-redis
-
-##### Frontend #####
-
-jsmin
-
-##### Network #####
-
-requests
-gunicorn
-
-##### Security #####
-
+# OAuth2 / Authentication
 Authlib
 
-##### Async #####
-rq
-
-##### AI #####
-ollama
-google-genai
-sentence-transformers
-
-##### Parsing #####
-dateparser
-python-slugify
-
-##### Audio #####
-pydub
+# HTTP for db_sync, AutoAuth callbacks, AI HTTP backends
+requests
