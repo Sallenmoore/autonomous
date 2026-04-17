@@ -5,6 +5,44 @@ recent first.
 
 ## Unreleased
 
+### `AutoModel.where()` — chainable query API (Item 20)
+
+**What changed.** New classmethod ``AutoModel.where(**kwargs)`` returns
+the underlying mongoengine ``QuerySet`` for chaining. Uses the same
+``str -> __icontains`` convenience mapping as ``search`` but does not
+materialize a list, so callers can keep composing:
+
+```python
+# Top-ten latest "hello"-ish posts
+posts = Post.where(title="hello").order_by("-created").limit(10)
+
+# First match of an exact lookup
+author = Post.where(author_id=pk).first()
+
+# Count without fetching rows
+n = Post.where(published=True).count()
+
+# Mix convenience and raw operators
+Post.where(name="alice", views__gt=1000, tags__in=["python"])
+```
+
+Rules for kwargs:
+- A ``str`` value with a plain field name (no ``__`` suffix) becomes
+  ``<field>__icontains=<value>`` — case-insensitive substring match.
+- Anything else (including keys that already contain ``__``) passes
+  straight through to mongoengine.
+
+**Why.** ``AutoModel.search`` returns a ``list``, which dead-ends
+chaining. Consumers who discovered ``Model.objects.filter(...)`` could
+chain, but that's undocumented and requires knowing mongoengine.
+``.where()`` makes chaining discoverable with the same ergonomic
+defaults as ``search``.
+
+**Migration.** Additive. ``search`` still returns a list for
+backward compatibility; prefer ``where`` for new code. There is no
+deprecation warning — ``search`` is useful when you know you want the
+list and don't care about chaining.
+
 ### autonomous.db fork cleanup (Item 22)
 
 **What changed.** Focused pass over the vendored-then-forked

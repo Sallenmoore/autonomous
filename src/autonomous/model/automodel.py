@@ -289,6 +289,42 @@ class AutoModel(Document):
         return cls.objects(**kwargs).first()
 
     @classmethod
+    def where(cls, **kwargs: Any):
+        """Return a chainable ``QuerySet`` for this model.
+
+        Unlike :meth:`search` — which materializes a ``list`` — ``where``
+        returns the underlying mongoengine QuerySet so consumers can
+        chain ``.order_by()``, ``.limit()``, ``.skip()``, ``.only()``,
+        ``.first()``, ``len()``, etc. without re-running the query.
+
+        Uses the same ``str -> __icontains`` translation as ``search``
+        for ergonomic case-insensitive substring matching:
+
+        .. code-block:: python
+
+            for post in Post.where(title="hello").order_by("-created")[:10]:
+                ...
+            author = Post.where(author_id=pk).first()
+            count = Post.where(published=True).count()
+
+        For raw mongoengine operators (``__gt``, ``__in``,
+        ``__regex``...), pass them explicitly; anything other than a
+        ``str`` is forwarded as-is:
+
+        .. code-block:: python
+
+            Post.where(views__gt=1000, tags__in=["python", "web"])
+        """
+        _ensure_connected()
+        translated: dict[str, Any] = {}
+        for k, v in kwargs.items():
+            if isinstance(v, str) and "__" not in k:
+                translated[f"{k}__icontains"] = v
+            else:
+                translated[k] = v
+        return cls.objects(**translated)
+
+    @classmethod
     def auto_pre_save(cls, sender, document, **kwargs):
         """
         Post-save hook for this model.
