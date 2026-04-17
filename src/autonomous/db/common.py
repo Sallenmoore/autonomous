@@ -25,7 +25,6 @@ def _import_class(cls_name):
         "Document",
         "DynamicEmbeddedDocument",
         "EmbeddedDocument",
-        "MapReduceDocument",
     )
 
     # Field Classes
