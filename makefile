@@ -1,5 +1,5 @@
 
-.PHONY: all clean cleantests test test-int test-all tests inittests package
+.PHONY: all clean cleantests test test-int test-all tests inittests package docs cleandocs
 
 -include .env
 export
@@ -47,3 +47,14 @@ test-all: test test-int
 
 # Backwards-compatible alias for the old behaviour.
 tests: test-all
+
+###### DOCS #######
+
+# Build the navigable HTML reference into docs/_build/ using the
+# zero-dependency generator at scripts/gen_docs.py.
+docs:
+	$(PYTHON) scripts/gen_docs.py --clean
+	@echo "Open docs/_build/index.html in a browser."
+
+cleandocs:
+	rm -rf docs/_build

@@ -1,3 +1,15 @@
+"""Typed attribute descriptors used on ``AutoModel`` subclasses.
+
+Every ``Attr`` class here is a thin wrapper around a mongoengine field
+from ``autonomous.db.fields``. They exist as a stable public surface so
+consumers can write ``from autonomous.model.autoattr import StringAttr``
+without reaching into the fork-internal ``autonomous.db.fields``
+namespace.
+
+Most are bare aliases. The ones that add behaviour document it in their
+class docstring.
+"""
+
 import re
 
 from autonomous.db.fields import (
@@ -20,10 +32,17 @@ from autonomous import log
 
 
 class StringAttr(StringField):
-    pass
+    """A unicode string attribute. Alias of :class:`StringField`."""
 
 
 class IntAttr(IntField):
+    """An integer attribute with best-effort string coercion.
+
+    Accepts numeric strings (``"1,234"`` → ``1234``) and extracts the
+    first integer substring from non-numeric input (``"$42.50"`` → ``42``).
+    Falls through to the parent behaviour for everything else.
+    """
+
     def __set__(self, instance, value):
         if isinstance(value, str):
             value = value.replace(",", "")
@@ -35,30 +54,37 @@ class IntAttr(IntField):
 
 
 class FloatAttr(FloatField):
-    pass
+    """A floating-point attribute. Alias of :class:`FloatField`."""
 
 
 class BoolAttr(BooleanField):
-    pass
+    """A boolean attribute. Alias of :class:`BooleanField`."""
 
 
 class DateTimeAttr(DateTimeField):
-    pass
+    """A ``datetime`` attribute. Alias of :class:`DateTimeField`."""
 
 
 class EmailAttr(EmailField):
-    pass
+    """An email-address attribute (validated). Alias of :class:`EmailField`."""
 
 
 class FileAttr(FileField):
-    pass
+    """A GridFS-backed file attribute. Alias of :class:`FileField`."""
 
 
 class ImageAttr(ImageField):
-    pass
+    """A GridFS-backed image attribute. Alias of :class:`ImageField`."""
 
 
 class ReferenceAttr(GenericReferenceField):
+    """A reference to another ``AutoModel`` instance.
+
+    Resolves to ``None`` when the referenced document has been deleted
+    rather than raising ``DoesNotExist``. Otherwise identical to
+    :class:`GenericReferenceField`.
+    """
+
     def __get__(self, instance, owner):
         try:
             return super().__get__(instance, owner)
@@ -67,19 +93,27 @@ class ReferenceAttr(GenericReferenceField):
 
 
 class ListAttr(ListField):
+    """A list attribute that self-heals.
+
+    Behaviour layered on top of :class:`ListField`:
+
+    - Returns an empty list (and rewrites the stored value) if the
+      document somehow contains a non-list under this key.
+    - When the list holds ``ReferenceAttr`` values, prunes ``None``
+      entries caused by deleted referents in-place on access.
+    - On assignment, turns a string with ``;`` or ``,`` separators into
+      a list of trimmed substrings; a single non-empty string becomes a
+      one-element list; ``""`` becomes ``[]``.
+    """
+
     def __get__(self, instance, owner):
         results = super().__get__(instance, owner)
 
-        # Defensive: a corrupted document or fresh init can leave the
-        # field in a non-list state; reset to empty so downstream code
-        # doesn't choke on len() / iteration.
         if not isinstance(results, list):
             super().__set__(instance, [])
             results = super().__get__(instance, owner)
 
         if isinstance(self.field, ReferenceAttr):
-            # Drop dangling references in-place (deleted documents leave
-            # ``None`` placeholders the upstream ListField doesn't prune).
             i = 0
             while i < len(results):
                 try:
@@ -106,6 +140,14 @@ class ListAttr(ListField):
 
 
 class DictAttr(DictField):
+    """A dictionary attribute that eagerly resolves lazy references.
+
+    When the stored dict contains values with a ``fetch()`` method
+    (typically ``ReferenceAttr`` placeholders), each value is
+    dereferenced on access. Missing referents are logged and the
+    placeholder is left in place.
+    """
+
     def __get__(self, instance, owner):
         results = super().__get__(instance, owner) or {}
         for key, lazy_obj in results.items():
@@ -124,4 +166,4 @@ class DictAttr(DictField):
 
 
 class EnumAttr(EnumField):
-    pass
+    """An enum-valued attribute. Alias of :class:`EnumField`."""

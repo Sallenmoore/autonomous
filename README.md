@@ -112,8 +112,12 @@ Post.get(p.pk).title  # "hello"
   - [ollama](https://ollama.com/), [google-genai](https://pypi.org/project/google-genai/), [sentence-transformers](https://www.sbert.net/)
 - **Testing**
   - [pytest](https://docs.pytest.org/) + [coverage](https://coverage.readthedocs.io/)
-- **Documentation** - Coming Soon
-  - [pdoc](https://pdoc.dev/docs/pdoc/doc.html)
+- **Documentation**
+  - Hand-authored guides live under `docs/` (Markdown).
+  - A zero-dependency generator at `scripts/gen_docs.py` introspects
+    the public surface and renders a navigable HTML reference to
+    `docs/_build/`.
+  - Build: `make docs`. Then open `docs/_build/index.html`.
 
 Autonomous has no framework dependency — pick your own (Flask, FastAPI, pure
 WSGI, CLI) and plug Autonomous into it.
@@ -125,7 +129,6 @@ WSGI, CLI) and plug Autonomous into it.
 ### TODO
 
 - Setup/fix template app generator
-- Add type hints
 - Switch to less verbose html preprocessor
 - 100% testing coverage
 
