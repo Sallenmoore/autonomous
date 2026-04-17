@@ -46,6 +46,34 @@ The library is a set of loosely-coupled service wrappers glued together by the `
 - [src/autonomous/apis/version_control/](src/autonomous/apis/version_control/) — PyGithub wrappers (`GHRepo`, `GHOrganization`, `GHCallbacks`).
 - [src/autonomous/logger.py](src/autonomous/logger.py) — `log` is a callable singleton that writes to `logs/current_run_error_log.log` + a dated archive; pass `_print=True` to also echo to stdout. Level controlled by `LOG_LEVEL` env var.
 
+## CI/CD
+
+### Pipeline shape
+
+```
+ai/<feature-slug>          (per-task branch, cut from ai-development)
+        │
+        ▼  PR (lint + unit tests required)
+      dev                  (integration tier; PRs to main cut from here)
+        │
+        ▼  PR (lint + unit + integration tests required, 1 approval)
+      main                 (protected; default branch)
+        │
+        ▼  git tag vX.Y.Z
+```
+
+### checklist for repo
+
+- [ ] Create `dev` and `ai-development` branches; push
+- [ ] Add `.github/pull_request_template.md` + `.github/CODEOWNERS` via PR to main
+- [ ] Create rulesets for `main` (1 approval) and `dev` (0 approvals); block deletion + force-push
+- [ ] Add pytest markers + lazy-connect any import-time side effects
+- [ ] Commit `lint.yml`, `test-unit.yml`, `test-integration.yml` via PR
+- [ ] Add required status checks to both rulesets
+- [ ] Commit `release.yml` via PR
+- [ ] Document AI branch convention in `CLAUDE.md`
+- [ ] Smoketest PR end-to-end
+
 ## Conventions worth knowing
 
 - **Never import from db submodules directly** — go through `autonomous.db`, which re-exports the intended public names.

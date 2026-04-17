@@ -190,6 +190,38 @@ class AutoTasks:
         """Return (or build) the Queue for ``priority_name``."""
         return Queue(priority_name, connection=self._get_connection())
 
+    @property
+    def queue(self) -> Queue:
+        """Shorthand for the default-priority queue."""
+        return self._get_queue(TaskPriority.DEFAULT.value)
+
+    def clear(self) -> None:
+        """Empty every priority queue and its job registries.
+
+        Test helper. Intentionally idempotent; missing registries are
+        ignored so this stays safe on a fresh Redis.
+        """
+        connection = self._get_connection()
+        for name in (
+            TaskPriority.HIGH.value,
+            TaskPriority.DEFAULT.value,
+            TaskPriority.LOW.value,
+        ):
+            q = Queue(name, connection=connection)
+            q.empty()
+            for registry in (
+                q.started_job_registry,
+                q.finished_job_registry,
+                q.failed_job_registry,
+                q.scheduled_job_registry,
+                q.deferred_job_registry,
+            ):
+                try:
+                    for job_id in registry.get_job_ids():
+                        registry.remove(job_id, delete_job=True)
+                except (redis.RedisError, AttributeError):
+                    continue
+
     def task(self, func, *args, **kwargs) -> AutoTask:
         """Enqueue ``func`` and return an :class:`AutoTask` handle.
 

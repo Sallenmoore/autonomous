@@ -164,10 +164,15 @@ class AutoModel(Document):
         return f"{self.model_name().lower()}/{self.pk}"
 
     def model_name(self, qualified: bool = False) -> str:
-        """Return the model's class name (or the qualified ``module.Class``)."""
-        return (
-            f"{self.__module__}.{self._class_name}" if qualified else self._class_name
-        )
+        """Return the model's class name (or the qualified ``module.Class``).
+
+        Uses the Python class name rather than the mongoengine ``_class_name``
+        discriminator so subclasses of non-abstract documents report their own
+        name (``ChildModel``) instead of the parent-qualified form
+        (``RealModel.ChildModel``) that mongoengine writes into ``_cls``.
+        """
+        name = type(self).__name__
+        return f"{self.__module__}.{name}" if qualified else name
 
     @classmethod
     def get_model(

@@ -93,7 +93,9 @@ class TestImageStorage:
         filedata = open("tests/assets/testimg.png", "rb").read()
         asset_id = storage.save(filedata, folder="tests/assets")
         url = storage.get_url(asset_id, full_url=True)
-        assert "/tests/assets" in url
+        # ImageStorage flattens folder + uuid into a single asset directory
+        # name with dots (e.g. ``tests.assets.<uuid>``).
+        assert "tests.assets" in url
 
     def test_imagestorage_search(self):
         storage = ImageStorage()

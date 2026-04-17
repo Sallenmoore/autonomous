@@ -211,14 +211,21 @@ class ImageStorage:
         return imgs
 
     def remove(self, asset_id: str | None) -> bool:
-        """Currently a no-op stub. Returns False until implemented."""
+        """Delete every file (original + variants) for ``asset_id``.
+
+        Returns ``True`` if the asset directory existed and was removed,
+        ``False`` otherwise. Path-traversal rejections surface as
+        ``False`` too so a bad asset reference doesn't crash a request.
+        """
         if not asset_id:
             return False
-        file_path = self.get_path(asset_id)
+        try:
+            file_path = self.get_path(asset_id)
+        except ValueError:
+            return False
         if os.path.isdir(file_path):
-            print(f"Removing {file_path}")
-            # TODO(item 22 follow-up): wire shutil.rmtree(file_path,
-            # ignore_errors=True) once consumers can confirm it's safe.
+            shutil.rmtree(file_path, ignore_errors=True)
+            return True
         return False
 
     def clear_cached(self, asset_id: str) -> bool:
