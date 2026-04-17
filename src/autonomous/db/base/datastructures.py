@@ -1,7 +1,5 @@
 import weakref
 
-from bson import DBRef
-
 from autonomous import log
 from autonomous.db.common import _import_class
 from autonomous.db.errors import DoesNotExist, MultipleObjectsReturned
@@ -11,7 +9,6 @@ __all__ = (
     "StrictDict",
     "BaseList",
     "EmbeddedDocumentList",
-    "LazyReference",
 )
 
 
@@ -434,41 +431,3 @@ class StrictDict:
             cls._classes[allowed_keys] = SpecificStrictDict
         return cls._classes[allowed_keys]
 
-
-class LazyReference(DBRef):
-    __slots__ = ("_cached_doc", "passthrough", "document_type")
-
-    def fetch(self, force=False):
-        if not self._cached_doc or force:
-            self._cached_doc = self.document_type.objects.get(pk=self.pk)
-            if not self._cached_doc:
-                raise DoesNotExist("Trying to dereference unknown document %s" % (self))
-        return self._cached_doc
-
-    @property
-    def pk(self):
-        return self.id
-
-    def __init__(self, document_type, pk, cached_doc=None, passthrough=False):
-        self.document_type = document_type
-        self._cached_doc = cached_doc
-        self.passthrough = passthrough
-        super().__init__(self.document_type._get_collection_name(), pk)
-
-    def __getitem__(self, name):
-        if not self.passthrough:
-            raise KeyError()
-        document = self.fetch()
-        return document[name]
-
-    def __getattr__(self, name):
-        if not object.__getattribute__(self, "passthrough"):
-            raise AttributeError()
-        document = self.fetch()
-        try:
-            return document[name]
-        except KeyError:
-            raise AttributeError()
-
-    def __repr__(self):
-        return f"<LazyReference({self.document_type}, {self.pk!r})>"

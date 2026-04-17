@@ -13,7 +13,6 @@ from autonomous.db.base.datastructures import (
     BaseDict,
     BaseList,
     EmbeddedDocumentList,
-    LazyReference,
     StrictDict,
 )
 from autonomous.db.base.fields import ComplexBaseField
@@ -568,9 +567,7 @@ class BaseDocument:
                     field_name = data._reverse_db_field_map.get(part, part)
                     data = getattr(data, field_name, None)
 
-                if not isinstance(data, LazyReference) and hasattr(
-                    data, "_changed_fields"
-                ):
+                if hasattr(data, "_changed_fields"):
                     if getattr(data, "_is_document", False):
                         continue
 
@@ -640,11 +637,8 @@ class BaseDocument:
     def _get_changed_fields(self):
         """Return a list of all fields that have explicitly been changed."""
         EmbeddedDocument = _import_class("EmbeddedDocument")
-        LazyReferenceField = _import_class("LazyReferenceField")
         ReferenceField = _import_class("ReferenceField")
-        GenericLazyReferenceField = _import_class("GenericLazyReferenceField")
         GenericReferenceField = _import_class("GenericReferenceField")
-        SortedListField = _import_class("SortedListField")
 
         changed_fields = []
         changed_fields += getattr(self, "_changed_fields", [])
@@ -669,19 +663,9 @@ class BaseDocument:
             elif isinstance(data, (list, tuple, dict)):
                 if hasattr(field, "field") and isinstance(
                     field.field,
-                    (
-                        LazyReferenceField,
-                        ReferenceField,
-                        GenericLazyReferenceField,
-                        GenericReferenceField,
-                    ),
+                    (ReferenceField, GenericReferenceField),
                 ):
                     continue
-                elif isinstance(field, SortedListField) and field._ordering:
-                    # if ordering is affected whole list is changed
-                    if any(field._ordering in d._changed_fields for d in data):
-                        changed_fields.append(db_field_name)
-                        continue
 
                 self._nestable_types_changed_fields(changed_fields, key, data)
         return changed_fields

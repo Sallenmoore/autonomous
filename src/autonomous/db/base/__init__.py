@@ -19,7 +19,6 @@ __all__ = (
     "BaseDict",
     "BaseList",
     "EmbeddedDocumentList",
-    "LazyReference",
     # document
     "BaseDocument",
     # fields
