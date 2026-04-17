@@ -219,7 +219,10 @@ class AutoTasks:
                 try:
                     for job_id in registry.get_job_ids():
                         registry.remove(job_id, delete_job=True)
-                except (redis.RedisError, AttributeError):
+                except (redis.RedisError, AttributeError, NotImplementedError):
+                    # Some rq registry subclasses don't override remove()
+                    # (``BaseRegistry.remove`` raises NotImplementedError).
+                    # The clean-up is best-effort for tests — ignore and move on.
                     continue
 
     def task(self, func, *args, **kwargs) -> AutoTask:
