@@ -5,6 +5,56 @@ recent first.
 
 ## Unreleased
 
+### `SignedCookieSession` gains optional expiry + issuer binding (Item 15)
+
+**What changed.** ``SignedCookieSession`` now accepts two optional
+keyword arguments and embeds matching claims in a reserved ``__meta__``
+key inside the payload:
+
+- ``max_age`` (seconds): producer attaches ``exp = iat + max_age``;
+  consumer rejects tokens past ``exp``.
+- ``issuer`` (str): producer attaches ``iss``; consumer rejects tokens
+  with no matching ``iss``.
+
+Both are independently optional and asymmetric:
+
+- A consumer with **neither** set behaves exactly as before — backward
+  compatible with cookies minted by older versions (no ``__meta__`` at
+  all).
+- A consumer with ``max_age`` set rejects tokens with no ``exp``
+  (downgrade defense — an attacker can't strip the claim by re-signing
+  with a leaked key on an old cookie).
+- A consumer with ``issuer`` set rejects tokens missing or mismatching
+  ``iss`` (cross-app token-reuse defense).
+- A consumer that doesn't set ``issuer`` ignores any ``iss`` present
+  (allows third-party verifiers).
+
+The reserved payload key ``__meta__`` is stripped on load, so a caller
+who happens to store ``session["__meta__"] = ...`` cannot clobber the
+envelope or leak it back into their dict.
+
+**Why.** The previous signed cookie was infinitely valid. If the
+signing key ever leaked, every historical session was usable
+indefinitely. Pinning expiry and issuer narrows the blast radius — you
+can rotate the key, drop the issuer, or shorten ``max_age`` and old
+cookies stop verifying.
+
+**Migration.** Zero changes for existing apps. To opt in:
+
+```python
+session = SignedCookieSession.from_cookie(
+    secret, request.cookies.get("session"),
+    max_age=86400,        # 24h
+    issuer="my-app",
+)
+```
+
+Use the same ``max_age`` / ``issuer`` on the producer side
+(``SignedCookieSession(secret, initial, max_age=..., issuer=...)``).
+Skew older cookies that lack the metadata are rejected, so deploy
+producer-side first, wait one cookie-lifetime, then enable on the
+consumer side — or just let the brief gap log out users once.
+
 ### `auto_pre_init` hardened; falsy values preserved; opt-out added (Item 13)
 
 **What changed.** ``AutoModel.auto_pre_init`` (the pre-init signal hook

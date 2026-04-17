@@ -125,3 +125,109 @@ class TestSignedCookieSession:
     def test_from_cookie_with_malformed_token(self):
         s = SignedCookieSession.from_cookie(self.secret, "not-a-valid-token")
         assert dict(s) == {}
+
+
+class TestSignedCookieSessionExpiry:
+    """Item 15: optional ``max_age`` attaches an ``exp`` claim and the
+    consumer rejects expired or missing-exp tokens."""
+
+    secret = "exp-key"
+
+    def test_within_window_loads_normally(self):
+        token = SignedCookieSession(
+            self.secret, {"user": "alice"}, max_age=3600
+        ).dumps()
+        loaded = SignedCookieSession.from_cookie(
+            self.secret, token, max_age=3600
+        )
+        assert loaded["user"] == "alice"
+        # Reserved meta key must never leak into the dict.
+        assert "__meta__" not in loaded
+
+    def test_past_exp_rejects(self, monkeypatch):
+        # Mint at t=1000.
+        monkeypatch.setattr("autonomous.web.session.time.time", lambda: 1000)
+        token = SignedCookieSession(
+            self.secret, {"user": "alice"}, max_age=10
+        ).dumps()
+        # Verify at t=2000 (well past 1010).
+        monkeypatch.setattr("autonomous.web.session.time.time", lambda: 2000)
+        loaded = SignedCookieSession.from_cookie(self.secret, token)
+        assert dict(loaded) == {}
+
+    def test_consumer_requires_exp_but_token_has_none(self):
+        # Old-style token without max_age -> no exp claim.
+        legacy_token = SignedCookieSession(
+            self.secret, {"user": "alice"}
+        ).dumps()
+        # Consumer that *requires* expiry must reject (downgrade defense).
+        loaded = SignedCookieSession.from_cookie(
+            self.secret, legacy_token, max_age=3600
+        )
+        assert dict(loaded) == {}
+
+    def test_legacy_consumer_accepts_legacy_token(self):
+        """Backward-compat: neither side configured max_age/issuer."""
+        legacy_token = SignedCookieSession(
+            self.secret, {"user": "alice"}
+        ).dumps()
+        loaded = SignedCookieSession.from_cookie(self.secret, legacy_token)
+        assert loaded["user"] == "alice"
+
+
+class TestSignedCookieSessionIssuer:
+    """Item 15: optional ``issuer`` pin guards against cross-app token reuse."""
+
+    secret = "iss-key"
+
+    def test_matching_issuer_loads(self):
+        token = SignedCookieSession(
+            self.secret, {"user": "alice"}, issuer="my-app"
+        ).dumps()
+        loaded = SignedCookieSession.from_cookie(
+            self.secret, token, issuer="my-app"
+        )
+        assert loaded["user"] == "alice"
+
+    def test_mismatched_issuer_rejected(self):
+        token = SignedCookieSession(
+            self.secret, {"user": "alice"}, issuer="app-a"
+        ).dumps()
+        loaded = SignedCookieSession.from_cookie(
+            self.secret, token, issuer="app-b"
+        )
+        assert dict(loaded) == {}
+
+    def test_consumer_requires_issuer_but_token_has_none(self):
+        legacy_token = SignedCookieSession(
+            self.secret, {"user": "alice"}
+        ).dumps()
+        loaded = SignedCookieSession.from_cookie(
+            self.secret, legacy_token, issuer="my-app"
+        )
+        assert dict(loaded) == {}
+
+    def test_token_carries_issuer_but_consumer_doesnt_check(self):
+        token = SignedCookieSession(
+            self.secret, {"user": "alice"}, issuer="my-app"
+        ).dumps()
+        # Consumer with no issuer set ignores the iss field.
+        loaded = SignedCookieSession.from_cookie(self.secret, token)
+        assert loaded["user"] == "alice"
+
+
+class TestSignedCookieSessionMetaIsolation:
+    secret = "meta-key"
+
+    def test_meta_key_in_user_data_is_dropped_on_dump(self):
+        """If a caller stores ``__meta__`` in their session it must not
+        clobber the envelope metadata."""
+        s = SignedCookieSession(
+            self.secret, {"user": "alice", "__meta__": "evil"}, max_age=60
+        )
+        token = s.dumps()
+        loaded = SignedCookieSession.from_cookie(
+            self.secret, token, max_age=60
+        )
+        assert loaded["user"] == "alice"
+        assert "__meta__" not in loaded
