@@ -1001,10 +1001,9 @@ class BaseQuerySet:
         # We may need to cast to the correct type eg. ListField(EmbeddedDocumentField)
         EmbeddedDocumentField = _import_class("EmbeddedDocumentField")
         ListField = _import_class("ListField")
-        GenericEmbeddedDocumentField = _import_class("GenericEmbeddedDocumentField")
         if isinstance(doc_field, ListField):
             doc_field = getattr(doc_field, "field", doc_field)
-        if isinstance(doc_field, (EmbeddedDocumentField, GenericEmbeddedDocumentField)):
+        if isinstance(doc_field, EmbeddedDocumentField):
             instance = getattr(doc_field, "document_type", None)
 
         # handle distinct on subdocuments
@@ -1012,7 +1011,7 @@ class BaseQuerySet:
             for field_part in field.split(".")[1:]:
                 # if looping on embedded document, get the document type instance
                 if instance and isinstance(
-                    doc_field, (EmbeddedDocumentField, GenericEmbeddedDocumentField)
+                    doc_field, EmbeddedDocumentField
                 ):
                     doc_field = instance
                 # now get the subdocument
@@ -1021,12 +1020,12 @@ class BaseQuerySet:
                 if isinstance(doc_field, ListField):
                     doc_field = getattr(doc_field, "field", doc_field)
                 if isinstance(
-                    doc_field, (EmbeddedDocumentField, GenericEmbeddedDocumentField)
+                    doc_field, EmbeddedDocumentField
                 ):
                     instance = getattr(doc_field, "document_type", None)
 
         if instance and isinstance(
-            doc_field, (EmbeddedDocumentField, GenericEmbeddedDocumentField)
+            doc_field, EmbeddedDocumentField
         ):
             distinct = [instance(**doc) for doc in distinct]
 

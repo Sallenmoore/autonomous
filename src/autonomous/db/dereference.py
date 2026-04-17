@@ -12,9 +12,7 @@ from autonomous.db.connection import get_db
 from autonomous.db.document import Document, EmbeddedDocument
 from autonomous.db.fields import (
     DictField,
-    # GenericReferenceField,
     ListField,
-    MapField,
     ReferenceField,
 )
 from autonomous.db.queryset import QuerySet
@@ -167,7 +165,7 @@ class DeReference:
                 for key, doc in references.items():
                     object_map[(col_name, key)] = doc
             else:  # Generic reference: use the refs data to convert to document
-                if isinstance(doc_type, (ListField, DictField, MapField)):
+                if isinstance(doc_type, (ListField, DictField)):
                     continue
 
                 refs = [

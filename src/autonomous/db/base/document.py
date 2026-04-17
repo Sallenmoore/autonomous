@@ -977,7 +977,6 @@ class BaseDocument:
             if field.__class__.__name__ in {
                 "EmbeddedDocumentListField",
                 "ListField",
-                "SortedListField",
             }:
                 field = field.field
 
@@ -1149,11 +1148,7 @@ class BaseDocument:
             if value is None:
                 return None
             sep = getattr(field, "display_sep", " ")
-            values = (
-                value
-                if field.__class__.__name__ in ("ListField", "SortedListField")
-                else [value]
-            )
+            values = value if field.__class__.__name__ == "ListField" else [value]
             return sep.join(
                 [str(dict(field.choices).get(val, val)) for val in values or []]
             )

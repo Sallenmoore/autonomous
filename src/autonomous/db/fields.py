@@ -1,20 +1,16 @@
 import datetime
-import decimal
 import inspect
 import itertools
 import re
 import socket
 import time
-import uuid
 from inspect import isclass
 from io import BytesIO
 from operator import itemgetter
 
 import gridfs
 import pymongo
-from bson import SON, Binary, DBRef, ObjectId
-from bson.decimal128 import Decimal128, create_decimal128_context
-from bson.int64 import Int64
+from bson import SON, DBRef, ObjectId
 from pymongo import ReturnDocument
 
 from autonomous import log
@@ -63,37 +59,27 @@ except ImportError:
 
 __all__ = (
     "StringField",
-    "URLField",
     "EmailField",
     "IntField",
-    "LongField",
     "FloatField",
-    "DecimalField",
     "BooleanField",
     "DateTimeField",
     "DateField",
-    "ComplexDateTimeField",
     "EmbeddedDocumentField",
     "ObjectIdField",
-    "GenericEmbeddedDocumentField",
     "DynamicField",
     "ListField",
-    "SortedListField",
     "EmbeddedDocumentListField",
     "DictField",
-    "MapField",
     "ReferenceField",
     "GenericReferenceField",
-    "BinaryField",
     "GridFSError",
     "GridFSProxy",
     "FileField",
     "ImageGridFsProxy",
     "ImproperlyConfigured",
     "ImageField",
-    "UUIDField",
     "EnumField",
-    "Decimal128Field",
 )
 
 RECURSIVE_REFERENCE_CONSTANT = "self"
@@ -170,42 +156,6 @@ class StringField(BaseField):
                 value = re.escape(value)
                 value = re.compile(regex % value, flags)
         return super().prepare_query_value(op, value)
-
-
-class URLField(StringField):
-    """A field that validates input as an URL."""
-
-    _URL_REGEX = LazyRegexCompiler(
-        r"^(?:[a-z0-9\.\-]*)://"  # scheme is validated separately
-        r"(?:(?:[A-Z0-9](?:[A-Z0-9-_]{0,61}[A-Z0-9])?\.)+(?:[A-Z]{2,6}\.?|[A-Z0-9-]{2,}(?<!-)\.?)|"  # domain...
-        r"localhost|"  # localhost...
-        r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|"  # ...or ipv4
-        r"\[?[A-F0-9]*:[A-F0-9:]+\]?)"  # ...or ipv6
-        r"(?::\d+)?"  # optional port
-        r"(?:/?|[/?]\S+)$",
-        re.IGNORECASE,
-    )
-    _URL_SCHEMES = ["http", "https", "ftp", "ftps"]
-
-    def __init__(self, url_regex=None, schemes=None, **kwargs):
-        """
-        :param url_regex: (optional) Overwrite the default regex used for validation
-        :param schemes: (optional) Overwrite the default URL schemes that are allowed
-        :param kwargs: Keyword arguments passed into the parent :class:`~autonomous.db.StringField`
-        """
-        self.url_regex = url_regex or self._URL_REGEX
-        self.schemes = schemes or self._URL_SCHEMES
-        super().__init__(**kwargs)
-
-    def validate(self, value):
-        # Check first if the scheme is valid
-        scheme = value.split("://")[0].lower()
-        if scheme not in self.schemes:
-            self.error(f"Invalid scheme {scheme} in URL: {value}")
-
-        # Then check full URL
-        if not self.url_regex.match(value):
-            self.error(f"Invalid URL: {value}")
 
 
 class EmailField(StringField):
@@ -355,13 +305,6 @@ class IntField(BaseField):
         return super().prepare_query_value(op, int(value))
 
 
-class LongField(IntField):
-    """64-bit integer field. (Equivalent to IntField since the support to Python2 was dropped)"""
-
-    def to_mongo(self, value):
-        return Int64(value)
-
-
 class FloatField(BaseField):
     """Floating point number field."""
 
@@ -404,95 +347,6 @@ class FloatField(BaseField):
         return super().prepare_query_value(op, float(value))
 
 
-class DecimalField(BaseField):
-    """Disclaimer: This field is kept for historical reason but since it converts the values to float, it
-    is not suitable for true decimal storage. Consider using :class:`~autonomous.db.fields.Decimal128Field`.
-
-    Fixed-point decimal number field. Stores the value as a float by default unless `force_string` is used.
-    If using floats, beware of Decimal to float conversion (potential precision loss)
-    """
-
-    def __init__(
-        self,
-        min_value=None,
-        max_value=None,
-        force_string=False,
-        precision=2,
-        rounding=decimal.ROUND_HALF_UP,
-        **kwargs,
-    ):
-        """
-        :param min_value: (optional) A min value that will be applied during validation
-        :param max_value: (optional) A max value that will be applied during validation
-        :param force_string: Store the value as a string (instead of a float).
-         Be aware that this affects query sorting and operation like lte, gte (as string comparison is applied)
-         and some query operator won't work (e.g. inc, dec)
-        :param precision: Number of decimal places to store.
-        :param rounding: The rounding rule from the python decimal library:
-
-            - decimal.ROUND_CEILING (towards Infinity)
-            - decimal.ROUND_DOWN (towards zero)
-            - decimal.ROUND_FLOOR (towards -Infinity)
-            - decimal.ROUND_HALF_DOWN (to nearest with ties going towards zero)
-            - decimal.ROUND_HALF_EVEN (to nearest with ties going to nearest even integer)
-            - decimal.ROUND_HALF_UP (to nearest with ties going away from zero)
-            - decimal.ROUND_UP (away from zero)
-            - decimal.ROUND_05UP (away from zero if last digit after rounding towards zero would have been 0 or 5; otherwise towards zero)
-
-            Defaults to: ``decimal.ROUND_HALF_UP``
-        :param kwargs: Keyword arguments passed into the parent :class:`~autonomous.db.BaseField`
-        """
-        self.min_value = min_value
-        self.max_value = max_value
-        self.force_string = force_string
-
-        if precision < 0 or not isinstance(precision, int):
-            self.error("precision must be a positive integer")
-
-        self.precision = precision
-        self.rounding = rounding
-
-        super().__init__(**kwargs)
-
-    def to_python(self, value):
-        # Convert to string for python 2.6 before casting to Decimal
-        try:
-            value = decimal.Decimal("%s" % value)
-        except (TypeError, ValueError, decimal.InvalidOperation):
-            return value
-        if self.precision > 0:
-            return value.quantize(
-                decimal.Decimal(".%s" % ("0" * self.precision)), rounding=self.rounding
-            )
-        else:
-            return value.quantize(decimal.Decimal(), rounding=self.rounding)
-
-    def to_mongo(self, value):
-        if self.force_string:
-            return str(self.to_python(value))
-        return float(self.to_python(value))
-
-    def validate(self, value):
-        if not isinstance(value, decimal.Decimal):
-            if not isinstance(value, str):
-                value = str(value)
-            try:
-                value = decimal.Decimal(value)
-            except (TypeError, ValueError, decimal.InvalidOperation) as exc:
-                self.error("Could not convert value to decimal: %s" % exc)
-
-        if self.min_value is not None and value < self.min_value:
-            self.error("Decimal value is too small")
-
-        if self.max_value is not None and value > self.max_value:
-            self.error("Decimal value is too large")
-
-    def prepare_query_value(self, op, value):
-        if value is None:
-            return value
-        return super().prepare_query_value(op, self.to_mongo(value))
-
-
 class BooleanField(BaseField):
     """Boolean field type."""
 
@@ -519,9 +373,6 @@ class DateTimeField(BaseField):
     Note: To default the field to the current datetime, use: DateTimeField(default=datetime.utcnow)
 
     Note: Microseconds are rounded to the nearest millisecond.
-      Pre UTC microsecond support is effectively broken.
-      Use :class:`~autonomous.db.fields.ComplexDateTimeField` if you
-      need accurate microsecond support.
     """
 
     def validate(self, value):
@@ -602,103 +453,6 @@ class DateField(DateTimeField):
         if isinstance(value, datetime.datetime):
             value = datetime.date(value.year, value.month, value.day)
         return value
-
-
-class ComplexDateTimeField(StringField):
-    """
-    ComplexDateTimeField handles microseconds exactly instead of rounding
-    like DateTimeField does.
-
-    Derives from a StringField so you can do `gte` and `lte` filtering by
-    using lexicographical comparison when filtering / sorting strings.
-
-    The stored string has the following format:
-
-        YYYY,MM,DD,HH,MM,SS,NNNNNN
-
-    Where NNNNNN is the number of microseconds of the represented `datetime`.
-    The `,` as the separator can be easily modified by passing the `separator`
-    keyword when initializing the field.
-
-    Note: To default the field to the current datetime, use: DateTimeField(default=datetime.utcnow)
-    """
-
-    def __init__(self, separator=",", **kwargs):
-        """
-        :param separator: Allows to customize the separator used for storage (default ``,``)
-        :param kwargs: Keyword arguments passed into the parent :class:`~autonomous.db.StringField`
-        """
-        self.separator = separator
-        self.format = separator.join(["%Y", "%m", "%d", "%H", "%M", "%S", "%f"])
-        super().__init__(**kwargs)
-
-    def _convert_from_datetime(self, val):
-        """
-        Convert a `datetime` object to a string representation (which will be
-        stored in MongoDB). This is the reverse function of
-        `_convert_from_string`.
-
-        >>> a = datetime(2011, 6, 8, 20, 26, 24, 92284)
-        >>> ComplexDateTimeField()._convert_from_datetime(a)
-        '2011,06,08,20,26,24,092284'
-        """
-        return val.strftime(self.format)
-
-    def _convert_from_string(self, data):
-        """
-        Convert a string representation to a `datetime` object (the object you
-        will manipulate). This is the reverse function of
-        `_convert_from_datetime`.
-
-        >>> a = '2011,06,08,20,26,24,092284'
-        >>> ComplexDateTimeField()._convert_from_string(a)
-        datetime.datetime(2011, 6, 8, 20, 26, 24, 92284)
-        """
-        values = [int(d) for d in data.split(self.separator)]
-        return datetime.datetime(*values)
-
-    def __get__(self, instance, owner):
-        if instance is None:
-            return self
-
-        data = super().__get__(instance, owner)
-
-        if isinstance(data, datetime.datetime) or data is None:
-            return data
-        return self._convert_from_string(data)
-
-    def __set__(self, instance, value):
-        super().__set__(instance, value)
-        value = instance._data[self.name]
-        if value is not None:
-            if isinstance(value, datetime.datetime):
-                instance._data[self.name] = self._convert_from_datetime(value)
-            else:
-                instance._data[self.name] = value
-
-    def validate(self, value):
-        value = self.to_python(value)
-        if not isinstance(value, datetime.datetime):
-            self.error("Only datetime objects may used in a ComplexDateTimeField")
-
-    def to_python(self, value):
-        original_value = value
-        try:
-            return self._convert_from_string(value)
-        except (ValueError, TypeError, IndexError, AttributeError):
-            # Not a string in the expected ComplexDateTimeField format —
-            # return the untouched input so the caller (typically
-            # validate()) can raise a clearer error.
-            return original_value
-
-    def to_mongo(self, value):
-        value = self.to_python(value)
-        return self._convert_from_datetime(value)
-
-    def prepare_query_value(self, op, value):
-        if value is None:
-            return value
-        return super().prepare_query_value(op, self._convert_from_datetime(value))
 
 
 class EmbeddedDocumentField(BaseField):
@@ -782,59 +536,6 @@ class EmbeddedDocumentField(BaseField):
                 )
         super().prepare_query_value(op, value)
         return self.to_mongo(value)
-
-
-class GenericEmbeddedDocumentField(BaseField):
-    """A generic embedded document field - allows any
-    :class:`~autonomous.db.EmbeddedDocument` to be stored.
-
-    Only valid values are subclasses of :class:`~autonomous.db.EmbeddedDocument`.
-
-    .. note ::
-        You can use the choices param to limit the acceptable
-        EmbeddedDocument types
-    """
-
-    def prepare_query_value(self, op, value):
-        return super().prepare_query_value(op, self.to_mongo(value))
-
-    def to_python(self, value):
-        if isinstance(value, dict):
-            doc_cls = get_document(value["_cls"])
-            value = doc_cls._from_son(value)
-
-        return value
-
-    def validate(self, value, clean=True):
-        if self.choices and isinstance(value, SON):
-            for choice in self.choices:
-                if value["_cls"] == choice._class_name:
-                    return True
-
-        if not isinstance(value, EmbeddedDocument):
-            self.error(
-                "Invalid embedded document instance provided to an "
-                "GenericEmbeddedDocumentField"
-            )
-
-        value.validate(clean=clean)
-
-    def lookup_member(self, member_name):
-        document_choices = self.choices or []
-        for document_choice in document_choices:
-            doc_and_subclasses = [document_choice] + document_choice.__subclasses__()
-            for doc_type in doc_and_subclasses:
-                field = doc_type._fields.get(member_name)
-                if field:
-                    return field
-
-    def to_mongo(self, document, use_db_field=True, fields=None):
-        if document is None:
-            return None
-        data = document.to_mongo(use_db_field, fields)
-        if "_cls" not in data:
-            data["_cls"] = document._class_name
-        return data
 
 
 class DynamicField(BaseField):
@@ -973,32 +674,6 @@ class EmbeddedDocumentListField(ListField):
         super().__init__(field=EmbeddedDocumentField(document_type), **kwargs)
 
 
-class SortedListField(ListField):
-    """A ListField that sorts the contents of its list before writing to
-    the database in order to ensure that a sorted list is always
-    retrieved.
-
-    .. warning::
-        There is a potential race condition when handling lists.  If you set /
-        save the whole list then other processes trying to save the whole list
-        as well could overwrite changes.  The safest way to append to a list is
-        to perform a push operation.
-    """
-
-    def __init__(self, field, **kwargs):
-        self._ordering = kwargs.pop("ordering", None)
-        self._order_reverse = kwargs.pop("reverse", False)
-        super().__init__(field, **kwargs)
-
-    def to_mongo(self, value, use_db_field=True, fields=None):
-        value = super().to_mongo(value, use_db_field, fields)
-        if self._ordering is not None:
-            return sorted(
-                value, key=itemgetter(self._ordering), reverse=self._order_reverse
-            )
-        return sorted(value, reverse=self._order_reverse)
-
-
 def key_not_string(d):
     """Helper function to recursively determine if any key in a
     dictionary is not a string.
@@ -1069,19 +744,6 @@ class DictField(ComplexBaseField):
             return self.field.prepare_query_value(op, value)
 
         return super().prepare_query_value(op, value)
-
-
-class MapField(DictField):
-    """A field that maps a name to a specified field type. Similar to
-    a DictField, except the 'value' of each item must match the specified
-    field type.
-    """
-
-    def __init__(self, field=None, *args, **kwargs):
-        # XXX ValidationError raised outside the "validate" method.
-        if not isinstance(field, BaseField):
-            self.error("Argument to MapField constructor must be a valid field")
-        super().__init__(field=field, *args, **kwargs)
 
 
 class ReferenceField(BaseField):
@@ -1397,38 +1059,6 @@ class GenericReferenceField(BaseField):
             return None
 
         return self.to_mongo(value)
-
-
-class BinaryField(BaseField):
-    """A binary data field."""
-
-    def __init__(self, max_bytes=None, **kwargs):
-        self.max_bytes = max_bytes
-        super().__init__(**kwargs)
-
-    def __set__(self, instance, value):
-        """Handle bytearrays in python 3.1"""
-        if isinstance(value, bytearray):
-            value = bytes(value)
-        return super().__set__(instance, value)
-
-    def to_mongo(self, value):
-        return Binary(value)
-
-    def validate(self, value):
-        if not isinstance(value, (bytes, Binary)):
-            self.error(
-                "BinaryField only accepts instances of "
-                "(%s, %s, Binary)" % (bytes.__name__, Binary.__name__)
-            )
-
-        if self.max_bytes is not None and len(value) > self.max_bytes:
-            self.error("Binary value is too long")
-
-    def prepare_query_value(self, op, value):
-        if value is None:
-            return value
-        return super().prepare_query_value(op, self.to_mongo(value))
 
 
 class EnumField(BaseField):
@@ -1913,94 +1543,3 @@ class ImageField(FileField):
         super().__init__(collection_name=collection_name, **kwargs)
 
 
-class UUIDField(BaseField):
-    """A UUID field."""
-
-    _binary = None
-
-    def __init__(self, binary=True, **kwargs):
-        """
-        Store UUID data in the database
-
-        :param binary: if False store as a string.
-        """
-        self._binary = binary
-        super().__init__(**kwargs)
-
-    def to_python(self, value):
-        if not self._binary:
-            original_value = value
-            try:
-                if not isinstance(value, str):
-                    value = str(value)
-                return uuid.UUID(value)
-            except (ValueError, TypeError, AttributeError):
-                return original_value
-        return value
-
-    def to_mongo(self, value):
-        if not self._binary:
-            return str(value)
-        elif isinstance(value, str):
-            return uuid.UUID(value)
-        return value
-
-    def prepare_query_value(self, op, value):
-        if value is None:
-            return None
-        return self.to_mongo(value)
-
-    def validate(self, value):
-        if not isinstance(value, uuid.UUID):
-            if not isinstance(value, str):
-                value = str(value)
-            try:
-                uuid.UUID(value)
-            except (ValueError, TypeError, AttributeError) as exc:
-                self.error("Could not convert to UUID: %s" % exc)
-
-
-class Decimal128Field(BaseField):
-    """
-    128-bit decimal-based floating-point field capable of emulating decimal
-    rounding with exact precision. This field will expose decimal.Decimal but stores the value as a
-    `bson.Decimal128` behind the scene, this field is intended for monetary data, scientific computations, etc.
-    """
-
-    DECIMAL_CONTEXT = create_decimal128_context()
-
-    def __init__(self, min_value=None, max_value=None, **kwargs):
-        self.min_value = min_value
-        self.max_value = max_value
-        super().__init__(**kwargs)
-
-    def to_mongo(self, value):
-        if value is None:
-            return None
-        if isinstance(value, Decimal128):
-            return value
-        if not isinstance(value, decimal.Decimal):
-            with decimal.localcontext(self.DECIMAL_CONTEXT) as ctx:
-                value = ctx.create_decimal(value)
-        return Decimal128(value)
-
-    def to_python(self, value):
-        if value is None:
-            return None
-        return self.to_mongo(value).to_decimal()
-
-    def validate(self, value):
-        if not isinstance(value, Decimal128):
-            try:
-                value = Decimal128(value)
-            except (TypeError, ValueError, decimal.InvalidOperation) as exc:
-                self.error("Could not convert value to Decimal128: %s" % exc)
-
-        if self.min_value is not None and value.to_decimal() < self.min_value:
-            self.error("Decimal value is too small")
-
-        if self.max_value is not None and value.to_decimal() > self.max_value:
-            self.error("Decimal value is too large")
-
-    def prepare_query_value(self, op, value):
-        return super().prepare_query_value(op, self.to_mongo(value))
