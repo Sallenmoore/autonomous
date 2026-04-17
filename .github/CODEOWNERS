@@ -1,0 +1,4 @@
+# Default reviewer for everything in this repo.
+# Branch protection will use these to auto-request review on PRs
+# into dev and main.
+*                       @Sallenmoore
