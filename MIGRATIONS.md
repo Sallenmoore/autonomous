@@ -5,6 +5,53 @@ recent first.
 
 ## Unreleased
 
+### Retry helper extracted from local_model.py (Item 17)
+
+**What changed.** New module ``autonomous.ai.retry`` exposes a
+single ``retry(func, *, max_attempts, sleep_seconds, catch, on_retry,
+default)`` helper that centralizes the "try-N-times-with-backoff-and-
+between-attempt-side-effects" pattern previously inlined inside
+``LocalAIModel.generate_json``.
+
+The hook signature ``on_retry(attempt, exc)`` lets the caller plug in
+side effects that the AI adapter needs between attempts — for example
+``flush_memory`` after an empty Ollama response — without baking them
+into the retry helper.
+
+``LocalAIModel.generate_json`` is now ~30 lines shorter; the request
+work and the recovery hook live in two clearly-named closures, and the
+retry plumbing is one ``retry(...)`` call.
+
+**Why.** The retry logic was tangled with payload construction and
+logging. The next retry-style adapter (Gemini text, audio, image
+generation) was on track to copy-paste the same loop with subtle
+differences. Pulling it out keeps callers focused on what's being
+retried, not how.
+
+**Migration.** No behavioral changes for callers of ``generate_json``:
+
+- Same number of attempts (3).
+- Same sleep between attempts (``self._retry_sleep``).
+- Same catch tuple (``RequestException``, ``JSONDecodeError``,
+  ``ValueError``, ``KeyError``).
+- Same default on total failure (``{}``).
+- Same ``flush_memory`` side effect on empty-response retries.
+
+If you want to use the helper in your own code:
+
+```python
+from autonomous.ai.retry import retry
+
+result = retry(
+    do_thing,
+    max_attempts=3,
+    sleep_seconds=1.0,
+    catch=(MyError,),
+    on_retry=lambda attempt, exc: log(f"retry {attempt}: {exc}"),
+    default=None,        # omit to re-raise on exhaustion
+)
+```
+
 ### `Response.body` accepts iterables for streaming (Item 16)
 
 **What changed.** ``autonomous.web.response.Response`` now accepts any
