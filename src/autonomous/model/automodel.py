@@ -72,13 +72,19 @@ class AutoModel(Document):
     auto_load_on_init: bool = True
 
     def __eq__(self, other):
-        return str(self.pk) == str(other.pk) if other else False
+        if not other or not hasattr(other, "pk"):
+            return False
+        return str(self.pk) == str(other.pk)
 
     def __lt__(self, other):
-        return str(self.pk) < str(other.pk) if other else False
+        if not other or not hasattr(other, "pk"):
+            return NotImplemented
+        return str(self.pk) < str(other.pk)
 
     def __gt__(self, other):
-        return not (str(self.pk) < str(other.pk)) if other else False
+        if not other or not hasattr(other, "pk"):
+            return NotImplemented
+        return str(self.pk) > str(other.pk)
 
     def __le__(self, other):
         return self < other or self == other
