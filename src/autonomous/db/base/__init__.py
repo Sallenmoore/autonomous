@@ -19,14 +19,12 @@ __all__ = (
     "BaseDict",
     "BaseList",
     "EmbeddedDocumentList",
-    "LazyReference",
     # document
     "BaseDocument",
     # fields
     "BaseField",
     "ComplexBaseField",
     "ObjectIdField",
-    "GeoJsonBaseField",
     # metaclasses
     "DocumentMetaclass",
     "TopLevelDocumentMetaclass",

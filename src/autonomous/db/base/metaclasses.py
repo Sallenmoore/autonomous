@@ -33,7 +33,6 @@ class DocumentMetaclass(type):
             return super_new(mcs, name, bases, attrs)
 
         attrs["_is_document"] = attrs.get("_is_document", False)
-        attrs["_cached_reference_fields"] = []
 
         # EmbeddedDocuments could have meta data for inheritance
         if "meta" in attrs:
@@ -158,12 +157,7 @@ class DocumentMetaclass(type):
                 base._subclasses += (_cls,)
             base._types = base._subclasses  # TODO depreciate _types
 
-        (
-            Document,
-            EmbeddedDocument,
-            DictField,
-            CachedReferenceField,
-        ) = mcs._import_classes()
+        Document, EmbeddedDocument, DictField = mcs._import_classes()
 
         if issubclass(new_class, Document):
             new_class._collection = None
@@ -177,16 +171,6 @@ class DocumentMetaclass(type):
             if f.owner_document is None:
                 f.owner_document = new_class
             delete_rule = getattr(f, "reverse_delete_rule", DO_NOTHING)
-            if isinstance(f, CachedReferenceField):
-                if issubclass(new_class, EmbeddedDocument):
-                    raise InvalidDocumentError(
-                        "CachedReferenceFields is not allowed in EmbeddedDocuments"
-                    )
-
-                if f.auto_sync:
-                    f.start_listener()
-
-                f.document_type._cached_reference_fields.append(f)
 
             if isinstance(f, ComplexBaseField) and hasattr(f, "field"):
                 delete_rule = getattr(f.field, "reverse_delete_rule", DO_NOTHING)
@@ -240,8 +224,7 @@ class DocumentMetaclass(type):
         Document = _import_class("Document")
         EmbeddedDocument = _import_class("EmbeddedDocument")
         DictField = _import_class("DictField")
-        CachedReferenceField = _import_class("CachedReferenceField")
-        return Document, EmbeddedDocument, DictField, CachedReferenceField
+        return Document, EmbeddedDocument, DictField
 
 
 class TopLevelDocumentMetaclass(DocumentMetaclass):

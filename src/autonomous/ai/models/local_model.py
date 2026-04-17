@@ -8,6 +8,7 @@ import requests
 from pydub import AudioSegment
 
 from autonomous import log
+from autonomous.ai.retry import retry
 from autonomous.model.autoattr import ListAttr, StringAttr
 from autonomous.model.automodel import AutoModel
 from autonomous.taskrunner.autotasks import AutoTasks
@@ -108,12 +109,13 @@ class LocalAIModel(AutoModel):
                 json={"model": model_name, "keep_alive": 0},
                 timeout=30,
             )
-        except Exception as e:
+        except requests.RequestException as e:
             log(f"Failed to flush memory: {e}", _print=True)
 
     def generate_json(
-        self, message, system_prompt=None, uri="", context={}, evaluation=False
+        self, message, system_prompt=None, uri="", context=None, evaluation=False
     ):
+        context = context or {}
         system_prompt = system_prompt or self.instructions
         system_prompt = system_prompt.rstrip(". ") + "."
         system_prompt = (
@@ -165,61 +167,69 @@ class LocalAIModel(AutoModel):
             "==== LocalAI JSON Payload ====", json.dumps(payload, indent=2), _print=True
         )
 
-        _max_retries = 2
-        result_dict = {}
-        for _attempt in range(_max_retries + 1):
-            result_text = ""
-            response = None
-            try:
-                if current_job := AutoTasks().get_current_task():
-                    current_job.meta(payload=payload)
-                response = requests.post(f"{self._ollama_url}/chat", json=payload, timeout=self._json_timeout)
-                log(response, _print=True)
-                response.raise_for_status()
+        # Per-attempt scratch — the closure mutates these so the on_retry
+        # hook can decide whether to flush model memory.
+        last_raw: dict = {"text": "", "response": None}
 
-                result_text = response.json().get("message", {}).get("content", "{}")
-                log(result_text, _print=True)
-                if not result_text.strip():
-                    raise ValueError("Ollama returned empty content")
+        def _attempt() -> dict:
+            last_raw["text"] = ""
+            last_raw["response"] = None
+            if current_job := AutoTasks().get_current_task():
+                current_job.meta(payload=payload)
+            response = requests.post(
+                f"{self._ollama_url}/chat",
+                json=payload,
+                timeout=self._json_timeout,
+            )
+            last_raw["response"] = response
+            response.raise_for_status()
+            result_text = response.json().get("message", {}).get("content", "{}")
+            last_raw["text"] = result_text
+            if not result_text.strip():
+                raise ValueError("Ollama returned empty content")
+            result_dict = json.loads(self._clean_json_response(result_text))
+            if "parameters" in result_dict and isinstance(
+                result_dict["parameters"], dict
+            ):
+                result_dict.update(result_dict.pop("parameters"))
+            return result_dict
 
-                # Clean & Parse
-                clean_text = self._clean_json_response(result_text)
-                result_dict = json.loads(clean_text)
+        def _on_retry(attempt: int, exc: BaseException) -> None:
+            log(
+                f"==== LocalAI JSON Error (attempt {attempt}/3): {exc} ====",
+                last_raw["response"],
+                f"--- FAILED RAW OUTPUT ---\n{last_raw['text']}\n----------",
+                _print=True,
+            )
+            if not last_raw["text"].strip():
+                # Empty response — model is stuck. Flush KV cache so next
+                # request gets a clean load rather than a corrupted state.
+                self.flush_memory(self._text_model)
 
-                # Unwrap (Handle cases where model wraps in 'parameters' key)
-                if "parameters" in result_dict and isinstance(
-                    result_dict["parameters"], dict
-                ):
-                    params = result_dict.pop("parameters")
-                    result_dict.update(params)
-
-                break  # success
-            except Exception as e:
-                log(
-                    f"==== LocalAI JSON Error (attempt {_attempt + 1}/{_max_retries + 1}): {e} ====",
-                    response,
-                    f"--- FAILED RAW OUTPUT ---\n{result_text}\n-----------------------",
-                    _print=True,
-                )
-                if _attempt < _max_retries:
-                    log(f"Retrying JSON generation...", _print=True)
-                    if not result_text.strip():
-                        # Empty response — model is stuck. Flush KV cache so next
-                        # request gets a clean load rather than a corrupted state.
-                        self.flush_memory(self._text_model)
-                    time.sleep(self._retry_sleep)
-
-        return result_dict
+        return retry(
+            _attempt,
+            max_attempts=3,
+            sleep_seconds=self._retry_sleep,
+            catch=(
+                requests.RequestException,
+                json.JSONDecodeError,
+                ValueError,
+                KeyError,
+            ),
+            on_retry=_on_retry,
+            default={},
+        )
 
     def generate_text(
         self,
         message,
         additional_instructions="",
         uri="",
-        context={},
+        context=None,
         temperature=0.7,
         evaluation=False,
     ):
+        context = context or {}
         if context:
             additional_instructions += (
                 f"\n\n### GROUND TRUTH CONTEXT ###\n"
@@ -265,7 +275,7 @@ class LocalAIModel(AutoModel):
                 response = requests.post(f"{self._ollama_url}/chat", json=payload, timeout=self._text_timeout)
                 response.raise_for_status()
             result = response.json().get("message", {}).get("content", "")
-        except Exception as e:
+        except (requests.RequestException, json.JSONDecodeError, ValueError) as e:
             log(f"==== LocalAI Text Error: {e} ====", _print=True)
         return result
 
@@ -299,7 +309,7 @@ class LocalAIModel(AutoModel):
                 res = requests.post(f"{self._ollama_url}/chat", json=payload, timeout=self._summary_timeout)
                 full_summary += res.json().get("message", {}).get("content", "") + "\n"
                 log(f"Chunk summarized: {full_summary}.", _print=True)
-            except Exception as e:
+            except (requests.RequestException, json.JSONDecodeError, ValueError) as e:
                 log(f"Summary Error: {e}", _print=True)
                 break
         return full_summary
@@ -324,7 +334,7 @@ class LocalAIModel(AutoModel):
             response.raise_for_status()
             # Return the structured JSON dict containing 'segments'
             return response.json()
-        except Exception as e:
+        except (requests.RequestException, json.JSONDecodeError, ValueError) as e:
             log(f"Transcription API Error: {e}", _print=True)
             return {"segments": [], "text": ""}
 
@@ -340,7 +350,7 @@ class LocalAIModel(AutoModel):
             audio_buffer = io.BytesIO()
             audio.export(audio_buffer, format="opus")
             return audio_buffer.getvalue()
-        except Exception as e:
+        except (requests.RequestException, OSError, ValueError) as e:
             log(f"TTS Error: {e}", _print=True)
             return None
 
@@ -459,7 +469,7 @@ class LocalAIModel(AutoModel):
             log("==== LocalAI Image Generation Complete ====", data)
             return image_content
 
-        except Exception as e:
+        except (requests.RequestException, OSError, ValueError) as e:
             log(f"Image Gen Error: {type(e)} - {e}", _print=True)
             return None
 

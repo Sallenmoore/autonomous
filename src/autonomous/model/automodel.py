@@ -1,35 +1,90 @@
+from __future__ import annotations
+
 import os
 import urllib.parse
 from datetime import datetime
+from typing import TYPE_CHECKING, Any, Self
 
 import bson
+from pymongo import errors as pymongo_errors
+
 from autonomous.db import Document, connect, db_sync, signals
 from autonomous.db.errors import ValidationError
 from autonomous.db.fields import DateTimeField
 
 from autonomous import log
 
-host = os.getenv("DB_HOST", "db")
-port = os.getenv("DB_PORT", 27017)
-password = urllib.parse.quote_plus(str(os.getenv("DB_PASSWORD")))
-username = urllib.parse.quote_plus(str(os.getenv("DB_USERNAME")))
-dbname = os.getenv("DB_DB")
-# log(f"Connecting to MongoDB at {host}:{port} with {username}:{password} for {dbname}")
-connect(host=f"mongodb://{username}:{password}@{host}:{port}/{dbname}?authSource=admin")
+if TYPE_CHECKING:
+    PrimaryKey = bson.ObjectId | str | dict | int | None
+
+
+_connected: bool = False
+
+
+def connect_from_env(**overrides) -> str:
+    """Open the default MongoDB connection using env vars.
+
+    Reads ``DB_HOST`` / ``DB_PORT`` / ``DB_USERNAME`` / ``DB_PASSWORD`` /
+    ``DB_DB`` and calls ``autonomous.db.connect``. Idempotent: subsequent
+    calls are no-ops. Returns the URI that was passed to ``connect``.
+
+    Any of the settings may be overridden via keyword args (``host``,
+    ``port``, ``username``, ``password``, ``db``) for tests or alternate
+    deployments.
+    """
+    global _connected
+    host = overrides.get("host", os.getenv("DB_HOST", "db"))
+    port = overrides.get("port", os.getenv("DB_PORT", 27017))
+    password = urllib.parse.quote_plus(
+        str(overrides.get("password", os.getenv("DB_PASSWORD")))
+    )
+    username = urllib.parse.quote_plus(
+        str(overrides.get("username", os.getenv("DB_USERNAME")))
+    )
+    dbname = overrides.get("db", os.getenv("DB_DB"))
+    uri = f"mongodb://{username}:{password}@{host}:{port}/{dbname}?authSource=admin"
+    connect(host=uri)
+    _connected = True
+    return uri
+
+
+def _ensure_connected() -> None:
+    """Auto-connect on first ORM operation if the consumer hasn't yet.
+
+    Keeps the zero-configuration ergonomics the container-app pattern relies
+    on (env vars are already set) without running MongoDB I/O at import time.
+    Consumers that want explicit control should call ``connect_from_env`` (or
+    ``autonomous.db.connect`` directly) at startup.
+    """
+    if _connected:
+        return
+    connect_from_env()
 
 
 class AutoModel(Document):
     meta = {"abstract": True, "allow_inheritance": True, "strict": False}
     last_updated = DateTimeField(default=datetime.now)
 
+    #: Side-load behaviour for ``Model(pk=...)``. When True (the default),
+    #: pre-init reads the document from MongoDB and merges any stored
+    #: fields the caller didn't pass. Set to False on a subclass that
+    #: doesn't want a DB hit per construction.
+    auto_load_on_init: bool = True
+
     def __eq__(self, other):
-        return str(self.pk) == str(other.pk) if other else False
+        if not other or not hasattr(other, "pk"):
+            return False
+        return str(self.pk) == str(other.pk)
 
     def __lt__(self, other):
-        return str(self.pk) < str(other.pk) if other else False
+        if not other or not hasattr(other, "pk"):
+            return NotImplemented
+        return str(self.pk) < str(other.pk)
 
     def __gt__(self, other):
-        return not (str(self.pk) < str(other.pk)) if other else False
+        if not other or not hasattr(other, "pk"):
+            return NotImplemented
+        return str(self.pk) > str(other.pk)
 
     def __le__(self, other):
         return self < other or self == other
@@ -49,19 +104,54 @@ class AutoModel(Document):
         )
 
     @classmethod
-    def auto_pre_init(cls, sender, document, **kwargs):
-        values = kwargs.pop("values", None)
-        if pk := values.get("pk") or values.get("id"):
-            # Try to load the existing document from the database
-            if existing_doc := sender._get_collection().find_one(
-                {"_id": bson.ObjectId(pk)}
-            ):
-                # Update the current instance with the existing data
-                existing_doc.pop("_id", None)
-                existing_doc.pop("_cls", None)
-                for k, v in existing_doc.items():
-                    if not values.get(k):
-                        values[k] = v
+    def auto_pre_init(cls, sender, document, **kwargs) -> None:
+        """Side-load fields from MongoDB on ``Model(pk=...)`` construction.
+
+        When the caller passes only a primary key (``Model(pk=x)`` /
+        ``Model(id=x)``), this hook fetches the stored document and fills
+        in any field the caller didn't explicitly provide. The caller's
+        kwargs always win — useful for partial updates like
+        ``Model(pk=x, name="new")`` which becomes equivalent to
+        ``Model.get(x); m.name = "new"`` without an extra round trip in
+        userland.
+
+        Bypass entirely by setting ``cls.auto_load_on_init = False``.
+
+        Failure modes that are *not* errors:
+          - ``values`` kwarg missing — nothing to merge into; return
+          - ``pk`` malformed (not a valid ObjectId) — return
+          - document not found in DB — return
+          - DB unavailable — return (logged elsewhere)
+        """
+        if not getattr(sender, "auto_load_on_init", True):
+            return
+        values = kwargs.get("values")
+        if not values:
+            return
+        pk = values.get("pk") or values.get("id")
+        if not pk:
+            return
+        try:
+            oid = bson.ObjectId(pk)
+        except (bson.errors.InvalidId, TypeError):
+            return
+        try:
+            existing_doc = sender._get_collection().find_one({"_id": oid})
+        except (
+            pymongo_errors.OperationFailure,
+            pymongo_errors.ConnectionFailure,
+        ) as exc:
+            log(f"auto_pre_init DB error for {sender.__name__} pk={pk}: {exc}")
+            return
+        if not existing_doc:
+            return
+        existing_doc.pop("_id", None)
+        existing_doc.pop("_cls", None)
+        # Fix: previously used ``not values.get(k)`` which clobbered
+        # legitimate falsy values (0, False, "", []). Compare presence.
+        for k, v in existing_doc.items():
+            if k not in values:
+                values[k] = v
 
     @classmethod
     def _auto_pre_init(cls, sender, document, **kwargs):
@@ -76,22 +166,29 @@ class AutoModel(Document):
         sender.auto_post_init(sender, document, **kwargs)
 
     @property
-    def path(self):
+    def path(self) -> str:
         return f"{self.model_name().lower()}/{self.pk}"
 
-    def model_name(self, qualified=False):
-        """
-        Get the fully qualified name of this model.
+    def model_name(self, qualified: bool = False) -> str:
+        """Return the model's class name (or the qualified ``module.Class``).
 
-        Returns:
-            str: The fully qualified name of this model.
+        Uses the Python class name rather than the mongoengine ``_class_name``
+        discriminator so subclasses of non-abstract documents report their own
+        name (``ChildModel``) instead of the parent-qualified form
+        (``RealModel.ChildModel``) that mongoengine writes into ``_cls``.
         """
-        return (
-            f"{self.__module__}.{self._class_name}" if qualified else self._class_name
-        )
+        name = type(self).__name__
+        return f"{self.__module__}.{name}" if qualified else name
 
     @classmethod
-    def get_model(cls, model, pk=None):
+    def get_model(
+        cls, model: str | type[AutoModel], pk: PrimaryKey = None
+    ) -> AutoModel | type[AutoModel] | None:
+        """Look up a registered ``AutoModel`` subclass by name (or pass-through).
+
+        With ``pk`` supplied, fetches and returns the instance. Otherwise
+        returns the class itself.
+        """
         try:
             Model = cls.load_model(model)
         except ValueError:
@@ -99,17 +196,16 @@ class AutoModel(Document):
         return Model.get(pk) if Model and pk else Model
 
     @classmethod
-    def load_model(cls, model):
+    def load_model(cls, model: str | type[AutoModel]) -> type[AutoModel]:
+        """Resolve ``model`` (string name or class) to an ``AutoModel`` subclass."""
         if not isinstance(model, str):
             return model
 
         subclasses = AutoModel.__subclasses__()
-        visited_subclasses = []
+        visited_subclasses: list[type[AutoModel]] = []
         while subclasses:
-            # log(subclasses, _print=True)
             subclass = subclasses.pop()
             if "_meta" in subclass.__dict__ and not subclass._meta.get("abstract"):
-                # log(f"Checking {subclass.__name__}", _print=True)
                 if subclass.__name__.lower() == model.lower():
                     return subclass
             if subclass not in visited_subclasses:
@@ -118,16 +214,15 @@ class AutoModel(Document):
         raise ValueError(f"Model {model} not found")
 
     @classmethod
-    def get(cls, pk):
-        """
-        Get a model by primary key.
+    def get(cls, pk: PrimaryKey) -> Self | None:
+        """Get a single model instance by primary key.
 
-        Args:
-            pk (int): The primary key of the model to retrieve.
-
-        Returns:
-            AutoModel or None: The retrieved AutoModel instance, or None if not found.
+        Returns ``None`` if the document doesn't exist or ``pk`` can't be
+        coerced to a valid ``ObjectId``. Re-raises pymongo
+        ``OperationFailure`` / ``ConnectionFailure`` so DB outages don't
+        get silently swallowed.
         """
+        _ensure_connected()
 
         if isinstance(pk, str):
             try:
@@ -137,33 +232,25 @@ class AutoModel(Document):
         elif isinstance(pk, dict) and "$oid" in pk:
             pk = bson.ObjectId(pk["$oid"])
         try:
-            # log(pk, type(pk))
             result = cls.objects.get(id=pk)
-            # log(result)
-        except cls.DoesNotExist as e:
-            # log(f"Model {cls.__name__} with pk {pk} not found : {e}")
+        except cls.DoesNotExist:
             return None
         except ValidationError as e:
-            # traceback.print_stack(limit=5)
             log(f"Model Validation failure {cls.__name__} [{pk}]: {e}")
             return None
-        except Exception as e:
-            log(f"Error getting model {cls.__name__} with pk {pk}: {e}", _print=True)
-            raise e
+        except (pymongo_errors.OperationFailure, pymongo_errors.ConnectionFailure) as e:
+            log(
+                f"DB error getting model {cls.__name__} with pk {pk}: {e}",
+                _print=True,
+            )
+            raise
         else:
             return result
 
     @classmethod
-    def random(cls):
-        """
-        Get a model by primary key.
-
-        Args:
-            pk (int): The primary key of the model to retrieve.
-
-        Returns:
-            AutoModel or None: The retrieved AutoModel instance, or None if not found.
-        """
+    def random(cls) -> Self | None:
+        """Return a single random instance of this model, or ``None`` if empty."""
+        _ensure_connected()
         pipeline = [{"$sample": {"size": 1}}]
 
         result = cls.objects.aggregate(pipeline)
@@ -171,31 +258,29 @@ class AutoModel(Document):
         return cls._from_son(random_document) if random_document else None
 
     @classmethod
-    def all(cls):
-        """
-        Get all models of this type.
-
-        Returns:
-            list: A list of AutoModel instances.
-        """
+    def all(cls) -> list[Self]:
+        """Return every instance of this model. Use ``search`` for filtering."""
+        _ensure_connected()
         return list(cls.objects())
 
     @classmethod
-    def search(cls, _order_by=None, _limit=None, **kwargs):
-        """
-        Search for models containing the keyword values.
+    def search(
+        cls,
+        _order_by: tuple[str, ...] | list[str] | None = None,
+        _limit: int | list[int] | None = None,
+        **kwargs: Any,
+    ) -> list[Self]:
+        """Case-insensitive substring search across the supplied fields.
 
-        Args:
-            **kwargs: Keyword arguments to search for (dict).
-
-        Returns:
-            list: A list of AutoModel instances that match the search criteria.
+        String values become ``__icontains`` queries; non-string values
+        become exact matches. ``_order_by`` is forwarded to mongoengine;
+        ``_limit`` accepts either a slice end or a ``[start, end]`` pair.
         """
-        new_kwargs = {}
+        _ensure_connected()
+        new_kwargs: dict[str, Any] = {}
         for k, v in kwargs.items():
             if isinstance(v, str):
-                new_k = f"{k}__icontains"
-                new_kwargs[new_k] = v
+                new_kwargs[f"{k}__icontains"] = v
             else:
                 new_kwargs[k] = v
         results = cls.objects(**new_kwargs)
@@ -209,17 +294,46 @@ class AutoModel(Document):
         return list(results)
 
     @classmethod
-    def find(cls, **kwargs):
-        """
-        Find the first model containing the keyword values and return it.
-
-        Args:
-            **kwargs: Keyword arguments to search for (dict).
-
-        Returns:
-            AutoModel or None: The first matching AutoModel instance, or None if not found.
-        """
+    def find(cls, **kwargs: Any) -> Self | None:
+        """Return the first instance matching ``**kwargs``, or ``None``."""
+        _ensure_connected()
         return cls.objects(**kwargs).first()
+
+    @classmethod
+    def where(cls, **kwargs: Any):
+        """Return a chainable ``QuerySet`` for this model.
+
+        Unlike :meth:`search` — which materializes a ``list`` — ``where``
+        returns the underlying mongoengine QuerySet so consumers can
+        chain ``.order_by()``, ``.limit()``, ``.skip()``, ``.only()``,
+        ``.first()``, ``len()``, etc. without re-running the query.
+
+        Uses the same ``str -> __icontains`` translation as ``search``
+        for ergonomic case-insensitive substring matching:
+
+        .. code-block:: python
+
+            for post in Post.where(title="hello").order_by("-created")[:10]:
+                ...
+            author = Post.where(author_id=pk).first()
+            count = Post.where(published=True).count()
+
+        For raw mongoengine operators (``__gt``, ``__in``,
+        ``__regex``...), pass them explicitly; anything other than a
+        ``str`` is forwarded as-is:
+
+        .. code-block:: python
+
+            Post.where(views__gt=1000, tags__in=["python", "web"])
+        """
+        _ensure_connected()
+        translated: dict[str, Any] = {}
+        for k, v in kwargs.items():
+            if isinstance(v, str) and "__" not in k:
+                translated[f"{k}__icontains"] = v
+            else:
+                translated[k] = v
+        return cls.objects(**translated)
 
     @classmethod
     def auto_pre_save(cls, sender, document, **kwargs):
@@ -235,14 +349,14 @@ class AutoModel(Document):
         """
         sender.auto_pre_save(sender, document, **kwargs)
 
-    def save(self, sync=False):
-        """
-        Save this model to the database.
+    def save(self, sync: bool = False) -> Any:
+        """Persist this document and return its primary key.
 
-        Returns:
-            int: The primary key (pk) of the saved model.
+        With ``sync=True`` the new ``pk`` is also enqueued for vector
+        re-indexing via ``autonomous.db.db_sync``.
         """
-        obj = super().save()
+        _ensure_connected()
+        super().save()
 
         if sync:
             db_sync.request_indexing(
@@ -265,10 +379,9 @@ class AutoModel(Document):
         """
         sender.auto_post_save(sender, document, **kwargs)
 
-    def delete(self):
-        """
-        Delete this model from the database.
-        """
+    def delete(self) -> None:
+        """Delete this document from the database."""
+        _ensure_connected()
         return super().delete()
 
 

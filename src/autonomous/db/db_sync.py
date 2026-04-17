@@ -4,6 +4,7 @@ import urllib.parse
 import uuid
 from datetime import datetime
 
+import bson
 import numpy as np
 import pymongo
 import redis
@@ -12,29 +13,48 @@ import requests
 from autonomous import log
 from autonomous.taskrunner.autotasks import AutoTasks, TaskPriority
 
-# CONFIGURATION
-db_host = os.getenv("DB_HOST", "db")
-db_port = os.getenv("DB_PORT", 27017)
-password = urllib.parse.quote_plus(str(os.getenv("DB_PASSWORD")))
-username = urllib.parse.quote_plus(str(os.getenv("DB_USERNAME")))
-MONGO_URI = f"mongodb://{username}:{password}@{db_host}:{db_port}/?authSource=admin"
-MEDIA_URL = os.getenv("MEDIA_API_BASE_URL", "http://media_ai:5005")
-REDIS_HOST = os.getenv("REDIS_HOST", "cachedb")
-REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
-# DB SETUP
-r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
-mongo = pymongo.MongoClient(MONGO_URI)
-db = mongo[os.getenv("DB_DB")]
-# connect(host=f"mongodb://{username}:{password}@{host}:{port}/{dbname}?authSource=admin")
+_redis_client = None
+_mongo_client = None
+_mongo_db = None
+
+
+def _get_redis():
+    global _redis_client
+    if _redis_client is None:
+        _redis_client = redis.Redis(
+            host=os.getenv("REDIS_HOST", "cachedb"),
+            port=int(os.getenv("REDIS_PORT", 6379)),
+            decode_responses=True,
+        )
+    return _redis_client
+
+
+def _get_mongo_db():
+    global _mongo_client, _mongo_db
+    if _mongo_db is None:
+        password = urllib.parse.quote_plus(str(os.getenv("DB_PASSWORD")))
+        username = urllib.parse.quote_plus(str(os.getenv("DB_USERNAME")))
+        host = os.getenv("DB_HOST", "db")
+        port = os.getenv("DB_PORT", 27017)
+        uri = f"mongodb://{username}:{password}@{host}:{port}/?authSource=admin"
+        _mongo_client = pymongo.MongoClient(uri)
+        _mongo_db = _mongo_client[os.getenv("DB_DB")]
+    return _mongo_db
+
+
+def _media_url() -> str:
+    return os.getenv("MEDIA_API_BASE_URL", "http://media_ai:5005")
 
 
 def get_vector(text):
     """Helper to get embedding from your Media AI container"""
     try:
-        resp = requests.post(f"{MEDIA_URL}/embeddings", json={"text": text}, timeout=30)
+        resp = requests.post(
+            f"{_media_url()}/embeddings", json={"text": text}, timeout=30
+        )
         if resp.status_code == 200:
             return resp.json()["embedding"]
-    except Exception as e:
+    except (requests.RequestException, ValueError, KeyError) as e:
         print(f"Vector Gen Failed: {e}")
     return None
 
@@ -46,6 +66,8 @@ def process_single_object_sync(object_id, collection_name, token):
     """
     str_id = str(object_id)
     token_key = f"sync_token:{collection_name}:{str_id}"
+    r = _get_redis()
+    db = _get_mongo_db()
 
     # 1. THE DEBOUNCE WAIT (Happens in background)
     time.sleep(5)
@@ -59,23 +81,16 @@ def process_single_object_sync(object_id, collection_name, token):
         return
 
     # 3. THE EXECUTION (Embedding generation)
-    # print(f"Processing Sync for: {str_id} in {collection_name}")
-
     from bson.objectid import ObjectId
 
-    # FIX: Use dynamic collection access instead of db.objects
     try:
-        # Tries to convert string ID to ObjectId.
-        # If your DB uses String IDs, remove the ObjectId() wrapper.
         oid = ObjectId(object_id)
         doc = db[collection_name].find_one({"_id": oid})
-    except Exception:
-        # Fallback if ID is not a valid ObjectId string
+    except (bson.errors.InvalidId, TypeError):
         doc = db[collection_name].find_one({"_id": object_id})
 
     if not doc:
         print(f"Object {object_id} not found in collection '{collection_name}'")
-        # Optional: Remove from Redis index if it exists
         r.delete(f"{collection_name}:{object_id}")
         return
 
@@ -95,7 +110,7 @@ def process_single_object_sync(object_id, collection_name, token):
 
     # 4. Save to Redis Index
     if vector:
-        r.hset(
+        _get_redis().hset(
             f"lore:{object_id}",
             mapping={
                 "mongo_id": str(object_id),
@@ -125,7 +140,7 @@ def request_indexing(object_id, collection_name):
     current_token = str(uuid.uuid4())
 
     # 2. SAVE TOKEN TO REDIS (Instant)
-    r.set(token_key, current_token, ex=300)
+    _get_redis().set(token_key, current_token, ex=300)
 
     # 3. ENQUEUE THE TASK (Instant)
     try:
@@ -137,6 +152,6 @@ def request_indexing(object_id, collection_name):
             priority=TaskPriority.LOW,
         )
         return True
-    except Exception as e:
+    except (redis.RedisError, ConnectionError) as e:
         print(f"Sync Enqueue failed: {e}")
         return False

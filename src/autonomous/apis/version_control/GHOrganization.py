@@ -19,7 +19,6 @@ class GHOrganization:
         self.username = username or os.getenv("GITHUB_USERNAME")
         self.email = email or os.getenv("GITHUB_EMAIL")
         self.commit_name = name or os.getenv("GITHUB_COMMIT_NAME")
-        # print(vars(self), os.getenv('GITHUB_PAT'))
         if self.token and self.org:
             self.g = github.Github(self.token)
             self.org = self.g.get_organization(self.org) if self.org else None

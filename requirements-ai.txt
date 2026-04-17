@@ -1,0 +1,3 @@
+# AI provider adapters in autonomous.ai
+google-genai      # autonomous.ai.models.gemini
+pydub             # audio post-processing in local + gemini models
