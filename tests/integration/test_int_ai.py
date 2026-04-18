@@ -166,11 +166,18 @@ class TestGenerateAudio:
                 "autonomous.ai.models.local_model.requests.post",
                 return_value=resp,
             ) as mock_post:
-                result = model.generate_audio("Hello", voice="Zephyr")
+                result = model.generate_audio(
+                    "Hello",
+                    voice_description="A clear, resonant voice.",
+                    voice_id="speaker-zephyr",
+                )
 
             assert result == b"opus_bytes"
             mock_post.assert_called_once()
-            assert mock_post.call_args.kwargs["json"]["voice"] == "Zephyr"
+            payload = mock_post.call_args.kwargs["json"]
+            assert payload["voice_id"] == "speaker-zephyr"
+            assert payload["voice_description"] == "A clear, resonant voice."
+            assert "voice" not in payload
 
 
 class TestGenerateTranscription:

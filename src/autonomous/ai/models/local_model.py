@@ -338,9 +338,13 @@ class LocalAIModel(AutoModel):
             log(f"Transcription API Error: {e}", _print=True)
             return {"segments": [], "text": ""}
 
-    def generate_audio(self, prompt, voice=""):
+    def generate_audio(self, prompt, voice_description=None, voice_id=None):
         try:
-            payload = {"text": prompt, "voice": voice}
+            payload = {
+                "text": prompt,
+                "voice_id": voice_id or "",
+                "voice_description": voice_description or "",
+            }
             if current_job := AutoTasks().get_current_task():
                 current_job.meta(payload=payload)
             response = requests.post(f"{self._audio_url}/tts", json=payload, timeout=self._media_timeout)

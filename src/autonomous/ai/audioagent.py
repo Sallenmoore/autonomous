@@ -17,10 +17,14 @@ class AudioAgent(BaseAgent):
         default="A helpful AI assistant trained to assist with generating audio files."
     )
 
-    def generate(self, prompt, voice=None):
+    def generate(self, prompt, voice_description=None, voice_id=None):
         return self.get_client(
             os.environ.get("TTS_AI_AGENT", self.provider)
-        ).generate_audio(prompt, voice=voice)
+        ).generate_audio(
+            prompt,
+            voice_description=voice_description,
+            voice_id=voice_id,
+        )
 
     def transcribe(self, audio_bytes, system_context, rolling_context=""):
         """

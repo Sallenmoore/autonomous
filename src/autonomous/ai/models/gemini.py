@@ -1,7 +1,6 @@
 import io
 import json
 import os
-import random
 import re
 import time
 import wave
@@ -278,8 +277,9 @@ class GeminiAIModel(AutoModel):
                 voices.append(voice)
         return voices
 
-    def generate_audio(self, prompt, voice=None):
-        voice = voice or random.choice(self.list_voices())
+    def generate_audio(self, prompt, voice_description=None, voice_id=None):
+        presets = self.list_voices()
+        voice = presets[hash(voice_id) % len(presets)] if voice_id else "Algieba"
         try:
             response = self.client.models.generate_content(
                 model=self._tts_model,
