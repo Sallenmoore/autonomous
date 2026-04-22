@@ -76,9 +76,11 @@ class LocalAIModel(AutoModel):
 
         if start_idx != -1 and end_idx != -1:
             text = text[start_idx : end_idx + 1]
-        elif text.strip():
+        elif text.strip() and '":' in text:
             # Model returned JSON fields without the {} wrapper — add it.
             # e.g. '"name": "Aria", "desc": "..."' → '{"name": "Aria", "desc": "..."}'
+            # Gated on `":"` so we don't wrap prose error strings
+            # ("I couldn't generate that.") that have no JSON structure.
             stripped = text.strip().rstrip(",")
             text = "{" + stripped + "}"
 
