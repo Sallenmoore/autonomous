@@ -10,7 +10,7 @@ all: test clean package
 PYTHON = python3
 
 package: clean
-    rm -rf .pytest_cache .coverage dist build *.egg-info static
+	rm -rf .pytest_cache .coverage dist build *.egg-info static
 	$(PYTHON) -m pip install --upgrade build twine setuptools wheel
 	$(PYTHON) -m build
 	$(PYTHON) -m twine check dist/*
