@@ -1,4 +1,4 @@
-__version__ = "0.3.124"
+__version__ = "0.3.125"
 
 from dotenv import load_dotenv
 
