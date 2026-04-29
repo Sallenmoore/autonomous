@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-`autonomous-app` is a routing framework agnotstic containerized service framework published to PyPI. It should layer seamlessly on top of flask, fast-api, and other micro-frameworks. Library source lives under [src/autonomous/](src/autonomous/); the package version is declared in [src/autonomous/__init__.py](src/autonomous/__init__.py) and consumed dynamically by [pyproject.toml](pyproject.toml). Runtime requires Python ≥3.12 per `pyproject.toml`, though CI matrix tests 3.11/3.12/3.13 on the `dev` branch ([.github/workflows/python-package.yml](.github/workflows/python-package.yml)). Importing the top-level `autonomous` package calls `load_dotenv()` and exposes the global `log` singleton.
+`autonomous-app` is a routing framework agnostic containerized service framework published to PyPI. It should layer seamlessly on top of flask, fast-api, and other micro-frameworks. Library source lives under [src/autonomous/](src/autonomous/); the package version is declared in [src/autonomous/__init__.py](src/autonomous/__init__.py) and consumed dynamically by [pyproject.toml](pyproject.toml). Runtime requires Python ≥3.12 per `pyproject.toml`, though CI matrix tests 3.11/3.12/3.13 on the `dev` branch ([.github/workflows/python-package.yml](.github/workflows/python-package.yml)). Importing the top-level `autonomous` package calls `load_dotenv()` and exposes the global `log` singleton.
 
 ## Commands
 
@@ -61,18 +61,6 @@ ai/<feature-slug>          (per-task branch, cut from ai-development)
         │
         ▼  git tag vX.Y.Z
 ```
-
-### checklist for repo
-
-- [ ] Create `dev` and `ai-development` branches; push
-- [ ] Add `.github/pull_request_template.md` + `.github/CODEOWNERS` via PR to main
-- [ ] Create rulesets for `main` (1 approval) and `dev` (0 approvals); block deletion + force-push
-- [ ] Add pytest markers + lazy-connect any import-time side effects
-- [ ] Commit `lint.yml`, `test-unit.yml`, `test-integration.yml` via PR
-- [ ] Add required status checks to both rulesets
-- [ ] Commit `release.yml` via PR
-- [ ] Document AI branch convention in `CLAUDE.md`
-- [ ] Smoketest PR end-to-end
 
 ## Conventions worth knowing
 
