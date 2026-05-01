@@ -8,6 +8,7 @@ import requests
 from pydub import AudioSegment
 
 from autonomous import log
+from autonomous.ai._json_utils import clean_json_response
 from autonomous.ai.retry import retry
 from autonomous.model.autoattr import ListAttr, StringAttr
 from autonomous.model.automodel import AutoModel
@@ -44,47 +45,7 @@ class LocalAIModel(AutoModel):
         return json.dumps(schema, indent=2)
 
     def _clean_json_response(self, text):
-        """
-        Robust cleaner for Llama 3 outputs.
-        It handles markdown blocks, chatter before/after, and malformed endings.
-        """
-        text = text.strip()
-
-        # 1. Strip Markdown Code Blocks (```json ... ```)
-        if "```" in text:
-            import re
-
-            # Regex to capture content inside ```json ... ``` or just ``` ... ```
-            # flags=re.DOTALL allows . to match newlines
-            pattern = r"```(?:json)?\s*(\{.*?\})\s*```"
-            match = re.search(pattern, text, re.DOTALL)
-            if match:
-                text = match.group(1)
-            else:
-                # Fallback: simple finding if regex fails due to weird chars
-                start = text.find("```")
-                end = text.rfind("```")
-                # Adjust start to skip the "json" part if present
-                first_newline = text.find("\n", start)
-                if first_newline != -1 and first_newline < end:
-                    text = text[first_newline:end]
-
-        # 2. Heuristic extraction: Find the first '{' and the last '}'
-        # This fixes cases where the model says "Here is the JSON: { ... }"
-        start_idx = text.find("{")
-        end_idx = text.rfind("}")
-
-        if start_idx != -1 and end_idx != -1:
-            text = text[start_idx : end_idx + 1]
-        elif text.strip() and '":' in text:
-            # Model returned JSON fields without the {} wrapper — add it.
-            # e.g. '"name": "Aria", "desc": "..."' → '{"name": "Aria", "desc": "..."}'
-            # Gated on `":"` so we don't wrap prose error strings
-            # ("I couldn't generate that.") that have no JSON structure.
-            stripped = text.strip().rstrip(",")
-            text = "{" + stripped + "}"
-
-        return text.strip()
+        return clean_json_response(text)
 
     def _evaluate_response(self, instruction, content, goal):
         eval_prompt = {
