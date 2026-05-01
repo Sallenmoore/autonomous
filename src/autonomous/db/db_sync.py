@@ -46,8 +46,8 @@ def _media_url() -> str:
     return os.getenv("MEDIA_API_BASE_URL", "http://media_ai:5005")
 
 
-def get_vector(text):
-    """Helper to get embedding from your Media AI container"""
+def _get_vector_local(text):
+    """Legacy media_ai HTTP path — preserved as the local-provider fallback."""
     try:
         resp = requests.post(
             f"{_media_url()}/embeddings", json={"text": text}, timeout=30
@@ -57,6 +57,46 @@ def get_vector(text):
     except (requests.RequestException, ValueError, KeyError) as e:
         print(f"Vector Gen Failed: {e}")
     return None
+
+
+def _get_vector_openai(text):
+    """OpenAI-compatible HPC path. __new__ bypass keeps Mongo out of the
+    RQ worker — `get_embedding` only reads class-level config."""
+    from autonomous.ai.models.openai_compat import OpenAIClient
+
+    client = OpenAIClient.__new__(OpenAIClient)
+    try:
+        return client.get_embedding(text)
+    except Exception as e:
+        # Failure here means RAG goes context-free for this save; that's
+        # noisy but recoverable, and the caller already tolerates None.
+        print(f"Vector Gen (HPC) Failed: {e}")
+        return None
+
+
+def _get_vector_mock(text):
+    """Deterministic stub for tests. Matches MockAIModel.get_embedding."""
+    return [1.0] + [0.0] * 383
+
+
+_VECTOR_PROVIDERS = {
+    "local": _get_vector_local,
+    "openai": _get_vector_openai,
+    "mock": _get_vector_mock,
+}
+
+
+def get_vector(text):
+    """
+    Returns an embedding vector for ``text`` using the provider selected
+    by ``EMBEDDING_AI_AGENT`` (default ``local``).
+
+    Returns None on failure so callers can degrade gracefully — the RAG
+    layer treats a missing vector as "skip indexing this save".
+    """
+    provider = os.getenv("EMBEDDING_AI_AGENT", "local")
+    fn = _VECTOR_PROVIDERS.get(provider, _get_vector_local)
+    return fn(text)
 
 
 def process_single_object_sync(object_id, collection_name, token):
