@@ -5,6 +5,33 @@ from autonomous.ai.baseagent import BaseAgent
 from autonomous.model.autoattr import StringAttr
 
 
+# LLM dramatize prompt — applied once over the COMPLETE transcript, not
+# interleaved per-chunk. The previous design threaded a 1000-char rolling
+# context between chunks; with full-transcript input that crutch is no
+# longer needed.
+DRAMATIZE_PROMPT = """\
+You are an expert TTRPG Scribe. Rewrite the following raw, automated
+audio transcript into a clean, readable screenplay format.
+
+GUIDELINES:
+1. Identify speakers using the World Context (player roster, NPC names).
+   When a speaker can't be confidently identified, label them
+   "UNKNOWN [Number]" and stay consistent for that voice.
+2. Remove verbal tics ("um", "uh") and off-topic table cross-talk
+   (e.g., passing snacks).
+3. KEEP EVERY RELEVANT SPOKEN WORD. Do not summarize the story.
+4. Output ONLY the screenplay text. No preamble.
+
+### RAW TRANSCRIPT TO FORMAT ###
+{transcript}
+"""
+
+DRAMATIZE_INSTRUCTIONS = (
+    "You are a strict screenplay formatter. Do not summarize. Output only the "
+    "screenplay text — no headers, no commentary, no markdown fences."
+)
+
+
 class AudioAgent(BaseAgent):
     name = StringAttr(default="audioagent")
 
@@ -26,52 +53,47 @@ class AudioAgent(BaseAgent):
             voice_id=voice_id,
         )
 
-    def transcribe(self, audio_bytes, system_context, rolling_context=""):
+    def transcribe(self, audio_bytes):
+        """Whisper-only transcription. Returns the verbose-json dict
+        ``{"text": str, "segments": [...]}`` from
+        ``OpenAIClient.generate_transcription`` (or the equivalent shape
+        from ``LocalAIModel.generate_transcription``).
+
+        No LLM pass. No rolling context. The caller is responsible for
+        feeding bounded audio (full file, VAD-bounded utterance) and for
+        running ``dramatize()`` separately when a screenplay-formatted
+        version is wanted.
         """
-        1. Transcribes a single chunk of audio.
-        2. Passes the raw transcript to the LLM to format as a screenplay.
-        """
-        local_model = self.get_client(
+        client = self.get_client(
             os.environ.get("TRANSCRIBE_AI_AGENT", self.provider)
         )
+        log("AudioAgent.transcribe: sending to Whisper...", _print=True)
+        return client.generate_transcription(audio_bytes)
 
-        # 1. Get raw transcript from Whisper
-        log("Sending chunk to Whisper...", _print=True)
-        raw_result = local_model.generate_transcription(audio_bytes)
-        log(raw_result)
-        segments = raw_result.get("segments", [])
-        if not segments:
+    def dramatize(self, transcript, world_context=None):
+        """Format a complete raw transcript as a TTRPG screenplay.
+
+        Takes the entire transcription text plus a ``world_context`` dict
+        (campaign brief, player roster, world elements) so the LLM can
+        attribute speakers from real names. Returns formatted screenplay
+        text or an empty string on failure.
+
+        Routed through ``TEXT_AI_AGENT`` (typically the same provider as
+        text generation generally — currently HPC's gpt-oss:120b).
+        """
+        if not transcript:
             return ""
-
-        # Stitch raw segments into a single block with timestamps
-        raw_text = "\n\n".join(
-            [f"[{s['start']}s - {s['end']}s] {s['text']}" for s in segments]
+        client = self.get_client(
+            os.environ.get("TEXT_AI_AGENT", self.provider)
         )
-
-        # 2. Format as Screenplay via LLM
-        log(f"Formatting the following chunk via LLM: {raw_text}", _print=True)
-        llm_prompt = f"""
-You are an expert TTRPG Scribe. Rewrite the following raw, automated audio transcript into a clean, readable screenplay format.
-
-GUIDELINES:
-1. Identify speakers using the Campaign Context. If unsure, use "UNKNOWN [Number]".
-2. Use the Rolling Context to maintain speaker continuity from the previous chunk.
-3. Remove verbal tics (um, uh) and off-topic table cross-talk (e.g., passing snacks).
-4. KEEP EVERY RELEVANT SPOKEN WORD. Do not summarize the story.
-5. Output ONLY the screenplay text. No preamble.
-
-### PREVIOUS CHUNK ENDING (Rolling Context) ###
-{rolling_context[-1000:] if rolling_context else "This is the very beginning of the session."}
-
-### RAW TRANSCRIPT TO FORMAT ###
-{raw_text}
-"""
-        # Call generate_text (which uses your Gemma2/Hermes3 model)
-        screenplay_chunk = local_model.generate_text(
-            message=llm_prompt,
-            additional_instructions="You are a strict screenplay formatter. Do not summarize.",
-            context={"Campaign Context": system_context},
-            temperature=0.3,  # Low temp for high accuracy/formatting adherence
+        log(
+            f"AudioAgent.dramatize: formatting {len(transcript)}-char transcript "
+            f"with {len(world_context or {})} context keys",
+            _print=True,
         )
-        log(f"Transcription Chunk Result: {screenplay_chunk}", _print=True)
-        return screenplay_chunk
+        return client.generate_text(
+            message=DRAMATIZE_PROMPT.format(transcript=transcript),
+            additional_instructions=DRAMATIZE_INSTRUCTIONS,
+            context=world_context or {},
+            temperature=0.3,
+        )
