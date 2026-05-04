@@ -72,8 +72,30 @@ class MockAIModel(AutoModel):
         return self._MOCK_AUDIO_BYTES
 
     def generate_image(
-        self, prompt, negative_prompt="", files=None, aspect_ratio="2KPortrait"
+        self,
+        prompt,
+        negative_prompt="",
+        files=None,
+        aspect_ratio="2KPortrait",
+        style=None,
     ):
         log(f"⚡ [MOCK] Generating Image ({aspect_ratio})...", _print=True)
-        # Returns a valid 1x1 pixel PNG so your UI displays something red instead of crashing
         return self._MOCK_IMAGE_BYTES
+
+    def upscale_image(
+        self, prompt, image_content=None, aspect_ratio="2KPortrait", style=None
+    ):
+        log(f"⚡ [MOCK] Upscaling Image ({aspect_ratio})...", _print=True)
+        return self._MOCK_IMAGE_BYTES
+
+    def get_embedding(self, text):
+        """
+        384-dim unit vector. Matches the live Redis vector index dimension
+        so RAG plumbing can run end-to-end against the mock without dim-mismatch
+        errors. The first dim is 1.0 (unit cosine norm); rest are zero so every
+        mock embedding is identical and KNN queries are deterministic.
+        """
+        return [1.0] + [0.0] * 383
+
+    def list_voices(self, filters=None):
+        return ["mock_voice_a", "mock_voice_b"]

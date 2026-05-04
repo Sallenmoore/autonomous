@@ -28,7 +28,12 @@ class AutoUser(AutoModel):
     token = StringAttr()
 
     def __eq__(self, other):
+        if other is None or not hasattr(other, "pk"):
+            return False
         return self.pk == other.pk
+
+    def __hash__(self):
+        return hash(self.pk)
 
     @classmethod
     def authenticate(cls, user_info, token=None):

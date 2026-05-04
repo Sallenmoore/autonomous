@@ -8,6 +8,7 @@ import requests
 from pydub import AudioSegment
 
 from autonomous import log
+from autonomous.ai._json_utils import clean_json_response
 from autonomous.ai.retry import retry
 from autonomous.model.autoattr import ListAttr, StringAttr
 from autonomous.model.automodel import AutoModel
@@ -20,11 +21,11 @@ class LocalAIModel(AutoModel):
     instructions = StringAttr(default="You are a helpful AI.")
     description = StringAttr(default="A Local AI Model using Ollama and Media AI.")
 
-    # Config
-    _ollama_url = os.environ.get("OLLAMA_API_BASE_URL", "")
-    _media_url = os.environ.get("MEDIA_API_BASE_URL", "")
-    _audio_url = os.environ.get("MEDIA_AUDIO_API_BASE_URL", "")
-    _image_url = os.environ.get("MEDIA_IMAGE_API_BASE_URL", "")
+    # Config — rstrip trailing '/' so path joins produce "<url>/<path>" not "<url>//<path>"
+    _ollama_url = os.environ.get("OLLAMA_API_BASE_URL", "").rstrip("/")
+    _media_url = os.environ.get("MEDIA_API_BASE_URL", "").rstrip("/")
+    _audio_url = os.environ.get("MEDIA_AUDIO_API_BASE_URL", "").rstrip("/")
+    _image_url = os.environ.get("MEDIA_IMAGE_API_BASE_URL", "").rstrip("/")
     _text_model = os.environ.get("OLLAMA_MODEL", "gemma4:26b")
     _context_limit = int(os.environ.get("OLLAMA_CONTEXT_LIMIT", 32768))
 
@@ -44,45 +45,7 @@ class LocalAIModel(AutoModel):
         return json.dumps(schema, indent=2)
 
     def _clean_json_response(self, text):
-        """
-        Robust cleaner for Llama 3 outputs.
-        It handles markdown blocks, chatter before/after, and malformed endings.
-        """
-        text = text.strip()
-
-        # 1. Strip Markdown Code Blocks (```json ... ```)
-        if "```" in text:
-            import re
-
-            # Regex to capture content inside ```json ... ``` or just ``` ... ```
-            # flags=re.DOTALL allows . to match newlines
-            pattern = r"```(?:json)?\s*(\{.*?\})\s*```"
-            match = re.search(pattern, text, re.DOTALL)
-            if match:
-                text = match.group(1)
-            else:
-                # Fallback: simple finding if regex fails due to weird chars
-                start = text.find("```")
-                end = text.rfind("```")
-                # Adjust start to skip the "json" part if present
-                first_newline = text.find("\n", start)
-                if first_newline != -1 and first_newline < end:
-                    text = text[first_newline:end]
-
-        # 2. Heuristic extraction: Find the first '{' and the last '}'
-        # This fixes cases where the model says "Here is the JSON: { ... }"
-        start_idx = text.find("{")
-        end_idx = text.rfind("}")
-
-        if start_idx != -1 and end_idx != -1:
-            text = text[start_idx : end_idx + 1]
-        elif text.strip():
-            # Model returned JSON fields without the {} wrapper — add it.
-            # e.g. '"name": "Aria", "desc": "..."' → '{"name": "Aria", "desc": "..."}'
-            stripped = text.strip().rstrip(",")
-            text = "{" + stripped + "}"
-
-        return text.strip()
+        return clean_json_response(text)
 
     def _evaluate_response(self, instruction, content, goal):
         eval_prompt = {
@@ -95,7 +58,7 @@ class LocalAIModel(AutoModel):
             ],
             "stream": False,
         }
-        res_eval = requests.post(f"{self._ollama_url}/chat", json=eval_prompt, timeout=self._text_timeout)
+        res_eval = requests.post(f"{self._ollama_url}/api/chat", json=eval_prompt, timeout=self._text_timeout)
 
         return res_eval.json().get("message", {}).get("content", "")
 
@@ -105,7 +68,7 @@ class LocalAIModel(AutoModel):
         try:
             # Sending keep_alive=0 triggers an immediate VRAM/RAM eviction
             requests.post(
-                f"{self._ollama_url}/generate",
+                f"{self._ollama_url}/api/generate",
                 json={"model": model_name, "keep_alive": 0},
                 timeout=30,
             )
@@ -177,7 +140,7 @@ class LocalAIModel(AutoModel):
             if current_job := AutoTasks().get_current_task():
                 current_job.meta(payload=payload)
             response = requests.post(
-                f"{self._ollama_url}/chat",
+                f"{self._ollama_url}/api/chat",
                 json=payload,
                 timeout=self._json_timeout,
             )
@@ -264,7 +227,7 @@ class LocalAIModel(AutoModel):
         try:
             if current_job := AutoTasks().get_current_task():
                 current_job.meta(payload=payload)
-            response = requests.post(f"{self._ollama_url}/chat", json=payload, timeout=self._text_timeout)
+            response = requests.post(f"{self._ollama_url}/api/chat", json=payload, timeout=self._text_timeout)
             response.raise_for_status()
             if evaluation:
                 eval_res = self._evaluate_response(
@@ -272,7 +235,7 @@ class LocalAIModel(AutoModel):
                 )
                 log(f"Evaluation:\n {eval_res}")
                 payload["messages"][1]["content"] = eval_res
-                response = requests.post(f"{self._ollama_url}/chat", json=payload, timeout=self._text_timeout)
+                response = requests.post(f"{self._ollama_url}/api/chat", json=payload, timeout=self._text_timeout)
                 response.raise_for_status()
             result = response.json().get("message", {}).get("content", "")
         except (requests.RequestException, json.JSONDecodeError, ValueError) as e:
@@ -306,7 +269,7 @@ class LocalAIModel(AutoModel):
                 log(f"Payload sent: {payload}...", _print=True)
                 if current_job := AutoTasks().get_current_task():
                     current_job.meta(payload=payload)
-                res = requests.post(f"{self._ollama_url}/chat", json=payload, timeout=self._summary_timeout)
+                res = requests.post(f"{self._ollama_url}/api/chat", json=payload, timeout=self._summary_timeout)
                 full_summary += res.json().get("message", {}).get("content", "") + "\n"
                 log(f"Chunk summarized: {full_summary}.", _print=True)
             except (requests.RequestException, json.JSONDecodeError, ValueError) as e:
@@ -338,9 +301,13 @@ class LocalAIModel(AutoModel):
             log(f"Transcription API Error: {e}", _print=True)
             return {"segments": [], "text": ""}
 
-    def generate_audio(self, prompt, voice=""):
+    def generate_audio(self, prompt, voice_description=None, voice_id=None):
         try:
-            payload = {"text": prompt, "voice": voice}
+            payload = {
+                "text": prompt,
+                "voice_id": voice_id or "",
+                "voice_description": voice_description or "",
+            }
             if current_job := AutoTasks().get_current_task():
                 current_job.meta(payload=payload)
             response = requests.post(f"{self._audio_url}/tts", json=payload, timeout=self._media_timeout)

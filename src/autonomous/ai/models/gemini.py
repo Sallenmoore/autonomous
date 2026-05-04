@@ -1,7 +1,6 @@
 import io
 import json
 import os
-import random
 import re
 import time
 import wave
@@ -19,13 +18,20 @@ from autonomous.model.automodel import AutoModel
 class GeminiAIModel(AutoModel):
     _client = None
 
-    # Model definitions
-    _text_model = "gemini-1.5-pro"
-    _summary_model = "gemini-1.5-flash"
-    _json_model = "gemini-1.5-pro"
-    _stt_model = "gemini-1.5-pro"
-    _image_model = "gemini-3.1-flash-image-preview"
-    _tts_model = "gemini-2.0-flash-exp"
+    # Model definitions — every default is env-overridable so deployments
+    # can chase Gemini's preview-model churn without a library release.
+    # The defaults track what Google has stable / preview as of the most
+    # recent release of this library; any deployment seeing a 404
+    # (e.g. "gemini-2.0-flash-exp is not found") should set the env var
+    # to a currently-available model name from
+    # https://ai.google.dev/gemini-api/docs/models without waiting on
+    # an autonomous bump.
+    _text_model = os.environ.get("GEMINI_TEXT_MODEL", "gemini-2.5-pro")
+    _summary_model = os.environ.get("GEMINI_SUMMARY_MODEL", "gemini-2.5-flash")
+    _json_model = os.environ.get("GEMINI_JSON_MODEL", "gemini-2.5-pro")
+    _stt_model = os.environ.get("GEMINI_STT_MODEL", "gemini-2.5-pro")
+    _image_model = os.environ.get("GEMINI_IMAGE_MODEL", "gemini-3.1-flash-image-preview")
+    _tts_model = os.environ.get("GEMINI_TTS_MODEL", "gemini-2.5-flash-preview-tts")
 
     messages = ListAttr(StringAttr(default=[]))
     name = StringAttr(default="agent")
@@ -278,8 +284,9 @@ class GeminiAIModel(AutoModel):
                 voices.append(voice)
         return voices
 
-    def generate_audio(self, prompt, voice=None):
-        voice = voice or random.choice(self.list_voices())
+    def generate_audio(self, prompt, voice_description=None, voice_id=None):
+        presets = self.list_voices()
+        voice = presets[hash(voice_id) % len(presets)] if voice_id else "Algieba"
         try:
             response = self.client.models.generate_content(
                 model=self._tts_model,

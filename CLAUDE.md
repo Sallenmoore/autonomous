@@ -4,7 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-`autonomous-app` is a routing framework agnotstic containerized service framework published to PyPI. It should layer seamlessly on top of flask, fast-api, and other micro-frameworks. Library source lives under [src/autonomous/](src/autonomous/); the package version is declared in [src/autonomous/__init__.py](src/autonomous/__init__.py) and consumed dynamically by [pyproject.toml](pyproject.toml). Runtime requires Python ≥3.12 per `pyproject.toml`, though CI matrix tests 3.11/3.12/3.13 on the `dev` branch ([.github/workflows/python-package.yml](.github/workflows/python-package.yml)). Importing the top-level `autonomous` package calls `load_dotenv()` and exposes the global `log` singleton.
+`autonomous-app` is a routing framework agnostic containerized service framework published to PyPI. It should layer seamlessly on top of flask, fast-api, and other micro-frameworks. Library source lives under [src/autonomous/](src/autonomous/); the package version is declared in [src/autonomous/__init__.py](src/autonomous/__init__.py) and consumed dynamically by [pyproject.toml](pyproject.toml). Runtime requires Python ≥3.12 per `pyproject.toml`, though CI matrix tests 3.11/3.12/3.13 on the `dev` branch ([.github/workflows/python-package.yml](.github/workflows/python-package.yml)). Importing the top-level `autonomous` package calls `load_dotenv()` and exposes the global `log` singleton.
+
+## How this library is consumed
+
+`autonomous-app` is published to PyPI and consumed by downstream apps (e.g.
+[Sallenmoore/StoryTeller](https://github.com/Sallenmoore/StoryTeller)) in three modes:
+
+- **Prod** — `pip install autonomous-app` from `requirements.txt` only; no submodule, no bind mount. Released versions on PyPI are the consumer-prod contract.
+- **Consumer dev** — the consumer bind-mounts this repo into its container and runs `pip install -e` against it for live editing. Edits in this repo appear immediately in the consumer's running container.
+- **Consumer test** — PyPI install only, for prod parity. No bind mount.
+
+Practical implication for breaking changes: cut a release here (`./scripts/release.sh` — see Commands below), then bump the consumer's `autonomous-app` pin in `requirements.txt` and fast-forward its submodule pointer. The dev consumer picks up changes from the bind mount without a rebuild; test/prod only see what's on PyPI after a rebuild.
 
 ## Commands
 
@@ -14,6 +25,7 @@ All dev workflows go through the [makefile](makefile), which `include .env` — 
 - `make test` — runs a single filter: `pytest -k $(TESTING)`. Override the filter inline, e.g. `make test TESTING=test_unit_automodel`. Default is `test_unit_ai`.
 - `make inittests` / `make cleantests` — bring the Compose stack up/down without running pytest.
 - `make package` — `python -m build` + `twine upload` to PyPI. Bump `__version__` in [src/autonomous/__init__.py](src/autonomous/__init__.py) first.
+- `./scripts/release.sh` — preferred release entrypoint: bumps the patch version in `src/autonomous/__init__.py`, runs `make package` (build + twine upload), then commits and pushes `origin/main`. Use this for routine patch releases. For non-patch bumps, edit `__version__` manually first, then run the script (or fall back to `make package`).
 - CI lints with `flake8 . --select=E9,F63,F7,F82` (syntax-only gate) plus a non-blocking `--max-complexity=10 --max-line-length=127` pass.
 
 Pytest config lives in `[tool.pytest.ini_options]` in [pyproject.toml](pyproject.toml): it auto-adds `-x --pdb -s -v --cov=autonomous` and loads `tests/.testenv`. Tests stop on first failure and drop into pdb — be aware when running non-interactively.
@@ -61,18 +73,6 @@ ai/<feature-slug>          (per-task branch, cut from ai-development)
         │
         ▼  git tag vX.Y.Z
 ```
-
-### checklist for repo
-
-- [ ] Create `dev` and `ai-development` branches; push
-- [ ] Add `.github/pull_request_template.md` + `.github/CODEOWNERS` via PR to main
-- [ ] Create rulesets for `main` (1 approval) and `dev` (0 approvals); block deletion + force-push
-- [ ] Add pytest markers + lazy-connect any import-time side effects
-- [ ] Commit `lint.yml`, `test-unit.yml`, `test-integration.yml` via PR
-- [ ] Add required status checks to both rulesets
-- [ ] Commit `release.yml` via PR
-- [ ] Document AI branch convention in `CLAUDE.md`
-- [ ] Smoketest PR end-to-end
 
 ## Conventions worth knowing
 
