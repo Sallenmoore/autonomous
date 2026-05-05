@@ -38,19 +38,36 @@ if [ -z "${VERSION}" ]; then
   exit 1
 fi
 
-echo "🔎 Smoke-testing autonomous-app==${VERSION}..."
+# Resolve interpreter — GH Actions runners expose `python`, but bare
+# hosts (Fedora/Ubuntu) typically only have `python3`. Pick whichever exists.
+if command -v python >/dev/null 2>&1; then
+  PY=python
+elif command -v python3 >/dev/null 2>&1; then
+  PY=python3
+else
+  echo "❌ No python or python3 on PATH" >&2
+  echo "SIGNATURE: setup:NoPythonError:" >&2
+  exit 1
+fi
+
+echo "🔎 Smoke-testing autonomous-app==${VERSION} (using ${PY})..."
 
 TMPVENV=$(mktemp -d)
 trap 'rm -rf "${TMPVENV}"' EXIT
-python -m venv "${TMPVENV}"
+"${PY}" -m venv "${TMPVENV}"
 # shellcheck disable=SC1091
 source "${TMPVENV}/bin/activate"
 pip install --quiet --upgrade pip
 
 INSTALL_ERR="${TMPVENV}/install.err"
 INSTALL_OK=0
+# Install with [all] extras — represents how consumers actually use the
+# package. A bare `pip install autonomous-app` may surface gaps in the
+# core requirements.txt (e.g. transitive numpy needs), but those are
+# separate library bugs to file via the normal issue flow, not smoke
+# concerns.
 for attempt in 1 2 3 4 5; do
-  if pip install --quiet "autonomous-app==${VERSION}" 2> "${INSTALL_ERR}"; then
+  if pip install --quiet "autonomous-app[all]==${VERSION}" 2> "${INSTALL_ERR}"; then
     INSTALL_OK=1
     break
   fi
@@ -59,27 +76,44 @@ for attempt in 1 2 3 4 5; do
 done
 
 if [ "${INSTALL_OK}" -ne 1 ]; then
-  echo "❌ pip install autonomous-app==${VERSION} failed after 5 attempts" >&2
+  echo "❌ pip install autonomous-app[all]==${VERSION} failed after 5 attempts" >&2
   cat "${INSTALL_ERR}" >&2
-  echo "SIGNATURE: install:PipInstallError:autonomous-app==${VERSION}" >&2
+  echo "SIGNATURE: install:PipInstallError:autonomous-app[all]==${VERSION}" >&2
   exit 1
 fi
 
 IMPORT_ERR="${TMPVENV}/import.err"
-if ! python - 2> "${IMPORT_ERR}" <<'PY'
+# Use the venv's interpreter — `python` always exists inside a venv even
+# when the host had only python3. Smoke imports each top-level subpackage
+# to detect package-structure breakage; avoids depending on which symbols
+# are re-exported (those vary by version and aren't part of the smoke
+# contract — broken submodule imports usually mean missing files in the
+# wheel, broken `__init__.py`, or a transitive import failure).
+if ! "${TMPVENV}/bin/python" - 2> "${IMPORT_ERR}" <<PY
 import autonomous
-from autonomous.ai import TextAgent, JSONAgent, ImageAgent, AudioAgent
-from autonomous.db import db_sync
-from autonomous.auth import AutoAuth
+import autonomous.ai
+import autonomous.auth
+import autonomous.db
+import autonomous.logger
+import autonomous.model
+import autonomous.storage
+import autonomous.taskrunner
 from autonomous import log
-print(f"✅ smoke OK: autonomous-app=={autonomous.__version__}")
+expected = "${VERSION}"
+got = getattr(autonomous, "__version__", None)
+if got != expected:
+    raise AssertionError(f"Version mismatch: expected {expected!r}, got {got!r}")
+print(f"✅ smoke OK: autonomous-app=={got}")
 PY
 then
   echo "❌ Import smoke failed" >&2
   cat "${IMPORT_ERR}" >&2
   err_class=$(grep -E '^[A-Z][a-zA-Z]+(Error|Exception):' "${IMPORT_ERR}" | tail -1 | cut -d: -f1)
   err_class=${err_class:-ImportSmokeError}
+  # Extract last frame, strip ephemeral venv path so the signature is stable
+  # across runs (dedup key for the prod agent's issue lifecycle).
   err_loc=$(grep -E '^\s*File "' "${IMPORT_ERR}" | tail -1 | sed -E 's/.*File "([^"]+)", line ([0-9]+).*/\1:\2/')
+  err_loc=$(echo "${err_loc}" | sed -E 's|.*/site-packages/||')
   err_loc=${err_loc:-unknown}
   echo "SIGNATURE: import:${err_class}:${err_loc}" >&2
   exit 1
