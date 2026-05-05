@@ -92,6 +92,49 @@ If both agents wrote tests in the same place, the test agent would just re-run d
 
 Practical implication for breaking changes: ship a release via `./scripts/release.sh` (see Commands below), then the consumer's storyteller-dev agent runs `bump-autonomous.sh ${NEW_VERSION}` to update the pin. After the consumer's PR through dev → test → main lands, the prod consumer rebuild picks up the new wheel.
 
+## Agent Workflow
+
+This repo is owned by the **autonomous agent**, working from the canonical clone at `/opt/data/autonomous/`. The autonomous agent's responsibilities:
+
+1. **Triage incoming issues from consumer projects.** Consumers (currently just StoryTeller; the library is framework-agnostic so others may follow) file GitHub issues against `Sallenmoore/autonomous` when they hit a library bug or want a new feature. Each issue should arrive with: a clear repro, the consumer-side workaround (if any), and a pointer to the suspected fix location. The autonomous agent reads, plans, implements, tests, and ships a release.
+2. **Maintain library quality.** No consumer is editing `autonomous` source directly anymore — the agent is the sole maintainer of the library's correctness. Tests, lint, and the release pipeline all live in this tree.
+3. **Coordinate releases with consumers.** After a release, notify any consumer that filed the issue (close it with a comment like "Released as v0.3.X — bump your `autonomous-app` pin"). For multi-consumer releases, post once per consumer.
+
+### Working tree
+
+- **Canonical clone:** `/opt/data/autonomous/` (this directory). Created 2026-05-05 as part of the storyteller decoupling.
+- **Storyteller no longer vendors this repo as a submodule.** Before 2026-05-05, the dev/test trees of `Sallenmoore/StoryTeller` carried this codebase as a submodule and bind-mounted it for live editing. That coupling is gone — storyteller now installs `autonomous-app` from PyPI exclusively, like any other dependency.
+
+### Filing issues from consumers
+
+When the storyteller agent (or any other consumer) needs an autonomous library change, they file an issue against this repo using `gh issue create -R Sallenmoore/autonomous`. Issues from agents follow this body template:
+
+```markdown
+## Symptom
+<one-paragraph user-visible behavior>
+
+## Repro
+<minimum-viable code or steps>
+
+## Suspected location
+<file:line in autonomous/src/...>
+
+## Consumer-side workaround (if any)
+<the temporary patch the consumer is using until library lands a fix>
+
+## Suggested fix shape
+<one-paragraph; not binding on the autonomous agent>
+```
+
+The autonomous agent should treat agent-filed issues the same as human-filed ones: read fully, decide whether to accept, plan, implement, ship.
+
+## Coordination with the storyteller agent
+
+StoryTeller has its own dev / test agent pair operating on `/opt/data/storyteller-dev/` and `/opt/data/storyteller-test/`. Those agents do not edit this tree. The relationship is producer (this tree) ↔ consumer (storyteller's trees), mediated by:
+- **GitHub issues** for change requests (storyteller → autonomous).
+- **PyPI releases** for change deliveries (autonomous → storyteller).
+- The `requirements.txt` pin in each storyteller tree (`autonomous-app>=X.Y.Z`) is the version contract.
+
 ## Commands
 
 All dev workflows go through the [makefile](makefile), which `include .env` — expect a `.env` at repo root with DB/Redis/AI credentials.
@@ -135,7 +178,7 @@ The library is a set of loosely-coupled service wrappers glued together by the `
 
 ## CI/CD
 
-### Pipeline shape
+### Pipeline shape (updated 2026-05-05)
 
 ```
       dev    - feature branches start here; autonomous-dev hot-iterates
@@ -150,6 +193,17 @@ The library is a set of loosely-coupled service wrappers glued together by the `
 ```
 
 GitHub Actions: `Python package` (lint + pytest, Python 3.11/3.12/3.13 matrix) fires on `dev`, `test`, `main`. `Pylint` fires on every push. `Release smoke` fires when a push to `main` modifies `src/autonomous/__init__.py` (i.e., a `release.sh` version-bump commit) — installs the new version from PyPI in a clean env and imports the public symbols.
+
+### Releasing
+
+Use [scripts/release.sh](scripts/release.sh):
+- Verifies on `main`, fast-forwarded, working tree clean, PyPI creds present
+- Computes next patch version from `__version__`
+- Writes the bump
+- Runs `make package` (build + twine check + twine upload)
+- Commits + pushes `origin/main`
+
+After the test→main merge, the autonomous-test agent runs `release.sh` automatically when the PR carries the `auto-release` label (see Agent Workflow above). Manual invocation is still supported for ad-hoc patches.
 
 ## Conventions worth knowing
 
