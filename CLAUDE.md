@@ -31,7 +31,7 @@ When the storyteller agent (or any other consumer) needs an autonomous library c
 <minimum-viable code or steps>
 
 ## Suspected location
-<file:line in autonomous/src/...>
+<file:line in src/autonomous/...>
 
 ## Consumer-side workaround (if any)
 <the temporary patch the consumer is using until library lands a fix>
@@ -96,14 +96,18 @@ The library is a set of loosely-coupled service wrappers glued together by the `
 ```
 chore/<slug> | fix/<slug> | feat/<slug>
         │
-        ▼  PR (lint + tests)
+        ▼  PR (pylint on push)
       main                 (protected; default branch — release trunk)
         │
         ▼  ./scripts/release.sh
-      tag vX.Y.Z + PyPI publish
+      PyPI publish + version bump commit
 ```
 
 The `dev` branch in this repo is a historical integration tier from when contributions were heavier; recent practice (PR #7 makefile fix, PR #12 release.sh) targets `main` directly and `dev` has fallen behind. The autonomous agent can either revive `dev` as a CI gate or formally retire it — either is fine; just be consistent. Until that decision lands, **PR against `main`**.
+
+**What the diagram does NOT show (because it isn't currently wired up):**
+- **pytest does not gate `main` PRs.** [.github/workflows/python-package.yml](.github/workflows/python-package.yml) only triggers on push/PR to `dev`, so the only check that fires on a `main`-targeted PR is [pylint.yml](.github/workflows/pylint.yml) (which is `on: [push]`). Run `make tests` locally before opening a PR — CI will not catch test regressions.
+- **`scripts/release.sh` does not create a git tag.** It bumps `__version__`, runs `make package` (which twine-uploads), commits, and pushes `origin/main`. The PyPI version is the source of truth for releases; there is no `vX.Y.Z` tag in the git history. If you need a tag (e.g. for changelog tooling), create it manually after release or extend the script.
 
 ### Releasing
 
