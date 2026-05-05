@@ -6,6 +6,49 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `autonomous-app` is a routing framework agnostic containerized service framework published to PyPI. It should layer seamlessly on top of flask, fast-api, and other micro-frameworks. Library source lives under [src/autonomous/](src/autonomous/); the package version is declared in [src/autonomous/__init__.py](src/autonomous/__init__.py) and consumed dynamically by [pyproject.toml](pyproject.toml). Runtime requires Python ≥3.12 per `pyproject.toml`, though CI matrix tests 3.11/3.12/3.13 on the `dev` branch ([.github/workflows/python-package.yml](.github/workflows/python-package.yml)). Importing the top-level `autonomous` package calls `load_dotenv()` and exposes the global `log` singleton.
 
+## Agent Workflow
+
+This repo is owned by the **autonomous agent**, working from the canonical clone at `/opt/data/autonomous/`. The autonomous agent's responsibilities:
+
+1. **Triage incoming issues from consumer projects.** Consumers (currently just StoryTeller; the library is framework-agnostic so others may follow) file GitHub issues against `Sallenmoore/autonomous` when they hit a library bug or want a new feature. Each issue should arrive with: a clear repro, the consumer-side workaround (if any), and a pointer to the suspected fix location. The autonomous agent reads, plans, implements, tests, and ships a release.
+2. **Maintain library quality.** No consumer is editing `autonomous` source directly anymore — the agent is the sole maintainer of the library's correctness. Tests, lint, and the release pipeline all live in this tree.
+3. **Coordinate releases with consumers.** After a release, notify any consumer that filed the issue (close it with a comment like "Released as v0.3.X — bump your `autonomous-app` pin"). For multi-consumer releases, post once per consumer.
+
+### Working tree
+
+- **Canonical clone:** `/opt/data/autonomous/` (this directory). Created 2026-05-05 as part of the storyteller decoupling.
+- **Storyteller no longer vendors this repo as a submodule.** Before 2026-05-05, the dev/test trees of `Sallenmoore/StoryTeller` carried this codebase as a submodule and bind-mounted it for live editing. That coupling is gone — storyteller now installs `autonomous-app` from PyPI exclusively, like any other dependency.
+
+### Filing issues from consumers
+
+When the storyteller agent (or any other consumer) needs an autonomous library change, they file an issue against this repo using `gh issue create -R Sallenmoore/autonomous`. Issues from agents follow this body template:
+
+```markdown
+## Symptom
+<one-paragraph user-visible behavior>
+
+## Repro
+<minimum-viable code or steps>
+
+## Suspected location
+<file:line in autonomous/src/...>
+
+## Consumer-side workaround (if any)
+<the temporary patch the consumer is using until library lands a fix>
+
+## Suggested fix shape
+<one-paragraph; not binding on the autonomous agent>
+```
+
+The autonomous agent should treat agent-filed issues the same as human-filed ones: read fully, decide whether to accept, plan, implement, ship.
+
+## Coordination with the storyteller agent
+
+StoryTeller has its own dev / test agent pair operating on `/opt/data/storyteller-dev/` and `/opt/data/storyteller-test/`. Those agents do not edit this tree. The relationship is producer (this tree) ↔ consumer (storyteller's trees), mediated by:
+- **GitHub issues** for change requests (storyteller → autonomous).
+- **PyPI releases** for change deliveries (autonomous → storyteller).
+- The `requirements.txt` pin in each storyteller tree (`autonomous-app>=X.Y.Z`) is the version contract.
+
 ## Commands
 
 All dev workflows go through the [makefile](makefile), which `include .env` — expect a `.env` at repo root with DB/Redis/AI credentials.
@@ -48,23 +91,34 @@ The library is a set of loosely-coupled service wrappers glued together by the `
 
 ## CI/CD
 
-### Pipeline shape
+### Pipeline shape (updated 2026-05-05)
 
 ```
-ai/<feature-slug>          (per-task branch, cut from ai-development)
+chore/<slug> | fix/<slug> | feat/<slug>
         │
-        ▼  PR (lint + unit tests required)
-      dev                  (integration tier; PRs to main cut from here)
+        ▼  PR (lint + tests)
+      main                 (protected; default branch — release trunk)
         │
-        ▼  PR (lint + unit + integration tests required, 1 approval)
-      main                 (protected; default branch)
-        │
-        ▼  git tag vX.Y.Z
+        ▼  ./scripts/release.sh
+      tag vX.Y.Z + PyPI publish
 ```
+
+The `dev` branch in this repo is a historical integration tier from when contributions were heavier; recent practice (PR #7 makefile fix, PR #12 release.sh) targets `main` directly and `dev` has fallen behind. The autonomous agent can either revive `dev` as a CI gate or formally retire it — either is fine; just be consistent. Until that decision lands, **PR against `main`**.
+
+### Releasing
+
+Use [scripts/release.sh](scripts/release.sh):
+- Verifies on `main`, fast-forwarded, working tree clean, PyPI creds present
+- Computes next patch version from `__version__`
+- Writes the bump
+- Runs `make package` (build + twine check + twine upload)
+- Commits + pushes `origin/main`
+
+Consumer-side bump (e.g. storyteller's `autonomous-app` pin in `requirements.txt`) is the consumer's responsibility — autonomous notifies via the GitHub issue thread that produced the work.
 
 ## Conventions worth knowing
 
 - **Never import from db submodules directly** — go through `autonomous.db`, which re-exports the intended public names.
 - **MongoDB is required at import time** for anything under `autonomous.model` or `autonomous.ai`; unit tests that touch these need the Compose stack up.
 - **Models must be imported before `AutoModel.load_model("Name")` will resolve them**, because resolution walks `__subclasses__()`.
-- **CI targets the `dev` branch, not `main`** — PRs for this repo typically go to `dev`.
+- **PRs target `main`** (see Pipeline shape above for the historical context on `dev`).
