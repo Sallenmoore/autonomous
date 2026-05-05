@@ -117,7 +117,7 @@ When the storyteller agent (or any other consumer) needs an autonomous library c
 <minimum-viable code or steps>
 
 ## Suspected location
-<file:line in autonomous/src/...>
+<file:line in src/autonomous/...>
 
 ## Consumer-side workaround (if any)
 <the temporary patch the consumer is using until library lands a fix>
@@ -193,6 +193,10 @@ The library is a set of loosely-coupled service wrappers glued together by the `
 ```
 
 GitHub Actions: `Python package` (lint + pytest, Python 3.11/3.12/3.13 matrix) fires on `dev`, `test`, `main`. `Pylint` fires on every push. `Release smoke` fires when a push to `main` modifies `src/autonomous/__init__.py` (i.e., a `release.sh` version-bump commit) — installs the new version from PyPI in a clean env and imports the public symbols.
+
+**What the diagram does NOT show (because it isn't currently wired up):**
+- **pytest does not gate `main` PRs.** [.github/workflows/python-package.yml](.github/workflows/python-package.yml) only triggers on push/PR to `dev`, so the only check that fires on a `main`-targeted PR is [pylint.yml](.github/workflows/pylint.yml) (which is `on: [push]`). Run `make tests` locally before opening a PR — CI will not catch test regressions.
+- **`scripts/release.sh` does not create a git tag.** It bumps `__version__`, runs `make package` (which twine-uploads), commits, and pushes `origin/main`. The PyPI version is the source of truth for releases; there is no `vX.Y.Z` tag in the git history. If you need a tag (e.g. for changelog tooling), create it manually after release or extend the script.
 
 ### Releasing
 
