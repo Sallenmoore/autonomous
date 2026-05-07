@@ -29,7 +29,7 @@ class MockAIModel(AutoModel):
         "UklGRigAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAEA"
     )
 
-    def generate_json(self, message, system_prompt=None, uri="", context=None):
+    def generate_json(self, message, system_prompt=None, uri="", context=None, temperature=None):
         """
         Returns a rich dummy JSON object.
         It attempts to guess the context based on keys found in the prompt,
@@ -51,7 +51,7 @@ class MockAIModel(AutoModel):
 
         return mock_response
 
-    def generate_text(self, message, additional_instructions="", uri="", context=None):
+    def generate_text(self, message, additional_instructions="", uri="", context=None, temperature=None):
         log(f"⚡ [MOCK] Generating Text...", _print=True)
         return (
             "Lorem ipsum dolor sit amet, consectetur adipiscing elit. "

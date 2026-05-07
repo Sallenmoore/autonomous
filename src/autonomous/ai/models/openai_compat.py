@@ -164,7 +164,7 @@ class OpenAIClient(AutoModel):
         return self._chat(self._text_model, system, user, temperature=temperature)
 
     def generate_json(
-        self, message, system_prompt=None, uri="", context=None, evaluation=False
+        self, message, system_prompt=None, uri="", context=None, temperature=0.7, evaluation=False
     ):
         system = system_prompt or self.instructions
         system = system.rstrip(". ") + ".\nYour response MUST be a single valid JSON object."
@@ -186,6 +186,7 @@ class OpenAIClient(AutoModel):
             system,
             user,
             response_format={"type": "json_object"},
+            temperature=temperature,
         )
         try:
             return json.loads(raw)

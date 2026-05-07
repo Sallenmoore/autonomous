@@ -18,11 +18,14 @@ class JSONAgent(BaseAgent):
         default="A helpful AI assistant trained to assist with generating JSON formatted data."
     )
 
-    def generate(self, message, system_prompt="", uri="", context=""):
+    def generate(self, message, system_prompt="", uri="", context="", temperature=None):
         # self.add_to_job_meta("prompt", message)
+        kwargs = {}
+        if temperature is not None:
+            kwargs["temperature"] = temperature
         result = self.get_client(
             os.environ.get("JSON_AI_AGENT", self.provider)
-        ).generate_json(message, system_prompt=system_prompt, uri=uri, context=context)
+        ).generate_json(message, system_prompt=system_prompt, uri=uri, context=context, **kwargs)
         if isinstance(result, str):
             try:
                 result = json.loads(result)
