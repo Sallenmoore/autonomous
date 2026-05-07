@@ -16,6 +16,11 @@ python-dotenv
 pymongo
 blinker
 
+# Vector embeddings (autonomous.db.db_sync imports numpy at module load,
+# so this is a hard runtime dep, not an extra — without it,
+# `from autonomous.db import Document` raises ModuleNotFoundError)
+numpy
+
 # OAuth2 / Authentication
 Authlib
 
