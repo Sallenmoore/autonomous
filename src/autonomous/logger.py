@@ -16,9 +16,12 @@ class Logger:
     """
     Leveled logger with optional file archive.
 
-    Level is read from the ``LOG_LEVEL`` env var on first use (values:
-    DEBUG / INFO / WARNING / ERROR / CRITICAL; default WARNING). File writes
-    can be disabled by setting ``LOG_TO_FILES=0`` or by calling
+    ``LOG_LEVEL`` (DEBUG / INFO / WARNING / ERROR / CRITICAL; default WARNING)
+    controls the **threshold** — the minimum severity that gets emitted to
+    stderr / handlers. It does not control the severity of any particular
+    message. Bare ``log(obj)`` calls always emit at DEBUG; reserve ERROR for
+    explicit ``log.error(...)`` / exception paths once those are wired up.
+    File writes can be disabled by setting ``LOG_TO_FILES=0`` or by calling
     ``logger.enable_file_logging(False)``.
 
     ``Logger()`` itself has no side effects — the logs directory and any
@@ -78,7 +81,13 @@ class Logger:
             return
         is_printed = kwargs.pop("_print", False)
         msg = self._format(*args, **kwargs)
-        self.logger.log(self.logger.level, f"{msg}\n")
+        # Bare ``log(obj)`` is a content-dump pattern (developer probe), not
+        # an error. Emit at DEBUG so prod consumers running with
+        # LOG_LEVEL=WARNING or higher don't see it — and so error-monitoring
+        # regexes don't flag it. Earlier code emitted at ``self.logger.level``
+        # (the threshold), which made bare calls inherit whatever severity
+        # the threshold was set to (often ERROR in prod).
+        self.logger.log(logging.DEBUG, f"{msg}\n")
         if self._file_logging:
             self._ensure_paths()
             try:
