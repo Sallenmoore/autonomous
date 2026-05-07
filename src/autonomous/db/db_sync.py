@@ -5,7 +5,6 @@ import uuid
 from datetime import datetime
 
 import bson
-import numpy as np
 import pymongo
 import redis
 import requests
@@ -150,6 +149,11 @@ def process_single_object_sync(object_id, collection_name, token):
 
     # 4. Save to Redis Index
     if vector:
+        # numpy is only needed when actually writing a vector — keep it
+        # out of the autonomous.db import-time graph so consumers that
+        # don't use vector embeddings (most ORM usage) can install
+        # without it.
+        import numpy as np
         _get_redis().hset(
             f"lore:{object_id}",
             mapping={
