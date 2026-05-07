@@ -35,6 +35,13 @@ jobs:
         # Installing the dev file here keeps CI in sync with `make tests`
         # locally — without it, pytest fails to parse its own arguments.
         if [ -f requirements_dev.txt ]; then pip install -r requirements_dev.txt; fi
+        # Extras: hermetic tests under tests/unit/ exercise optional-feature
+        # code paths (PIL for image_cache, google-genai for gemini, redis/rq
+        # for taskrunner). The unit suite imports them at collect time, so
+        # CI must install all extras to match what `make inittests` provides.
+        for extras in requirements-images.txt requirements-ai.txt requirements-tasks.txt requirements-server.txt requirements-github.txt; do
+          if [ -f "$extras" ]; then pip install -r "$extras"; fi
+        done
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names
