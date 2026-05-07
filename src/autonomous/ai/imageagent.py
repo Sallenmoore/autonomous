@@ -23,6 +23,7 @@ class ImageAgent(BaseAgent):
         files=None,
         aspect_ratio="2KPortrait",
         style=None,
+        temperature=None,
     ):
         self.add_to_job_meta("prompt", prompt)
         self.add_to_job_meta("provider", self.provider)

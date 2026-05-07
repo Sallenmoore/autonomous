@@ -174,7 +174,7 @@ class GeminiAIModel(AutoModel):
         return uploaded_files
 
     def generate_json(
-        self, message, function, additional_instructions="", uri="", context=None
+        self, message, function, additional_instructions="", uri="", context=None, temperature=None
     ):
         context = context or {}
         function_definition = self._add_function(function)
@@ -190,16 +190,20 @@ class GeminiAIModel(AutoModel):
             contents.append(Part.from_uri(file_uri=uri, mime_type="application/json"))
             additional_instructions += "\nUse the provided uri file for reference\n"
 
+        config_kwargs = {
+            "system_instruction": f"{self.instructions}.{additional_instructions}",
+            "tools": [types.Tool(function_declarations=[function_definition])],
+            "tool_config": types.ToolConfig(
+                function_calling_config=types.FunctionCallingConfig(mode="ANY")
+            ),
+        }
+        if temperature is not None:
+            config_kwargs["temperature"] = temperature
+
         response = self.client.models.generate_content(
             model=self._json_model,
             contents=contents,
-            config=types.GenerateContentConfig(
-                system_instruction=f"{self.instructions}.{additional_instructions}",
-                tools=[types.Tool(function_declarations=[function_definition])],
-                tool_config=types.ToolConfig(
-                    function_calling_config=types.FunctionCallingConfig(mode="ANY")
-                ),
-            ),
+            config=types.GenerateContentConfig(**config_kwargs),
         )
 
         try:
@@ -216,7 +220,7 @@ class GeminiAIModel(AutoModel):
             log(f"==== Failed to parse ToolCall response: {e} ====")
             return {}
 
-    def generate_text(self, message, additional_instructions="", uri="", context=None):
+    def generate_text(self, message, additional_instructions="", uri="", context=None, temperature=None):
         context = context or {}
         contents = [message]
         if context:
@@ -228,11 +232,15 @@ class GeminiAIModel(AutoModel):
         if uri:
             contents.append(Part.from_uri(file_uri=uri, mime_type="application/json"))
 
+        config_kwargs = {
+            "system_instruction": f"{self.instructions}.{additional_instructions}",
+        }
+        if temperature is not None:
+            config_kwargs["temperature"] = temperature
+
         response = self.client.models.generate_content(
             model=self._text_model,
-            config=types.GenerateContentConfig(
-                system_instruction=f"{self.instructions}.{additional_instructions}",
-            ),
+            config=types.GenerateContentConfig(**config_kwargs),
             contents=contents,
         )
         return response.text
