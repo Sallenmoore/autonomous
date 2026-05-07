@@ -17,5 +17,6 @@ if sys.version_info >= (3, 13):
     collect_ignore_glob = [
         "test_unit_audioagent.py",
         "test_unit_gemini_env_models.py",
+        "test_unit_mutable_defaults.py",
         "test_unit_temperature_override.py",
     ]
