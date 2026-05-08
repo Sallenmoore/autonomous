@@ -1,24 +1,9 @@
-"""Unit-test conftest: skip pydub-dependent suites on Python 3.13+.
+"""Unit-test conftest.
 
-pydub <0.26 imports the stdlib ``audioop`` module at load, which was
-removed in Python 3.13. The ``pyaudioop`` backport pydub falls back to
-also doesn't support 3.13 yet. Until pydub ships a 3.13-compatible
-release, any test that transitively imports it (audioagent, gemini,
-temperature_override) errors at collection on the 3.13 matrix entry.
-
-Suppressing collection here keeps CI green on 3.13 for the rest of the
-suite. 3.11 / 3.12 still exercise the affected tests fully. Remove this
-block once pydub is updated.
+Historical note: this file used to skip the pydub-dependent suites on
+Python 3.13+ because pydub's `import audioop` exploded on 3.13 (PEP 594
+removed audioop from stdlib). PR #37 / issue #24 fixed that at the dep
+layer by pinning `audioop-lts` in requirements-ai.txt, so the skip
+block is no longer needed — the affected tests now run cleanly on
+every leg of the matrix.
 """
-
-import sys
-
-if sys.version_info >= (3, 13):
-    collect_ignore_glob = [
-        "test_unit_audioagent.py",
-        "test_unit_gemini_env_models.py",
-        "test_unit_mutable_defaults.py",
-        "test_unit_narrow_exceptions.py",
-        "test_unit_openai_client.py",
-        "test_unit_temperature_override.py",
-    ]
