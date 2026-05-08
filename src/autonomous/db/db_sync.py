@@ -6,11 +6,16 @@ from datetime import datetime
 
 import bson
 import pymongo
-import redis
 import requests
 
 from autonomous import log
-from autonomous.taskrunner.autotasks import AutoTasks, TaskPriority
+
+# redis, rq, and autonomous.taskrunner are imported lazily inside the
+# functions that need them. They live in the [tasks] extra (and numpy
+# in [all]); module-top imports here would prevent ORM-only consumers
+# from running ``from autonomous.db import Document`` without those
+# extras installed. See parallel treatment for numpy in
+# process_single_object_sync below.
 
 _redis_client = None
 _mongo_client = None
@@ -20,6 +25,7 @@ _mongo_db = None
 def _get_redis():
     global _redis_client
     if _redis_client is None:
+        import redis
         _redis_client = redis.Redis(
             host=os.getenv("REDIS_HOST", "cachedb"),
             port=int(os.getenv("REDIS_PORT", 6379)),
@@ -61,15 +67,26 @@ def _get_vector_local(text):
 def _get_vector_openai(text):
     """OpenAI-compatible HPC path. __new__ bypass keeps Mongo out of the
     RQ worker — `get_embedding` only reads class-level config."""
-    from autonomous.ai.models.openai_compat import OpenAIClient
+    from autonomous.ai.models.openai_compat import HPCUnreachableError, OpenAIClient
 
     client = OpenAIClient.__new__(OpenAIClient)
     try:
         return client.get_embedding(text)
+    except HPCUnreachableError as e:
+        # Returning None is the supported degrade path — the caller
+        # tolerates a missing vector (see openai_compat.HPCUnreachableError).
+        # The "[HPC-UNREACHABLE]" prefix is a stable observability sentinel;
+        # downstream log scrapers match on it, so do not rename without
+        # coordinating consumers.
+        print(f"[HPC-UNREACHABLE] embedding generation failed: {e}")
+        return None
     except Exception as e:
-        # Failure here means RAG goes context-free for this save; that's
-        # noisy but recoverable, and the caller already tolerates None.
-        print(f"Vector Gen (HPC) Failed: {e}")
+        # Same sentinel for unexpected errors so any HPC-path failure
+        # surfaces under one marker family.
+        print(
+            f"[HPC-UNREACHABLE] embedding generation failed "
+            f"(unexpected {type(e).__name__}): {e}"
+        )
         return None
 
 
@@ -173,6 +190,10 @@ def request_indexing(object_id, collection_name):
     MUST BE FAST. NO SLEEPING HERE.
     """
     print("Requesting Indexing...")
+
+    # Lazy imports — see module-top comment.
+    import redis
+    from autonomous.taskrunner.autotasks import AutoTasks, TaskPriority
 
     # Initialize the Task Runner
     task_runner = AutoTasks()
