@@ -1,3 +1,10 @@
 # AI provider adapters in autonomous.ai
 google-genai      # autonomous.ai.models.gemini
 pydub             # audio post-processing in local + gemini models
+
+# pydub does ``import audioop`` at module load. Python 3.13 removed
+# ``audioop`` from the stdlib (PEP 594). ``audioop-lts`` is the
+# actively-maintained drop-in: installing it provides an ``audioop``
+# module so the legacy import keeps working. The marker scopes it to
+# 3.13+, so 3.11/3.12 environments don't pick it up unnecessarily.
+audioop-lts; python_version >= "3.13"
