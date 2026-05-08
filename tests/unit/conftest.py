@@ -18,5 +18,7 @@ if sys.version_info >= (3, 13):
         "test_unit_audioagent.py",
         "test_unit_gemini_env_models.py",
         "test_unit_mutable_defaults.py",
+        "test_unit_narrow_exceptions.py",
+        "test_unit_openai_client.py",
         "test_unit_temperature_override.py",
     ]
