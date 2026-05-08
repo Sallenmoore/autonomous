@@ -1,0 +1,42 @@
+# Post-release smoke test. Pairs with the autonomous-prod local agent
+# (see CLAUDE.md "Agent Workflow"). Runs on every push to `main` that
+# touches `src/autonomous/__init__.py` (which is what `scripts/release.sh`
+# bumps after a successful PyPI upload), plus on manual dispatch.
+#
+# The local prod agent fingerprints failures and files issues; this
+# workflow provides public auditability — green ✓ on the merged PR
+# means the wheel installs and basic symbols import in a clean env.
+
+name: Release smoke
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "src/autonomous/__init__.py"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to smoke (e.g. 0.3.128). Defaults to whatever __init__.py declares."
+        required: false
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run smoke
+        env:
+          # If the workflow_dispatch input is set, override the version in __init__.py
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ -n "${INPUT_VERSION:-}" ]; then
+            ./scripts/smoke_test.sh "${INPUT_VERSION}"
+          else
+            ./scripts/smoke_test.sh
+          fi

@@ -91,6 +91,24 @@ class ReferenceAttr(GenericReferenceField):
         except DoesNotExist:
             return None
 
+    def __set__(self, instance, value):
+        """Assign *value* and unconditionally mark the field dirty.
+
+        ``GenericReferenceField.__get__`` lazily replaces the raw
+        ``{_cls, _ref}`` dict stored in ``instance._data`` with the
+        dereferenced ``Document`` object by writing directly to ``_data``,
+        bypassing the normal descriptor path.  The base-class equality
+        check in ``BaseField.__set__`` then compares a ``Document`` to
+        itself (or to a stale dict) and may incorrectly decide the field
+        has not changed, leaving ``_changed_fields`` empty.  Explicitly
+        calling ``_mark_as_changed`` here ensures the field is always
+        included in the next ``$set`` payload regardless of what was
+        previously cached in ``_data``.
+        """
+        if instance._initialised:
+            instance._mark_as_changed(self.name)
+        super().__set__(instance, value)
+
 
 class ListAttr(ListField):
     """A list attribute that self-heals.

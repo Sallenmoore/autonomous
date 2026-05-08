@@ -178,6 +178,50 @@ class TestAutomodel:
         assert am.auto is None
         assert len(am.autolist) == 1
 
+    def test_referenceattr_update_persists_after_save(self):
+        """Regression: ReferenceAttr assignment on an already-saved doc must
+        mark the field dirty so the next save() includes it in $set.
+
+        Steps:
+          1. Create and save two independent Model instances (am, sub1).
+          2. Assign am.auto = sub1 and save → persists reference.
+          3. Create a third instance (sub2), save it.
+          4. Re-fetch am from DB (clean state, _changed_fields=[]).
+          5. Assign am.auto = sub2 — this is the regression scenario.
+          6. Assert 'auto' in am._changed_fields immediately after assignment.
+          7. Save am.
+          8. Re-fetch am from DB and assert am.auto.pk == sub2.pk.
+        """
+        am = Model(name="testam", age=10, date=datetime.now())
+        am.save()
+        sub1 = Model(name="sub1", age=1, date=datetime.now())
+        sub1.save()
+        sub2 = Model(name="sub2", age=2, date=datetime.now())
+        sub2.save()
+
+        # Prime: set auto → sub1 and persist
+        am.auto = sub1
+        am.save()
+
+        # Clean re-fetch (simulates the real-world scenario)
+        am = Model.get(am.pk)
+        assert am.auto.pk == sub1.pk
+
+        # Regression: assign a *different* reference on the already-saved doc
+        am.auto = sub2
+        assert "auto" in am._changed_fields, (
+            "_changed_fields must contain 'auto' immediately after assignment"
+        )
+
+        am.save()
+
+        # Re-fetch and verify the new value was persisted
+        am_reloaded = Model.get(am.pk)
+        assert am_reloaded.auto is not None, "auto field must not be None after save"
+        assert am_reloaded.auto.pk == sub2.pk, (
+            f"Expected auto.pk={sub2.pk} but got {am_reloaded.auto.pk!r}"
+        )
+
     def test_abstractmodel_all(self):
         RealModel.drop_collection()
         RealModel(name="test", age=10).save()

@@ -76,7 +76,7 @@ class LocalAIModel(AutoModel):
             log(f"Failed to flush memory: {e}", _print=True)
 
     def generate_json(
-        self, message, system_prompt=None, uri="", context=None, evaluation=False
+        self, message, system_prompt=None, uri="", context=None, temperature=0.7, evaluation=False
     ):
         context = context or {}
         system_prompt = system_prompt or self.instructions
@@ -119,7 +119,7 @@ class LocalAIModel(AutoModel):
             "options": {
                 "num_ctx": self._context_limit,
                 "num_predict": 1024,
-                "temperature": 0.7,
+                "temperature": temperature,
                 "top_p": 0.95,
                 "top_k": 64,
                 "repeat_penalty": 1.1,
