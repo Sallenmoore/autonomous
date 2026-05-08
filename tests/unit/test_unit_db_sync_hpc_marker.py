@@ -115,6 +115,9 @@ class TestMarkerStability:
             side_effect=HPCUnreachableError("x"),
         ):
             _get_vector_openai("t")
-        out = capsys.readouterr().out
+        captured = capsys.readouterr()
         # Exact bracket form, leading position, no leading whitespace.
-        assert out.startswith("[HPC-UNREACHABLE]")
+        assert captured.out.startswith("[HPC-UNREACHABLE]")
+        # Pin stdout (not stderr) — log scrapers tail one stream; if this
+        # ever moves to stderr it must be a deliberate, coordinated change.
+        assert captured.err == ""

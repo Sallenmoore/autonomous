@@ -67,10 +67,11 @@ def _get_vector_openai(text):
     try:
         return client.get_embedding(text)
     except HPCUnreachableError as e:
-        # Returning None is the documented degrade path — the caller
-        # tolerates a missing vector. The "[HPC-UNREACHABLE]" prefix is
-        # a stable observability sentinel; downstream log scrapers match
-        # on it, so do not rename without coordinating consumers.
+        # Returning None is the supported degrade path — the caller
+        # tolerates a missing vector (see openai_compat.HPCUnreachableError).
+        # The "[HPC-UNREACHABLE]" prefix is a stable observability sentinel;
+        # downstream log scrapers match on it, so do not rename without
+        # coordinating consumers.
         print(f"[HPC-UNREACHABLE] embedding generation failed: {e}")
         return None
     except Exception as e:
