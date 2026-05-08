@@ -6,11 +6,16 @@ from datetime import datetime
 
 import bson
 import pymongo
-import redis
 import requests
 
 from autonomous import log
-from autonomous.taskrunner.autotasks import AutoTasks, TaskPriority
+
+# redis, rq, and autonomous.taskrunner are imported lazily inside the
+# functions that need them. They live in the [tasks] extra (and numpy
+# in [all]); module-top imports here would prevent ORM-only consumers
+# from running ``from autonomous.db import Document`` without those
+# extras installed. See parallel treatment for numpy in
+# process_single_object_sync below.
 
 _redis_client = None
 _mongo_client = None
@@ -20,6 +25,7 @@ _mongo_db = None
 def _get_redis():
     global _redis_client
     if _redis_client is None:
+        import redis
         _redis_client = redis.Redis(
             host=os.getenv("REDIS_HOST", "cachedb"),
             port=int(os.getenv("REDIS_PORT", 6379)),
@@ -184,6 +190,10 @@ def request_indexing(object_id, collection_name):
     MUST BE FAST. NO SLEEPING HERE.
     """
     print("Requesting Indexing...")
+
+    # Lazy imports — see module-top comment.
+    import redis
+    from autonomous.taskrunner.autotasks import AutoTasks, TaskPriority
 
     # Initialize the Task Runner
     task_runner = AutoTasks()
