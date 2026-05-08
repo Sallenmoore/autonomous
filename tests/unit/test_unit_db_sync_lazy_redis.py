@@ -16,6 +16,7 @@ Also pins `pyproject.toml`'s `dynamic` list to include
 
 import ast
 import inspect
+import os
 import re
 import subprocess
 import sys
@@ -117,11 +118,18 @@ class TestEndToEndImportSmoke:
                 raise SystemExit(1)
             print("ok")
         """)
+        # Forward the parent's sys.path so the subprocess can find
+        # `autonomous`. CI doesn't pip-install the package — tests/conftest.py
+        # injects src/ at runtime, but those mutations don't cross
+        # subprocess boundaries. PYTHONPATH does.
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.pathsep.join(p for p in sys.path if p)
         result = subprocess.run(
             [sys.executable, "-c", code],
             capture_output=True,
             text=True,
             timeout=30,
+            env=env,
         )
         assert result.returncode == 0 and "ok" in result.stdout, (
             "`from autonomous.db import Document` must succeed when redis "
