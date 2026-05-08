@@ -62,15 +62,25 @@ def _get_vector_local(text):
 def _get_vector_openai(text):
     """OpenAI-compatible HPC path. __new__ bypass keeps Mongo out of the
     RQ worker — `get_embedding` only reads class-level config."""
-    from autonomous.ai.models.openai_compat import OpenAIClient
+    from autonomous.ai.models.openai_compat import HPCUnreachableError, OpenAIClient
 
     client = OpenAIClient.__new__(OpenAIClient)
     try:
         return client.get_embedding(text)
+    except HPCUnreachableError as e:
+        # Returning None is the documented degrade path — the caller
+        # tolerates a missing vector. The "[HPC-UNREACHABLE]" prefix is
+        # a stable observability sentinel; downstream log scrapers match
+        # on it, so do not rename without coordinating consumers.
+        print(f"[HPC-UNREACHABLE] embedding generation failed: {e}")
+        return None
     except Exception as e:
-        # Failure here means RAG goes context-free for this save; that's
-        # noisy but recoverable, and the caller already tolerates None.
-        print(f"Vector Gen (HPC) Failed: {e}")
+        # Same sentinel for unexpected errors so any HPC-path failure
+        # surfaces under one marker family.
+        print(
+            f"[HPC-UNREACHABLE] embedding generation failed "
+            f"(unexpected {type(e).__name__}): {e}"
+        )
         return None
 
 
