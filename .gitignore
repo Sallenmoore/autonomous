@@ -3,6 +3,9 @@ static/
 test/assets/
 logs/
 base_folder/
+
+# Claude Code per-clone state
+.claude/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

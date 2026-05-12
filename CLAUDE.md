@@ -45,7 +45,7 @@ All dev workflows go through the [makefile](makefile), which `include .env` — 
 - `make tests` — full suite: reinstalls deps, `pip install -e .`, brings up the Docker Compose stack in `tests/`, then runs `pytest`. **The test container is expected to mount the repo at `/var/app/autonomous`** (see [tests/conftest.py](tests/conftest.py)); pytest is not meant to be run directly on the host.
 - `make test` — runs a single filter: `pytest -k $(TESTING)`. Override the filter inline, e.g. `make test TESTING=test_unit_automodel`. Default is `test_unit_ai`.
 - `make inittests` / `make cleantests` — bring the Compose stack up/down without running pytest.
-- `make package` — `python -m build` + `twine upload` to PyPI. Bump `__version__` in [src/autonomous/__init__.py](src/autonomous/__init__.py) first.
+- `make package` — `python -m build` + `twine upload --skip-existing` to PyPI. Bump `__version__` in [src/autonomous/__init__.py](src/autonomous/__init__.py) first. **Side effect**: this ALWAYS attempts a PyPI upload; `--skip-existing` makes it a silent no-op when the version is already published, but a real publish for new versions. For local validation without uploading, run `python -m build && python -m twine check dist/*` directly.
 - `./scripts/release.sh` — preferred release entrypoint: bumps the patch version in `src/autonomous/__init__.py`, runs `make package` (build + twine upload), then commits and pushes `origin/main`. Use this for routine patch releases. For non-patch bumps, edit `__version__` manually first, then run the script (or fall back to `make package`).
 - CI lints with `flake8 . --select=E9,F63,F7,F82` (syntax-only gate) plus a non-blocking `--max-complexity=10 --max-line-length=127` pass.
 
@@ -96,6 +96,18 @@ The autonomous library runs as a closed-loop autonomous pipeline with three agen
 
 All three run as `/loop` in dynamic / self-paced mode. The dev agent does not push to `test`. The test agent does not edit the dev tree. Coordination is through PRs, issues, and labels (`smoke-fail`, `auto-filed`, `auto-release`, `awaiting-upstream`, `human-only`, `feature-request`).
 
+### Invariants
+
+The procedures below describe how the contract is satisfied today. The contract itself doesn't change when CI tiers, review tooling, or release cadence evolve — re-read this table before editing the procedure to make sure the change preserves what doesn't move.
+
+| Invariant | Source | Enforcement |
+|---|---|---|
+| Test agent writes tests INDEPENDENTLY of dev | Two-perspective design (`## Two-perspective testing`) | `tests/_dev_local/` is gitignored, so dev's tests are invisible in the PR diff the test agent works from |
+| All bundled work goes through the full local + CI gate | No fast-paths | No docs-only skip; `/review-pr` runs at the test gate even on small bundles |
+| Bug-fix commits land on `test`, never on dev's PR branch | One-way info flow (dev → test → main) | Test agent has no write capability against the dev tree or dev-owned PR head branches |
+| Manual commits on `main` get reconciled before the next cycle | Halt trigger #4 + step 1 drift inspection | Pre-cycle `git log origin/test..origin/main --oneline` is part of the refresh step, not just a reactive halt |
+| `test → dev` back-merge opens parallel to `test → main` | Keeps dev current with bug-fix commits the test agent landed directly on test | Both PRs are opened in step 8 — back-merge is not deferred until after main merge |
+
 ### Interactive mode
 
 When a human invokes Claude Code interactively in any of the three trees (most often `/opt/data/autonomous/` since that's the canonical clone), the loop discipline above is suspended in favor of explicit human direction. The agent may edit files, push branches, and open PRs from the prod tree under direct human prompts without violating the read-only constraint — that constraint applies to *autonomous* (loop-driven) operation, not human-prompted work. Project conventions (PRs target `main`, run `/review` before opening, ultrareview before merging, etc.) still apply.
@@ -131,25 +143,23 @@ Per iteration:
 
 Per iteration:
 
-1. **Refresh.** `git fetch origin && git checkout test && git pull --ff-only`.
+1. **Refresh + main-drift check.** `git fetch origin --prune && git checkout test && git pull --ff-only`. Then inspect `git log origin/test..origin/main --oneline` — every commit listed is on `main` but not on `test`. If non-empty: any subject *not* shaped like `Bump autonomous version to X.Y.Z` (the `release.sh` push) is a manual user edit and should be back-merged into `test` (`git merge --no-ff origin/main`) before this cycle proceeds, or halt and ask the user if it's not a recognized edit. Doing this proactively at step 1 catches drift cheaply rather than waiting for halt trigger #4 to fire mid-cycle.
 2. **Poll for open `dev → test` PRs.** None → fall through to step 9.
 3. **Pull and test-merge locally.** `gh pr checkout <PR>; git checkout test; git merge --no-ff <PR-branch>`.
-4. **Write independent tests for the change.** `gh pr diff <PR>` → write tests targeting the changed code from a fresh perspective (without seeing dev's `tests/_dev_local/`, which are gitignored). Place under `tests/unit/` or `tests/integration/`. **These ARE committed** — they ride into main + PyPI.
+4. **Write independent tests for the change.** `gh pr diff <PR>` → write tests targeting the changed code from a fresh perspective (without seeing dev's `tests/_dev_local/`, which are gitignored). Place under `tests/unit/` or `tests/integration/`. **These ARE committed** — they ride into main + PyPI. Sanity-check by reverting the source-code half of the diff (`git checkout origin/test -- <files>`) and confirming the new tests *fail* — catches the "test asserts something already true" tautology trap. Restore the diff after.
 5. **Full local gate.**
    ```bash
    pytest tests/unit/
    pytest tests/integration/
    pylint $(git ls-files '*.py')
    flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-   make package    # build + twine check (no upload — release.sh handles upload)
+   python -m build && python -m twine check dist/*    # build + check, no upload
    ```
    On red: bug-fix-only commits to `test` (or to PR branch if dev-owned). Red after 3 attempts → halt.
 6. **`/review-pr` (multi-agent) skill, then fix.** Heavier review at this gate.
 7. **Decide release intent.** If the change warrants a PyPI release (bug fix users need, new feature, etc.), apply the `auto-release` label to the `test → main` PR before opening. Skip the label for docs-only / internal-only changes.
-8. **Promote to main.** `git push origin test; gh pr merge <PR> --merge; gh pr create --base main --title "test → main: <cycle summary>"`. Watch GitHub CI (Python package matrix + Pylint + release smoke). Amend until green; red after 3 amends → halt. Notify user when ready to merge.
-9. **After user merges `test → main`:**
-   - **If the merged PR carried `auto-release`** → `git checkout main && git pull --ff-only && ./scripts/release.sh`. Comment the resulting version on the merged PR. autonomous-prod picks up the new version on its next iteration.
-   - **Drift check** (always) → if `git log origin/main..origin/dev` is non-empty, `gh pr create --base dev --head test --title "test → dev: post-main back-merge"`.
+8. **Promote to main + open back-merge in parallel.** `git push origin test; gh pr merge <PR> --merge; gh pr create --base main --title "test → main: <cycle summary>"`. Then, in the same step, check `git log origin/dev..origin/test --oneline` — every listed commit is on `test` but not on `dev` (test agent bug-fix commits, or anything else the dev tree should pick up). If non-empty: `gh pr create --base dev --head test --title "test → dev: post-cycle back-merge"`. Opening both PRs together — rather than deferring the back-merge until after the user merges `test → main` — keeps dev current with test agent bug-fixes and avoids the multi-cycle drift window where dev rebases against a stale baseline. Watch GitHub CI on the `test → main` PR (Python package matrix + release smoke — these are the gates). Amend until green; red after 3 amends → halt. Notify user when ready to merge. **The Pylint workflow is currently broken on every commit on every branch** (see `## Known broken workflows`); treat it as informational, not a gate.
+9. **After user merges `test → main`:** if the merged PR carried `auto-release`, `git checkout main && git pull --ff-only && ./scripts/release.sh`. Comment the resulting version on the merged PR. autonomous-prod picks up the new version on its next iteration. The `test → dev` back-merge PR was already opened in step 8 — the user merges it independently of `test → main`, so no new PR is filed here.
 
 ### Halt triggers (all autonomous agents)
 
@@ -180,6 +190,11 @@ Use [scripts/release.sh](scripts/release.sh):
 - Commits + pushes `origin/main`
 
 After the test→main merge, the autonomous-test agent runs `release.sh` automatically when the PR carries the `auto-release` label (see `## Three-Agent Pipeline` above). Manual invocation is still supported for ad-hoc patches.
+
+## Known broken workflows
+
+- **`.github/workflows/pylint.yml`** has been red on every commit for the entire visible history. Two root causes: (a) the workflow installs only pylint, not project deps, so `E0401: Unable to import 'dotenv'` (and `'google'`, `'pydub'`, etc.) trips on every imported module; (b) it runs full pylint without `--disable=all --enable=E`, so convention warnings (missing-module-docstring, line-too-long, too-many-branches) drown out anything actionable. Fix shape: add `pip install -r requirements.txt` to the install step and switch to `--disable=all --enable=E`. Until that lands, the workflow is informational only.
+- **`scripts/release.sh` requires an active venv with pip on PATH.** On Fedora-like hosts, system `python3` doesn't bundle pip, and `make package` calls `python3 -m pip install --upgrade build twine ...`. The script's preflight doesn't catch this — failures land mid-`make package` after the version bump is already written, and the script's revert path catches it (so no permanent damage). Run inside an activated venv with pip available, e.g. `source .venv/bin/activate && ./scripts/release.sh`.
 
 ## Conventions worth knowing
 
