@@ -2,8 +2,8 @@ import os
 import time
 import urllib.parse
 import uuid
-from datetime import datetime
-from typing import Literal
+from datetime import datetime, timezone
+from typing import Literal, get_args
 
 import bson
 import pymongo
@@ -12,8 +12,13 @@ import requests
 from autonomous import log
 
 EmbeddingSyncEvent = Literal["success", "hpc_failure", "silent_skip"]
-_EMBEDDING_SYNC_HEALTH_KEY_PREFIX = "embedding_sync_health"
+EMBEDDING_SYNC_HEALTH_KEY_PREFIX = "embedding_sync_health"
 _EMBEDDING_SYNC_HEALTH_TTL_SECONDS = 7 * 24 * 3600  # 7 days
+# Frozenset for O(1) membership in record_embedding_sync_event's guard —
+# prevents typo-induced bucket pollution (storyteller's HGETALL-on-named-
+# fields read can't distinguish a phantom typo field from a future event,
+# so an unknown event with no out-of-band signal silently underreports).
+_VALID_EMBEDDING_SYNC_EVENTS = frozenset(get_args(EmbeddingSyncEvent))
 
 # redis, rq, and autonomous.taskrunner are imported lazily inside the
 # functions that need them. They live in the [tasks] extra (and numpy
@@ -52,6 +57,20 @@ def _get_mongo_db():
     return _mongo_db
 
 
+def bucket_key_for(dt: datetime | None = None) -> str:
+    """Return the embedding-sync-health Redis key for ``dt`` (default: now UTC).
+
+    Key shape: ``embedding_sync_health:<YYYYMMDDHH>`` (UTC hour bucket).
+
+    Consumers (e.g. storyteller's ``/debug/lore/health``) that parse these
+    keys should call this helper rather than re-deriving the strftime
+    format — pins the wire contract in one place. Pass an explicit ``dt``
+    when reading historical buckets; default is now (UTC).
+    """
+    bucket = (dt or datetime.now(timezone.utc)).strftime("%Y%m%d%H")
+    return f"{EMBEDDING_SYNC_HEALTH_KEY_PREFIX}:{bucket}"
+
+
 def record_embedding_sync_event(event: EmbeddingSyncEvent, redis_client=None) -> None:
     """Record an embedding-sync event in a Redis hour-bucketed counter.
 
@@ -70,21 +89,29 @@ def record_embedding_sync_event(event: EmbeddingSyncEvent, redis_client=None) ->
     modes — OOM, segfault, deploy — operators most need to see).
 
     Best-effort: any failure (Redis unreachable, [tasks] extra absent,
-    network blip) is silently swallowed. This is an observability
+    network blip) is silently swallowed. Unknown ``event`` strings are
+    likewise a silent no-op — prevents typo-induced bucket pollution
+    that the consumer's named-field read would otherwise underreport
+    without any out-of-band signal. The recorder is an observability
     surface, NOT control flow — callers must not change behavior based
     on whether the record landed. Alerting on observability gaps lives
     in the consumer's monitoring layer, not here.
 
     Args:
         event: One of ``"success"``, ``"hpc_failure"``, ``"silent_skip"``.
+            Other values are silently dropped.
         redis_client: Optional injected client. Defaults to the shared
             module client returned by :func:`_get_redis`. Consumers
             mirroring writes to a separate Redis can pass their own.
     """
+    if event not in _VALID_EMBEDDING_SYNC_EVENTS:
+        # Silent no-op on unknown event names — see docstring. Stays
+        # consistent with the best-effort contract (no raise, no log,
+        # no stream output).
+        return
     try:
         r = redis_client if redis_client is not None else _get_redis()
-        bucket = datetime.utcnow().strftime("%Y%m%d%H")
-        key = f"{_EMBEDDING_SYNC_HEALTH_KEY_PREFIX}:{bucket}"
+        key = bucket_key_for()
         r.hincrby(key, event, 1)
         r.expire(key, _EMBEDDING_SYNC_HEALTH_TTL_SECONDS)
     except Exception:
@@ -201,22 +228,25 @@ def process_single_object_sync(object_id, collection_name, token):
         return
 
     # 2. Construct Searchable Text
-    # (Existing logic...)
     log(doc.get("associations"))
-    searchable_text = (
-        f"{doc.get('name', '')}: {doc.get('history', '')}"
-        f"Related: {', '.join([str(a) for a in doc['associations'][:20]]) if doc.get('associations') else ''}"
-    )
 
-    if len(searchable_text) < 10:
-        # NOTE: this branch is currently unreachable in production —
-        # the literal "Related: " prefix on line 208 forces
-        # searchable_text to >= 11 chars even when all fields are
-        # empty. The wire is in place so the metric works the day
-        # someone fixes the threshold; tracked separately as a
-        # follow-up to issue #41 / PR #42.
+    name = doc.get("name") or ""
+    history = doc.get("history") or ""
+    associations = doc.get("associations") or []
+
+    # Threshold is computed on actual user content only. The previous
+    # `len(searchable_text) < 10` check ran AFTER the f-string below
+    # added a literal "Related: " prefix, so the branch never fired on
+    # empty docs in production (fixed #48).
+    content_chars = name + history + " ".join(str(a) for a in associations[:20])
+    if len(content_chars) < 10:
         record_embedding_sync_event("silent_skip")
         return
+
+    searchable_text = (
+        f"{name}: {history}"
+        f"Related: {', '.join([str(a) for a in associations[:20]]) if associations else ''}"
+    )
 
     # 3. Generate Vector
     vector = get_vector(searchable_text)
@@ -235,7 +265,7 @@ def process_single_object_sync(object_id, collection_name, token):
                 "collection": collection_name,  # Useful for debugging
                 "content": searchable_text,
                 "vector": np.array(vector, dtype=np.float32).tobytes(),
-                "last_synced": datetime.utcnow().isoformat(),
+                "last_synced": datetime.now(timezone.utc).isoformat(),
             },
         )
         # Counter must follow the hset — only count writes that landed.
