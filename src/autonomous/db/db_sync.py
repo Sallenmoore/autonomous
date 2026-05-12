@@ -209,6 +209,12 @@ def process_single_object_sync(object_id, collection_name, token):
     )
 
     if len(searchable_text) < 10:
+        # NOTE: this branch is currently unreachable in production —
+        # the literal "Related: " prefix on line 208 forces
+        # searchable_text to >= 11 chars even when all fields are
+        # empty. The wire is in place so the metric works the day
+        # someone fixes the threshold; tracked separately as a
+        # follow-up to issue #41 / PR #42.
         record_embedding_sync_event("silent_skip")
         return
 
