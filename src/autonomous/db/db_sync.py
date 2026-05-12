@@ -3,12 +3,17 @@ import time
 import urllib.parse
 import uuid
 from datetime import datetime
+from typing import Literal
 
 import bson
 import pymongo
 import requests
 
 from autonomous import log
+
+EmbeddingSyncEvent = Literal["success", "hpc_failure", "silent_skip"]
+_EMBEDDING_SYNC_HEALTH_KEY_PREFIX = "embedding_sync_health"
+_EMBEDDING_SYNC_HEALTH_TTL_SECONDS = 7 * 24 * 3600  # 7 days
 
 # redis, rq, and autonomous.taskrunner are imported lazily inside the
 # functions that need them. They live in the [tasks] extra (and numpy
@@ -47,6 +52,49 @@ def _get_mongo_db():
     return _mongo_db
 
 
+def record_embedding_sync_event(event: EmbeddingSyncEvent, redis_client=None) -> None:
+    """Record an embedding-sync event in a Redis hour-bucketed counter.
+
+    Storage shape:
+        HASH ``embedding_sync_health:<YYYYMMDDHH>`` with integer counts
+        in fields ``success`` / ``hpc_failure`` / ``silent_skip``.
+
+    TTL is refreshed to 7 days on every HINCRBY, so each hash key
+    self-expires a week after its last write — bounded storage without
+    a separate sweeper.
+
+    Multi-worker safe by construction: every RQ worker increments the
+    same shared hash; no in-process state, no cross-worker drift.
+    Survives worker restarts (the original deferral reason on #31 was
+    that an in-process counter loses signal on exactly the failure
+    modes — OOM, segfault, deploy — operators most need to see).
+
+    Best-effort: any failure (Redis unreachable, [tasks] extra absent,
+    network blip) is silently swallowed. This is an observability
+    surface, NOT control flow — callers must not change behavior based
+    on whether the record landed. Alerting on observability gaps lives
+    in the consumer's monitoring layer, not here.
+
+    Args:
+        event: One of ``"success"``, ``"hpc_failure"``, ``"silent_skip"``.
+        redis_client: Optional injected client. Defaults to the shared
+            module client returned by :func:`_get_redis`. Consumers
+            mirroring writes to a separate Redis can pass their own.
+    """
+    try:
+        r = redis_client if redis_client is not None else _get_redis()
+        bucket = datetime.utcnow().strftime("%Y%m%d%H")
+        key = f"{_EMBEDDING_SYNC_HEALTH_KEY_PREFIX}:{bucket}"
+        r.hincrby(key, event, 1)
+        r.expire(key, _EMBEDDING_SYNC_HEALTH_TTL_SECONDS)
+    except Exception:
+        # See docstring — best-effort observability. A recorder failure
+        # MUST NOT surface in the worker's log, stderr, or return path,
+        # because doing so would couple worker reliability to a purely
+        # diagnostic substrate.
+        pass
+
+
 def _media_url() -> str:
     return os.getenv("MEDIA_API_BASE_URL", "http://media_ai:5005")
 
@@ -78,11 +126,13 @@ def _get_vector_openai(text):
         # The "[HPC-UNREACHABLE]" prefix is a stable observability sentinel;
         # downstream log scrapers match on it, so do not rename without
         # coordinating consumers.
+        record_embedding_sync_event("hpc_failure")
         print(f"[HPC-UNREACHABLE] embedding generation failed: {e}")
         return None
     except Exception as e:
         # Same sentinel for unexpected errors so any HPC-path failure
         # surfaces under one marker family.
+        record_embedding_sync_event("hpc_failure")
         print(
             f"[HPC-UNREACHABLE] embedding generation failed "
             f"(unexpected {type(e).__name__}): {e}"
@@ -159,6 +209,13 @@ def process_single_object_sync(object_id, collection_name, token):
     )
 
     if len(searchable_text) < 10:
+        # NOTE: this branch is currently unreachable in production —
+        # the literal "Related: " prefix on line 208 forces
+        # searchable_text to >= 11 chars even when all fields are
+        # empty. The wire is in place so the metric works the day
+        # someone fixes the threshold; tracked separately as a
+        # follow-up to issue #41 / PR #42.
+        record_embedding_sync_event("silent_skip")
         return
 
     # 3. Generate Vector
@@ -181,6 +238,9 @@ def process_single_object_sync(object_id, collection_name, token):
                 "last_synced": datetime.utcnow().isoformat(),
             },
         )
+        # Counter must follow the hset — only count writes that landed.
+        # If hset raises, the worker's existing degrade path takes over.
+        record_embedding_sync_event("success")
         print(f"Successfully Indexed: {doc.get('name')}")
 
 
