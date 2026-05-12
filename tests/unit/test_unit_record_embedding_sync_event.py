@@ -25,7 +25,7 @@ unit tests deliberately avoid).
 
 import inspect
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import get_args, get_origin
 from unittest.mock import MagicMock, patch
 
@@ -33,8 +33,8 @@ import pytest
 
 from autonomous.db import db_sync
 from autonomous.db.db_sync import (
+    EMBEDDING_SYNC_HEALTH_KEY_PREFIX,
     EmbeddingSyncEvent,
-    _EMBEDDING_SYNC_HEALTH_KEY_PREFIX,
     _EMBEDDING_SYNC_HEALTH_TTL_SECONDS,
     record_embedding_sync_event,
 )
@@ -51,7 +51,7 @@ class TestStorageContract:
     def test_key_prefix_is_embedding_sync_health(self):
         # The consumer's /debug/lore/health endpoint will `HGETALL` keys
         # matching this prefix. Renaming requires consumer coordination.
-        assert _EMBEDDING_SYNC_HEALTH_KEY_PREFIX == "embedding_sync_health"
+        assert EMBEDDING_SYNC_HEALTH_KEY_PREFIX == "embedding_sync_health"
 
     def test_ttl_is_seven_days_in_seconds(self):
         # 7 days bounds storage to a known window. Shorter TTLs would
@@ -113,12 +113,12 @@ class TestHappyPath:
         # the format. We pin the YYYYMMDDHH shape (10 digits) and that
         # the bucket matches the time when the call was made.
         client = MagicMock()
-        before = datetime.utcnow().strftime("%Y%m%d%H")
+        before = datetime.now(timezone.utc).strftime("%Y%m%d%H")
         record_embedding_sync_event("success", redis_client=client)
-        after = datetime.utcnow().strftime("%Y%m%d%H")
+        after = datetime.now(timezone.utc).strftime("%Y%m%d%H")
         key = client.hincrby.call_args[0][0]
         prefix, _, bucket = key.partition(":")
-        assert prefix == _EMBEDDING_SYNC_HEALTH_KEY_PREFIX
+        assert prefix == EMBEDDING_SYNC_HEALTH_KEY_PREFIX
         assert re.fullmatch(r"\d{10}", bucket), (
             f"bucket should be YYYYMMDDHH (10 digits); got {bucket!r}"
         )
@@ -218,14 +218,17 @@ class TestBestEffortContract:
         assert captured.out == ""
         assert captured.err == ""
 
-    def test_unknown_event_string_does_not_raise(self, capsys):
-        # Literal is a documentation aid, not runtime enforcement. A
-        # caller passing the wrong string shouldn't crash — Redis will
-        # happily HINCRBY on any field name. Document that the recorder
-        # is permissive at the wire level; the contract enforcement
-        # lives in the type-checker, not at runtime.
+    def test_unknown_event_string_is_silent_noop(self, capsys):
+        # An unknown event name (typo or unrecognized) must NOT be written
+        # to Redis — bucket pollution would silently underreport the
+        # consumer's named-field read (storyteller's /debug/lore/health
+        # sums success+hpc_failure+silent_skip; a typo'd field never gets
+        # counted, with no out-of-band signal). The guard is silent
+        # (no raise, no log) to keep the best-effort contract intact.
         client = MagicMock()
         record_embedding_sync_event("unrecognized_event", redis_client=client)  # type: ignore[arg-type]
+        client.hincrby.assert_not_called()
+        client.expire.assert_not_called()
         captured = capsys.readouterr()
         assert captured.out == ""
         assert captured.err == ""
@@ -354,19 +357,15 @@ def _process_sync_body() -> str:
 class TestProcessSyncWiringStructural:
 
     def test_silent_skip_branch_calls_recorder_with_silent_skip(self):
-        # Behavioral aside: the PR body notes this branch is currently
-        # unreachable (the literal `Related: ` prefix makes
-        # searchable_text always >= 11 chars). The wiring is in place
-        # for the day someone fixes the threshold, so we pin it
-        # structurally rather than behaviorally — a behavioral test
-        # would have to inject a doc that bypasses the prefix, which
-        # depends on internal text construction the test agent has no
-        # business pinning.
+        # The silent-skip threshold check must wire the recorder before
+        # the early return — pin structurally because the worker's full
+        # path needs Mongo + Redis + RQ to exercise. Threshold variable
+        # is content_chars (built from real doc fields only, not the
+        # template-literal-inflated searchable_text — see #48).
         src = _process_sync_body()
-        # Slice from "len(searchable_text) < 10" to the next blank
-        # line — only the silent-skip branch should match.
+        # Slice from the threshold check to the next blank line.
         m = re.search(
-            r"if len\(searchable_text\) < 10:(.*?)(?:\n\n|\n    [a-zA-Z#])",
+            r"if len\(content_chars\) < 10:(.*?)(?:\n\n|\n    [a-zA-Z#])",
             src,
             re.S,
         )
