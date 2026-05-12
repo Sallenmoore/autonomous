@@ -28,6 +28,7 @@ file's structural pin can't reach.
 
 import inspect
 import re
+import sys
 from datetime import datetime, timedelta, timezone
 from typing import get_args
 from unittest.mock import MagicMock, patch
@@ -342,6 +343,12 @@ class TestUTCTzMigration:
         monkeypatch.setattr(db_sync, "_get_mongo_db", lambda: mongo_db)
         monkeypatch.setattr(db_sync.time, "sleep", lambda _: None)
         monkeypatch.setattr(db_sync, "get_vector", lambda _: [0.0] * 384)
+
+        # The success branch lazy-imports numpy (intentional — kept out
+        # of autonomous.db's import-time graph so ORM-only consumers
+        # don't need it). Stub it so this test doesn't require the
+        # dependency just to exercise the last_synced wire format.
+        monkeypatch.setitem(sys.modules, "numpy", MagicMock())
 
         db_sync.process_single_object_sync("x", "lore", "tok")
 
