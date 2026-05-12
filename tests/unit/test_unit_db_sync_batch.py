@@ -310,6 +310,73 @@ class TestUTCTzMigration:
             f"got: {last_synced_line.strip()!r}"
         )
 
+    def test_last_synced_wire_format_has_utc_offset_suffix(
+        self, monkeypatch
+    ):
+        # Behavioral pin on the wire-format change. The PR explicitly
+        # promises consumers a "+00:00" suffix (was naive before #47);
+        # the structural test above only checks the source line, which
+        # would silently accept a future drive-by like
+        # ``.replace("+00:00", "Z")`` or ``.strftime("%Y-%m-%dT%H:%M:%S")``
+        # that breaks consumers parsing the historical naive form.
+        # Drive through the success branch with mocked Mongo/Redis and
+        # capture the value actually written.
+        captured = {}
+
+        def fake_hset(key, mapping):
+            captured.setdefault("hsets", []).append((key, dict(mapping)))
+
+        redis_client = MagicMock()
+        redis_client.get.return_value = "tok"
+        redis_client.hset.side_effect = fake_hset
+
+        mongo_db = MagicMock()
+        mongo_db.__getitem__.return_value.find_one.return_value = {
+            "_id": "x",
+            "name": "long-enough-name",
+            "history": "",
+            "associations": [],
+        }
+
+        monkeypatch.setattr(db_sync, "_get_redis", lambda: redis_client)
+        monkeypatch.setattr(db_sync, "_get_mongo_db", lambda: mongo_db)
+        monkeypatch.setattr(db_sync.time, "sleep", lambda _: None)
+        monkeypatch.setattr(db_sync, "get_vector", lambda _: [0.0] * 384)
+
+        db_sync.process_single_object_sync("x", "lore", "tok")
+
+        lore_hsets = [
+            (k, m) for k, m in captured.get("hsets", []) if k.startswith("lore:")
+        ]
+        assert lore_hsets, (
+            f"expected at least one hset on lore:* key; "
+            f"got captures: {captured}"
+        )
+        _, mapping = lore_hsets[0]
+        assert "last_synced" in mapping, (
+            f"hset mapping missing last_synced: {mapping.keys()}"
+        )
+        last_synced = mapping["last_synced"]
+
+        # Wire-contract guarantee #1: ends with the UTC offset suffix,
+        # NOT a "Z" suffix and NOT a bare naive form.
+        assert last_synced.endswith("+00:00"), (
+            f"last_synced must end with '+00:00' (UTC offset); "
+            f"got {last_synced!r}"
+        )
+        # Wire-contract guarantee #2: round-trips through fromisoformat
+        # and the resulting datetime is tz-aware UTC. This catches the
+        # subtle case where the suffix is right but the rest of the
+        # string drifts.
+        parsed = datetime.fromisoformat(last_synced)
+        assert parsed.tzinfo is not None, (
+            f"parsed last_synced must be tz-aware; got {parsed!r}"
+        )
+        assert parsed.utcoffset() == timedelta(0), (
+            f"parsed last_synced offset must be UTC zero; "
+            f"got {parsed.utcoffset()!r}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # content_chars threshold (#48) — behavioral coverage
