@@ -181,11 +181,20 @@ def _get_vector_local(text):
     """Legacy media_ai HTTP path — preserved as the local-provider fallback.
 
     Failure observability is symmetric with ``_get_vector_openai``: every
-    failure mode (transport exception OR non-200 status) bumps the
-    ``hpc_failure`` counter and emits a ``[HPC-UNREACHABLE]`` marker.
-    The literal "HPC" name is provider-agnostic per the sentinel
-    convention — all provider failures share one marker family so log
-    scrapers match a single regex (#60).
+    failure mode (transport exception OR non-200 status OR anything else
+    raised from the HTTP stack) bumps the ``hpc_failure`` counter and
+    emits a ``[HPC-UNREACHABLE]`` marker. The literal "HPC" name is
+    provider-agnostic per the sentinel convention — all provider
+    failures share one marker family so log scrapers match a single
+    regex (#60).
+
+    The except clause is intentionally a bare ``Exception`` to match
+    ``_get_vector_openai`` (#65). The symmetric-observability claim
+    above was previously false on non-tuple exceptions raised from
+    transport adapters — those propagated uncaught and could kill the
+    RQ worker. The function's documented contract is "return None on
+    any failure"; programmer-error surfacing is the test suite's job,
+    not this observability path.
     """
     try:
         resp = requests.post(
@@ -200,7 +209,7 @@ def _get_vector_local(text):
         print(
             f"[HPC-UNREACHABLE] local embedding failed: HTTP {resp.status_code}"
         )
-    except (requests.RequestException, ValueError, KeyError) as e:
+    except Exception as e:
         record_embedding_sync_event("hpc_failure")
         print(
             f"[HPC-UNREACHABLE] local embedding failed: "
@@ -222,16 +231,18 @@ def _get_vector_openai(text):
         # tolerates a missing vector (see openai_compat.HPCUnreachableError).
         # The "[HPC-UNREACHABLE]" prefix is a stable observability sentinel;
         # downstream log scrapers match on it, so do not rename without
-        # coordinating consumers.
+        # coordinating consumers. The "openai" substring (#66) lets
+        # dashboards disambiguate provider in mixed-deployment grep —
+        # the local path includes the same word in its marker lines.
         record_embedding_sync_event("hpc_failure")
-        print(f"[HPC-UNREACHABLE] embedding generation failed: {e}")
+        print(f"[HPC-UNREACHABLE] openai embedding failed: {e}")
         return None
     except Exception as e:
         # Same sentinel for unexpected errors so any HPC-path failure
         # surfaces under one marker family.
         record_embedding_sync_event("hpc_failure")
         print(
-            f"[HPC-UNREACHABLE] embedding generation failed "
+            f"[HPC-UNREACHABLE] openai embedding failed "
             f"(unexpected {type(e).__name__}): {e}"
         )
         return None
