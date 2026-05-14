@@ -361,11 +361,13 @@ class TestProcessSyncWiringStructural:
         # the early return — pin structurally because the worker's full
         # path needs Mongo + Redis + RQ to exercise. Threshold variable
         # is content_chars (built from real doc fields only, not the
-        # template-literal-inflated searchable_text — see #48).
+        # template-literal-inflated searchable_text — see #48). The
+        # threshold value lives in MIN_CONTENT_CHARS at module top (#56,
+        # in-lockstep update from iter/2026-05-13-batch).
         src = _process_sync_body()
         # Slice from the threshold check to the next blank line.
         m = re.search(
-            r"if len\(content_chars\) < 10:(.*?)(?:\n\n|\n    [a-zA-Z#])",
+            r"if len\(content_chars\) < MIN_CONTENT_CHARS:(.*?)(?:\n\n|\n    [a-zA-Z#])",
             src,
             re.S,
         )
