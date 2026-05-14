@@ -14,6 +14,11 @@ from autonomous import log
 EmbeddingSyncEvent = Literal["success", "hpc_failure", "silent_skip"]
 EMBEDDING_SYNC_HEALTH_KEY_PREFIX = "embedding_sync_health"
 _EMBEDDING_SYNC_HEALTH_TTL_SECONDS = 7 * 24 * 3600  # 7 days
+# Below this content length the embedding would be dominated by the
+# template prefix (and by stopwords/punctuation), producing a useless
+# vector. Promoted to a module constant in #56 — was a load-bearing
+# magic number after #48 made the silent_skip branch reachable.
+MIN_CONTENT_CHARS = 10
 # Frozenset for O(1) membership in record_embedding_sync_event's guard —
 # prevents typo-induced bucket pollution (storyteller's HGETALL-on-named-
 # fields read can't distinguish a phantom typo field from a future event,
@@ -66,8 +71,34 @@ def bucket_key_for(dt: datetime | None = None) -> str:
     keys should call this helper rather than re-deriving the strftime
     format — pins the wire contract in one place. Pass an explicit ``dt``
     when reading historical buckets; default is now (UTC).
+
+    When passing an explicit ``dt``, the caller is responsible for
+    ensuring it is UTC. A naive datetime (no ``tzinfo``) emits a one-line
+    WARNING and is treated as wall-clock — the resulting key may
+    mis-align with what the recorder wrote from a non-UTC zone. Pass
+    ``datetime.now(timezone.utc)`` or a converted UTC datetime to be
+    safe. The helper does not raise on naive datetimes so existing
+    callers keep working through the deprecation window.
     """
-    bucket = (dt or datetime.now(timezone.utc)).strftime("%Y%m%d%H")
+    if dt is not None and dt.tzinfo is None:
+        # Best-effort warning, not an exception: callers passing naive
+        # datetimes today must keep working, but the contract violation
+        # should leave a breadcrumb that root-causes wrong-hour keys.
+        # The autonomous logger always emits at DEBUG regardless of
+        # level= kwarg (see logger.py:22); encode severity in the
+        # message prefix so log scrapers and humans see it.
+        try:
+            log(
+                f"[WARNING] bucket_key_for: naive datetime {dt!r} "
+                "treated as wall-clock; pass a UTC-aware datetime "
+                "to avoid mis-aligned keys"
+            )
+        except Exception:
+            # Symmetry with record_embedding_sync_event — a logger
+            # failure must not propagate from an observability path.
+            pass
+    effective = dt if dt is not None else datetime.now(timezone.utc)
+    bucket = effective.strftime("%Y%m%d%H")
     return f"{EMBEDDING_SYNC_HEALTH_KEY_PREFIX}:{bucket}"
 
 
@@ -90,24 +121,44 @@ def record_embedding_sync_event(event: EmbeddingSyncEvent, redis_client=None) ->
 
     Best-effort: any failure (Redis unreachable, [tasks] extra absent,
     network blip) is silently swallowed. Unknown ``event`` strings are
-    likewise a silent no-op — prevents typo-induced bucket pollution
-    that the consumer's named-field read would otherwise underreport
-    without any out-of-band signal. The recorder is an observability
-    surface, NOT control flow — callers must not change behavior based
-    on whether the record landed. Alerting on observability gaps lives
-    in the consumer's monitoring layer, not here.
+    a no-op for the Redis write (prevents typo-induced bucket pollution
+    that the consumer's named-field read would otherwise underreport),
+    but emit a one-line WARNING log so the typo is attributable at the
+    call site — programmer-error swallowing is categorically different
+    from infrastructure-failure swallowing and gets a breadcrumb. The
+    recorder is an observability surface, NOT control flow — callers
+    must not change behavior based on whether the record landed.
+    Alerting on observability gaps lives in the consumer's monitoring
+    layer, not here.
 
     Args:
         event: One of ``"success"``, ``"hpc_failure"``, ``"silent_skip"``.
-            Other values are silently dropped.
+            Other values produce a WARNING log and no Redis write.
         redis_client: Optional injected client. Defaults to the shared
             module client returned by :func:`_get_redis`. Consumers
             mirroring writes to a separate Redis can pass their own.
     """
     if event not in _VALID_EMBEDDING_SYNC_EVENTS:
-        # Silent no-op on unknown event names — see docstring. Stays
-        # consistent with the best-effort contract (no raise, no log,
-        # no stream output).
+        # Log the typo (programmer error) but don't write to Redis —
+        # see docstring. Preserves the no-raise / no-control-flow
+        # contract while restoring forensic attribution. The pre-PR-#52
+        # behavior was a phantom HINCRBY field that left a Redis-side
+        # breadcrumb; the guard added in #46 removed that without a
+        # replacement signal. This log line is the replacement.
+        try:
+            # The autonomous logger always emits at DEBUG regardless of
+            # level= kwarg (see logger.py:22); encode severity in the
+            # message prefix so log scrapers and humans see it.
+            log(
+                f"[WARNING] record_embedding_sync_event: unknown event "
+                f"{event!r}; valid: {sorted(_VALID_EMBEDDING_SYNC_EVENTS)}"
+            )
+        except Exception:
+            # The log itself is best-effort — a logger failure must not
+            # propagate and turn the observability surface into a
+            # control-flow surface. See the module-level docstring on
+            # best-effort contract.
+            pass
         return
     try:
         r = redis_client if redis_client is not None else _get_redis()
@@ -127,15 +178,34 @@ def _media_url() -> str:
 
 
 def _get_vector_local(text):
-    """Legacy media_ai HTTP path — preserved as the local-provider fallback."""
+    """Legacy media_ai HTTP path — preserved as the local-provider fallback.
+
+    Failure observability is symmetric with ``_get_vector_openai``: every
+    failure mode (transport exception OR non-200 status) bumps the
+    ``hpc_failure`` counter and emits a ``[HPC-UNREACHABLE]`` marker.
+    The literal "HPC" name is provider-agnostic per the sentinel
+    convention — all provider failures share one marker family so log
+    scrapers match a single regex (#60).
+    """
     try:
         resp = requests.post(
             f"{_media_url()}/embeddings", json={"text": text}, timeout=30
         )
         if resp.status_code == 200:
             return resp.json()["embedding"]
+        # Non-200 was previously a silent None-return — no marker, no
+        # counter. Surface it under the same marker family as the
+        # except-clause case so the consumer dashboard captures both.
+        record_embedding_sync_event("hpc_failure")
+        print(
+            f"[HPC-UNREACHABLE] local embedding failed: HTTP {resp.status_code}"
+        )
     except (requests.RequestException, ValueError, KeyError) as e:
-        print(f"Vector Gen Failed: {e}")
+        record_embedding_sync_event("hpc_failure")
+        print(
+            f"[HPC-UNREACHABLE] local embedding failed: "
+            f"{type(e).__name__}: {e}"
+        )
     return None
 
 
@@ -237,9 +307,19 @@ def process_single_object_sync(object_id, collection_name, token):
     # Threshold is computed on actual user content only. The previous
     # `len(searchable_text) < 10` check ran AFTER the f-string below
     # added a literal "Related: " prefix, so the branch never fired on
-    # empty docs in production (fixed #48).
+    # empty docs in production (fixed #48). Threshold value lives in
+    # MIN_CONTENT_CHARS at module top (#56).
     content_chars = name + history + " ".join(str(a) for a in associations[:20])
-    if len(content_chars) < 10:
+    if len(content_chars) < MIN_CONTENT_CHARS:
+        # Per-doc log so operators investigating storyteller
+        # /debug/lore/health can attribute a silent_skip increment to a
+        # specific document (#56). Parallel to the not-found branch
+        # above, which has always been loud.
+        print(
+            f"Skipping embedding for {collection_name}:{object_id}: "
+            f"only {len(content_chars)} content chars "
+            f"(name={name!r}, threshold={MIN_CONTENT_CHARS})"
+        )
         record_embedding_sync_event("silent_skip")
         return
 
@@ -252,6 +332,13 @@ def process_single_object_sync(object_id, collection_name, token):
     vector = get_vector(searchable_text)
 
     # 4. Save to Redis Index
+    #
+    # No `else` clause on the `if vector:` check by design (#57): each
+    # provider in _VECTOR_PROVIDERS is responsible for bumping
+    # ``hpc_failure`` on its own failure modes before returning None.
+    # Adding a caller-side else would double-count every real failure.
+    # See `_get_vector_local` / `_get_vector_openai` for the provider-
+    # side observability contract.
     if vector:
         # numpy is only needed when actually writing a vector — keep it
         # out of the autonomous.db import-time graph so consumers that
