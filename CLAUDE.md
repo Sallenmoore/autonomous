@@ -86,13 +86,13 @@ The library is a set of loosely-coupled service wrappers glued together by the `
 
 The autonomous library runs as a closed-loop pipeline with three agents — paired with a downstream consumer (storyteller currently) that files inbound issues. The flow is **consumer issue OR CI release-smoke fail → dev → test → main → [user: `run prod`] → PyPI release → CI release-smoke verify**, with two independent test perspectives, asymmetric review gates, and explicit halt triggers. Full design + history: `~/.claude/plans/autonomous-process-codification.md` and `~/.claude/plans/agent-topology.md`.
 
-**Release ownership (changed 2026-05-14):** autonomous-prod runs `./scripts/release.sh` under the user's manual `run prod` trigger, but **only** when the merged `test → main` PR carries the `auto-release` label. autonomous-test sets the label as the release-intent signal; autonomous-prod gates the actual ship on it. Docs-only / internal-only PRs land on main without a corresponding PyPI bump. Local post-release smoke is not a prod responsibility — the CI `release-smoke.yml` workflow is the authoritative post-publish verifier.
+**Release ownership (changed 2026-05-14):** autonomous-prod runs `./scripts/release.sh` under the user's manual `run prod` trigger, but **only** when the merged `test → main` PR carries the `auto-release` label. autonomous-test sets the label as the release-intent signal; autonomous-prod gates the actual ship on it. Docs-only / internal-only PRs land on main without a corresponding PyPI bump. autonomous-prod also owns **post-release smoke verification** (`scripts/smoke_test.sh`) on the same `run prod` invocation that produced the release, and files / updates `[smoke-fail]` issues on signature mismatch. CI `release-smoke.yml` runs in parallel on the release commit as a public-audit layer in a clean GitHub Actions environment; the two layers are complementary, and disagreement between them is itself signal worth investigating. **No polling** — prod is manual-trigger only.
 
 ### Agents at a glance
 
 | Agent | Branch | Tree | Triggered by | Writes | Review skill |
 |---|---|---|---|---|---|
-| **autonomous-prod** | `main` | `/opt/data/autonomous/` | merged `test → main` PRs with `auto-release` label; new PyPI releases (poll PyPI for version delta) | `./scripts/release.sh` (version bump + PyPI upload + push); issues titled `[smoke-fail] <version>: <signature>` | n/a |
+| **autonomous-prod** | `main` | `/opt/data/autonomous/` | manual `run prod` from user (no polling) | `./scripts/release.sh` (version bump + PyPI upload + push) when PR has `auto-release`; `[smoke-fail] <v>: <signature>` issues against `Sallenmoore/autonomous` on smoke-test failure | n/a |
 | **autonomous-dev** | `dev` | `/opt/data/autonomous-dev/` | open `Sallenmoore/autonomous` issues | library code + ephemeral tests in `tests/_dev_local/` (gitignored) | `/review` before opening `dev → test` |
 | **autonomous-test** | `test` | `/opt/data/autonomous-test/` | open `dev → test` PRs | committed tests + bug-fix commits | `/review-pr` (multi-agent) before opening `test → main` |
 
@@ -116,20 +116,28 @@ When a human invokes Claude Code interactively in any of the three trees (most o
 
 In short: tree assignment dictates default loop behavior, not absolute capability. Outside an interactive session, the agent in each tree obeys its role; inside one, it follows the human.
 
-### autonomous-prod (release + smoke watcher)
+### autonomous-prod (release + smoke operator)
 
-Owns the release step (`./scripts/release.sh`, as of 2026-05-14) and post-release smoke verification. Does not edit library source — its writes are limited to: the version-bump commit + push that `release.sh` produces, the PyPI upload, and smoke-fail issues. Per iteration:
+Manual-triggered (no `/loop`, no polling). Owns the release step (`./scripts/release.sh`, as of 2026-05-14) and post-release smoke verification (`./scripts/smoke_test.sh`). Does not edit library source — its writes are limited to: the version-bump commit + push that `release.sh` produces, the PyPI upload, and `[smoke-fail]` issues filed/updated against `Sallenmoore/autonomous` when smoke fails. Per invocation:
 
 1. **Check for open `test → main` PR.** `gh pr list -R Sallenmoore/autonomous --base main --state open`.
 2. **Merge + pull.**
    - Open PR → `gh pr merge <num> --merge` then `git pull --ff-only origin main`.
    - No PR but `main` moved (someone merged via UI) → `git pull --ff-only origin main`.
    - No PR and `main` unchanged → **stop and report "nothing to deploy"**. Skip the remaining steps.
+   - **GitHub refuses merge despite green CI** (`mergeable=CONFLICTING / state=DIRTY` while all checks pass) → verify locally: `git fetch origin pull/<PR>/head:probe-pr && git checkout -B merge-probe origin/main && git merge --no-commit --no-ff probe-pr`. If the local merge is clean (no conflict files), GitHub's mergeability cache is stale relative to the current base — usually because `main` advanced after the PR was opened. **Halt and notify the user**; do not push to `test` to refresh the cache (writes to `test` are the test agent's exclusive responsibility per the invariants). The test agent's step 1 main-drift check will back-merge `main` into `test` on its next iteration, which refreshes the PR's mergeability; then re-run `run prod`. If the local merge actually conflicts, also halt — same rule: prod doesn't resolve test-side conflicts.
 3. **Release (gated on `auto-release` label).** Inspect the merged PR's labels (or, for UI-merged commits with no current PR, look up the merge commit's source PR via `gh`). If `auto-release` is present, run `./scripts/release.sh` — bumps the patch in `src/autonomous/__init__.py`, runs `make package` (build + twine upload), commits + pushes the bump to `origin/main`. On `release.sh` failure: surface stderr and **halt**, do not retry (releases are not idempotent). If `auto-release` is absent (or no source PR is identifiable), skip the release and jump to step 5 — the change landed on main but is not deemed ship-worthy by the test agent.
-4. **Verify source vs PyPI** *(only if step 3 released)*. Probe `https://pypi.org/pypi/autonomous-app/<released-version>/json` for HTTP 200, then compare `__version__` in `origin/main:src/autonomous/__init__.py` to `info.version` from `https://pypi.org/pypi/autonomous-app/json`. Both endpoints agreeing → clean. Disagreement after ~30s of retry → flag in the summary (`info.version` is CDN-cached and typically lags upload by 5–60s, so brief lag is expected, not drift).
-5. **Notify + stop.** One-pulse summary: merged PR + label state, deployed SHA + version (or "merge only — no release" if `auto-release` was absent), count of open issues against `Sallenmoore/autonomous`. Then wait for the next user command.
+4. **Verify + smoke** *(only if step 3 released)*.
+   - **Version verify:** probe `https://pypi.org/pypi/autonomous-app/<released-version>/json` for HTTP 200, then compare `__version__` in `origin/main:src/autonomous/__init__.py` to `info.version` from `https://pypi.org/pypi/autonomous-app/json`. Both endpoints agreeing → clean. Disagreement after ~30s of retry → flag (`info.version` is CDN-cached and typically lags upload by 5–60s, so brief lag is expected, not drift).
+   - **Smoke:** run `./scripts/smoke_test.sh <released-version>` — or `SMOKE_CONTAINER=python:3.13-slim ./scripts/smoke_test.sh <v>` if the host Python is broken (Fedora-like hosts where pyenv lacks `_ctypes`). The script installs `autonomous-app[all]==<v>` with PyPI-propagation retries, imports each top-level subpackage, and verifies the installed `__version__` matches.
+   - **Smoke passes** → optionally comment `✅ smoke passed` on the merged `test → main` PR.
+   - **Smoke fails** → parse `SIGNATURE: <stage>:<error_class>:<location>` from stderr's last line. Fingerprint by signature. Issue lifecycle:
+     - No matching open issue → `gh issue create -R Sallenmoore/autonomous` titled `[smoke-fail] <v>: <signature>`, body with full stderr, labels `smoke-fail` + `auto-filed` + `release:<v>`.
+     - Matching open → comment with version + new stderr.
+     - Matching closed → reopen as regression.
+5. **Notify + stop.** One-pulse summary: merged PR + label state, deployed SHA + version (or "merge only — no release" if `auto-release` was absent), smoke result (`SIGNATURE: ok` or signature + issue # filed/updated), count of open issues against `Sallenmoore/autonomous`. Then wait for the next user command.
 
-Local post-release smoke testing is **not** a prod responsibility. CI `release-smoke.yml` runs against the freshly published artifact and is the authoritative post-publish check; failures there are human-triaged, not auto-filed.
+Local smoke (`scripts/smoke_test.sh`, run by prod at step 4) and CI `release-smoke.yml` (runs automatically on release commits to main) form a two-layer post-publish check: local smoke gives the operator immediate feedback under `run prod`; CI provides the public-audit layer that runs in a clean GitHub Actions environment and catches things the local environment may mask. **Only local prod files `[smoke-fail]` issues** — CI just runs `smoke_test.sh` and surfaces failure as a red check on the release commit. A red CI release-smoke after a green local smoke is the halt-trigger #5 case (human triage).
 
 ### autonomous-dev loop
 
