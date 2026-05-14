@@ -84,17 +84,19 @@ The library is a set of loosely-coupled service wrappers glued together by the `
 
 ## Three-Agent Pipeline
 
-The autonomous library runs as a closed-loop autonomous pipeline with three agents — paired with a downstream consumer (storyteller currently) that files inbound issues. The loop is **release smoke fail OR consumer issue → dev → test → main → PyPI release → smoke verify**, with two independent test perspectives, asymmetric review gates, and explicit halt triggers. Full design + history: `~/.claude/plans/autonomous-process-codification.md` and `~/.claude/plans/agent-topology.md`.
+The autonomous library runs as a closed-loop pipeline with three agents — paired with a downstream consumer (storyteller currently) that files inbound issues. The flow is **consumer issue OR CI release-smoke fail → dev → test → main → [user: `run prod`] → PyPI release → CI release-smoke verify**, with two independent test perspectives, asymmetric review gates, and explicit halt triggers. Full design + history: `~/.claude/plans/autonomous-process-codification.md` and `~/.claude/plans/agent-topology.md`.
+
+**Release ownership (changed 2026-05-14):** autonomous-prod runs `./scripts/release.sh` under the user's manual `run prod` trigger. autonomous-test no longer ships releases; the `auto-release` label is deprecated. Local post-release smoke is no longer a prod responsibility — the CI `release-smoke.yml` workflow is the authoritative post-publish verifier.
 
 ### Agents at a glance
 
-| Agent | Branch | Tree | Polls for | Writes | Review skill |
+| Agent | Branch | Tree | Triggered by | Writes | Review skill |
 |---|---|---|---|---|---|
-| **autonomous-prod** | `main` | `/opt/data/autonomous/` (read-only) | new PyPI releases (poll PyPI for version delta) | issues against `Sallenmoore/autonomous` titled `[smoke-fail] <version>: <signature>` | n/a |
-| **autonomous-dev** | `dev` | `/opt/data/autonomous-dev/` | open `Sallenmoore/autonomous` issues | library code + ephemeral tests in `tests/_dev_local/` (gitignored) | `/review` before opening `dev → test` |
-| **autonomous-test** | `test` | `/opt/data/autonomous-test/` | open `dev → test` PRs | committed tests + bug-fix commits | `/review-pr` (multi-agent) before opening `test → main` |
+| **autonomous-prod** | `main` | `/opt/data/autonomous/` | manual `run prod` from user | release commits (`./scripts/release.sh`) + merges of open `test → main` PRs | n/a |
+| **autonomous-dev** | `dev` | `/opt/data/autonomous-dev/` | poll open `Sallenmoore/autonomous` issues | library code + ephemeral tests in `tests/_dev_local/` (gitignored) | `/review` before opening `dev → test` |
+| **autonomous-test** | `test` | `/opt/data/autonomous-test/` | poll open `dev → test` PRs | committed tests + bug-fix commits | `/review-pr` (multi-agent) before opening `test → main` |
 
-All three run as `/loop` in dynamic / self-paced mode. The dev agent does not push to `test`. The test agent does not edit the dev tree. Coordination is through PRs, issues, and labels (`smoke-fail`, `auto-filed`, `auto-release`, `awaiting-upstream`, `human-only`, `feature-request`).
+dev and test run as `/loop` in dynamic / self-paced mode. **prod does NOT loop** — it runs one iteration per `run prod` user command and then stops. The dev agent does not push to `test`. The test agent does not edit the dev tree. Coordination is through PRs, issues, and labels (`smoke-fail`, `auto-filed`, `awaiting-upstream`, `human-only`, `feature-request`). The `auto-release` label is deprecated.
 
 ### Invariants
 
@@ -106,7 +108,7 @@ The procedures below describe how the contract is satisfied today. The contract 
 | All bundled work goes through the full local + CI gate | No fast-paths | No docs-only skip; `/review-pr` runs at the test gate even on small bundles |
 | Bug-fix commits land on `test`, never on dev's PR branch | One-way info flow (dev → test → main) | Test agent has no write capability against the dev tree or dev-owned PR head branches |
 | Manual commits on `main` get reconciled before the next cycle | Halt trigger #4 + step 1 drift inspection | Pre-cycle `git log origin/test..origin/main --oneline` is part of the refresh step, not just a reactive halt |
-| `test → dev` back-merge opens parallel to `test → main` | Keeps dev current with bug-fix commits the test agent landed directly on test | Both PRs are opened in step 8 — back-merge is not deferred until after main merge |
+| `test → dev` back-merge opens parallel to `test → main` | Keeps dev current with bug-fix commits the test agent landed directly on test | Both PRs are opened in step 7 — back-merge is not deferred until after main merge |
 
 ### Interactive mode
 
@@ -114,17 +116,20 @@ When a human invokes Claude Code interactively in any of the three trees (most o
 
 In short: tree assignment dictates default loop behavior, not absolute capability. Outside an interactive session, the agent in each tree obeys its role; inside one, it follows the human.
 
-### autonomous-prod (post-release smoke watcher)
+### autonomous-prod (manual-triggered release operator)
 
-Mutates **nothing** — never edits files, never pushes, never modifies the published artifact. Per iteration:
+Triggered exclusively by the user typing **"run prod"**. No polling, no `/loop`, no `CronCreate`, no `ScheduleWakeup`. Each invocation runs one cycle to completion and stops. Per invocation:
 
-1. **Detect new release.** Poll `https://pypi.org/pypi/autonomous-app/json` (or `git log origin/main` for `Bump autonomous version to ...` commits). Compare to `last_seen_version` in `~/.claude/projects/-opt-data-autonomous/memory/last_smoke_version.md`.
-2. **No new release** → sleep self-paced (15–60 min idle, faster right after a known release).
-3. **New release detected** → run `scripts/smoke_test.sh <version>`. The script creates a fresh venv, runs `pip install autonomous-app[all]==<v>` (the `[all]` extras path — represents the supported consumer install) with retries (PyPI propagation can lag a few minutes), then imports each top-level subpackage (`autonomous`, `autonomous.ai`, `autonomous.auth`, `autonomous.db`, `autonomous.logger`, `autonomous.model`, `autonomous.storage`, `autonomous.taskrunner`) and verifies the installed `__version__` matches `<v>`. Importing top-level subpackages rather than re-exported symbols catches package-structure breakage (missing files, broken `__init__.py`, transitive import failures) without binding the smoke contract to specific re-exports that vary by version.
-4. **Smoke fails** → parse `SIGNATURE: <stage>:<error_class>:<location>` from stderr's last line. Fingerprint by signature. Issue lifecycle: no matching open → `gh issue create -R Sallenmoore/autonomous` titled `[smoke-fail] <version>: <signature>`, body with full stderr, labels `smoke-fail` + `auto-filed` + `release:<v>`. Matching open → comment with version + new stderr. Matching closed → reopen as regression.
-5. **Smoke passes** → optionally comment `✅ smoke passed` on the `test → main` PR that produced the release.
+1. **Check for open `test → main` PR.** `gh pr list -R Sallenmoore/autonomous --base main --state open`.
+2. **Merge + pull.**
+   - Open PR → `gh pr merge <num> --merge` then `git pull --ff-only origin main`.
+   - No PR but `main` moved (someone merged via UI) → `git pull --ff-only origin main`.
+   - No PR and `main` unchanged → **stop and report "nothing to deploy"**. Skip the remaining steps.
+3. **Release.** `./scripts/release.sh`. Bumps the patch in `src/autonomous/__init__.py`, runs `make package` (build + twine upload), commits + pushes the bump to `origin/main`. On failure: surface stderr and **halt**. Do not retry — releases are not idempotent.
+4. **Verify source vs PyPI.** Compare `__version__` in `origin/main:src/autonomous/__init__.py` to `info.version` from `https://pypi.org/pypi/autonomous-app/json`. Equal → clean. Drift → flag in the summary.
+5. **Notify + stop.** One-pulse summary: deployed SHA + version, PRs merged this cycle, count of open issues against `Sallenmoore/autonomous`. Then wait for the next user command.
 
-In both cases, advance `last_seen_version` to `<v>` so prod doesn't re-smoke the same release on subsequent iterations — a fail leaves the open smoke-fail issue tracking delivery of the next version, and a pass certifies the release.
+Local post-release smoke testing is **not** a prod responsibility. CI `release-smoke.yml` runs against the freshly published artifact and is the authoritative post-publish check; failures there are human-triaged, not auto-filed.
 
 ### autonomous-dev loop
 
@@ -144,7 +149,7 @@ Per iteration:
 Per iteration:
 
 1. **Refresh + main-drift check.** `git fetch origin --prune && git checkout test && git pull --ff-only`. Then inspect `git log origin/test..origin/main --oneline` — every commit listed is on `main` but not on `test`. If non-empty: any subject *not* shaped like `Bump autonomous version to X.Y.Z` (the `release.sh` push) is a manual user edit and should be back-merged into `test` (`git merge --no-ff origin/main`) before this cycle proceeds, or halt and ask the user if it's not a recognized edit. Doing this proactively at step 1 catches drift cheaply rather than waiting for halt trigger #4 to fire mid-cycle.
-2. **Poll for open `dev → test` PRs.** None → fall through to step 9.
+2. **Poll for open `dev → test` PRs.** None → fall through to step 8.
 3. **Pull and test-merge locally.** `gh pr checkout <PR>; git checkout test; git merge --no-ff <PR-branch>`.
 4. **Write independent tests for the change.** `gh pr diff <PR>` → write tests targeting the changed code from a fresh perspective (without seeing dev's `tests/_dev_local/`, which are gitignored). Place under `tests/unit/` or `tests/integration/`. **These ARE committed** — they ride into main + PyPI. Sanity-check by reverting the source-code half of the diff (`git checkout origin/test -- <files>`) and confirming the new tests *fail* — catches the "test asserts something already true" tautology trap. Restore the diff after.
 5. **Full local gate.**
@@ -157,9 +162,8 @@ Per iteration:
    ```
    On red: bug-fix-only commits to `test` (or to PR branch if dev-owned). Red after 3 attempts → halt.
 6. **`/review-pr` (multi-agent) skill, then fix.** Heavier review at this gate.
-7. **Decide release intent.** If the change warrants a PyPI release (bug fix users need, new feature, etc.), apply the `auto-release` label to the `test → main` PR before opening. Skip the label for docs-only / internal-only changes.
-8. **Promote to main + open back-merge in parallel.** `git push origin test; gh pr merge <PR> --merge; gh pr create --base main --title "test → main: <cycle summary>"`. Then, in the same step, check `git log origin/dev..origin/test --oneline` — every listed commit is on `test` but not on `dev` (test agent bug-fix commits, or anything else the dev tree should pick up). If non-empty: `gh pr create --base dev --head test --title "test → dev: post-cycle back-merge"`. Opening both PRs together — rather than deferring the back-merge until after the user merges `test → main` — keeps dev current with test agent bug-fixes and avoids the multi-cycle drift window where dev rebases against a stale baseline. Watch GitHub CI on the `test → main` PR (Python package matrix + release smoke — these are the gates). Amend until green; red after 3 amends → halt. Notify user when ready to merge.
-9. **After user merges `test → main`:** if the merged PR carried `auto-release`, `git checkout main && git pull --ff-only && ./scripts/release.sh`. Comment the resulting version on the merged PR. autonomous-prod picks up the new version on its next iteration. The `test → dev` back-merge PR was already opened in step 8 — the user merges it independently of `test → main`, so no new PR is filed here.
+7. **Promote to main + open back-merge in parallel.** `git push origin test; gh pr merge <PR> --merge; gh pr create --base main --title "test → main: <cycle summary>"`. Then, in the same step, check `git log origin/dev..origin/test --oneline` — every listed commit is on `test` but not on `dev` (test agent bug-fix commits, or anything else the dev tree should pick up). If non-empty: `gh pr create --base dev --head test --title "test → dev: post-cycle back-merge"`. Opening both PRs together — rather than deferring the back-merge until after the user merges `test → main` — keeps dev current with test agent bug-fixes and avoids the multi-cycle drift window where dev rebases against a stale baseline. Watch GitHub CI on the `test → main` PR (Python package matrix is the gate). Amend until green; red after 3 amends → halt. Notify user when ready to merge.
+8. **After user merges `test → main`:** the test agent's role is complete for this cycle. **Do not run `release.sh`** — that responsibility moved to autonomous-prod (manual `run prod` trigger). The `test → dev` back-merge PR was already opened in step 7 — the user merges it independently of `test → main`, so no new PR is filed here.
 
 ### Halt triggers (all autonomous agents)
 
@@ -169,7 +173,7 @@ When any fire, the agent stops, posts a summary, and waits for user input. On re
 2. **Issue scope unclear** (dev only).
 3. **Merge conflict on back-merge.** `test → dev` can't auto-resolve.
 4. **Unexpected commit on main.** A commit lands on `main` that wasn't part of any `test → main` PR or a `release.sh` version-bump push. All agents pause, sync from `origin/main`, ask user.
-5. **Smoke fails immediately after auto-release.** The test agent's auto-release succeeded but autonomous-prod immediately filed a smoke-fail issue. Stop polling on dev/test; this is the equivalent of "released and immediately broken" and needs human attention.
+5. **CI release-smoke fails immediately after `run prod`.** Prod published a release and the `release-smoke.yml` CI workflow reports failure against it. Stop polling on dev/test; this is "released and immediately broken" and needs human triage — autonomous-prod owns the release decision but does not auto-recover from a botched publish.
 
 ### Two-perspective testing
 
@@ -189,7 +193,7 @@ Use [scripts/release.sh](scripts/release.sh):
 - Runs `make package` (build + twine check + twine upload)
 - Commits + pushes `origin/main`
 
-After the test→main merge, the autonomous-test agent runs `release.sh` automatically when the PR carries the `auto-release` label (see `## Three-Agent Pipeline` above). Manual invocation is still supported for ad-hoc patches.
+Release is invoked exclusively by **autonomous-prod's manual `run prod` cycle** (see `## Three-Agent Pipeline` → autonomous-prod above). autonomous-test does not run `release.sh`. Manual invocation by a human in any tree is also supported for ad-hoc patches.
 
 ## Known broken workflows
 
@@ -202,4 +206,4 @@ After the test→main merge, the autonomous-test agent runs `release.sh` automat
 - **Models must be imported before `AutoModel.load_model("Name")` will resolve them**, because resolution walks `__subclasses__()`.
 - **Use [`autonomous.ai.retry.retry`](src/autonomous/ai/retry.py) for bounded HTTP retry** rather than ad-hoc `try/except` loops; backlog items in README #5, #6, #16, #21 all exist because callers bypass it.
 - **Existing backlog lives in [README.md](README.md) "Task List"** — 28 items with file:line anchors and impact axes (security/stability/functionality/efficiency/usability). Before accepting a new issue, check whether it duplicates a backlog item; close as duplicate or merge scope when it does.
-- **CI fires on `dev`, `test`, and `main` branches.** Feature PRs target `test` (not `dev` directly and not `main`); see "Three-Agent Pipeline" above for the dev → test → main flow and the `auto-release` label semantics.
+- **CI fires on `dev`, `test`, and `main` branches.** Feature PRs target `test` (not `dev` directly and not `main`); see "Three-Agent Pipeline" above for the dev → test → main → `run prod` flow.
