@@ -439,32 +439,30 @@ class TestVectorLocalObservability:
             "local vs openai failure counts"
         )
 
-    def test_uncaught_exception_type_propagates_pin_intent(self):
-        # INTENT PIN, not a regression guard. `_get_vector_local`
-        # catches a narrow exception tuple — (RequestException,
-        # ValueError, KeyError) — while `_get_vector_openai` has a
-        # bare `except Exception`. The asymmetry is deliberate-or-
-        # accident; this test makes the choice load-bearing so a
-        # future "fix" to broaden the catch (or to narrow openai's)
-        # has to also update this test, forcing a conversation.
-        #
-        # If dev later decides both providers should catch every
-        # Exception, flip the assertion. If dev decides openai
-        # should narrow to match local, the openai-side test in
-        # test_unit_record_embedding_sync_event.py would need the
-        # same flip. Either way, the two providers' exception
-        # surfaces must move together.
+    def test_non_tuple_exception_is_caught_and_recorded(self):
+        # Post-#65: `_get_vector_local` catches bare `Exception`,
+        # matching `_get_vector_openai`. Previously this test pinned
+        # the asymmetric narrow-tuple catch as an INTENT PIN; the
+        # test agent's note authorized the flip ("If dev later
+        # decides both providers should catch every Exception, flip
+        # the assertion."). Both providers' exception surfaces now
+        # move together — symmetric "any failure returns None and
+        # bumps hpc_failure". Dashboard math (success + hpc_failure
+        # + silent_skip ≈ total work) is preserved.
         with patch.object(
             db_sync.requests,
             "post",
             side_effect=RuntimeError("not a RequestException subclass"),
         ), patch.object(db_sync, "record_embedding_sync_event") as mock_record:
-            with pytest.raises(RuntimeError):
-                db_sync._get_vector_local("text")
-        # And: the recorder was NOT called for the uncaught path —
-        # the hpc_failure counter only bumps on the documented
-        # catchable failure modes. If this changes, dashboard
-        # math (success + hpc_failure + silent_skip == total) breaks
-        # in a way that depends on the operating environment.
-        mock_record.assert_not_called()
+            result = db_sync._get_vector_local("text")
+        assert result is None, (
+            "bare-Exception catch must keep the documented degrade "
+            "contract — return None, do not propagate"
+        )
+        # NOTE: `Mock.assert_called_once_with(...)` raises on mismatch,
+        # so this line is the actual assertion. Don't reattach a
+        # trailing tuple "message" — `(call_result, "msg")` would
+        # just build and discard a 2-tuple expression and the
+        # explanatory string would never reach the operator.
+        mock_record.assert_called_once_with("hpc_failure")
 
