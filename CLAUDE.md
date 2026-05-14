@@ -92,9 +92,9 @@ The autonomous library runs as a closed-loop pipeline with three agents — pair
 
 | Agent | Branch | Tree | Triggered by | Writes | Review skill |
 |---|---|---|---|---|---|
-| **autonomous-prod** | `main` | `/opt/data/autonomous/` | manual `run prod` from user | release commits (`./scripts/release.sh`) + merges of open `test → main` PRs | n/a |
-| **autonomous-dev** | `dev` | `/opt/data/autonomous-dev/` | poll open `Sallenmoore/autonomous` issues | library code + ephemeral tests in `tests/_dev_local/` (gitignored) | `/review` before opening `dev → test` |
-| **autonomous-test** | `test` | `/opt/data/autonomous-test/` | poll open `dev → test` PRs | committed tests + bug-fix commits | `/review-pr` (multi-agent) before opening `test → main` |
+| **autonomous-prod** | `main` | `/opt/data/autonomous/` | merged `test → main` PRs with `auto-release` label; new PyPI releases (poll PyPI for version delta) | `./scripts/release.sh` (version bump + PyPI upload + push); issues titled `[smoke-fail] <version>: <signature>` | n/a |
+| **autonomous-dev** | `dev` | `/opt/data/autonomous-dev/` | open `Sallenmoore/autonomous` issues | library code + ephemeral tests in `tests/_dev_local/` (gitignored) | `/review` before opening `dev → test` |
+| **autonomous-test** | `test` | `/opt/data/autonomous-test/` | open `dev → test` PRs | committed tests + bug-fix commits | `/review-pr` (multi-agent) before opening `test → main` |
 
 dev and test run as `/loop` in dynamic / self-paced mode. **prod does NOT loop** — it runs one iteration per `run prod` user command and then stops. The dev agent does not push to `test`. The test agent does not edit the dev tree. Coordination is through PRs, issues, and labels (`smoke-fail`, `auto-filed`, `auto-release`, `awaiting-upstream`, `human-only`, `feature-request`). `auto-release` is set by the test agent and read by the prod agent as the ship-or-skip gate.
 
@@ -116,9 +116,9 @@ When a human invokes Claude Code interactively in any of the three trees (most o
 
 In short: tree assignment dictates default loop behavior, not absolute capability. Outside an interactive session, the agent in each tree obeys its role; inside one, it follows the human.
 
-### autonomous-prod (manual-triggered release operator)
+### autonomous-prod (release + smoke watcher)
 
-Triggered exclusively by the user typing **"run prod"**. No polling, no `/loop`, no `CronCreate`, no `ScheduleWakeup`. Each invocation runs one cycle to completion and stops. Per invocation:
+Owns the release step (`./scripts/release.sh`, as of 2026-05-14) and post-release smoke verification. Does not edit library source — its writes are limited to: the version-bump commit + push that `release.sh` produces, the PyPI upload, and smoke-fail issues. Per iteration:
 
 1. **Check for open `test → main` PR.** `gh pr list -R Sallenmoore/autonomous --base main --state open`.
 2. **Merge + pull.**
@@ -162,9 +162,9 @@ Per iteration:
    ```
    On red: bug-fix-only commits to `test` (or to PR branch if dev-owned). Red after 3 attempts → halt.
 6. **`/review-pr` (multi-agent) skill, then fix.** Heavier review at this gate.
-7. **Decide release intent.** If the change warrants a PyPI release (bug fix users need, new feature, behavior change consumers will notice), apply the `auto-release` label to the `test → main` PR before opening. Skip the label for docs-only / internal-only changes. The label is autonomous-prod's gate in step 3 of its cycle — without it, prod merges but does not ship.
-8. **Promote to main + open back-merge in parallel.** `git push origin test; gh pr merge <PR> --merge; gh pr create --base main --title "test → main: <cycle summary>"`. Then, in the same step, check `git log origin/dev..origin/test --oneline` — every listed commit is on `test` but not on `dev` (test agent bug-fix commits, or anything else the dev tree should pick up). If non-empty: `gh pr create --base dev --head test --title "test → dev: post-cycle back-merge"`. Opening both PRs together — rather than deferring the back-merge until after the user merges `test → main` — keeps dev current with test agent bug-fixes and avoids the multi-cycle drift window where dev rebases against a stale baseline. Watch GitHub CI on the `test → main` PR (Python package matrix is the gate). Amend until green; red after 3 amends → halt. Notify user when ready to merge.
-9. **After user merges `test → main`:** the test agent's role is complete for this cycle. **Do not run `release.sh`** — that responsibility moved to autonomous-prod (manual `run prod` trigger), gated on the `auto-release` label set in step 7. The `test → dev` back-merge PR was already opened in step 8 — the user merges it independently of `test → main`, so no new PR is filed here.
+7. **Decide release intent.** If the change warrants a PyPI release (bug fix users need, new feature, etc.), apply the `auto-release` label to the `test → main` PR before opening. Skip the label for docs-only / internal-only changes.
+8. **Promote to main + open back-merge in parallel.** `git push origin test; gh pr merge <PR> --merge; gh pr create --base main --title "test → main: <cycle summary>"`. Then, in the same step, check `git log origin/dev..origin/test --oneline` — every listed commit is on `test` but not on `dev` (test agent bug-fix commits, or anything else the dev tree should pick up). If non-empty: `gh pr create --base dev --head test --title "test → dev: post-cycle back-merge"`. Opening both PRs together — rather than deferring the back-merge until after the user merges `test → main` — keeps dev current with test agent bug-fixes and avoids the multi-cycle drift window where dev rebases against a stale baseline. Watch GitHub CI on the `test → main` PR (Python package matrix + release smoke — these are the gates). Amend until green; red after 3 amends → halt. Notify user when ready to merge.
+9. **After user merges `test → main`:** test agent does nothing further. If the merged PR carried `auto-release`, autonomous-prod is responsible for running `./scripts/release.sh` on its next iteration (release authority was moved from test → prod on 2026-05-14). The `test → dev` back-merge PR was already opened in step 8 — the user merges it independently of `test → main`, so no new PR is filed here.
 
 ### Halt triggers (all autonomous agents)
 
@@ -194,7 +194,7 @@ Use [scripts/release.sh](scripts/release.sh):
 - Runs `make package` (build + twine check + twine upload)
 - Commits + pushes `origin/main`
 
-Release is invoked exclusively by **autonomous-prod's manual `run prod` cycle** (see `## Three-Agent Pipeline` → autonomous-prod above), and **only** when the merged `test → main` PR carries the `auto-release` label set by the test agent in its step 7. autonomous-test does not run `release.sh` itself. Manual invocation by a human in any tree is also supported for ad-hoc patches.
+After the test→main merge, the autonomous-prod agent runs `release.sh` automatically when the PR carries the `auto-release` label (release authority moved from test → prod on 2026-05-14; see `## Three-Agent Pipeline` above). Manual invocation is still supported for ad-hoc patches.
 
 ## Known broken workflows
 
