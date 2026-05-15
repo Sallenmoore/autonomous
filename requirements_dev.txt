@@ -6,3 +6,4 @@ pytest-cov
 setuptools
 build
 pytest-dotenv
+pytest-benchmark

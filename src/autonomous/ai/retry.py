@@ -7,6 +7,7 @@ Pure stdlib; tests are in ``tests/unit/test_unit_retry.py``.
 
 from __future__ import annotations
 
+import random
 import time
 from typing import Any, Callable
 
@@ -24,6 +25,7 @@ def retry(
     *,
     max_attempts: int = 3,
     sleep_seconds: float = 0,
+    jitter: float = 0.0,
     catch: tuple[type[BaseException], ...] = (Exception,),
     on_retry: RetryHook | None = None,
     default: Any = _NO_DEFAULT,
@@ -40,13 +42,24 @@ def retry(
     1. ``on_retry(attempt_number, exc)`` is invoked if supplied. The
        attempt number is 1-indexed and refers to the attempt that just
        failed. Useful for "flush model memory before retry" logic.
-    2. ``time.sleep(sleep_seconds)`` runs if positive.
+    2. ``time.sleep`` runs if ``sleep_seconds`` is positive. If
+       ``jitter`` is also positive, the actual sleep is
+       ``sleep_seconds * uniform(1 - jitter, 1 + jitter)`` — randomizes
+       the sleep duration so many concurrent retriers don't wake in
+       lockstep and re-flood a recovering service.
 
     The hook never sleeps after the *final* attempt — there's nothing
     left to retry.
+
+    Args:
+        jitter: Fraction in ``[0, 1)``. ``0.0`` (default) disables
+            jitter — existing callers are unaffected. ``0.3`` means the
+            actual sleep is between 70% and 130% of ``sleep_seconds``.
     """
     if max_attempts < 1:
         raise ValueError("max_attempts must be >= 1")
+    if jitter < 0 or jitter >= 1:
+        raise ValueError("jitter must be in [0, 1)")
 
     last_exc: BaseException | None = None
     for attempt in range(1, max_attempts + 1):
@@ -58,7 +71,10 @@ def retry(
                 if on_retry is not None:
                     on_retry(attempt, exc)
                 if sleep_seconds > 0:
-                    time.sleep(sleep_seconds)
+                    actual_sleep = sleep_seconds
+                    if jitter > 0:
+                        actual_sleep *= random.uniform(1 - jitter, 1 + jitter)
+                    time.sleep(actual_sleep)
 
     if default is _NO_DEFAULT:
         assert last_exc is not None

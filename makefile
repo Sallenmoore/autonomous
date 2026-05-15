@@ -1,5 +1,5 @@
 
-.PHONY: all clean cleantests test test-int test-all tests inittests package docs cleandocs
+.PHONY: all clean cleantests test test-int test-perf test-all tests inittests package docs cleandocs
 
 -include .env
 export
@@ -42,6 +42,13 @@ test:
 # Integration tests that need the full stack. `inittests` brings it up.
 test-int: inittests
 	python -m pytest tests/integration -m integration
+
+# Performance benchmarks. Opt-in; doesn't gate `test-all`. Requires
+# pytest-benchmark (in requirements_dev.txt). Run locally for baselines;
+# CI doesn't gate on this because benchmark variance on shared runners
+# would flake.
+test-perf:
+	python -m pytest tests/perf --benchmark-only
 
 # Full suite — unit first (fails fast), then integration.
 test-all: test test-int

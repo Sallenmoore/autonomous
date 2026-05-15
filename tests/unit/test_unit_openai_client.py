@@ -69,7 +69,7 @@ def _mock_chat_response(content):
 class TestGenerateText:
     def test_posts_to_chat_completions(self, client):
         with patch(
-            "autonomous.ai.models.openai_compat.requests.post",
+            "autonomous.ai.models.openai_compat._SESSION.post",
             return_value=_mock_chat_response("hello world"),
         ) as mock_post:
             result = client.generate_text("hi")
@@ -88,7 +88,7 @@ class TestGenerateText:
 
     def test_appends_context_and_uri(self, client):
         with patch(
-            "autonomous.ai.models.openai_compat.requests.post",
+            "autonomous.ai.models.openai_compat._SESSION.post",
             return_value=_mock_chat_response("ok"),
         ) as mock_post:
             client.generate_text(
@@ -103,7 +103,7 @@ class TestGenerateText:
 class TestGenerateJson:
     def test_sends_response_format_json_object(self, client):
         with patch(
-            "autonomous.ai.models.openai_compat.requests.post",
+            "autonomous.ai.models.openai_compat._SESSION.post",
             return_value=_mock_chat_response('{"name": "Aria"}'),
         ) as mock_post:
             result = client.generate_json("describe a character")
@@ -117,7 +117,7 @@ class TestGenerateJson:
         # should rescue the JSON.
         wrapped = '```json\n{"name": "Aria"}\n```'
         with patch(
-            "autonomous.ai.models.openai_compat.requests.post",
+            "autonomous.ai.models.openai_compat._SESSION.post",
             return_value=_mock_chat_response(wrapped),
         ):
             result = client.generate_json("describe a character")
@@ -125,7 +125,7 @@ class TestGenerateJson:
 
     def test_returns_empty_on_unparseable_response(self, client):
         with patch(
-            "autonomous.ai.models.openai_compat.requests.post",
+            "autonomous.ai.models.openai_compat._SESSION.post",
             return_value=_mock_chat_response("I cannot help with that."),
         ):
             result = client.generate_json("anything")
@@ -140,7 +140,7 @@ class TestEmbeddings:
         response.raise_for_status.return_value = None
 
         with patch(
-            "autonomous.ai.models.openai_compat.requests.post",
+            "autonomous.ai.models.openai_compat._SESSION.post",
             return_value=response,
         ) as mock_post:
             vec = client.get_embedding("a bit of text")
@@ -163,7 +163,7 @@ class TestTranscription:
         response.raise_for_status.return_value = None
 
         with patch(
-            "autonomous.ai.models.openai_compat.requests.post",
+            "autonomous.ai.models.openai_compat._SESSION.post",
             return_value=response,
         ) as mock_post:
             result = client.generate_transcription(b"fake audio bytes")
@@ -183,7 +183,7 @@ class TestTranscription:
         response.raise_for_status.return_value = None
 
         with patch(
-            "autonomous.ai.models.openai_compat.requests.post",
+            "autonomous.ai.models.openai_compat._SESSION.post",
             return_value=response,
         ):
             result = client.generate_transcription(b"audio")
@@ -198,7 +198,7 @@ class TestUnreachableErrors:
         from autonomous.ai.models.openai_compat import HPCUnreachableError
 
         with patch(
-            "autonomous.ai.models.openai_compat.requests.post",
+            "autonomous.ai.models.openai_compat._SESSION.post",
             side_effect=requests.ConnectionError("VPN down"),
         ):
             with pytest.raises(HPCUnreachableError):
@@ -208,7 +208,7 @@ class TestUnreachableErrors:
         from autonomous.ai.models.openai_compat import HPCUnreachableError
 
         with patch(
-            "autonomous.ai.models.openai_compat.requests.post",
+            "autonomous.ai.models.openai_compat._SESSION.post",
             side_effect=requests.Timeout("slow"),
         ):
             with pytest.raises(HPCUnreachableError):
@@ -223,7 +223,7 @@ class TestUnreachableErrors:
         bad.text = "denied"
 
         with patch(
-            "autonomous.ai.models.openai_compat.requests.post", return_value=bad
+            "autonomous.ai.models.openai_compat._SESSION.post", return_value=bad
         ):
             with pytest.raises(HPCUnreachableError):
                 client.generate_text("hi")
@@ -232,7 +232,7 @@ class TestUnreachableErrors:
         from autonomous.ai.models.openai_compat import HPCUnreachableError
 
         with patch(
-            "autonomous.ai.models.openai_compat.requests.post",
+            "autonomous.ai.models.openai_compat._SESSION.post",
             side_effect=requests.ConnectionError("nope"),
         ) as mock_post:
             with pytest.raises(HPCUnreachableError):

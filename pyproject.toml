@@ -14,6 +14,7 @@ requires-python = ">=3.12"
 #license = {text = "MIT License"}
 classifiers=[
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
@@ -79,6 +80,7 @@ testpaths = [
 ]
 markers = [
     "integration: tests that require live MongoDB / Redis / AI services",
+    "perf: performance benchmarks; opt-in via `pytest tests/perf` or `make test-perf`",
 ]
 pythonpath = [
     "src",
