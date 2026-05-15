@@ -7,6 +7,7 @@ Pure stdlib; tests are in ``tests/unit/test_unit_retry.py``.
 
 from __future__ import annotations
 
+import math
 import random
 import time
 from typing import Any, Callable
@@ -58,8 +59,14 @@ def retry(
     """
     if max_attempts < 1:
         raise ValueError("max_attempts must be >= 1")
-    if jitter < 0 or jitter >= 1:
-        raise ValueError("jitter must be in [0, 1)")
+    # NaN comparison semantics: `NaN < 0` and `NaN >= 1` are both
+    # False, so a bare `<` / `>=` check accepts NaN — which then
+    # propagates to `random.uniform` and `time.sleep` and explodes
+    # partway through a retry loop with no breadcrumb. ``math.isfinite``
+    # rejects NaN AND ±Infinity (+Inf would fail the `>= 1` check
+    # but NaN slipped through). See issue #77.
+    if not math.isfinite(jitter) or jitter < 0 or jitter >= 1:
+        raise ValueError("jitter must be a finite float in [0, 1)")
 
     last_exc: BaseException | None = None
     for attempt in range(1, max_attempts + 1):

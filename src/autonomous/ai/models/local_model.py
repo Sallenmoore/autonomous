@@ -16,9 +16,19 @@ from autonomous.taskrunner.autotasks import AutoTasks
 
 # Module-level Session for connection pooling. Ollama and the media_ai
 # service are typically on the same intranet; reusing TCP connections
-# saves the per-call socket setup overhead. Session.post() is
-# thread-safe for the POST-heavy workload here. Tests can monkeypatch
-# `autonomous.ai.models.local_model._SESSION` to a stub.
+# saves the per-call socket setup overhead.
+#
+# Concurrency note: ``requests.Session.post`` is safe to call from
+# multiple threads concurrently. What is NOT safe is mutating
+# Session-level state (``_SESSION.headers``, ``_SESSION.cookies``,
+# ``_SESSION.auth``) from one thread while another is mid-request.
+# This module's call sites pass all per-call state via kwargs (no
+# Session-level mutation), so the concurrent-POST workload is fine.
+# PR #76 review comment r3250218127 flagged the prior overstatement;
+# clarified per #78 follow-up.
+#
+# Tests can monkeypatch `autonomous.ai.models.local_model._SESSION`
+# to a stub.
 _SESSION = requests.Session()
 
 

@@ -402,15 +402,21 @@ class TestPersistFalseLogAsymmetry:
             "so the persist=False asymmetry below has a baseline"
         )
 
-    def test_persist_false_currently_silent_on_reinstantiation(
+    def test_persist_false_emits_reinstantiation_log_with_orphan_note(
         self, monkeypatch
     ):
-        # The asymmetry: the SAME provider switch under persist=False
-        # produces NO re-instantiation log because the log call is
-        # gated by `if self.client and persist:`. This test pins the
-        # CURRENT behavior — when a future fix lifts the log out of
-        # the persist gate, this test will start failing and force
-        # a deliberate flip. Until then: file a follow-up issue.
+        # Post-#79: the log is lifted OUT of the persist gate so
+        # provider switches under persist=False are still attributable
+        # in the operator log. The message also notes the orphan-doc
+        # trade-off ("persist=False: old doc orphaned") so debuggers
+        # investigating "where's the old client doc?" have a
+        # breadcrumb pointing at the deliberate skip.
+        #
+        # This test was previously pinned as
+        # test_persist_false_currently_silent_on_reinstantiation; it
+        # was flipped in lockstep with the #79 fix (the test agent
+        # explicitly authorized the flip in the prior class docstring:
+        # "this test will start failing and force a deliberate flip").
         agent, BaseAgent = self._make_stub_agent_and_client_class(
             monkeypatch
         )
@@ -419,17 +425,23 @@ class TestPersistFalseLogAsymmetry:
             "autonomous.ai.baseagent.log",
             lambda msg, *a, **k: log_calls.append(msg),
         )
-        # agent.client already a wrong-type _OldClient from the stub
         BaseAgent.get_client(agent, persist=False)
         reinstantiation_calls = [
             c for c in log_calls if "Re-instantiating" in c
         ]
-        assert reinstantiation_calls == [], (
-            f"CURRENT behavior pin (not desired behavior): "
-            f"persist=False is silent on provider switches. "
-            f"Got logs: {log_calls}. When the source is fixed to "
-            f"lift the log out of the persist gate, this test will "
-            f"need updating — that's intentional."
+        assert len(reinstantiation_calls) == 1, (
+            f"persist=False provider switch must emit exactly one "
+            f"Re-instantiating log line; got: {log_calls}"
+        )
+        msg = reinstantiation_calls[0]
+        assert "persist=False" in msg, (
+            "log line should flag that this is the persist=False path "
+            "(operators investigating 'where's the old client?' need "
+            "the breadcrumb pointing at the orphan-doc trade-off)"
+        )
+        assert "orphaned" in msg, (
+            "log line should mention the old doc is orphaned (the "
+            "documented trade-off — not silently deleted)"
         )
 
 
