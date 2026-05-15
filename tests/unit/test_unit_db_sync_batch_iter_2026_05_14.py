@@ -81,7 +81,7 @@ class TestVectorLocalBaseExceptionBoundary:
         # widens to BaseException, this test fails — forcing a
         # conversation before workers become un-stoppable.
         with patch.object(
-            db_sync.requests,
+            db_sync._HTTP_SESSION,
             "post",
             side_effect=KeyboardInterrupt(),
         ), patch.object(db_sync, "record_embedding_sync_event") as mock_record:
@@ -98,7 +98,7 @@ class TestVectorLocalBaseExceptionBoundary:
         # KeyboardInterrupt — must reach the worker's process boundary
         # unmodified.
         with patch.object(
-            db_sync.requests,
+            db_sync._HTTP_SESSION,
             "post",
             side_effect=SystemExit(2),
         ), patch.object(db_sync, "record_embedding_sync_event") as mock_record:
@@ -112,7 +112,7 @@ class TestVectorLocalBaseExceptionBoundary:
         # like `except (Exception, BaseException)` — which would be
         # silly but defensible against a tired-Monday commit.
         with patch.object(
-            db_sync.requests,
+            db_sync._HTTP_SESSION,
             "post",
             side_effect=BaseException("not Exception-derived"),
         ), patch.object(db_sync, "record_embedding_sync_event") as mock_record:
@@ -129,7 +129,7 @@ class TestVectorLocalBaseExceptionBoundary:
             pass
 
         with patch.object(
-            db_sync.requests,
+            db_sync._HTTP_SESSION,
             "post",
             side_effect=MyDomainError("from a third-party adapter"),
         ), patch.object(db_sync, "record_embedding_sync_event") as mock_record:

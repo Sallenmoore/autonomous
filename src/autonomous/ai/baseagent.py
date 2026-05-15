@@ -36,12 +36,44 @@ class BaseAgent(AutoModel):
     def get_agent_id(self):
         return self.get_client().id
 
-    def get_client(self, provider=None):
+    def get_client(self, provider=None, *, persist: bool = True):
+        """Return the agent's client, instantiating the right provider on demand.
+
+        Fast path: when ``self.client`` is already the correct
+        ``MODEL_REGISTRY[provider]`` type, returns it directly with no
+        DB I/O.
+
+        Slow path (provider changed): with ``persist=True`` (default,
+        legacy behavior) deletes the old client doc, constructs a
+        fresh one, then saves both the new client and ``self`` so the
+        reference is durable. With ``persist=False`` no DB I/O fires
+        at all — the old client doc is NOT deleted (it becomes
+        orphaned in the database) and the new client is in-memory
+        only.
+
+        Args:
+            persist: When ``False``, skip ALL DB writes on the
+                provider-switch path — including the old client's
+                ``delete()``. The old doc remains as an orphan in the
+                database until a subsequent ``persist=True`` call (or
+                manual cleanup) reclaims it. This is intentional: a
+                delete-without-save would leave ``self.client``
+                pointing at a destroyed doc, and the asymmetry of
+                "no writes by default" is more useful than partial
+                writes. Use ``persist=False`` for test setup or
+                throughput-sensitive request-scoped instantiation
+                where the caller takes responsibility for the next
+                ``save()`` on the agent.
+        """
         # 5. Determine which class to use based on the provider string
         model_class = self.MODEL_REGISTRY.get(provider or self.provider, LocalAIModel)
         # If we already have a client, but it's the WRONG type (e.g. we switched providers), we might want to re-instantiate. For simplicity, we check if it exists first.
         if not isinstance(self.client, model_class):
-            if self.client:
+            if self.client and persist:
+                # Only delete the old client doc when we're persisting
+                # the new one. Otherwise we'd leave self.client
+                # pointing at a destroyed doc — worse than leaking an
+                # orphan that a future persist=True call can reclaim.
                 log(
                     f"Re-instantiating client for agent {self.name} from {type(self.client).__name__} to {model_class.__name__}"
                 )
@@ -51,8 +83,9 @@ class BaseAgent(AutoModel):
                 instructions=self.instructions,
                 description=self.description,
             )
-            self.client.save()
-            self.save()
+            if persist:
+                self.client.save()
+                self.save()
 
         return self.client
 

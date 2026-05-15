@@ -353,7 +353,7 @@ class TestVectorLocalObservability:
 
     def test_transport_exception_records_hpc_failure(self, capsys):
         with patch.object(
-            db_sync.requests,
+            db_sync._HTTP_SESSION,
             "post",
             side_effect=requests.ConnectionError("refused"),
         ), patch.object(
@@ -380,7 +380,7 @@ class TestVectorLocalObservability:
         fake_resp = MagicMock()
         fake_resp.status_code = 503
         with patch.object(
-            db_sync.requests, "post", return_value=fake_resp
+            db_sync._HTTP_SESSION, "post", return_value=fake_resp
         ), patch.object(
             db_sync, "record_embedding_sync_event"
         ) as mock_record:
@@ -407,7 +407,7 @@ class TestVectorLocalObservability:
         fake_resp.status_code = 200
         fake_resp.json.return_value = {"embedding": [0.1, 0.2, 0.3]}
         with patch.object(
-            db_sync.requests, "post", return_value=fake_resp
+            db_sync._HTTP_SESSION, "post", return_value=fake_resp
         ), patch.object(
             db_sync, "record_embedding_sync_event"
         ) as mock_record:
@@ -428,7 +428,7 @@ class TestVectorLocalObservability:
         # post-#60 both providers can fire and the dashboard needs
         # provider attribution.
         with patch.object(
-            db_sync.requests,
+            db_sync._HTTP_SESSION,
             "post",
             side_effect=requests.ConnectionError("refused"),
         ), patch.object(db_sync, "record_embedding_sync_event"):
@@ -450,7 +450,7 @@ class TestVectorLocalObservability:
         # bumps hpc_failure". Dashboard math (success + hpc_failure
         # + silent_skip ≈ total work) is preserved.
         with patch.object(
-            db_sync.requests,
+            db_sync._HTTP_SESSION,
             "post",
             side_effect=RuntimeError("not a RequestException subclass"),
         ), patch.object(db_sync, "record_embedding_sync_event") as mock_record:
