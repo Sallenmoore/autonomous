@@ -118,6 +118,21 @@ class OpenAIClient(AutoModel):
                         json=json_body,
                         timeout=self._timeout,
                     )
+            except (
+                requests.exceptions.MissingSchema,
+                requests.exceptions.InvalidURL,
+                requests.exceptions.InvalidSchema,
+                requests.exceptions.InvalidJSONError,
+            ):
+                # Config / programmer errors — propagate raw. These
+                # mean "URL is malformed" or "payload is unserializable"
+                # — retry will not help, and translating to
+                # HPCUnreachableError would burn _retry_attempts rounds
+                # against an unfixable error AND mislead operators
+                # debugging Sentry alerts toward network/DNS/firewall
+                # when the real issue is a typo'd HPC_API_BASE_URL.
+                # See #84 — must come BEFORE the broader catch below.
+                raise
             except requests.RequestException as exc:
                 # Broadened from (ConnectionError, Timeout) to the
                 # documented base — also catches RetryError (urllib3
