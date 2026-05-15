@@ -80,6 +80,7 @@ testpaths = [
 ]
 markers = [
     "integration: tests that require live MongoDB / Redis / AI services",
+    "perf: performance benchmarks; opt-in via `pytest tests/perf` or `make test-perf`",
 ]
 pythonpath = [
     "src",

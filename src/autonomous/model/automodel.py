@@ -20,6 +20,15 @@ if TYPE_CHECKING:
 
 _connected: bool = False
 
+# Cache for AutoModel.load_model() string-name resolution. The tree walk
+# over AutoModel.__subclasses__() is O(n) in the registered model count
+# and gets called per dispatch in agent code paths — memoizing the
+# successful lookups gives ~10-50ms back per call on a deep tree.
+# Additive-only: misses (ValueError) are NOT cached, because a subclass
+# may be imported later. Tests that want to reset the cache between
+# runs should call AutoModel._invalidate_load_model_cache().
+_LOAD_MODEL_CACHE: dict[str, type["AutoModel"]] = {}
+
 
 def connect_from_env(**overrides) -> str:
     """Open the default MongoDB connection using env vars.
@@ -197,9 +206,21 @@ class AutoModel(Document):
 
     @classmethod
     def load_model(cls, model: str | type[AutoModel]) -> type[AutoModel]:
-        """Resolve ``model`` (string name or class) to an ``AutoModel`` subclass."""
+        """Resolve ``model`` (string name or class) to an ``AutoModel`` subclass.
+
+        String resolution is memoized in module-level ``_LOAD_MODEL_CACHE``
+        (additive-only — successful lookups are cached, ValueError misses
+        aren't, because a subclass may be imported later). The
+        ``__subclasses__()`` tree walk that runs on a cache miss is the
+        unchanged legacy behavior.
+        """
         if not isinstance(model, str):
             return model
+
+        cache_key = model.lower()
+        cached = _LOAD_MODEL_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
 
         subclasses = AutoModel.__subclasses__()
         visited_subclasses: list[type[AutoModel]] = []
@@ -207,11 +228,17 @@ class AutoModel(Document):
             subclass = subclasses.pop()
             if "_meta" in subclass.__dict__ and not subclass._meta.get("abstract"):
                 if subclass.__name__.lower() == model.lower():
+                    _LOAD_MODEL_CACHE[cache_key] = subclass
                     return subclass
             if subclass not in visited_subclasses:
                 subclasses += subclass.__subclasses__()
                 visited_subclasses += [subclass]
         raise ValueError(f"Model {model} not found")
+
+    @classmethod
+    def _invalidate_load_model_cache(cls) -> None:
+        """Clear the load_model resolution cache. For test teardown."""
+        _LOAD_MODEL_CACHE.clear()
 
     @classmethod
     def get(cls, pk: PrimaryKey) -> Self | None:

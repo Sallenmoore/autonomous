@@ -77,13 +77,28 @@ class TestStorageContract:
 
 
 class TestHappyPath:
-    """Verify the wire-level Redis interaction."""
+    """Verify the wire-level Redis interaction.
+
+    Post-pipelining (iter/2026-05-15 perf batch): both HINCRBY and
+    EXPIRE are queued on a single ``client.pipeline(transaction=False)``
+    context, executed in one round-trip via ``pipe.execute()``. The
+    ``pipe`` referenced below is the auto-created mock at
+    ``client.pipeline.return_value.__enter__.return_value`` (the
+    object yielded by ``with client.pipeline(...) as pipe:``).
+    """
+
+    @staticmethod
+    def _pipe(client):
+        # The mock-internal path that ``with client.pipeline(...) as
+        # pipe:`` resolves to. All hincrby/expire calls now land here.
+        return client.pipeline.return_value.__enter__.return_value
 
     def test_hincrby_called_with_event_field_and_increment_1(self):
         client = MagicMock()
         record_embedding_sync_event("success", redis_client=client)
-        client.hincrby.assert_called_once()
-        args, _ = client.hincrby.call_args
+        pipe = self._pipe(client)
+        pipe.hincrby.assert_called_once()
+        args, _ = pipe.hincrby.call_args
         # signature is hincrby(key, field, amount)
         assert args[1] == "success"
         assert args[2] == 1
@@ -91,8 +106,9 @@ class TestHappyPath:
     def test_expire_called_with_seven_day_ttl(self):
         client = MagicMock()
         record_embedding_sync_event("hpc_failure", redis_client=client)
-        client.expire.assert_called_once()
-        args, _ = client.expire.call_args
+        pipe = self._pipe(client)
+        pipe.expire.assert_called_once()
+        args, _ = pipe.expire.call_args
         # signature is expire(key, seconds); pin the seconds.
         assert args[1] == _EMBEDDING_SYNC_HEALTH_TTL_SECONDS
 
@@ -102,8 +118,9 @@ class TestHappyPath:
         # forever — silent storage leak.
         client = MagicMock()
         record_embedding_sync_event("silent_skip", redis_client=client)
-        hincrby_key = client.hincrby.call_args[0][0]
-        expire_key = client.expire.call_args[0][0]
+        pipe = self._pipe(client)
+        hincrby_key = pipe.hincrby.call_args[0][0]
+        expire_key = pipe.expire.call_args[0][0]
         assert hincrby_key == expire_key
 
     def test_key_is_hour_bucketed_yyyymmddhh(self):
@@ -116,7 +133,8 @@ class TestHappyPath:
         before = datetime.now(timezone.utc).strftime("%Y%m%d%H")
         record_embedding_sync_event("success", redis_client=client)
         after = datetime.now(timezone.utc).strftime("%Y%m%d%H")
-        key = client.hincrby.call_args[0][0]
+        pipe = self._pipe(client)
+        key = pipe.hincrby.call_args[0][0]
         prefix, _, bucket = key.partition(":")
         assert prefix == EMBEDDING_SYNC_HEALTH_KEY_PREFIX
         assert re.fullmatch(r"\d{10}", bucket), (
@@ -135,15 +153,37 @@ class TestHappyPath:
         # TTL is meaningless until the key exists — `expire` on a
         # missing key is a Redis no-op (returns 0) and the hash would
         # then live forever once hincrby finally landed. Pin the order
-        # at the mock-call level so a future refactor that swaps the
-        # two statements regresses unit-test time, not at "why is
-        # this hash key never expiring?" production-debug time.
+        # at the pipeline-call level: hincrby must be queued before
+        # expire so the queued execution sequence is correct, even
+        # though both fire atomically in one round-trip post-pipeline.
         client = MagicMock()
         record_embedding_sync_event("success", redis_client=client)
-        method_names = [c[0] for c in client.method_calls]
+        pipe = self._pipe(client)
+        method_names = [c[0] for c in pipe.method_calls]
+        # Filter to hincrby/expire (Mock may record other attribute
+        # access from the `with` protocol).
+        method_names = [n for n in method_names if n in {"hincrby", "expire"}]
         assert method_names == ["hincrby", "expire"], (
             f"Expected hincrby then expire; got {method_names}"
         )
+
+    def test_pipeline_transaction_false(self):
+        # MULTI/EXEC is unnecessary — the two ops are commutative for
+        # the consumer's HGETALL view (counter increment + TTL refresh
+        # order doesn't matter). Pin transaction=False so a future
+        # refactor that enables MULTI doesn't silently add latency to
+        # the best-effort observability path.
+        client = MagicMock()
+        record_embedding_sync_event("success", redis_client=client)
+        client.pipeline.assert_called_once_with(transaction=False)
+
+    def test_pipeline_execute_fires_once(self):
+        # One round-trip per call. If a regression splits the two ops
+        # back into separate pipelines, execute() would fire twice.
+        client = MagicMock()
+        record_embedding_sync_event("success", redis_client=client)
+        pipe = self._pipe(client)
+        pipe.execute.assert_called_once_with()
 
 
 # ---------------------------------------------------------------------------
@@ -159,14 +199,18 @@ class TestClientInjection:
         with patch.object(db_sync, "_get_redis") as mock_default:
             record_embedding_sync_event("success", redis_client=injected)
         mock_default.assert_not_called()
-        injected.hincrby.assert_called_once()
+        # Post-pipelining: hincrby is queued on the pipeline mock, not
+        # the client directly. The client's .pipeline() being called
+        # confirms the injected client owns the round-trip.
+        injected.pipeline.assert_called_once_with(transaction=False)
 
     def test_default_client_is_get_redis_when_not_injected(self):
         with patch.object(db_sync, "_get_redis") as mock_default:
             mock_default.return_value = MagicMock()
             record_embedding_sync_event("success")
         mock_default.assert_called_once()
-        mock_default.return_value.hincrby.assert_called_once()
+        # Pipeline routed through the default-resolved client.
+        mock_default.return_value.pipeline.assert_called_once_with(transaction=False)
 
 
 # ---------------------------------------------------------------------------
@@ -183,22 +227,29 @@ class TestBestEffortContract:
     (b) no output reaches stdout or stderr.
     """
 
-    def test_hincrby_raising_is_swallowed(self, capsys):
+    def test_pipeline_execute_raising_is_swallowed(self, capsys):
+        # Post-pipelining: both hincrby and expire are queued and
+        # then sent together via pipe.execute(). The atomic
+        # round-trip means we only have one failure point to
+        # exercise — pipe.execute() raising — which covers both
+        # the old "hincrby raised" and "expire raised" scenarios.
         client = MagicMock()
-        client.hincrby.side_effect = RuntimeError("redis down")
+        client.pipeline.return_value.__enter__.return_value.execute.side_effect = (
+            RuntimeError("redis down")
+        )
         # Must not raise.
         record_embedding_sync_event("success", redis_client=client)
         captured = capsys.readouterr()
         assert captured.out == ""
         assert captured.err == ""
 
-    def test_expire_raising_is_swallowed(self, capsys):
-        # The hincrby already succeeded — the event is counted. If
-        # EXPIRE raises (e.g., connection died between calls), the key
-        # would eventually accumulate, but that's a smaller problem
-        # than crashing the worker on a diagnostic failure.
+    def test_pipeline_construction_raising_is_swallowed(self, capsys):
+        # If client.pipeline() itself raises (e.g., the client is
+        # not actually a Redis but something the consumer wired
+        # wrong, or the redis module is uninstallable), the
+        # best-effort contract still holds.
         client = MagicMock()
-        client.expire.side_effect = RuntimeError("connection reset")
+        client.pipeline.side_effect = RuntimeError("not a redis client")
         record_embedding_sync_event("hpc_failure", redis_client=client)
         captured = capsys.readouterr()
         assert captured.out == ""

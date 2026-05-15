@@ -236,10 +236,15 @@ class TestRuntimeGuardBehavior:
         # Literal *does* reach Redis. A subtle bug in the guard's
         # membership check would silently demote a real event to a
         # no-op — exactly what #46 was trying to prevent.
+        # Post-pipelining (iter/2026-05-15): both ops are queued on
+        # the pipeline yielded by `with client.pipeline(...) as pipe:`,
+        # which auto-resolves to
+        # `client.pipeline.return_value.__enter__.return_value`.
         client = MagicMock()
         record_embedding_sync_event(event, redis_client=client)
-        client.hincrby.assert_called_once()
-        client.expire.assert_called_once()
+        pipe = client.pipeline.return_value.__enter__.return_value
+        pipe.hincrby.assert_called_once()
+        pipe.expire.assert_called_once()
 
     def test_empty_string_event_no_ops(self):
         # Edge case worth pinning: an empty string is a falsy value

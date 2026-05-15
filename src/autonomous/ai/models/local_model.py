@@ -14,6 +14,13 @@ from autonomous.model.autoattr import ListAttr, StringAttr
 from autonomous.model.automodel import AutoModel
 from autonomous.taskrunner.autotasks import AutoTasks
 
+# Module-level Session for connection pooling. Ollama and the media_ai
+# service are typically on the same intranet; reusing TCP connections
+# saves the per-call socket setup overhead. Session.post() is
+# thread-safe for the POST-heavy workload here. Tests can monkeypatch
+# `autonomous.ai.models.local_model._SESSION` to a stub.
+_SESSION = requests.Session()
+
 
 class LocalAIModel(AutoModel):
     messages = ListAttr(StringAttr(default=[]))
@@ -58,7 +65,7 @@ class LocalAIModel(AutoModel):
             ],
             "stream": False,
         }
-        res_eval = requests.post(f"{self._ollama_url}/api/chat", json=eval_prompt, timeout=self._text_timeout)
+        res_eval = _SESSION.post(f"{self._ollama_url}/api/chat", json=eval_prompt, timeout=self._text_timeout)
 
         return res_eval.json().get("message", {}).get("content", "")
 
@@ -67,7 +74,7 @@ class LocalAIModel(AutoModel):
         log(f"Flushing {model_name} from memory to free resources...", _print=True)
         try:
             # Sending keep_alive=0 triggers an immediate VRAM/RAM eviction
-            requests.post(
+            _SESSION.post(
                 f"{self._ollama_url}/api/generate",
                 json={"model": model_name, "keep_alive": 0},
                 timeout=30,
@@ -139,7 +146,7 @@ class LocalAIModel(AutoModel):
             last_raw["response"] = None
             if current_job := AutoTasks().get_current_task():
                 current_job.meta(payload=payload)
-            response = requests.post(
+            response = _SESSION.post(
                 f"{self._ollama_url}/api/chat",
                 json=payload,
                 timeout=self._json_timeout,
@@ -227,7 +234,7 @@ class LocalAIModel(AutoModel):
         try:
             if current_job := AutoTasks().get_current_task():
                 current_job.meta(payload=payload)
-            response = requests.post(f"{self._ollama_url}/api/chat", json=payload, timeout=self._text_timeout)
+            response = _SESSION.post(f"{self._ollama_url}/api/chat", json=payload, timeout=self._text_timeout)
             response.raise_for_status()
             if evaluation:
                 eval_res = self._evaluate_response(
@@ -235,7 +242,7 @@ class LocalAIModel(AutoModel):
                 )
                 log(f"Evaluation:\n {eval_res}")
                 payload["messages"][1]["content"] = eval_res
-                response = requests.post(f"{self._ollama_url}/api/chat", json=payload, timeout=self._text_timeout)
+                response = _SESSION.post(f"{self._ollama_url}/api/chat", json=payload, timeout=self._text_timeout)
                 response.raise_for_status()
             result = response.json().get("message", {}).get("content", "")
         except (requests.RequestException, json.JSONDecodeError, ValueError) as e:
@@ -269,7 +276,7 @@ class LocalAIModel(AutoModel):
                 log(f"Payload sent: {payload}...", _print=True)
                 if current_job := AutoTasks().get_current_task():
                     current_job.meta(payload=payload)
-                res = requests.post(f"{self._ollama_url}/api/chat", json=payload, timeout=self._summary_timeout)
+                res = _SESSION.post(f"{self._ollama_url}/api/chat", json=payload, timeout=self._summary_timeout)
                 full_summary += res.json().get("message", {}).get("content", "") + "\n"
                 log(f"Chunk summarized: {full_summary}.", _print=True)
             except (requests.RequestException, json.JSONDecodeError, ValueError) as e:
@@ -288,7 +295,7 @@ class LocalAIModel(AutoModel):
         try:
             if current_job := AutoTasks().get_current_task():
                 current_job.meta(data=data)
-            response = requests.post(
+            response = _SESSION.post(
                 f"{self._audio_url}/transcribe",
                 files=files,
                 data=data,
@@ -310,7 +317,7 @@ class LocalAIModel(AutoModel):
             }
             if current_job := AutoTasks().get_current_task():
                 current_job.meta(payload=payload)
-            response = requests.post(f"{self._audio_url}/tts", json=payload, timeout=self._media_timeout)
+            response = _SESSION.post(f"{self._audio_url}/tts", json=payload, timeout=self._media_timeout)
             response.raise_for_status()
             wav_bytes = response.content
             audio = AudioSegment.from_file(io.BytesIO(wav_bytes), format="wav")
@@ -428,7 +435,7 @@ class LocalAIModel(AutoModel):
             if current_job := AutoTasks().get_current_task():
                 current_job.meta(generation_data=json.dumps(data, indent=2))
 
-            response = requests.post(url, data=data, files={"file": file_obj}, timeout=self._media_timeout)
+            response = _SESSION.post(url, data=data, files={"file": file_obj}, timeout=self._media_timeout)
 
             response.raise_for_status()
             image_content = response.content
@@ -471,7 +478,7 @@ class LocalAIModel(AutoModel):
                     upscale_target_size=(target_w, target_h),
                     upscale_original_size=(base_w, base_h),
                 )
-            upscale_response = requests.post(
+            upscale_response = _SESSION.post(
                 f"{self._image_url}/upscale", data=upscale_data, files=upscale_files,
                 timeout=self._media_timeout,
             )

@@ -25,6 +25,14 @@ from autonomous.model.autoattr import ListAttr, StringAttr
 from autonomous.model.automodel import AutoModel
 from autonomous.taskrunner.autotasks import AutoTasks
 
+# Module-level Session for connection pooling. Reusing a single Session
+# across all _post() calls keeps TCP + TLS connections warm to the HPC,
+# saving ~100-500ms per call after the first (handshake reuse). Session
+# is thread-safe for the read-heavy / POST-heavy workload here; tests
+# can monkeypatch this attribute directly without touching the requests
+# module global state.
+_SESSION = requests.Session()
+
 
 class HPCUnreachableError(RuntimeError):
     """
@@ -87,7 +95,7 @@ class OpenAIClient(AutoModel):
             try:
                 if files is not None:
                     # multipart — let requests set Content-Type with boundary
-                    response = requests.post(
+                    response = _SESSION.post(
                         url,
                         headers=self._headers(content_type=None),
                         files=files,
@@ -95,7 +103,7 @@ class OpenAIClient(AutoModel):
                         timeout=self._timeout,
                     )
                 else:
-                    response = requests.post(
+                    response = _SESSION.post(
                         url,
                         headers=self._headers(),
                         json=json_body,
