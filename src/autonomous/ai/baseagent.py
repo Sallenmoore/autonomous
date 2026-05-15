@@ -69,15 +69,25 @@ class BaseAgent(AutoModel):
         model_class = self.MODEL_REGISTRY.get(provider or self.provider, LocalAIModel)
         # If we already have a client, but it's the WRONG type (e.g. we switched providers), we might want to re-instantiate. For simplicity, we check if it exists first.
         if not isinstance(self.client, model_class):
-            if self.client and persist:
-                # Only delete the old client doc when we're persisting
-                # the new one. Otherwise we'd leave self.client
-                # pointing at a destroyed doc — worse than leaking an
-                # orphan that a future persist=True call can reclaim.
+            if self.client:
+                # Always log the re-instantiation — the operator's
+                # attribution signal for "when did the agent switch
+                # provider?". Pre-#79 this lived inside `and persist:`,
+                # so persist=False switches produced no log AND no
+                # Mongo trace, leaving zero evidence of the swap.
                 log(
-                    f"Re-instantiating client for agent {self.name} from {type(self.client).__name__} to {model_class.__name__}"
+                    f"Re-instantiating client for agent {self.name} "
+                    f"from {type(self.client).__name__} to "
+                    f"{model_class.__name__}"
+                    + ("" if persist else " (persist=False: old doc orphaned)")
                 )
-                self.client.delete()
+                if persist:
+                    # Only delete the old client doc when we're
+                    # persisting the new one. Otherwise we'd leave
+                    # self.client pointing at a destroyed doc —
+                    # worse than leaking an orphan that a future
+                    # persist=True call can reclaim.
+                    self.client.delete()
             self.client = model_class(
                 name=self.name,
                 instructions=self.instructions,

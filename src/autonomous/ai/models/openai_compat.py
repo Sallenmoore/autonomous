@@ -27,10 +27,19 @@ from autonomous.taskrunner.autotasks import AutoTasks
 
 # Module-level Session for connection pooling. Reusing a single Session
 # across all _post() calls keeps TCP + TLS connections warm to the HPC,
-# saving ~100-500ms per call after the first (handshake reuse). Session
-# is thread-safe for the read-heavy / POST-heavy workload here; tests
-# can monkeypatch this attribute directly without touching the requests
-# module global state.
+# saving ~100-500ms per call after the first (handshake reuse).
+#
+# Concurrency note: ``requests.Session.get/post/...`` are safe to call
+# from multiple threads concurrently. What is NOT safe is mutating
+# Session-level state — ``_SESSION.headers``, ``_SESSION.cookies``,
+# ``_SESSION.auth`` — from one thread while another is mid-request.
+# This module sticks to the safe pattern (per-call ``headers=`` kwarg,
+# no Session-level mutation), so the concurrent-POST workload here is
+# fine. PR #76 review comment r3250218106 flagged the prior
+# overstatement; clarified per #78 follow-up.
+#
+# Tests can monkeypatch this attribute directly without touching the
+# requests module global state.
 _SESSION = requests.Session()
 
 
@@ -109,7 +118,16 @@ class OpenAIClient(AutoModel):
                         json=json_body,
                         timeout=self._timeout,
                     )
-            except (requests.ConnectionError, requests.Timeout) as exc:
+            except requests.RequestException as exc:
+                # Broadened from (ConnectionError, Timeout) to the
+                # documented base — also catches RetryError (urllib3
+                # pool exhaustion on Session-pooled requests),
+                # ChunkedEncodingError (interrupted streamed body),
+                # and any future requests-defined subclass. Without
+                # this, those errors would bypass the
+                # HPCUnreachableError translation and the
+                # `[HPC-UNREACHABLE]` scrape sentinel, surfacing as
+                # raw `requests.exceptions.*` to callers. See #78.
                 raise HPCUnreachableError(
                     f"HPC unreachable ({type(exc).__name__}): {exc}"
                 ) from exc

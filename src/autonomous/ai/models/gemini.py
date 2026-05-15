@@ -143,8 +143,24 @@ class GeminiAIModel(AutoModel):
         return self._add_files([{"name": f.name, "file": f}])
 
     def _add_files(self, file_list, mime_type="application/json"):
+        # Two callers exercise this function with two different shapes:
+        # - _add_context passes a list of `{"name", "file"}` dicts
+        # - generate_image (and storyteller's ImageAgent) passes a
+        #   `{filename: fileobj}` dict
+        # Normalize both to a single list-of-dicts shape so the loop
+        # body has one shape to handle. Pre-fix, the code did
+        # `file_list.items()` which AttributeError'd on the list path
+        # and produced `(key, value)` tuples on the dict path — neither
+        # matched the `f["name"]` subscript that followed (#74).
+        if isinstance(file_list, dict):
+            normalized = [
+                {"name": fn, "file": fobj} for fn, fobj in file_list.items()
+            ]
+        else:
+            normalized = list(file_list)
+
         uploaded_files = []
-        for f in list(file_list.items())[: self.MAX_FILES]:
+        for f in normalized[: self.MAX_FILES]:
             fn = f["name"]
             try:
                 self.client.files.delete(name=fn)
