@@ -11,6 +11,12 @@ import requests
 
 from autonomous import log
 
+# Module-level Session for the media_ai embeddings POST. Keeps the TCP
+# connection to the local media service warm across calls in the RQ
+# worker's process lifetime. Process-lifetime; no teardown needed.
+# Tests can monkeypatch this attribute directly.
+_HTTP_SESSION = requests.Session()
+
 EmbeddingSyncEvent = Literal["success", "hpc_failure", "silent_skip"]
 EMBEDDING_SYNC_HEALTH_KEY_PREFIX = "embedding_sync_health"
 _EMBEDDING_SYNC_HEALTH_TTL_SECONDS = 7 * 24 * 3600  # 7 days
@@ -163,8 +169,16 @@ def record_embedding_sync_event(event: EmbeddingSyncEvent, redis_client=None) ->
     try:
         r = redis_client if redis_client is not None else _get_redis()
         key = bucket_key_for()
-        r.hincrby(key, event, 1)
-        r.expire(key, _EMBEDDING_SYNC_HEALTH_TTL_SECONDS)
+        # Pipeline both ops into one Redis round-trip. transaction=False
+        # skips MULTI/EXEC — the two ops are commutative for the
+        # consumer's HGETALL view (counter increment + TTL refresh order
+        # doesn't matter), so the extra latency of a transaction would
+        # buy nothing. pipe.execute() raises into the surrounding
+        # try/except so the best-effort contract is preserved.
+        with r.pipeline(transaction=False) as pipe:
+            pipe.hincrby(key, event, 1)
+            pipe.expire(key, _EMBEDDING_SYNC_HEALTH_TTL_SECONDS)
+            pipe.execute()
     except Exception:
         # See docstring — best-effort observability. A recorder failure
         # MUST NOT surface in the worker's log, stderr, or return path,
@@ -197,7 +211,7 @@ def _get_vector_local(text):
     not this observability path.
     """
     try:
-        resp = requests.post(
+        resp = _HTTP_SESSION.post(
             f"{_media_url()}/embeddings", json={"text": text}, timeout=30
         )
         if resp.status_code == 200:
