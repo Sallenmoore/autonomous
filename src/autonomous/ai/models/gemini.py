@@ -148,16 +148,51 @@ class GeminiAIModel(AutoModel):
         # - generate_image (and storyteller's ImageAgent) passes a
         #   `{filename: fileobj}` dict
         # Normalize both to a single list-of-dicts shape so the loop
-        # body has one shape to handle. Pre-fix, the code did
+        # body has one shape to handle. Pre-#74, the code did
         # `file_list.items()` which AttributeError'd on the list path
         # and produced `(key, value)` tuples on the dict path — neither
-        # matched the `f["name"]` subscript that followed (#74).
+        # matched the `f["name"]` subscript that followed.
+        #
+        # Shape guard (#85): only the two documented shapes are
+        # accepted. A naked `{"name": ..., "file": ...}` dict (not
+        # wrapped in a list) would otherwise iterate the OUTER dict's
+        # two items and silently upload two bogus entries. `bytes`,
+        # `str`, and other iterables would `list()` to something that
+        # TypeError's later in the loop — explicit upfront rejection
+        # is more debuggable.
         if isinstance(file_list, dict):
+            # The {filename: fileobj} shape. A naked single-file dict
+            # like {"name": "x", "file": fobj} would land here too and
+            # silently corrupt; reject by checking for the misuse
+            # pattern.
+            if set(file_list.keys()) == {"name", "file"}:
+                raise TypeError(
+                    "_add_files received a single {'name', 'file'} dict; "
+                    "wrap it in a list ([{'name': ..., 'file': ...}]) or "
+                    "pass {filename: fileobj, ...} instead. See #85."
+                )
             normalized = [
                 {"name": fn, "file": fobj} for fn, fobj in file_list.items()
             ]
-        else:
+        elif isinstance(file_list, (list, tuple)):
             normalized = list(file_list)
+            for entry in normalized:
+                if not (
+                    isinstance(entry, dict)
+                    and "name" in entry
+                    and "file" in entry
+                ):
+                    raise TypeError(
+                        f"_add_files list entries must be "
+                        f"{{'name', 'file'}} dicts; got "
+                        f"{type(entry).__name__}: {entry!r}. See #85."
+                    )
+        else:
+            raise TypeError(
+                f"_add_files expects a list-of-dicts or "
+                f"{{filename: fileobj}} dict; got "
+                f"{type(file_list).__name__}: {file_list!r}. See #85."
+            )
 
         uploaded_files = []
         for f in normalized[: self.MAX_FILES]:
