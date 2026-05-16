@@ -123,15 +123,25 @@ class OpenAIClient(AutoModel):
                 requests.exceptions.InvalidURL,
                 requests.exceptions.InvalidSchema,
                 requests.exceptions.InvalidJSONError,
+                requests.exceptions.URLRequired,
+                requests.exceptions.InvalidHeader,
+                # InvalidProxyURL is an InvalidURL subclass and would
+                # be caught by the entry above today; listing it
+                # explicitly defends the intent against future MRO
+                # changes in `requests`. See #89.
+                requests.exceptions.InvalidProxyURL,
             ):
                 # Config / programmer errors — propagate raw. These
-                # mean "URL is malformed" or "payload is unserializable"
-                # — retry will not help, and translating to
-                # HPCUnreachableError would burn _retry_attempts rounds
-                # against an unfixable error AND mislead operators
-                # debugging Sentry alerts toward network/DNS/firewall
-                # when the real issue is a typo'd HPC_API_BASE_URL.
-                # See #84 — must come BEFORE the broader catch below.
+                # mean "URL is malformed", "header is malformed", or
+                # "payload is unserializable" — retry will not help,
+                # and translating to HPCUnreachableError would burn
+                # _retry_attempts rounds against an unfixable error
+                # AND mislead operators debugging Sentry alerts toward
+                # network/DNS/firewall when the real issue is a typo'd
+                # HPC_API_BASE_URL or a malformed header value. See
+                # #84 (initial 4 types) and #89 (URLRequired,
+                # InvalidHeader, InvalidProxyURL added) — must come
+                # BEFORE the broader catch below.
                 raise
             except requests.RequestException as exc:
                 # Broadened from (ConnectionError, Timeout) to the
