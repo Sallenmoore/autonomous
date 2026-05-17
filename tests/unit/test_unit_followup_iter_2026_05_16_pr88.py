@@ -250,10 +250,10 @@ class TestGeminiAddFilesSubsetGuard:
         misused = {"name": "alice", "file": f, "extra": "metadata"}
         with pytest.raises(TypeError) as exc:
             GeminiAIModel._add_files(stub, misused)
-        # Anchor the issue reference in the message — operators
-        # debugging "why did this raise?" should land on #90.
-        assert "#90" in str(exc.value) or "#85, #90" in str(exc.value), (
-            f"TypeError message should reference #90 (or #85, #90); "
+        # Pin the both-keys error's signature phrase (English, stable
+        # across comment-hygiene churn that drops issue refs).
+        assert "with both 'name' and 'file' keys" in str(exc.value), (
+            f"TypeError must use the both-keys signature phrase; "
             f"got: {exc.value!r}"
         )
 
@@ -361,19 +361,22 @@ class TestGeminiAddFilesValueShapeGuard:
         return GeminiAIModel, _Stub()
 
     def test_asymmetric_typo_string_value_raises(self):
-        # The substance of #100: a dict that DOESN'T contain both
-        # "name" and "file" (so #90 guard doesn't fire) but has a
-        # non-file value (the literal string "alice.webp") in what
-        # should be the fileobj slot. Pre-#100 this silently uploaded.
+        # A dict that DOESN'T contain both "name" and "file" (so the
+        # both-keys guard doesn't fire) but has a non-file value
+        # (the literal string "alice.webp") in what should be the
+        # fileobj slot. Without the per-value guard this silently
+        # uploaded.
         GeminiAIModel, stub = self._stub()
         misused = {"name": "alice.webp", "metadata": io.BytesIO(b"x")}
         with pytest.raises(TypeError) as exc:
             GeminiAIModel._add_files(stub, misused)
-        # The string value for key "name" is what trips the guard.
-        # Anchor the issue ref so operators land on #100.
         msg = str(exc.value)
-        assert "#100" in msg or "#85, #90, #100" in msg, (
-            f"TypeError message should reference #100; got: {msg!r}"
+        # Pin the value-shape error's signature phrase (stable across
+        # comment-hygiene churn — see the precedence test for the
+        # discriminator strategy).
+        assert "file-like object or bytes" in msg, (
+            f"value-shape error must use its signature phrase; "
+            f"got: {msg!r}"
         )
         assert "str" in msg, (
             f"Error message should call out the offending type "

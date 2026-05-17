@@ -64,21 +64,11 @@ class AutoUser(AutoModel):
 
     @classmethod
     def get_guest(cls):
-        """Return the guest user, memoized for process lifetime.
-
-        The guest document is effectively immutable, so we cache it on the
-        class to eliminate a MongoDB round-trip on every unauthenticated
-        request. Tests / admin tooling can call
-        :meth:`_invalidate_guest_cache` to drop the memo.
-        """
+        """Return the guest user, memoized class-side (doc is effectively immutable)."""
         cached = cls._cached_guest
         if cached is not None:
             return cached
         guest = cls.find(name="_GuestOfAutonomous_")
-        # Identity check, not truthiness: a future find() override that
-        # returned an empty collection / falsy doc instead of None would
-        # otherwise trigger an unwanted second bootstrap and memoize a
-        # duplicate guest for the rest of process lifetime.
         if guest is None:
             guest = cls(
                 name="_GuestOfAutonomous_",
@@ -89,12 +79,10 @@ class AutoUser(AutoModel):
             guest.save()
             log(
                 f"Bootstrapped new guest doc "
-                f"pk={getattr(guest, 'pk', '?')} on {cls.__name__}"
+                f"pk={getattr(guest, 'pk', '?')} on {cls.__name__}",
+                _print=False,
             )
         cls._cached_guest = guest
-        # `getattr` default keeps this log defensive against
-        # unexpected `find()` returns — the same robustness that
-        # motivates the `is None` check above.
         log(
             f"Memoized guest pk={getattr(guest, 'pk', '?')} "
             f"on {cls.__name__}",
@@ -104,12 +92,7 @@ class AutoUser(AutoModel):
 
     @classmethod
     def _invalidate_guest_cache(cls):
-        """Drop the memoized guest doc on this class and every descendant.
-
-        Walks the subclass tree from this class downward so a project with
-        sibling AutoUser subclasses (User, AdminUser, …) can call
-        ``AutoUser._invalidate_guest_cache()`` once and clear all of them.
-        """
+        """Drop the memoized guest on this class and every descendant."""
         def _walk(c):
             c._cached_guest = None
             for sub in c.__subclasses__():
@@ -118,17 +101,11 @@ class AutoUser(AutoModel):
 
     @classmethod
     def auto_post_save(cls, sender, document, **kwargs):
-        # Bound invalidation to the AutoUser subtree: the post_save signal
-        # is wired globally and any AutoModel save reaches this dispatcher,
-        # so cross-model name collisions (a non-User document with name
-        # "_GuestOfAutonomous_") would otherwise clobber the cache.
         if not isinstance(document, cls):
             return
         if getattr(document, "name", None) != "_GuestOfAutonomous_":
             return
-        # Walk the entire AutoUser subtree, not just `cls`'s descendants:
-        # saving via AdminUser must also drop User's stale cache, since
-        # they share the same Mongo guest document.
+        # Walk from AutoUser (not cls) so sibling subclass caches drop too.
         AutoUser._invalidate_guest_cache()
 
     @property

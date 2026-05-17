@@ -125,48 +125,19 @@ class OpenAIClient(AutoModel):
                 requests.exceptions.InvalidJSONError,
                 requests.exceptions.URLRequired,
                 requests.exceptions.InvalidHeader,
-                # InvalidProxyURL is an InvalidURL subclass and would
-                # be caught by the entry above today; listing it
-                # explicitly defends the intent against future MRO
-                # changes in `requests`.
                 requests.exceptions.InvalidProxyURL,
-                # SSLError: corporate-proxy cert bundle misconfig.
-                # Translating to HPCUnreachableError misdirects on-call
-                # toward VPN/firewall when the real issue is local cert
-                # config — and burns _retry_attempts rounds first.
                 requests.exceptions.SSLError,
-                # ProxyError: proxy URL invalid, proxy auth misconfig,
-                # or proxy unreachable for non-network reasons. Same
-                # retry-spin + Sentry-misdirection failure mode as SSL.
                 requests.exceptions.ProxyError,
             ):
-                # Config / programmer errors — propagate raw. These
-                # mean "URL is malformed", "header is malformed",
-                # "TLS cert is misconfigured", or "payload is
-                # unserializable" — retry will not help, and
-                # translating to HPCUnreachableError would burn
-                # _retry_attempts rounds against an unfixable error
-                # AND mislead operators debugging Sentry alerts toward
-                # network/DNS/firewall when the real issue is a typo'd
-                # HPC_API_BASE_URL or a bad cert bundle. Must come
-                # BEFORE the broader catch below.
-                #
-                # ContentDecodingError is deliberately NOT in the
-                # carve-out: it's ambiguous (could be a transient
-                # server bug returning malformed gzip), so the retry
-                # path is the more conservative default until we have
-                # production evidence it's actually unfixable.
+                # Config / programmer errors — propagate raw rather
+                # than burn retry against unfixable causes. Must come
+                # before the broader catch below.
                 raise
             except requests.RequestException as exc:
-                # Broadened from (ConnectionError, Timeout) to the
-                # documented base — also catches RetryError (urllib3
-                # pool exhaustion on Session-pooled requests),
-                # ChunkedEncodingError (interrupted streamed body),
-                # and any future requests-defined subclass. Without
-                # this, those errors would bypass the
-                # HPCUnreachableError translation and the
-                # `[HPC-UNREACHABLE]` scrape sentinel, surfacing as
-                # raw `requests.exceptions.*` to callers. See #78.
+                # Catch the documented base so transient transport
+                # errors (RetryError, ChunkedEncodingError, future
+                # subclasses) flow through the HPCUnreachableError
+                # translation and the [HPC-UNREACHABLE] scrape sentinel.
                 raise HPCUnreachableError(
                     f"HPC unreachable ({type(exc).__name__}): {exc}"
                 ) from exc
