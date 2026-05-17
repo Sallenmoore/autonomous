@@ -18,6 +18,7 @@ class AutoUser(AutoModel):
         "abstract": True,
         "allow_inheritance": True,
         "strict": False,
+        "indexes": ["name"],
     }
     name = StringAttr(default="Anonymous")
     email = StringAttr(required=True)
@@ -26,6 +27,10 @@ class AutoUser(AutoModel):
     provider = StringAttr()
     role = StringAttr(default="guest")
     token = StringAttr()
+
+    # Process-lifetime cache for the singleton guest doc. Set on the concrete
+    # subclass (not AutoUser) so each AutoUser subclass keeps its own cache.
+    _cached_guest = None
 
     def __eq__(self, other):
         if other is None or not hasattr(other, "pk"):
@@ -59,9 +64,16 @@ class AutoUser(AutoModel):
 
     @classmethod
     def get_guest(cls):
+        """Return the guest user, memoized for process lifetime.
+
+        The guest document is effectively immutable, so we cache it on the
+        class to eliminate a MongoDB round-trip on every unauthenticated
+        request. Tests / admin tooling can call
+        :meth:`_invalidate_guest_cache` to drop the memo.
         """
-        Returns a guest user.
-        """
+        cached = cls._cached_guest
+        if cached is not None:
+            return cached
         guest = cls.find(name="_GuestOfAutonomous_")
         if not guest:
             guest = cls(
@@ -71,7 +83,21 @@ class AutoUser(AutoModel):
                 role="guest",
             )
             guest.save()
+        cls._cached_guest = guest
         return guest
+
+    @classmethod
+    def _invalidate_guest_cache(cls):
+        """Drop the memoized guest doc. Test/admin helper."""
+        cls._cached_guest = None
+
+    @classmethod
+    def auto_post_save(cls, sender, document, **kwargs):
+        # Keep the cached guest doc consistent with Mongo: if any code path
+        # saves the guest record (initial bootstrap, admin tooling, future
+        # migrations), drop the memo so the next get_guest() reloads.
+        if getattr(document, "name", None) == "_GuestOfAutonomous_":
+            cls._cached_guest = None
 
     @property
     def is_authenticated(self):

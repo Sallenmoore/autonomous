@@ -164,12 +164,20 @@ class GeminiAIModel(AutoModel):
             # The {filename: fileobj} shape. A naked single-file dict
             # like {"name": "x", "file": fobj} would land here too and
             # silently corrupt; reject by checking for the misuse
-            # pattern.
-            if set(file_list.keys()) == {"name", "file"}:
+            # pattern. The check is subset, not exact-equality (#90):
+            # an N-key dict that happens to contain both 'name' and
+            # 'file' is the same misuse pattern, just with extra
+            # metadata fields. The legitimate {filename: fileobj}
+            # shape has filenames as keys (e.g. "alice.webp"), not
+            # the literal strings "name" / "file", so a real caller
+            # would essentially never trip this guard.
+            if "name" in file_list and "file" in file_list:
                 raise TypeError(
-                    "_add_files received a single {'name', 'file'} dict; "
-                    "wrap it in a list ([{'name': ..., 'file': ...}]) or "
-                    "pass {filename: fileobj, ...} instead. See #85."
+                    "_add_files received a dict with both 'name' and 'file' "
+                    "keys, suggesting a single-file misuse. Wrap it in a list "
+                    "([{'name': ..., 'file': ...}]) or pass "
+                    "{filename: fileobj, ...} with multiple distinct "
+                    "filenames. See #85, #90."
                 )
             normalized = [
                 {"name": fn, "file": fobj} for fn, fobj in file_list.items()

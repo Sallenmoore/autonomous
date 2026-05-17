@@ -79,6 +79,14 @@ class TestOpenAIPostPropagatesConfigErrors:
             requests.exceptions.InvalidURL,
             requests.exceptions.InvalidSchema,
             requests.exceptions.InvalidJSONError,
+            # Added in lockstep with #89 — the original 4-type carve-
+            # out was incomplete; URLRequired and InvalidHeader are
+            # also pure config errors that retry will not help.
+            # InvalidProxyURL is an InvalidURL subclass already caught
+            # transitively but listed for MRO-drift defense.
+            requests.exceptions.URLRequired,
+            requests.exceptions.InvalidHeader,
+            requests.exceptions.InvalidProxyURL,
         ],
     )
     def test_config_error_propagates_raw(self, exc_class, monkeypatch):
