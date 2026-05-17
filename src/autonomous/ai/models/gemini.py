@@ -179,9 +179,27 @@ class GeminiAIModel(AutoModel):
                     "{filename: fileobj, ...} with multiple distinct "
                     "filenames. See #85, #90."
                 )
-            normalized = [
-                {"name": fn, "file": fobj} for fn, fobj in file_list.items()
-            ]
+            normalized = []
+            for fn, fobj in file_list.items():
+                # Value-shape guard: in the {filename: fileobj} dict
+                # shape, every VALUE must look like a file (has .read())
+                # or be raw bytes. An asymmetric typo such as
+                # {"name": "alice.webp", "metadata": fobj} bypasses the
+                # both-key guard above and would otherwise silently
+                # iterate to {display_name="name", content="alice.webp"}
+                # — a string uploaded as file content. Rejecting on
+                # value shape catches this at the right layer.
+                if not (hasattr(fobj, "read") or isinstance(fobj, (bytes, bytearray))):
+                    raise TypeError(
+                        f"_add_files: value for key {fn!r} is not a "
+                        f"file-like object or bytes; got "
+                        f"{type(fobj).__name__}: {fobj!r}. Did you "
+                        f"mean to pass a single-item list "
+                        f"[{{'name': ..., 'file': ...}}] instead of "
+                        f"the {{filename: fileobj}} dict form? "
+                        f"See #85, #90, #100."
+                    )
+                normalized.append({"name": fn, "file": fobj})
         elif isinstance(file_list, (list, tuple)):
             normalized = list(file_list)
             for entry in normalized:

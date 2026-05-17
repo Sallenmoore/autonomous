@@ -69,13 +69,13 @@ class TestOpenAICarveOutSurfaceExtended:
         client._retry_backoff = 0
         return client
 
-    def test_carve_out_source_contains_all_seven_types(self):
+    def test_carve_out_source_contains_all_nine_types(self):
         # Source-text pin: the except tuple must enumerate at least
-        # the 7 types this PR ratifies. A regression that drops one
-        # silently (e.g. a merge resolving to the pre-#89 tuple)
-        # would slip through the parametrize-list check if someone
-        # also edited that list back to 4. This pin is the second
-        # line of defense — names checked against the source file.
+        # the 9 types currently ratified. A regression that drops one
+        # silently (e.g. a merge resolving to a pre-#99 tuple) would
+        # slip through the parametrize-list check if someone also
+        # edited that list back. This pin is the second line of
+        # defense — names checked against the source file.
         src = pathlib.Path(
             "src/autonomous/ai/models/openai_compat.py"
         ).read_text()
@@ -87,13 +87,47 @@ class TestOpenAICarveOutSurfaceExtended:
             "URLRequired",
             "InvalidHeader",
             "InvalidProxyURL",
+            "SSLError",
+            "ProxyError",
         )
         missing = [n for n in required if n not in src]
         assert not missing, (
             f"openai_compat.py is missing carve-out types: {missing}. "
-            f"Carve-out must enumerate all 7 config-error types per "
-            f"#84 + #89, even if InvalidProxyURL is transitively "
-            f"caught by InvalidURL today."
+            f"Carve-out must enumerate all 9 config-error types per "
+            f"#84 + #89 + #99."
+        )
+
+    def test_carve_out_does_NOT_contain_contentdecodingerror(self):
+        # Negative pin: ContentDecodingError was deliberately excluded
+        # in #99 because it can be transient (server bug returning
+        # malformed gzip). Including it would short-circuit the
+        # retry path for cases where retry actually helps. Keep this
+        # pin so a well-intentioned "let's just add all the errors"
+        # PR doesn't quietly broaden the carve-out.
+        src = pathlib.Path(
+            "src/autonomous/ai/models/openai_compat.py"
+        ).read_text()
+        # Locate the carve-out tuple specifically by the canary type
+        # (`MissingSchema` is the always-first entry per #84). Anchor
+        # by content, NOT by "first except block" — a future edit
+        # that adds an earlier `except` for an unrelated reason would
+        # silently change which tuple this pin tests.
+        import re
+        candidates = [
+            m.group(1) for m in re.finditer(r"except\s*\(([^)]+)\):", src)
+        ]
+        carve_out = next(
+            (body for body in candidates if "MissingSchema" in body),
+            None,
+        )
+        assert carve_out is not None, (
+            "could not locate the config-error carve-out tuple "
+            "(no `except (...)` block containing MissingSchema)"
+        )
+        assert "ContentDecodingError" not in carve_out, (
+            "ContentDecodingError must NOT be in the carve-out tuple "
+            "per the #99 decision — it can be transient, so retry is "
+            "the safer default. (Mentions in comments are fine.)"
         )
 
     def test_invalid_header_propagates_raw_without_retry(self, monkeypatch):
@@ -281,6 +315,107 @@ class TestGeminiAddFilesSubsetGuard:
             f"Symmetric to the 'only-name' case: clean return "
             f"proves guard did not fire. Got: {result!r}"
         )
+
+
+# ===========================================================================
+# #100 — gemini _add_files value-shape validation (asymmetric typo guard)
+# ===========================================================================
+
+
+class TestGeminiAddFilesValueShapeGuard:
+    """Pin the value-shape validation that catches asymmetric typos.
+
+    The #90 both-keys guard catches ``{"name": ..., "file": ...}`` —
+    but a caller who typo'd one key (``{"name": "alice.webp",
+    "metadata": fobj}``) bypasses it, falls through to the
+    ``{filename: fileobj}`` interpretation, and silently uploads two
+    bogus files (one with display_name="name" and content="alice.webp"
+    as a literal string). #100 added a per-value shape check that
+    catches this at the right layer (value type, not key set).
+    """
+
+    def _stub(self):
+        # Same MAX_FILES=0 short-circuit pattern as the #90 tests —
+        # we don't need the upload loop to run to prove the guard fires.
+        from autonomous.ai.models.gemini import GeminiAIModel
+
+        class _ClientFilesStub:
+            @staticmethod
+            def list():
+                return []
+
+        class _ClientStub:
+            files = _ClientFilesStub()
+
+        class _Stub:
+            MAX_FILES = 0
+            client = _ClientStub()
+
+            def __init__(self):
+                self.files = []
+                self.file_refs = []
+
+            def save(self):
+                pass
+
+        return GeminiAIModel, _Stub()
+
+    def test_asymmetric_typo_string_value_raises(self):
+        # The substance of #100: a dict that DOESN'T contain both
+        # "name" and "file" (so #90 guard doesn't fire) but has a
+        # non-file value (the literal string "alice.webp") in what
+        # should be the fileobj slot. Pre-#100 this silently uploaded.
+        GeminiAIModel, stub = self._stub()
+        misused = {"name": "alice.webp", "metadata": io.BytesIO(b"x")}
+        with pytest.raises(TypeError) as exc:
+            GeminiAIModel._add_files(stub, misused)
+        # The string value for key "name" is what trips the guard.
+        # Anchor the issue ref so operators land on #100.
+        msg = str(exc.value)
+        assert "#100" in msg or "#85, #90, #100" in msg, (
+            f"TypeError message should reference #100; got: {msg!r}"
+        )
+        assert "str" in msg, (
+            f"Error message should call out the offending type "
+            f"(str) so the caller can find their typo; got: {msg!r}"
+        )
+
+    def test_asymmetric_typo_int_value_raises(self):
+        # Different non-file-shape value — proves the guard is on
+        # shape, not the specific string trap.
+        GeminiAIModel, stub = self._stub()
+        misused = {"image_id": 12345, "other.webp": io.BytesIO(b"y")}
+        with pytest.raises(TypeError):
+            GeminiAIModel._add_files(stub, misused)
+
+    def test_bytes_value_flows_through(self):
+        # Raw bytes are a legitimate file content shape (used for
+        # in-memory image generation). Must NOT trip the guard.
+        GeminiAIModel, stub = self._stub()
+        legitimate = {"alice.webp": b"\x89PNG\r\n\x1a\n...png bytes..."}
+        result = GeminiAIModel._add_files(stub, legitimate)
+        assert result == [], (
+            f"bytes is a valid fileobj shape; clean MAX_FILES=0 "
+            f"flow-through expected. Got: {result!r}"
+        )
+
+    def test_bytearray_value_flows_through(self):
+        # bytearray is the mutable cousin of bytes and is also a
+        # legitimate file-content shape — pin so a regression that
+        # narrows to `isinstance(fobj, bytes)` (dropping bytearray)
+        # gets caught.
+        GeminiAIModel, stub = self._stub()
+        legitimate = {"bob.webp": bytearray(b"image bytes")}
+        result = GeminiAIModel._add_files(stub, legitimate)
+        assert result == []
+
+    def test_file_like_value_flows_through(self):
+        # Anything with a .read() attribute — the canonical file-like
+        # protocol used by requests/urllib3. Pin the duck-type contract.
+        GeminiAIModel, stub = self._stub()
+        legitimate = {"carol.webp": io.BytesIO(b"image bytes")}
+        result = GeminiAIModel._add_files(stub, legitimate)
+        assert result == []
 
 
 # ===========================================================================
