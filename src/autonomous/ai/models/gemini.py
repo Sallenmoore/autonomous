@@ -161,34 +161,21 @@ class GeminiAIModel(AutoModel):
         # TypeError's later in the loop — explicit upfront rejection
         # is more debuggable.
         if isinstance(file_list, dict):
-            # The {filename: fileobj} shape. A naked single-file dict
-            # like {"name": "x", "file": fobj} would land here too and
-            # silently corrupt; reject by checking for the misuse
-            # pattern. The check is subset, not exact-equality (#90):
-            # an N-key dict that happens to contain both 'name' and
-            # 'file' is the same misuse pattern, just with extra
-            # metadata fields. The legitimate {filename: fileobj}
-            # shape has filenames as keys (e.g. "alice.webp"), not
-            # the literal strings "name" / "file", so a real caller
-            # would essentially never trip this guard.
+            # Subset check (not exact-equality): any dict containing both
+            # "name" and "file" keys is a single-file misuse, regardless
+            # of extra metadata keys.
             if "name" in file_list and "file" in file_list:
                 raise TypeError(
                     "_add_files received a dict with both 'name' and 'file' "
                     "keys, suggesting a single-file misuse. Wrap it in a list "
                     "([{'name': ..., 'file': ...}]) or pass "
                     "{filename: fileobj, ...} with multiple distinct "
-                    "filenames. See #85, #90."
+                    "filenames."
                 )
             normalized = []
             for fn, fobj in file_list.items():
-                # Value-shape guard: in the {filename: fileobj} dict
-                # shape, every VALUE must look like a file (has .read())
-                # or be raw bytes. An asymmetric typo such as
-                # {"name": "alice.webp", "metadata": fobj} bypasses the
-                # both-key guard above and would otherwise silently
-                # iterate to {display_name="name", content="alice.webp"}
-                # — a string uploaded as file content. Rejecting on
-                # value shape catches this at the right layer.
+                # Per-value guard: catches asymmetric typos that smuggle
+                # a non-file value into the fileobj slot.
                 if not (hasattr(fobj, "read") or isinstance(fobj, (bytes, bytearray))):
                     raise TypeError(
                         f"_add_files: value for key {fn!r} is not a "
@@ -196,8 +183,7 @@ class GeminiAIModel(AutoModel):
                         f"{type(fobj).__name__}: {fobj!r}. Did you "
                         f"mean to pass a single-item list "
                         f"[{{'name': ..., 'file': ...}}] instead of "
-                        f"the {{filename: fileobj}} dict form? "
-                        f"See #85, #90, #100."
+                        f"the {{filename: fileobj}} dict form?"
                     )
                 normalized.append({"name": fn, "file": fobj})
         elif isinstance(file_list, (list, tuple)):
