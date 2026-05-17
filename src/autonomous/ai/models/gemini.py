@@ -143,37 +143,42 @@ class GeminiAIModel(AutoModel):
         return self._add_files([{"name": f.name, "file": f}])
 
     def _add_files(self, file_list, mime_type="application/json"):
-        # Two callers exercise this function with two different shapes:
-        # - _add_context passes a list of `{"name", "file"}` dicts
-        # - generate_image (and storyteller's ImageAgent) passes a
-        #   `{filename: fileobj}` dict
-        # Normalize both to a single list-of-dicts shape so the loop
-        # body has one shape to handle. Pre-#74, the code did
-        # `file_list.items()` which AttributeError'd on the list path
-        # and produced `(key, value)` tuples on the dict path — neither
-        # matched the `f["name"]` subscript that followed.
-        #
-        # Shape guard (#85): only the two documented shapes are
-        # accepted. A naked `{"name": ..., "file": ...}` dict (not
-        # wrapped in a list) would otherwise iterate the OUTER dict's
-        # two items and silently upload two bogus entries. `bytes`,
-        # `str`, and other iterables would `list()` to something that
-        # TypeError's later in the loop — explicit upfront rejection
-        # is more debuggable.
+        # Accepts either a list of {"name", "file"} dicts (from
+        # _add_context) or a {filename: fileobj} dict (from
+        # generate_image / ImageAgent); normalize both to one shape.
         if isinstance(file_list, dict):
-            # The {filename: fileobj} shape. A naked single-file dict
-            # like {"name": "x", "file": fobj} would land here too and
-            # silently corrupt; reject by checking for the misuse
-            # pattern.
-            if set(file_list.keys()) == {"name", "file"}:
+            # Subset check (not exact-equality): any dict containing both
+            # "name" and "file" keys is a single-file misuse, regardless
+            # of extra metadata keys.
+            #
+            # NOTE: the phrase "with both 'name' and 'file' keys" below
+            # is load-bearing as a test discriminator vs. the value-shape
+            # error in the inner loop. Reword only with a matching test
+            # update.
+            if "name" in file_list and "file" in file_list:
                 raise TypeError(
-                    "_add_files received a single {'name', 'file'} dict; "
-                    "wrap it in a list ([{'name': ..., 'file': ...}]) or "
-                    "pass {filename: fileobj, ...} instead. See #85."
+                    "_add_files received a dict with both 'name' and 'file' "
+                    "keys, suggesting a single-file misuse. Wrap it in a list "
+                    "([{'name': ..., 'file': ...}]) or pass "
+                    "{filename: fileobj, ...} with multiple distinct "
+                    "filenames."
                 )
-            normalized = [
-                {"name": fn, "file": fobj} for fn, fobj in file_list.items()
-            ]
+            normalized = []
+            for fn, fobj in file_list.items():
+                # Per-value guard: catches asymmetric typos that smuggle
+                # a non-file value into the fileobj slot.
+                # NOTE: "file-like object or bytes" is also a load-bearing
+                # discriminator phrase — see test comment above.
+                if not (hasattr(fobj, "read") or isinstance(fobj, (bytes, bytearray))):
+                    raise TypeError(
+                        f"_add_files: value for key {fn!r} is not a "
+                        f"file-like object or bytes; got "
+                        f"{type(fobj).__name__}: {fobj!r}. Did you "
+                        f"mean to pass a single-item list "
+                        f"[{{'name': ..., 'file': ...}}] instead of "
+                        f"the {{filename: fileobj}} dict form?"
+                    )
+                normalized.append({"name": fn, "file": fobj})
         elif isinstance(file_list, (list, tuple)):
             normalized = list(file_list)
             for entry in normalized:
@@ -185,13 +190,13 @@ class GeminiAIModel(AutoModel):
                     raise TypeError(
                         f"_add_files list entries must be "
                         f"{{'name', 'file'}} dicts; got "
-                        f"{type(entry).__name__}: {entry!r}. See #85."
+                        f"{type(entry).__name__}: {entry!r}."
                     )
         else:
             raise TypeError(
                 f"_add_files expects a list-of-dicts or "
                 f"{{filename: fileobj}} dict; got "
-                f"{type(file_list).__name__}: {file_list!r}. See #85."
+                f"{type(file_list).__name__}: {file_list!r}."
             )
 
         uploaded_files = []

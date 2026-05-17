@@ -18,6 +18,7 @@ class AutoUser(AutoModel):
         "abstract": True,
         "allow_inheritance": True,
         "strict": False,
+        "indexes": ["name"],
     }
     name = StringAttr(default="Anonymous")
     email = StringAttr(required=True)
@@ -26,6 +27,10 @@ class AutoUser(AutoModel):
     provider = StringAttr()
     role = StringAttr(default="guest")
     token = StringAttr()
+
+    # Process-lifetime cache for the singleton guest doc. Set on the concrete
+    # subclass (not AutoUser) so each AutoUser subclass keeps its own cache.
+    _cached_guest = None
 
     def __eq__(self, other):
         if other is None or not hasattr(other, "pk"):
@@ -59,11 +64,12 @@ class AutoUser(AutoModel):
 
     @classmethod
     def get_guest(cls):
-        """
-        Returns a guest user.
-        """
+        """Return the guest user, memoized class-side (doc is effectively immutable)."""
+        cached = cls._cached_guest
+        if cached is not None:
+            return cached
         guest = cls.find(name="_GuestOfAutonomous_")
-        if not guest:
+        if guest is None:
             guest = cls(
                 name="_GuestOfAutonomous_",
                 email="guest@mail.com",
@@ -71,7 +77,36 @@ class AutoUser(AutoModel):
                 role="guest",
             )
             guest.save()
+            log(
+                f"Bootstrapped new guest doc "
+                f"pk={getattr(guest, 'pk', '?')} on {cls.__name__}",
+                _print=False,
+            )
+        cls._cached_guest = guest
+        log(
+            f"Memoized guest pk={getattr(guest, 'pk', '?')} "
+            f"on {cls.__name__}",
+            _print=False,
+        )
         return guest
+
+    @classmethod
+    def _invalidate_guest_cache(cls):
+        """Drop the memoized guest on this class and every descendant."""
+        def _walk(c):
+            c._cached_guest = None
+            for sub in c.__subclasses__():
+                _walk(sub)
+        _walk(cls)
+
+    @classmethod
+    def auto_post_save(cls, sender, document, **kwargs):
+        if not isinstance(document, cls):
+            return
+        if getattr(document, "name", None) != "_GuestOfAutonomous_":
+            return
+        # Walk from AutoUser (not cls) so sibling subclass caches drop too.
+        AutoUser._invalidate_guest_cache()
 
     @property
     def is_authenticated(self):

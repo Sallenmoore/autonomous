@@ -25,21 +25,9 @@ from autonomous.model.autoattr import ListAttr, StringAttr
 from autonomous.model.automodel import AutoModel
 from autonomous.taskrunner.autotasks import AutoTasks
 
-# Module-level Session for connection pooling. Reusing a single Session
-# across all _post() calls keeps TCP + TLS connections warm to the HPC,
-# saving ~100-500ms per call after the first (handshake reuse).
-#
-# Concurrency note: ``requests.Session.get/post/...`` are safe to call
-# from multiple threads concurrently. What is NOT safe is mutating
-# Session-level state — ``_SESSION.headers``, ``_SESSION.cookies``,
-# ``_SESSION.auth`` — from one thread while another is mid-request.
-# This module sticks to the safe pattern (per-call ``headers=`` kwarg,
-# no Session-level mutation), so the concurrent-POST workload here is
-# fine. PR #76 review comment r3250218106 flagged the prior
-# overstatement; clarified per #78 follow-up.
-#
-# Tests can monkeypatch this attribute directly without touching the
-# requests module global state.
+# Module-level Session pools connections; concurrent calls are safe but
+# Session-state mutation (headers/cookies/auth) from a sibling thread
+# is not — every call site here uses per-request `headers=` kwargs.
 _SESSION = requests.Session()
 
 
@@ -123,26 +111,26 @@ class OpenAIClient(AutoModel):
                 requests.exceptions.InvalidURL,
                 requests.exceptions.InvalidSchema,
                 requests.exceptions.InvalidJSONError,
+                requests.exceptions.URLRequired,
+                requests.exceptions.InvalidHeader,
+                requests.exceptions.InvalidProxyURL,
+                requests.exceptions.SSLError,
+                requests.exceptions.ProxyError,
             ):
-                # Config / programmer errors — propagate raw. These
-                # mean "URL is malformed" or "payload is unserializable"
-                # — retry will not help, and translating to
-                # HPCUnreachableError would burn _retry_attempts rounds
-                # against an unfixable error AND mislead operators
-                # debugging Sentry alerts toward network/DNS/firewall
-                # when the real issue is a typo'd HPC_API_BASE_URL.
-                # See #84 — must come BEFORE the broader catch below.
+                # Config / programmer errors — propagate raw rather
+                # than burn retry against unfixable causes. Must come
+                # before the broader catch below.
+                #
+                # ContentDecodingError is deliberately NOT in this tuple:
+                # malformed-gzip bodies can be transient server bugs, so
+                # retry is the safer default. A test in the followup
+                # suite pins the exclusion.
                 raise
             except requests.RequestException as exc:
-                # Broadened from (ConnectionError, Timeout) to the
-                # documented base — also catches RetryError (urllib3
-                # pool exhaustion on Session-pooled requests),
-                # ChunkedEncodingError (interrupted streamed body),
-                # and any future requests-defined subclass. Without
-                # this, those errors would bypass the
-                # HPCUnreachableError translation and the
-                # `[HPC-UNREACHABLE]` scrape sentinel, surfacing as
-                # raw `requests.exceptions.*` to callers. See #78.
+                # Catch the documented base so transient transport
+                # errors (RetryError, ChunkedEncodingError, future
+                # subclasses) flow through the HPCUnreachableError
+                # translation and the [HPC-UNREACHABLE] scrape sentinel.
                 raise HPCUnreachableError(
                     f"HPC unreachable ({type(exc).__name__}): {exc}"
                 ) from exc
