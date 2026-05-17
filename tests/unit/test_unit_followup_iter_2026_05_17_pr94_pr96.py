@@ -660,17 +660,17 @@ class TestGeminiValueShapeGapPins:
 
     def test_both_keys_guard_fires_before_value_shape_guard(self):
         # Precedence pin: a dict {"name": <str>, "file": <str>}
-        # has BOTH keys (the both-keys guard from #90 fires) AND
-        # non-file values (the value-shape guard from #100 would
-        # also fire). The both-keys guard must win — its error
-        # message is more informative (tells the operator to wrap
-        # in a list).
+        # has BOTH keys (the both-keys guard fires) AND non-file
+        # values (the value-shape guard would also fire). The
+        # both-keys guard must win — its error message tells the
+        # operator to wrap in a list, which is the more actionable
+        # diagnosis.
         #
-        # Discriminator: source contains "#85, #90." in the
-        # both-keys message and "#85, #90, #100." in the value-
-        # shape message. Pin via issue-tag presence rather than
-        # English keywords ("wrap", "list") — keywords would
-        # break on harmless message rewording.
+        # Discriminator: each guard's error has a unique signature
+        # phrase that doesn't appear in the other. Pin via those
+        # signatures rather than issue tags — keeps the discriminator
+        # stable across comment-hygiene churn (which can legitimately
+        # drop issue refs from error messages per CLAUDE.md).
         GeminiAIModel, stub = self._stub()
         misuse = {"name": "alice.webp", "file": "should-be-file-obj"}
 
@@ -678,12 +678,12 @@ class TestGeminiValueShapeGapPins:
             GeminiAIModel._add_files(stub, misuse)
 
         msg = str(exc.value)
-        assert "#100" not in msg, (
-            f"value-shape error contains '#100'; presence here "
-            f"means value-shape guard fired before both-keys "
-            f"guard — wrong precedence. Got: {msg!r}"
+        assert "file-like object or bytes" not in msg, (
+            f"value-shape signature phrase present; precedence "
+            f"inversion (value-shape fired before both-keys). "
+            f"Got: {msg!r}"
         )
-        assert "#90" in msg, (
-            f"both-keys error must reference its source issue "
-            f"(#90). Got: {msg!r}"
+        assert "with both 'name' and 'file' keys" in msg, (
+            f"both-keys signature phrase absent; wrong guard "
+            f"fired. Got: {msg!r}"
         )
