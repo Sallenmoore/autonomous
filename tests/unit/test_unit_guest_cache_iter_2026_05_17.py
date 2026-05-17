@@ -27,6 +27,19 @@ import pytest
 from autonomous.auth.user import AutoUser, User
 
 
+@pytest.fixture(autouse=True)
+def _reset_autouser_tree_caches():
+    # Post-#97 the auto_post_save hook walks the entire AutoUser
+    # subclass tree on guest save. Test-defined subclasses persist
+    # in ``AutoUser.__subclasses__()`` for the session, so we clear
+    # every cache slot before AND after each test to keep state
+    # explicit. Without this, an earlier test's lingering
+    # ``_cached_guest`` value can pollute later assertions.
+    AutoUser._invalidate_guest_cache()
+    yield
+    AutoUser._invalidate_guest_cache()
+
+
 # ===========================================================================
 # Mechanism 1: index on AutoUser.name
 # ===========================================================================
@@ -249,45 +262,66 @@ class TestInvalidateGuestCache:
 
 
 class TestAutoPostSaveInvalidatesOnGuestSave:
-    """Pin the defensive cache invalidation."""
+    """Pin the defensive cache invalidation.
 
-    def _doc_with_name(self, name):
-        # Build a minimal stand-in for a saved document with a
-        # `.name` attribute — that's all the hook reaches.
-        return type("_DocStub", (), {"name": name})()
+    Post-#97 the hook ALSO (1) gates on ``isinstance(document, cls)``
+    so a non-AutoUser-subclass document early-returns, and (2) walks
+    ``AutoUser.__subclasses__()`` so sibling subclass caches drop
+    together. The stubs are real AutoUser subclasses (abstract, so
+    they don't trigger Mongo collection setup) so the
+    ``AutoUser`` subclass walk actually reaches them.
+    """
+
+    def _stub_subclass(self, name="_StubGuest"):
+        # Build a fresh AutoUser subclass per test. Using abstract +
+        # allow_inheritance keeps MongoEngine from trying to attach a
+        # collection (no Mongo round trip), and AutoUser metaclass
+        # registers it in `AutoUser.__subclasses__()` so the post-#97
+        # walk reaches it.
+        return type(
+            name,
+            (AutoUser,),
+            {"meta": {"abstract": True, "allow_inheritance": True}},
+        )
+
+    def _doc_with_name(self, cls, name):
+        # Post-#97: document must be an instance of `cls` for the
+        # isinstance gate to allow the hook to fall through.
+        doc = cls()
+        doc.name = name
+        return doc
 
     def test_guest_doc_save_drops_cache(self):
         # The substance of #96's defensive layer: if anyone saves
         # the guest doc (initial bootstrap, admin tooling, migrations),
         # the cache must drop so the next get_guest reloads.
-        class _Stub:
-            _cached_guest = "cached_guest_sentinel"
+        Stub = self._stub_subclass()
+        Stub._cached_guest = "cached_guest_sentinel"
 
         AutoUser.auto_post_save.__func__(
-            _Stub,
+            Stub,
             sender=None,
-            document=self._doc_with_name("_GuestOfAutonomous_"),
+            document=self._doc_with_name(Stub, "_GuestOfAutonomous_"),
         )
-        assert _Stub._cached_guest is None, (
+        assert Stub._cached_guest is None, (
             "auto_post_save must invalidate cache when document.name "
             "is the guest sentinel"
         )
 
     def test_non_guest_doc_save_preserves_cache(self):
         # Critical asymmetry: saving Alice's account must NOT touch
-        # the guest cache. Pre-#96 there was no cache so this was
-        # a non-issue; post-#96 a regression that drops the
+        # the guest cache. A regression that drops the
         # `if name == sentinel` check would invalidate on every
         # save and defeat the entire point of caching.
-        class _Stub:
-            _cached_guest = "cached_guest_sentinel"
+        Stub = self._stub_subclass()
+        Stub._cached_guest = "cached_guest_sentinel"
 
         AutoUser.auto_post_save.__func__(
-            _Stub,
+            Stub,
             sender=None,
-            document=self._doc_with_name("Alice"),
+            document=self._doc_with_name(Stub, "Alice"),
         )
-        assert _Stub._cached_guest == "cached_guest_sentinel", (
+        assert Stub._cached_guest == "cached_guest_sentinel", (
             "auto_post_save MUST NOT invalidate cache for non-guest "
             "saves — that would defeat the caching purpose"
         )
@@ -295,34 +329,218 @@ class TestAutoPostSaveInvalidatesOnGuestSave:
     def test_document_without_name_attribute_is_safe(self):
         # `getattr(document, "name", None)` defensive pattern — must
         # not AttributeError on weird document types (e.g. during
-        # signal-firing on partially-constructed docs).
-        class _Stub:
-            _cached_guest = "cached_guest_sentinel"
+        # signal-firing on partially-constructed docs). Build the
+        # doc as an instance of Stub (passes isinstance gate) but
+        # WITHOUT setting a `name` attribute — proves the getattr
+        # default path is reached and works correctly.
+        Stub = self._stub_subclass()
+        Stub._cached_guest = "cached_guest_sentinel"
 
-        # Empty object with no `name` attr at all.
+        doc = Stub()  # instance of Stub; AutoUser default name="Anonymous"
         AutoUser.auto_post_save.__func__(
-            _Stub,
+            Stub,
             sender=None,
-            document=object(),
+            document=doc,
         )
-        # Cache must NOT be dropped (None != sentinel string).
-        assert _Stub._cached_guest == "cached_guest_sentinel"
+        # Cache must NOT be dropped — default name is "Anonymous",
+        # not the guest sentinel.
+        assert Stub._cached_guest == "cached_guest_sentinel"
 
     def test_document_with_none_name_is_safe(self):
-        # `document.name = None` (a freshly-instantiated AutoUser
-        # before defaults fire) → getattr returns None → comparison
+        # `document.name = None` → getattr returns None → comparison
         # vs sentinel string is False → no invalidation. Pin so
         # nobody accidentally rewrites the comparison as
         # `if name in ("_GuestOfAutonomous_", None)`.
-        class _Stub:
-            _cached_guest = "cached_guest_sentinel"
+        Stub = self._stub_subclass()
+        Stub._cached_guest = "cached_guest_sentinel"
 
         AutoUser.auto_post_save.__func__(
-            _Stub,
+            Stub,
             sender=None,
-            document=self._doc_with_name(None),
+            document=self._doc_with_name(Stub, None),
         )
-        assert _Stub._cached_guest == "cached_guest_sentinel"
+        assert Stub._cached_guest == "cached_guest_sentinel"
+
+    def test_cross_model_doc_does_not_clear_cache(self):
+        # The substance of #97's isinstance gate: a saved doc that
+        # is NOT an instance of the cache-class must not reach the
+        # name-comparison branch. Real signal dispatch makes this
+        # nearly impossible (sender always == document.__class__),
+        # but the gate defends against future dispatch refactors and
+        # catches manual misuse loudly.
+        Stub = self._stub_subclass()
+        Stub._cached_guest = "cached_guest_sentinel"
+
+        # `object()` is not an instance of Stub — isinstance gate
+        # short-circuits the hook before name comparison can fire.
+        AutoUser.auto_post_save.__func__(
+            Stub,
+            sender=None,
+            document=object(),
+        )
+        assert Stub._cached_guest == "cached_guest_sentinel", (
+            "Non-cls document must early-return via isinstance gate; "
+            "cache preserved"
+        )
+
+
+# ===========================================================================
+# #97 — cross-subclass invalidation walk
+# ===========================================================================
+
+
+class TestAutoPostSaveCrossSubclassWalk:
+    """Pin the substance of #97: saving the guest via one AutoUser
+    subclass must invalidate every sibling subclass's cache too.
+
+    Pre-#97 the hook only cleared ``cls._cached_guest`` (the
+    dispatching class), leaving siblings with stale memos until
+    process restart. Post-#97 the hook walks
+    ``AutoUser.__subclasses__()`` so all caches drop together.
+    """
+
+    def test_save_via_one_subclass_clears_sibling_subclass_cache(self):
+        # Define two AutoUser subclasses, populate both caches, fire
+        # the hook with a guest doc from one subclass, and assert
+        # BOTH caches are cleared. Pre-#97 only the dispatching
+        # subclass would clear.
+        from autonomous.auth.user import AutoUser as RealAutoUser
+
+        class _SubA(RealAutoUser):
+            meta = {"abstract": True, "allow_inheritance": True}
+
+        class _SubB(RealAutoUser):
+            meta = {"abstract": True, "allow_inheritance": True}
+
+        try:
+            _SubA._cached_guest = "sub_a_cache"
+            _SubB._cached_guest = "sub_b_cache"
+
+            # Save the guest via _SubA (real signal dispatch shape).
+            doc = _SubA()
+            doc.name = "_GuestOfAutonomous_"
+            RealAutoUser.auto_post_save.__func__(
+                _SubA, sender=_SubA, document=doc,
+            )
+
+            assert _SubA._cached_guest is None, (
+                "dispatching subclass cache must be cleared"
+            )
+            assert _SubB._cached_guest is None, (
+                "sibling subclass cache must ALSO be cleared "
+                "(substance of #97 — pre-fix, _SubB stayed stale)"
+            )
+        finally:
+            # Don't leak the test subclasses' cache state into other
+            # tests in the same session.
+            _SubA._cached_guest = None
+            _SubB._cached_guest = None
+
+    def test_save_via_deep_subclass_clears_intermediate_caches(self):
+        # Three-level chain: AutoUser → Mid → Leaf. Saving a Leaf
+        # guest must clear Mid's cache too (Mid is in
+        # AutoUser.__subclasses__() chain).
+        from autonomous.auth.user import AutoUser as RealAutoUser
+
+        class _Mid(RealAutoUser):
+            meta = {"abstract": True, "allow_inheritance": True}
+
+        class _Leaf(_Mid):
+            meta = {"abstract": True, "allow_inheritance": True}
+
+        try:
+            _Mid._cached_guest = "mid_cache"
+            _Leaf._cached_guest = "leaf_cache"
+
+            doc = _Leaf()
+            doc.name = "_GuestOfAutonomous_"
+            RealAutoUser.auto_post_save.__func__(
+                _Leaf, sender=_Leaf, document=doc,
+            )
+
+            assert _Mid._cached_guest is None
+            assert _Leaf._cached_guest is None
+        finally:
+            _Mid._cached_guest = None
+            _Leaf._cached_guest = None
+
+
+# ===========================================================================
+# #98 — identity (is None) check on find() result in bootstrap branch
+# ===========================================================================
+
+
+class TestGetGuestBootstrapUsesIsNone:
+    """Pin that the bootstrap branch checks ``guest is None``, NOT
+    truthiness. Pre-#98 a future ``find()`` override that returned
+    an empty queryset / falsy doc would trigger an unwanted second
+    bootstrap and memoize a duplicate. Post-#98 only ``None``
+    triggers the bootstrap path.
+    """
+
+    def test_find_returning_empty_list_does_not_bootstrap(self):
+        # Falsy non-None: empty list. Pre-#98 the `if not guest:`
+        # check fired and bootstrapped a duplicate; post-#98 the
+        # `is None` check passes the empty list through to be cached
+        # as-is. The cache value will look wrong (you can't .pk it),
+        # but the point is the BOOTSTRAP branch did not fire — that's
+        # the actual bug surface.
+        instantiated = []
+
+        class _Stub:
+            _cached_guest = None
+
+            @classmethod
+            def find(cls, **kw):
+                return []  # falsy but NOT None
+
+            def __init__(self, **kw):
+                instantiated.append(kw)
+
+            def save(self):
+                pass
+
+        result = AutoUser.get_guest.__func__(_Stub)
+        # The empty list got memoized — the bootstrap branch did
+        # not fire (no `_Stub.__init__` call).
+        assert result == []
+        assert instantiated == [], (
+            "post-#98 the bootstrap branch must only fire when find "
+            "returns None; an empty/falsy non-None must pass through. "
+            f"Got {len(instantiated)} __init__ calls."
+        )
+
+    def test_find_returning_none_still_bootstraps(self):
+        # Regression pin for the other direction: None must still
+        # trigger bootstrap (i.e. the change to `is None` didn't
+        # break the original-intent path).
+        instantiated = []
+
+        class _Stub:
+            _cached_guest = None
+
+            @classmethod
+            def find(cls, **kw):
+                return None
+
+            def __init__(self, **kw):
+                instantiated.append(kw)
+                self.pk = "new_guest_pk"
+
+            def save(self):
+                pass
+
+        result = AutoUser.get_guest.__func__(_Stub)
+        assert isinstance(result, _Stub)
+        assert len(instantiated) == 1, (
+            "find()=None must still trigger the bootstrap path"
+        )
+        assert instantiated[0] == {
+            "name": "_GuestOfAutonomous_",
+            "email": "guest@mail.com",
+            "state": "guest",
+            "role": "guest",
+        }
 
 
 # ===========================================================================

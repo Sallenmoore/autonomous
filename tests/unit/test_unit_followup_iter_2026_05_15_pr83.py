@@ -87,6 +87,13 @@ class TestOpenAIPostPropagatesConfigErrors:
             requests.exceptions.URLRequired,
             requests.exceptions.InvalidHeader,
             requests.exceptions.InvalidProxyURL,
+            # Added in lockstep with #99 — SSLError + ProxyError are
+            # corporate-proxy / cert-bundle misconfigs that retry will
+            # not help and HPCUnreachable translation actively
+            # misdirects on-call. ContentDecodingError is deliberately
+            # NOT added — it can legitimately be transient.
+            requests.exceptions.SSLError,
+            requests.exceptions.ProxyError,
         ],
     )
     def test_config_error_propagates_raw(self, exc_class, monkeypatch):
