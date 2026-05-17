@@ -128,20 +128,34 @@ class OpenAIClient(AutoModel):
                 # InvalidProxyURL is an InvalidURL subclass and would
                 # be caught by the entry above today; listing it
                 # explicitly defends the intent against future MRO
-                # changes in `requests`. See #89.
+                # changes in `requests`.
                 requests.exceptions.InvalidProxyURL,
+                # SSLError: corporate-proxy cert bundle misconfig.
+                # Translating to HPCUnreachableError misdirects on-call
+                # toward VPN/firewall when the real issue is local cert
+                # config — and burns _retry_attempts rounds first.
+                requests.exceptions.SSLError,
+                # ProxyError: proxy URL invalid, proxy auth misconfig,
+                # or proxy unreachable for non-network reasons. Same
+                # retry-spin + Sentry-misdirection failure mode as SSL.
+                requests.exceptions.ProxyError,
             ):
                 # Config / programmer errors — propagate raw. These
-                # mean "URL is malformed", "header is malformed", or
-                # "payload is unserializable" — retry will not help,
-                # and translating to HPCUnreachableError would burn
+                # mean "URL is malformed", "header is malformed",
+                # "TLS cert is misconfigured", or "payload is
+                # unserializable" — retry will not help, and
+                # translating to HPCUnreachableError would burn
                 # _retry_attempts rounds against an unfixable error
                 # AND mislead operators debugging Sentry alerts toward
                 # network/DNS/firewall when the real issue is a typo'd
-                # HPC_API_BASE_URL or a malformed header value. See
-                # #84 (initial 4 types) and #89 (URLRequired,
-                # InvalidHeader, InvalidProxyURL added) — must come
+                # HPC_API_BASE_URL or a bad cert bundle. Must come
                 # BEFORE the broader catch below.
+                #
+                # ContentDecodingError is deliberately NOT in the
+                # carve-out: it's ambiguous (could be a transient
+                # server bug returning malformed gzip), so the retry
+                # path is the more conservative default until we have
+                # production evidence it's actually unfixable.
                 raise
             except requests.RequestException as exc:
                 # Broadened from (ConnectionError, Timeout) to the
