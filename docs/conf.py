@@ -123,8 +123,8 @@ intersphinx_mapping = {
 # -- HTML output -------------------------------------------------------------
 html_theme = "furo"
 html_title = f"autonomous-app {version}"
-html_static_path = ["_static"]
-html_css_files = ["style.css"]  # carry over the existing custom style
+html_static_path = ["assets"]
+html_css_files = ["style.css"]  # carry over the existing custom style (lives in docs/assets/)
 html_show_sourcelink = False
 html_show_sphinx = False
 

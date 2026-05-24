@@ -264,8 +264,8 @@ class TestGitignoreSphinxArtifacts:
 class TestArchivedGenerator:
     def test_old_path_is_gone(self):
         assert not (SCRIPTS / "gen_docs.py").exists(), (
-            "scripts/gen_docs.py still exists — PR #118 should have "
-            "moved it to scripts/_archive/."
+            "scripts/gen_docs.py still exists — the docs migration should "
+            "have moved it to scripts/_archive/."
         )
 
     def test_archived_copy_exists(self):
@@ -273,6 +273,60 @@ class TestArchivedGenerator:
         for the prior generation pipeline (Markdown subset rules,
         etc.) intact rather than relying on git history alone."""
         assert (SCRIPTS / "_archive" / "gen_docs.py").exists(), (
-            "scripts/_archive/gen_docs.py is missing — PR #118 promised "
-            "to keep an archived copy."
+            "scripts/_archive/gen_docs.py is missing — the docs migration "
+            "promised to keep an archived copy."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Real sphinx -W build (caught the kind of conf.py bug that pure-config
+# tests miss, e.g. html_static_path pointing at a nonexistent directory)
+# ---------------------------------------------------------------------------
+
+
+def _sphinx_importable() -> bool:
+    """Return True if the doc-build deps are installed.
+
+    requirements-docs.txt is its own extra (`pip install .[docs]`),
+    so a hermetic test env often won't have sphinx + furo + myst.
+    Skip rather than fail when they're absent — CI / RTD always have
+    them, so the build check still runs where it matters.
+    """
+    try:
+        import sphinx  # noqa: F401
+        import furo  # noqa: F401
+        import myst_parser  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+@pytest.mark.skipif(
+    not _sphinx_importable(),
+    reason="sphinx + furo + myst-parser not installed in this env",
+)
+def test_sphinx_build_succeeds_under_warning_gate(tmp_path):
+    """Real ``sphinx -W -b html`` build. The pure-config tests above
+    parse conf.py textually and assert on declared values, but they
+    can't tell when a declared path is bogus (the historical
+    ``html_static_path = ["_static"]`` pointing at a nonexistent
+    directory). A real build catches the entire class of "config
+    asserts correct values but the values reference missing files"
+    bug at unit-gate time, before the RTD build trips it."""
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-m", "sphinx", "-W", "-b", "html",
+         str(DOCS), str(tmp_path / "html")],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=180,
+    )
+    if result.returncode != 0:
+        pytest.fail(
+            f"sphinx -W build failed (exit {result.returncode}):\n"
+            f"--- STDOUT (tail) ---\n{result.stdout[-2000:]}\n"
+            f"--- STDERR (tail) ---\n{result.stderr[-2000:]}"
         )
