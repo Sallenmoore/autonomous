@@ -91,6 +91,8 @@ The library is a set of loosely-coupled service wrappers glued together by the `
 - [src/autonomous/storage/](src/autonomous/storage/) — `ImageStorage` (Pillow, writes WebP + thumbnail/small/medium/large variants under `static/images/`) and `LocalStorage`.
 - [src/autonomous/apis/version_control/](src/autonomous/apis/version_control/) — PyGithub wrappers (`GHRepo`, `GHOrganization`, `GHCallbacks`).
 - [src/autonomous/logger.py](src/autonomous/logger.py) — `log` is a callable singleton that writes to `logs/current_run_error_log.log` + a dated archive; pass `_print=True` to also echo to stdout. Level controlled by `LOG_LEVEL` env var.
+- [src/autonomous/cli.py](src/autonomous/cli.py) — placeholder CLI entrypoint (single `createapp()` stub today). Treat as reserved namespace; ask before expanding.
+- [src/autonomous/utils/](src/autonomous/utils/) — small shared helpers (currently just `markdown.py`); home for cross-subpackage utilities that don't belong in a specific subsystem.
 
 ## Three-Agent Pipeline
 
