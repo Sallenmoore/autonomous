@@ -58,11 +58,18 @@ tests: test-all
 
 ###### DOCS #######
 
-# Build the navigable HTML reference into docs/_build/ using the
-# zero-dependency generator at scripts/gen_docs.py.
+# Build HTML docs into docs/_build/html via Sphinx. -W treats warnings as
+# errors so broken cross-refs / stale autosummary entries fail the build.
 docs:
-	$(PYTHON) scripts/gen_docs.py --clean
-	@echo "Open docs/_build/index.html in a browser."
+	$(PYTHON) -m sphinx -W -b html docs docs/_build/html
+	@echo "Open docs/_build/html/index.html in a browser."
+
+# Live-reload server: rebuilds + browser-refreshes on every source edit.
+# Useful when iterating on the guides; not used by CI or RTD.
+docs-serve:
+	$(PYTHON) -m sphinx_autobuild -b html docs docs/_build/html \
+		--watch src/autonomous \
+		--ignore "docs/_build/*"
 
 cleandocs:
 	rm -rf docs/_build
