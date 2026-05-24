@@ -42,14 +42,23 @@ Issues feed autonomous-dev's iteration loop (see `## Three-Agent Pipeline`).
 
 All dev workflows go through the [makefile](makefile), which `include .env` — expect a `.env` at repo root with DB/Redis/AI credentials.
 
-- `make tests` — full suite: reinstalls deps, `pip install -e .`, brings up the Docker Compose stack in `tests/`, then runs `pytest`. **The test container is expected to mount the repo at `/var/app/autonomous`** (see [tests/conftest.py](tests/conftest.py)); pytest is not meant to be run directly on the host.
-- `make test` — runs a single filter: `pytest -k $(TESTING)`. Override the filter inline, e.g. `make test TESTING=test_unit_automodel`. Default is `test_unit_ai`.
-- `make inittests` / `make cleantests` — bring the Compose stack up/down without running pytest.
+The test layout was split into hermetic unit / live-stack integration / opt-in perf tiers (MIGRATIONS.md Item 21). `pytest` invoked bare picks up `[tool.pytest.ini_options].testpaths = ["tests/unit"]`, so the default run is hermetic — no Mongo / Redis / Ollama required, safe on any laptop.
+
+- `make test` — hermetic unit tests only: `python -m pytest tests/unit`. This is the default fast-feedback target.
+- `make test-int` — integration tier: brings up the Compose stack (`inittests`) then runs `pytest tests/integration -m integration`. Requires Docker.
+- `make test-perf` — opt-in `pytest-benchmark` perf suite under `tests/perf/`. Doesn't gate `test-all`; runners flake.
+- `make test-all` (alias `make tests`) — `test` then `test-int` (unit-first so failures surface fast).
+- `make inittests` / `make cleantests` — bring the Compose stack in [tests/docker-compose.yml](tests/docker-compose.yml) up/down without running pytest. `inittests` also `pip install -e ".[all]"` and refreshes requirements.
+- `make docs` / `make cleandocs` — build/clean the zero-dependency HTML reference under `docs/_build/` via [scripts/gen_docs.py](scripts/gen_docs.py).
 - `make package` — `python -m build` + `twine upload --skip-existing` to PyPI. Bump `__version__` in [src/autonomous/__init__.py](src/autonomous/__init__.py) first. **Side effect**: this ALWAYS attempts a PyPI upload; `--skip-existing` makes it a silent no-op when the version is already published, but a real publish for new versions. For local validation without uploading, run `python -m build && python -m twine check dist/*` directly.
 - `./scripts/release.sh` — preferred release entrypoint: bumps the patch version in `src/autonomous/__init__.py`, runs `make package` (build + twine upload), then commits and pushes `origin/main`. Use this for routine patch releases. For non-patch bumps, edit `__version__` manually first, then run the script (or fall back to `make package`).
 - CI lints with `flake8 . --select=E9,F63,F7,F82` (syntax-only gate) plus a non-blocking `--max-complexity=10 --max-line-length=127` pass.
 
-Pytest config lives in `[tool.pytest.ini_options]` in [pyproject.toml](pyproject.toml): it auto-adds `-x --pdb -s -v --cov=autonomous` and loads `tests/.testenv`. Tests stop on first failure and drop into pdb — be aware when running non-interactively.
+Pytest config in `[tool.pytest.ini_options]`: `addopts = "--cov=autonomous -rx -l -x -s --log-level=INFO --ignore=src --no-cov-on-fail -v --pdb --cov-reset"` and loads `tests/.testenv`. Tests stop on first failure (`-x`) and drop into pdb (`--pdb`) — be aware when running non-interactively (CI passes `--pdbcls` overrides). Markers: `integration` (live services) and `perf` (benchmarks).
+
+The package ships per-feature extras defined in [pyproject.toml](pyproject.toml) (MIGRATIONS.md Item 9): `[tasks]`, `[images]`, `[ai]`, `[github]`, `[server]`, `[dev]`, `[all]`. Install only what the consumer uses, e.g. `pip install autonomous-app[ai,tasks]`. The smoke test (`scripts/smoke_test.sh`) installs `[all]` and imports every subpackage.
+
+Consumer-visible changes ship in [MIGRATIONS.md](MIGRATIONS.md) (most-recent-first, with replacement recipes for removed symbols). Update it for any change that breaks or alters the public API of a subpackage that downstream projects import.
 
 ## Architecture
 
@@ -59,7 +68,7 @@ The library is a set of loosely-coupled service wrappers glued together by the `
 [src/autonomous/db/](src/autonomous/db/) is a full in-tree fork of a MongoEngine-like ODM: `Document`, `QuerySet`, `signals`, `fields`, `context_managers`, `dereference`, `db_sync`. The public surface is re-exported from [src/autonomous/db/__init__.py](src/autonomous/db/__init__.py) — import from `autonomous.db`, not the submodules. [src/autonomous/db/db_sync.py](src/autonomous/db/db_sync.py) enqueues debounced vector-embedding sync jobs via Redis/RQ and calls out to `MEDIA_API_BASE_URL` (default `http://media_ai:5005`) for embeddings.
 
 ### `autonomous.model` — AutoModel ORM surface
-[src/autonomous/model/automodel.py](src/autonomous/model/automodel.py) defines `AutoModel(Document)`, the abstract base every app model should extend. **Importing this module calls `connect(...)` at import time** using `DB_HOST`/`DB_PORT`/`DB_USERNAME`/`DB_PASSWORD`/`DB_DB` — any code path that touches `AutoModel` (including test collection) requires a reachable MongoDB. It also wires four `auto_pre/post_init/save` signal hooks that subclasses can override.
+[src/autonomous/model/automodel.py](src/autonomous/model/automodel.py) defines `AutoModel(Document)`, the abstract base every app model should extend. **Connection is lazy.** Importing the module does NOT touch Mongo; `_ensure_connected()` runs on the first ORM operation (`save`/`get`/`all`/`where`/etc.) and calls `connect_from_env()` with `DB_HOST`/`DB_PORT`/`DB_USERNAME`/`DB_PASSWORD`/`DB_DB`. Consumers wanting explicit startup-time control call `autonomous.init(**overrides)` (re-exported from `src/autonomous/__init__.py`) or `connect_from_env` directly. This is why `pytest tests/unit/` is hermetic — unit tests that never call an ORM operation never need MongoDB. It also wires four `auto_pre/post_init/save` signal hooks that subclasses can override.
 
 `AutoModel.load_model(name)` walks `__subclasses__()` at call time to resolve string → class, so dynamic model lookups depend on the target class having been imported already.
 
@@ -92,9 +101,9 @@ The autonomous library runs as a closed-loop pipeline with three agents — pair
 
 | Agent | Branch | Tree | Triggered by | Writes | Review skill |
 |---|---|---|---|---|---|
-| **autonomous-prod** | `main` | `/opt/data/autonomous/` | manual `run prod` from user (no polling) | `./scripts/release.sh` (version bump + PyPI upload + push) when PR has `auto-release`; `[smoke-fail] <v>: <signature>` issues against `Sallenmoore/autonomous` on smoke-test failure | n/a |
-| **autonomous-dev** | `dev` | `/opt/data/autonomous-dev/` | open `Sallenmoore/autonomous` issues | library code + ephemeral tests in `tests/_dev_local/` (gitignored) | `/review` before opening `dev → test` |
-| **autonomous-test** | `test` | `/opt/data/autonomous-test/` | open `dev → test` PRs | committed tests + bug-fix commits | `/review-pr` (multi-agent) before opening `test → main` |
+| **autonomous-prod** | `main` | `/opt/projects/autonomous/` | manual `run prod` from user (no polling) | `./scripts/release.sh` (version bump + PyPI upload + push) when PR has `auto-release`; `[smoke-fail] <v>: <signature>` issues against `Sallenmoore/autonomous` on smoke-test failure | n/a |
+| **autonomous-dev** | `dev` | `/opt/projects/autonomous-dev/` | open `Sallenmoore/autonomous` issues | library code + ephemeral tests in `tests/_dev_local/` (gitignored) | `/review` before opening `dev → test` |
+| **autonomous-test** | `test` | `/opt/projects/autonomous-test/` | open `dev → test` PRs | committed tests + bug-fix commits | `/review-pr` (multi-agent) before opening `test → main` |
 
 dev and test run as `/loop` in dynamic / self-paced mode. **prod does NOT loop** — it runs one iteration per `run prod` user command and then stops. The dev agent does not push to `test`. The test agent does not edit the dev tree. Coordination is through PRs, issues, and labels (`smoke-fail`, `auto-filed`, `auto-release`, `awaiting-upstream`, `human-only`, `feature-request`). `auto-release` is set by the test agent and read by the prod agent as the ship-or-skip gate.
 
@@ -112,7 +121,7 @@ The procedures below describe how the contract is satisfied today. The contract 
 
 ### Interactive mode
 
-When a human invokes Claude Code interactively in any of the three trees (most often `/opt/data/autonomous/` since that's the canonical clone), the loop discipline above is suspended in favor of explicit human direction. The agent may edit files, push branches, and open PRs from the prod tree under direct human prompts without violating the read-only constraint — that constraint applies to *autonomous* (loop-driven) operation, not human-prompted work. Project conventions (PRs target `main`, run `/review` before opening, ultrareview before merging, etc.) still apply.
+When a human invokes Claude Code interactively in any of the three trees (most often `/opt/projects/autonomous/` since that's the canonical clone), the loop discipline above is suspended in favor of explicit human direction. The agent may edit files, push branches, and open PRs from the prod tree under direct human prompts without violating the read-only constraint — that constraint applies to *autonomous* (loop-driven) operation, not human-prompted work. Project conventions (PRs target `main`, run `/review` before opening, ultrareview before merging, etc.) still apply.
 
 In short: tree assignment dictates default loop behavior, not absolute capability. Outside an interactive session, the agent in each tree obeys its role; inside one, it follows the human.
 
