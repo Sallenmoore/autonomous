@@ -189,11 +189,10 @@ tests/_dev_local/
 ruvector.db
 
 # AgentDB (companion to RuVector) — same shape: runtime memory artifact
-# regenerated per cycle, never source. Showed up as untracked noise in
-# all three agent trees (dev/test/prod) after the 2026-05-23 restore.
+# regenerated per cycle, never source.
 agentdb.rvf
 agentdb.rvf.lock
 
 # /graphify output directory — the skill emits a knowledge-graph HTML
-# bundle here. ~700KB+ per run, regenerable. Same lineage as ruvector.db.
+# bundle here (~700KB+ per run, regenerable). Same lineage as ruvector.db.
 graphify-out/

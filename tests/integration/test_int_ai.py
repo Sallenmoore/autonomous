@@ -2,11 +2,10 @@
 Unit tests for the local AI model.
 
 All outbound network calls to Ollama / the media service are mocked via
-the module-level ``_SESSION.post`` (see local_model.py — the May 15 perf
-prelim moved every call site onto a shared requests.Session, so the patch
-target is the Session attribute, not bare ``requests.post``). The
-``AutoTasks`` side-effect (which connects to Redis) is patched so the
-tests stay pure.
+the module-level ``_SESSION.post`` (see local_model.py — call sites use
+a shared ``requests.Session`` for pooling, so the patch target is the
+Session attribute, not bare ``requests.post``). The ``AutoTasks``
+side-effect (which connects to Redis) is patched so the tests stay pure.
 """
 
 import os

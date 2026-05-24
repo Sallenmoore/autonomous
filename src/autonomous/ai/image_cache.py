@@ -80,6 +80,11 @@ def cache_key(
 
     Keyword-only so future fields can be added at the call site without
     silently shifting positional meaning.
+
+    Side effect on ``files``: file-like values are read to compute the
+    digest. Seekable streams have their cursor restored to its prior
+    position; non-seekable streams are *drained* and the caller is
+    responsible for materializing bytes if a round-trip is needed.
     """
     canonical = {
         "prompt": prompt or "",
@@ -113,13 +118,26 @@ def _cache_root() -> Path | None:
 
 
 def get(key: str) -> bytes | None:
-    """Return cached bytes for ``key`` or ``None`` on miss/disabled."""
+    """Return cached bytes for ``key`` or ``None`` on miss/disabled.
+
+    ``FileNotFoundError`` (the legitimate miss) is silent. Other
+    ``OSError`` subclasses (``PermissionError``, ``IsADirectoryError``,
+    disk-corruption ``EIO``) are logged loudly because they masquerade
+    as cache miss and silently trigger upstream re-billing — exactly
+    the failure mode the cache exists to prevent.
+    """
     root = _cache_root()
     if root is None or not key:
         return None
     try:
         return (root / f"{key}.webp").read_bytes()
-    except (FileNotFoundError, OSError):
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        log(
+            f"Image cache read failed for {key[:12]}: {type(exc).__name__}: {exc}",
+            _print=True,
+        )
         return None
 
 
