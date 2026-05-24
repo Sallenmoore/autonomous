@@ -494,3 +494,8 @@ class LocalAIModel(AutoModel):
             )
             upscale_response.raise_for_status()
             return upscale_response.content
+
+        # No-op upscale: base size already matches target. Return the
+        # input image unchanged so callers (notably ImageAgent's hybrid
+        # path) don't have to special-case a None return.
+        return image_content

@@ -36,14 +36,36 @@ It is **not** a web framework. It ships:
 
 ## Reference
 
-Auto-generated API reference for every public class:
+Auto-generated API reference for every public module and class:
 
-- See the [reference index](reference/index.md) for the full tree.
+- [API reference](api/index) — full tree, introspected by Sphinx
+  autosummary.
 
 ## Project
 
-- [README](../README.md)
-- [Migration notes](../MIGRATIONS.md) — breaking changes, most recent
-  first.
-- [autonomous.db divergence](../src/autonomous/db/DIVERGENCE.md) —
-  what we changed versus upstream mongoengine.
+- [Pipeline setup](pipeline-setup) — release flow, dev/test/main, CI.
+- [README on GitHub](https://github.com/Sallenmoore/autonomous) — latest
+  README + issue tracker.
+
+```{toctree}
+:hidden:
+:caption: Guides
+:maxdepth: 2
+
+guides/quickstart
+guides/ormodel
+guides/auth
+guides/ai
+guides/web
+guides/storage
+guides/tasks
+```
+
+```{toctree}
+:hidden:
+:caption: Reference
+:maxdepth: 2
+
+api/index
+pipeline-setup
+```

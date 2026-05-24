@@ -2,8 +2,10 @@
 Unit tests for the local AI model.
 
 All outbound network calls to Ollama / the media service are mocked via
-``requests.post``. The ``AutoTasks`` side-effect (which connects to Redis) is
-patched so the tests stay pure.
+the module-level ``_SESSION.post`` (see local_model.py — call sites use
+a shared ``requests.Session`` for pooling, so the patch target is the
+Session attribute, not bare ``requests.post``). The ``AutoTasks``
+side-effect (which connects to Redis) is patched so the tests stay pure.
 """
 
 import os
@@ -60,7 +62,7 @@ class TestGenerateText:
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"message": {"content": "blue"}}
         with patch(
-            "autonomous.ai.models.local_model.requests.post",
+            "autonomous.ai.models.local_model._SESSION.post",
             return_value=mock_resp,
         ) as mock_post:
             response = model.generate_text(
@@ -88,7 +90,7 @@ class TestGenerateJson:
         }
         mock_resp.raise_for_status = MagicMock()
         with patch(
-            "autonomous.ai.models.local_model.requests.post",
+            "autonomous.ai.models.local_model._SESSION.post",
             return_value=mock_resp,
         ) as mock_post:
             result = model.generate_json("Tell a joke", context={})
@@ -121,7 +123,7 @@ class TestGenerateImage:
         resp.content = b"base_image_bytes"
         resp.raise_for_status = MagicMock()
         with patch(
-            "autonomous.ai.models.local_model.requests.post",
+            "autonomous.ai.models.local_model._SESSION.post",
             return_value=resp,
         ) as mock_post:
             result = model.generate_image("A cat", aspect_ratio="4K")
@@ -136,7 +138,7 @@ class TestGenerateImage:
         resp.content = b"upscaled_image_bytes"
         resp.raise_for_status = MagicMock()
         with patch(
-            "autonomous.ai.models.local_model.requests.post",
+            "autonomous.ai.models.local_model._SESSION.post",
             return_value=resp,
         ) as mock_post:
             result = model.upscale_image("A cat", b"base_image_bytes", aspect_ratio="4K")
@@ -163,7 +165,7 @@ class TestGenerateAudio:
             resp.raise_for_status = MagicMock()
 
             with patch(
-                "autonomous.ai.models.local_model.requests.post",
+                "autonomous.ai.models.local_model._SESSION.post",
                 return_value=resp,
             ) as mock_post:
                 result = model.generate_audio(
@@ -189,7 +191,7 @@ class TestGenerateTranscription:
         }
         resp.raise_for_status = MagicMock()
         with patch(
-            "autonomous.ai.models.local_model.requests.post",
+            "autonomous.ai.models.local_model._SESSION.post",
             return_value=resp,
         ) as mock_post:
             result = model.generate_transcription(
@@ -208,7 +210,7 @@ class TestSummarizeText:
         resp = MagicMock()
         resp.json.return_value = {"message": {"content": "Summary chunk."}}
         with patch(
-            "autonomous.ai.models.local_model.requests.post",
+            "autonomous.ai.models.local_model._SESSION.post",
             return_value=resp,
         ) as mock_post:
             # max_chars = context_limit * 4 = 400

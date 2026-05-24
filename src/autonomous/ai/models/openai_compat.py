@@ -59,7 +59,7 @@ class OpenAIClient(AutoModel):
     _api_key = os.environ.get("HPC_API_KEY", "")
     _text_model = os.environ.get("HPC_TEXT_MODEL", "gpt-oss:20b")
     _json_model = os.environ.get("HPC_JSON_MODEL", _text_model)
-    _summary_model = os.environ.get("HPC_SUMMARY_MODEL", "gemma3:4b")
+    _summary_model = os.environ.get("HPC_SUMMARY_MODEL", "gemma4:26b")
     _embedding_model = os.environ.get(
         "HPC_EMBEDDING_MODEL", "dengcao/Qwen3-Embedding-8B:F16"
     )
