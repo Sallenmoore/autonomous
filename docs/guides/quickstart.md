@@ -21,7 +21,7 @@ Autonomous reads MongoDB settings from the environment on first use.
 Set them once (``.env`` works; ``python-dotenv`` is already a
 dependency):
 
-```env
+```ini
 DB_HOST=localhost
 DB_PORT=27017
 DB_USERNAME=app

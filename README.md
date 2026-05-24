@@ -113,11 +113,13 @@ Post.get(p.pk).title  # "hello"
 - **Testing**
   - [pytest](https://docs.pytest.org/) + [coverage](https://coverage.readthedocs.io/)
 - **Documentation**
-  - Hand-authored guides live under `docs/` (Markdown).
-  - A zero-dependency generator at `scripts/gen_docs.py` introspects
-    the public surface and renders a navigable HTML reference to
-    `docs/_build/`.
-  - Build: `make docs`. Then open `docs/_build/index.html`.
+  - Hand-authored guides live under `docs/` (Markdown via myst-parser).
+  - Sphinx + autodoc + furo render a navigable HTML reference to
+    `docs/_build/html/`; the configuration is in `docs/conf.py`.
+  - Build: `make docs`, then open `docs/_build/html/index.html`. Live-
+    reload during edits: `make docs-serve`.
+  - The legacy zero-dependency generator is archived at
+    `scripts/_archive/gen_docs.py` for reference.
 
 Autonomous has no framework dependency — pick your own (Flask, FastAPI, pure
 WSGI, CLI) and plug Autonomous into it.
