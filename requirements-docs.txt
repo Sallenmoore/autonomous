@@ -1,0 +1,9 @@
+# Documentation build deps. Used by:
+#   make docs                       (local builds)
+#   .readthedocs.yaml               (RTD CI)
+#   pyproject.toml [docs] extra     (pip install -e ".[docs]")
+sphinx>=7.0
+furo>=2024.1.29
+myst-parser>=2.0
+linkify-it-py>=2.0      # required by myst's `linkify` extension
+sphinx-autobuild>=2024.0  # live-reload server for `make docs-serve`

@@ -80,6 +80,10 @@ instance/
 
 # Sphinx documentation
 docs/_build/
+# Sphinx autosummary regenerates these stubs on every build from the
+# templates in docs/_templates/autosummary/. Committing them would mean
+# diff churn on every code change to a public module.
+docs/api/generated/
 
 # PyBuilder
 .pybuilder/
