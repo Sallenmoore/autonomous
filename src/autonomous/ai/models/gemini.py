@@ -415,6 +415,9 @@ class GeminiAIModel(AutoModel):
     def generate_image(
         self, prompt, negative_prompt="", files=None, aspect_ratio="2K", style=""
     ):
+        # negative_prompt accepted to honor the cross-provider interface
+        # but ignored: gemini-3.x-flash-image-preview's ImageConfig has no
+        # negative-prompt slot. Phrase the prompt positively instead.
         image = None
         style_str_payload = ""
         if isinstance(style, dict):
@@ -463,43 +466,19 @@ class GeminiAIModel(AutoModel):
 
         return image
 
-    def upscale_image(self, prompt, file, aspect_ratio="2KPortrait", style=None):
-        image = None
-        contents = [f"{style}. {prompt}."]
-        filerefs = self._add_files(file, mime_type="image/webp")
-        contents.extend(filerefs)
-
-        try:
-            # 1. Resolve Aspect Ratio AND Size
-            valid_ratio, valid_size = self._get_image_config(aspect_ratio)
-
-            # 2. Call API with correct parameters
-            response = self.client.models.generate_content(
-                model=self._image_model,
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    safety_settings=self.SAFETY_SETTINGS,
-                    image_config=types.ImageConfig(
-                        aspect_ratio=valid_ratio,
-                        image_size=valid_size,
-                    ),
-                ),
-            )
-
-            # 3. Extract Image Data
-            if response.candidates and response.candidates[0].content.parts:
-                for part in response.candidates[0].content.parts:
-                    if part.inline_data:
-                        image = part.inline_data.data
-                        break
-
-            if not image:
-                raise ValueError(
-                    f"API returned Success but no image data found. Response: {response}"
-                )
-
-        except (genai.errors.APIError, ValueError, OSError) as e:
-            log(f"==== Error: Unable to create image ====\n\n{e}", _print=True)
-            raise
-
-        return image
+    def upscale_image(
+        self, prompt, image_content=None, aspect_ratio="2KPortrait", style=None
+    ):
+        # Gemini's image API has no dedicated upscaler; the prior
+        # implementation re-issued a full generate_content call with the
+        # input image attached, which billed as a fresh image generation
+        # without any guarantee of resolution improvement. Returning the
+        # input unchanged is the honest contract: callers that want
+        # actual upscaling should route through ImageAgent's hybrid
+        # path (IMAGE_HYBRID_UPSCALE=1) or use the local provider.
+        log(
+            "Gemini does not support image upscaling; "
+            "returning input image unchanged.",
+            _print=False,
+        )
+        return image_content
