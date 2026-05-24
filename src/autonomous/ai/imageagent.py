@@ -104,9 +104,12 @@ class ImageAgent(BaseAgent):
 
         # Hybrid path: when the caller asked Gemini for a high-resolution
         # output (2K/4K) AND the operator opted in via env var, hand the
-        # Gemini base bytes to the local upscaler. The local /upscale
-        # endpoint isn't billed per-call, so we get the resolution
-        # without paying Gemini for the upscale tier.
+        # Gemini base bytes to the local upscaler. The local upscaler runs
+        # on operator-controlled infrastructure rather than a per-call
+        # paid API, so we get the resolution without paying Gemini for
+        # the upscale tier. Sets ``hybrid_upscale`` job-meta to
+        # ``succeeded`` / ``failed:<exc-class>`` / ``returned-base`` so a
+        # billing-conscious caller can detect a silent-downgrade.
         if (
             result
             and self.provider == "gemini"
@@ -127,13 +130,20 @@ class ImageAgent(BaseAgent):
                 )
                 # Fall back to the Gemini base on any falsy upscale —
                 # operator gets degraded resolution but not a broken
-                # response.
-                if upscaled:
+                # response. The ``returned-base`` breadcrumb makes this
+                # visible to the job-meta consumer.
+                if upscaled and upscaled is not result:
                     result = upscaled
+                    self.add_to_job_meta("hybrid_upscale", "succeeded")
+                else:
+                    self.add_to_job_meta("hybrid_upscale", "returned-base")
             except (OSError, ValueError, RuntimeError) as exc:
                 log(
                     f"Hybrid upscale failed; using Gemini base image: {exc}",
                     _print=False,
+                )
+                self.add_to_job_meta(
+                    "hybrid_upscale", f"failed:{type(exc).__name__}"
                 )
 
         if result:
@@ -173,6 +183,14 @@ class ImageAgent(BaseAgent):
             aspect_ratio=effective_ratio,
             style=style,
         )
+        # Provider-agnostic no-op detection: gemini.upscale_image and the
+        # local "size already matches target" branch both return the input
+        # bytes unchanged. ``is`` is cheap and reliable here because both
+        # implementations return the exact ``image_content`` reference
+        # rather than a copy. Surface as ``upscale_supported=False`` so
+        # callers don't silently see bytes-in-equal-bytes-out as success.
+        if result is image_content:
+            self.add_to_job_meta("upscale_supported", False)
         if result:
             image_cache.put(key, result)
         return result
