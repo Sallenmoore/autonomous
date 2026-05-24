@@ -187,3 +187,13 @@ tests/_dev_local/
 # relocate this file out of the working tree before each release.sh
 # preflight passed; this ignore makes that relocation unnecessary.
 ruvector.db
+
+# AgentDB (companion to RuVector) — same shape: runtime memory artifact
+# regenerated per cycle, never source. Showed up as untracked noise in
+# all three agent trees (dev/test/prod) after the 2026-05-23 restore.
+agentdb.rvf
+agentdb.rvf.lock
+
+# /graphify output directory — the skill emits a knowledge-graph HTML
+# bundle here. ~700KB+ per run, regenerable. Same lineage as ruvector.db.
+graphify-out/
