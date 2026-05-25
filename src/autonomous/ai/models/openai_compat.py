@@ -20,6 +20,10 @@ import requests
 
 from autonomous import log
 from autonomous.ai._json_utils import clean_json_response
+from autonomous.ai.exceptions import (
+    GenerateJSONEmptyResponseError,
+    GenerateJSONParseError,
+)
 from autonomous.ai.retry import retry
 from autonomous.model.autoattr import ListAttr, StringAttr
 from autonomous.model.automodel import AutoModel
@@ -210,13 +214,29 @@ class OpenAIClient(AutoModel):
         # First try with response_format. If the served model honors it the
         # body is already valid JSON; if not, fall through to the same cleaner
         # used by LocalAIModel.
-        raw = self._chat(
-            self._json_model,
-            system,
-            user,
-            response_format={"type": "json_object"},
-            temperature=temperature,
-        )
+        #
+        # ``_chat`` reaches into ``body["choices"][0]["message"]["content"]``
+        # — a real prod outage shape is ``{"choices": []}`` or ``{}``,
+        # which leaks KeyError/IndexError/TypeError raw. MIGRATIONS promises
+        # EmptyResponseError for "Empty body, no candidates, missing keys",
+        # so translate at the call site rather than let stdlib exceptions
+        # escape past the typed-exception contract.
+        try:
+            raw = self._chat(
+                self._json_model,
+                system,
+                user,
+                response_format={"type": "json_object"},
+                temperature=temperature,
+            )
+        except (KeyError, IndexError, TypeError) as exc:
+            raise GenerateJSONEmptyResponseError(
+                f"HPC chat endpoint returned a malformed body: {exc}"
+            ) from exc
+        if not raw or not raw.strip():
+            raise GenerateJSONEmptyResponseError(
+                "HPC chat endpoint returned an empty body for generate_json."
+            )
         try:
             return json.loads(raw)
         except json.JSONDecodeError:
@@ -229,7 +249,10 @@ class OpenAIClient(AutoModel):
                     f"--- RAW ---\n{raw[:500]}",
                     _print=True,
                 )
-                return {}
+                raise GenerateJSONParseError(
+                    f"Could not parse JSON from HPC chat response: {exc}",
+                    raw=raw,
+                ) from exc
 
     def summarize_text(self, text, primer=""):
         primer = primer or "Summarize the following text concisely."
