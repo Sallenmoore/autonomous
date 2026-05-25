@@ -127,5 +127,5 @@ cat <<EOF
 
 Next: in each consumer repo, bump the autonomous-app pin to >=${NEW_VERSION}.
 For StoryTeller, that means:
-   cd /opt/data/storyteller-dev && ./scripts/bump-autonomous.sh ${NEW_VERSION}
+   cd /opt/projects/storyteller-dev && ./scripts/bump-autonomous.sh ${NEW_VERSION}
 EOF

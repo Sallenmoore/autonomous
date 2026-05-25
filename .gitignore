@@ -4,8 +4,12 @@ test/assets/
 logs/
 base_folder/
 
-# Claude Code per-clone state
-.claude/
+# Claude Code per-clone state (projects/, settings.local.json, etc.)
+# but track shared commands/agents — those are project-level config that
+# peer trees (autonomous-dev, autonomous-test) inherit on git pull.
+.claude/*
+!.claude/commands/
+!.claude/agents/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
