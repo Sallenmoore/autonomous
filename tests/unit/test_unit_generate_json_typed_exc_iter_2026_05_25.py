@@ -331,30 +331,39 @@ class TestLocalModelExceptionDispatch:
             with pytest.raises(GenerateJSONEmptyResponseError):
                 model.generate_json("prompt", context={})
 
-    def test_missing_message_key_raises_empty_response_error(self, model):
-        """Server returns a shape we don't recognize (no "message" or no
-        "content"). Pre-PR this returned {} silently; new contract is
-        EmptyResponseError so callers can branch."""
+    def test_keyerror_in_attempt_raises_empty_response_error(self, model):
+        """The third dispatch branch in local_model's typed exception
+        block: ``except KeyError → GenerateJSONEmptyResponseError``.
+        Defensive against an unrecognised server response shape that
+        triggers KeyError somewhere inside ``_attempt`` (e.g. an
+        unexpected breaking change in ``_clean_json_response`` that
+        reaches into a missing key).
+
+        Real-world this is uncommon because the happy path uses
+        ``.get(..., default)`` chains, but the dispatch arm exists for
+        a reason — pin it directly by injecting a KeyError into the
+        cleaner."""
         from autonomous.ai.exceptions import GenerateJSONEmptyResponseError
 
         resp = MagicMock()
-        # No "message" key at all → .get("message", {}).get("content", "{}")
-        # returns "{}" which parses fine to {}. So we need to make the
-        # server return something that triggers a KeyError downstream.
-        # The cleanest way: have the retry's `_attempt` raise KeyError
-        # directly. We can simulate this with a malformed response that
-        # the cleaner / json.loads chain raises KeyError on — but the
-        # simplest path is just the explicit empty case from above.
-        # Instead, pin the existing path: empty content always lands as
-        # EmptyResponseError, regardless of the path.
-        resp.json.return_value = {"message": {"content": ""}}
+        resp.json.return_value = {"message": {"content": "{\"x\": 1}"}}
         resp.raise_for_status = MagicMock()
         with patch(
             "autonomous.ai.models.local_model._SESSION.post",
             return_value=resp,
-        ), patch.object(model, "flush_memory"):
-            with pytest.raises(GenerateJSONEmptyResponseError):
+        ), patch.object(model, "flush_memory"), patch.object(
+            model,
+            "_clean_json_response",
+            side_effect=KeyError("missing-key-fake"),
+        ):
+            with pytest.raises(GenerateJSONEmptyResponseError) as ctx:
                 model.generate_json("prompt", context={})
+            # And it must NOT be a ParseError — order in the except
+            # dispatch matters here too: KeyError is NOT a ValueError
+            # subclass, so the dispatch must route it to the KeyError
+            # arm specifically (not fall through to ValueError).
+            from autonomous.ai.exceptions import GenerateJSONParseError
+            assert not isinstance(ctx.value, GenerateJSONParseError)
 
     def test_transport_failure_propagates_as_requests_exception(self, model):
         """MIGRATIONS.md callout: pre-PR the ``retry(..., default={})``
@@ -370,6 +379,165 @@ class TestLocalModelExceptionDispatch:
         ), patch.object(model, "flush_memory"):
             with pytest.raises(requests.RequestException):
                 model.generate_json("prompt", context={})
+
+
+# ---------------------------------------------------------------------------
+# Gemini: three raise sites (no candidates, wrong function call, AttributeError)
+# ---------------------------------------------------------------------------
+
+
+def _make_gemini_stub():
+    """Build a stub that satisfies GeminiAIModel.generate_json's
+    self-access pattern without triggering AutoModel/MongoEngine setup.
+
+    Same composition-not-inheritance trick as test_unit_image_perf_iter_*
+    used: alias generate_json (and the helpers it calls) as bound
+    methods on a hand-built class. ``client`` is a property in the
+    real class; we replace it with a plain MagicMock here.
+    """
+    from autonomous.ai.models.gemini import GeminiAIModel
+
+    class _Stub:
+        instructions = "test"
+        pk = "test-pk"
+        _json_model = "gemini-test"
+        file_refs: list = []
+
+        def save(self):
+            pass
+
+        def _add_function(self, function):
+            return {"name": function["name"]}
+
+        def _add_context(self, context):
+            return []
+
+        generate_json = GeminiAIModel.generate_json
+
+    stub = _Stub()
+    stub.client = MagicMock()
+    return stub
+
+
+def _gemini_response(candidates=None):
+    """Shape a fake Gemini response with the access pattern the
+    production code reaches into."""
+    resp = MagicMock()
+    resp.candidates = candidates if candidates is not None else []
+    return resp
+
+
+class TestGeminiExceptionDispatch:
+    """Three raise sites in Gemini's generate_json:
+
+    1. ``response.candidates is empty`` or ``content is None`` or
+       ``parts is empty`` → EmptyResponseError (the new content-is-None
+       check is what the code-reviewer flagged).
+    2. ``function_call`` returned but name doesn't match (prose / wrong
+       tool) → ParseError with raw=response.text.
+    3. Anything inside the parse path that raises
+       AttributeError/IndexError/KeyError/TypeError → ParseError.
+    """
+
+    @pytest.fixture
+    def function(self):
+        return {"name": "generate_thing", "parameters": {}}
+
+    def test_no_candidates_raises_empty_response_error(self, function):
+        from autonomous.ai.exceptions import GenerateJSONEmptyResponseError
+
+        stub = _make_gemini_stub()
+        stub.client.models.generate_content.return_value = _gemini_response(
+            candidates=[]
+        )
+        with pytest.raises(GenerateJSONEmptyResponseError):
+            stub.generate_json("prompt", function=function)
+
+    def test_content_is_none_raises_empty_response_error(self, function):
+        """Gemini safety filters can drop the candidate's content to None
+        while the candidate itself stays. Pre-fix this AttributeError'd
+        on ``.content.parts`` and got misclassified as ParseError. The
+        new explicit None check routes it to EmptyResponseError."""
+        from autonomous.ai.exceptions import (
+            GenerateJSONEmptyResponseError,
+            GenerateJSONParseError,
+        )
+
+        candidate = MagicMock()
+        candidate.content = None
+        stub = _make_gemini_stub()
+        stub.client.models.generate_content.return_value = _gemini_response(
+            candidates=[candidate]
+        )
+        with pytest.raises(GenerateJSONEmptyResponseError) as ctx:
+            stub.generate_json("prompt", function=function)
+        assert not isinstance(ctx.value, GenerateJSONParseError), (
+            "filter-blocked content (content=None) must route to "
+            "EmptyResponseError, not ParseError — the MIGRATIONS table "
+            "promises 'no candidates / no content parts' is empty mode."
+        )
+
+    def test_empty_parts_raises_empty_response_error(self, function):
+        from autonomous.ai.exceptions import GenerateJSONEmptyResponseError
+
+        candidate = MagicMock()
+        candidate.content.parts = []
+        stub = _make_gemini_stub()
+        stub.client.models.generate_content.return_value = _gemini_response(
+            candidates=[candidate]
+        )
+        with pytest.raises(GenerateJSONEmptyResponseError):
+            stub.generate_json("prompt", function=function)
+
+    def test_wrong_function_name_raises_parse_error_with_raw(self, function):
+        """The model returned a function_call but for a DIFFERENT
+        function. Caller should retry with prompt change, not transport
+        retry — so this is ParseError, with the response text on .raw
+        for diagnostic logging."""
+        from autonomous.ai.exceptions import GenerateJSONParseError
+
+        candidate = MagicMock()
+        part = MagicMock()
+        part.function_call.name = "different_function"
+        candidate.content.parts = [part]
+        stub = _make_gemini_stub()
+        resp = _gemini_response(candidates=[candidate])
+        resp.text = "model went off on a tangent here"
+        stub.client.models.generate_content.return_value = resp
+        with pytest.raises(GenerateJSONParseError) as ctx:
+            stub.generate_json("prompt", function=function)
+        assert "model went off" in ctx.value.raw
+
+    def test_response_text_failure_logs_and_still_raises(self, function):
+        """``response.text`` raising AttributeError on a tool-only
+        response (a real Gemini SDK shape) should still surface as a
+        ParseError — but with raw="" since we couldn't read the body.
+        Pin that the inner catch doesn't escape the outer raise."""
+        from unittest.mock import PropertyMock
+
+        from autonomous.ai.exceptions import GenerateJSONParseError
+
+        candidate = MagicMock()
+        part = MagicMock()
+        part.function_call.name = "different_function"
+        candidate.content.parts = [part]
+        stub = _make_gemini_stub()
+        # Build the response as a real class (not MagicMock) so we can
+        # define ``text`` as a property that raises. MagicMock's
+        # auto-attribute lookup short-circuits regular property
+        # protocol, so the type-level patch on a MagicMock doesn't fire.
+        class _Resp:
+            candidates = [candidate]
+
+            @property
+            def text(self):
+                raise AttributeError("no text on tool-only response")
+
+        stub.client.models.generate_content.return_value = _Resp()
+        with pytest.raises(GenerateJSONParseError) as ctx:
+            stub.generate_json("prompt", function=function)
+        # raw is "" because the inner except swallowed (with log).
+        assert ctx.value.raw == ""
 
 
 # ---------------------------------------------------------------------------

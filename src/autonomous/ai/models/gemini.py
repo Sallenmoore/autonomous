@@ -266,12 +266,24 @@ class GeminiAIModel(AutoModel):
             config=types.GenerateContentConfig(**config_kwargs),
         )
 
-        try:
-            if not response.candidates or not response.candidates[0].content.parts:
-                raise GenerateJSONEmptyResponseError(
-                    "Gemini returned no candidates / no content parts."
-                )
+        # Empty-content guard: Gemini's safety filters can drop the
+        # candidate's ``.content`` entirely (returns ``content=None`` rather
+        # than an empty parts list). Reach in only after each level proves
+        # non-None — accessing ``.parts`` on ``None.content`` would otherwise
+        # raise AttributeError, which the outer except would misclassify as
+        # ParseError. MIGRATIONS contract says "no candidates / no content
+        # parts" is the EmptyResponse mode.
+        no_content = (
+            not response.candidates
+            or response.candidates[0].content is None
+            or not response.candidates[0].content.parts
+        )
+        if no_content:
+            raise GenerateJSONEmptyResponseError(
+                "Gemini returned no candidates / no content parts."
+            )
 
+        try:
             tool_call = response.candidates[0].content.parts[0].function_call
             if tool_call and tool_call.name == function["name"]:
                 return tool_call.args
@@ -280,10 +292,17 @@ class GeminiAIModel(AutoModel):
             # caller can decide whether to retry or change the prompt.
             raw = ""
             try:
-                raw = (response.text or "")[:500]
-            except (AttributeError, TypeError):
-                pass
-            log(f"Response: {raw}", _print=True)
+                raw = response.text or ""
+            except (AttributeError, TypeError) as text_exc:
+                # response.text can raise if the candidate has no text
+                # accessor (tool-only response, or SDK schema drift).
+                # Log it so the failure mode is visible — leaving raw=""
+                # would otherwise look identical to a wrong-tool response.
+                log(
+                    f"==== Could not read Gemini response.text: {text_exc} ====",
+                    _print=True,
+                )
+            log(f"Response: {raw[:500]}", _print=True)
             raise GenerateJSONParseError(
                 f"Gemini did not call function {function['name']!r}; "
                 f"returned prose or wrong tool.",

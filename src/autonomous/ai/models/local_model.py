@@ -185,10 +185,12 @@ class LocalAIModel(AutoModel):
                 f"--- FAILED RAW OUTPUT ---\n{last_raw['text']}\n----------",
                 _print=True,
             )
-            if not last_raw["text"].strip():
-                # Empty response — model is stuck. Flush KV cache so next
-                # request gets a clean load rather than a corrupted state.
-                self.flush_memory(self._text_model)
+            # Flush KV cache on any failure. The empty-text case is
+            # obviously "model stuck", but a model that keeps emitting
+            # unparseable prose for the same prompt is equally stuck
+            # (and retrying the same prompt without a flush burns
+            # tokens for no benefit). Cheap to flush, expensive to skip.
+            self.flush_memory(self._text_model)
 
         try:
             return retry(
@@ -211,10 +213,9 @@ class LocalAIModel(AutoModel):
             # _clean_json_response() couldn't extract valid JSON from the
             # model's free-form output. Model is producing prose; retry
             # with the same prompt usually won't help.
-            raw = last_raw["text"][:500]
             raise GenerateJSONParseError(
                 f"Could not parse JSON from Ollama response: {exc}",
-                raw=raw,
+                raw=last_raw["text"],
             ) from exc
         except ValueError as exc:
             # _attempt() raises ValueError("Ollama returned empty content")

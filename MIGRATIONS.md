@@ -26,7 +26,7 @@ failure mode to translate.
 shape — callers couldn't tell whether the model produced no output (retry
 unlikely to help), the transport blipped (retry likely to help), or the
 model returned prose (prompt change needed). Storyteller's consumer-side
-workaround at `lore_generator.py:174` papered over the symptom by checking
+workaround at `lore_generator.py:164` papered over the symptom by checking
 `if not result.get('responses')`, but the underlying ambiguity stayed.
 Surfaced by StoryTeller#675 on 2026-05-25 — a prod outage where the chat
 endpoint returned an empty/truncated 200 during the same window that the
@@ -88,7 +88,7 @@ else:
     use(result)
 ```
 
-Storyteller's `lore_generator.py:174` defensive check (`if not result or not
+Storyteller's `lore_generator.py:164` defensive check (`if not result or not
 result.get('responses')`) will still work — the new exception just escapes
 past it instead of being caught by the `if`. Migration to typed `except` is
 recommended but not required at the call site to avoid breakage.

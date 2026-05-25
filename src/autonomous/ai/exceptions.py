@@ -39,10 +39,14 @@ class GenerateJSONParseError(GenerateJSONError):
     with the same prompt usually won't help; a prompt change or a
     fallback path is the right response.
 
-    The first ~500 chars of the unparseable text are kept on ``.raw``
-    for diagnostics — caller code can log it without re-fetching.
+    The first ``_RAW_MAX`` chars of the unparseable text are kept on
+    ``.raw`` for diagnostics — caller code can log it without re-fetching.
+    Truncation lives in the constructor (not at each provider's call
+    site) so a future provider can't forget the bound.
     """
 
-    def __init__(self, msg: str, raw: str = "") -> None:
+    _RAW_MAX = 500
+
+    def __init__(self, msg: str, *, raw: str = "") -> None:
         super().__init__(msg)
-        self.raw = raw
+        self.raw = (raw or "")[: self._RAW_MAX]
