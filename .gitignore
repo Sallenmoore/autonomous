@@ -4,8 +4,14 @@ test/assets/
 logs/
 base_folder/
 
-# Claude Code per-clone state
-.claude/
+# Claude Code per-clone state — cache, scheduled-task lock, etc. The
+# commands/ subtree is whitelisted below so the project-local slash
+# commands (e.g. /test-agent, the loop-iteration brief) ride with the
+# repo and survive tree relocations. Pre-2026-05-25, the procedure was
+# only local; moving /opt/data → /opt/projects lost it on this side.
+.claude/*
+!.claude/commands/
+!.claude/commands/**
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

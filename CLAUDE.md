@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Coordination with the storyteller agent
 
-StoryTeller has its own dev / test agent pair operating on `/opt/data/storyteller-dev/` and `/opt/data/storyteller-test/`. Those agents do not edit this tree. The relationship is producer (this tree) ↔ consumer (storyteller's trees), mediated by:
+StoryTeller has its own dev / test agent pair operating on `/opt/projects/storyteller-dev/` and `/opt/projects/storyteller-test/` (moved from `/opt/data/` alongside this tree on 2026-05-25 — autonomous is a project, not a homelab service). Those agents do not edit this tree. The relationship is producer (this tree) ↔ consumer (storyteller's trees), mediated by:
 - **GitHub issues** for change requests (storyteller → autonomous).
 - **PyPI releases** for change deliveries (autonomous → storyteller).
 - The `requirements.txt` pin in each storyteller tree (`autonomous-app>=X.Y.Z`) is the version contract.
