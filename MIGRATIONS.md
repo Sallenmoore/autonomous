@@ -36,9 +36,21 @@ embedding endpoint was emitting `[HPC-UNREACHABLE]` events.
 **transport** failures too (the `retry(..., default={})` shape ate
 `requests.RequestException` after 3 attempts). Those now propagate as the
 underlying `requests` exception, matching `OpenAIClient`'s long-standing
-behavior of raising `HPCUnreachableError` on transport failure. If you
+behavior of raising `HPCUnreachableError` (defined in
+`autonomous.ai.models.openai_compat`) on transport failure. If you
 were relying on `generate_json` to mask network failures with `{}`, wrap
 the call in your own try/except.
+
+**`JSONAgent.generate` is the entry point most consumers hit.** It
+delegates to the underlying provider's `generate_json` without an outer
+try/except (`src/autonomous/ai/jsonagent.py:28`), so the new typed
+exceptions propagate raw through `JSONAgent` to the caller. Note also
+that `JSONAgent.generate` raises `ValueError` for shape-not-dict
+results (line 29-35) — that's distinct from the new `RuntimeError`-based
+hierarchy. Downstream code catching only `ValueError` to mean "any AI
+failure" will start missing the new failure classes; switch to
+`except (ValueError, GenerateJSONError)` or refactor to branch on the
+specific subclass.
 
 **Migration.**
 

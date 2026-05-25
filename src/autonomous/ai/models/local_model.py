@@ -211,7 +211,7 @@ class LocalAIModel(AutoModel):
             # _clean_json_response() couldn't extract valid JSON from the
             # model's free-form output. Model is producing prose; retry
             # with the same prompt usually won't help.
-            raw = last_raw["text"][:500] if last_raw["text"] else ""
+            raw = last_raw["text"][:500]
             raise GenerateJSONParseError(
                 f"Could not parse JSON from Ollama response: {exc}",
                 raw=raw,
