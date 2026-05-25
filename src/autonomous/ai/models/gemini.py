@@ -11,6 +11,10 @@ from google.genai.types import Part
 from pydub import AudioSegment
 
 from autonomous import log
+from autonomous.ai.exceptions import (
+    GenerateJSONEmptyResponseError,
+    GenerateJSONParseError,
+)
 from autonomous.model.autoattr import ListAttr, StringAttr
 from autonomous.model.automodel import AutoModel
 
@@ -262,19 +266,54 @@ class GeminiAIModel(AutoModel):
             config=types.GenerateContentConfig(**config_kwargs),
         )
 
-        try:
-            if not response.candidates or not response.candidates[0].content.parts:
-                return {}
+        # Empty-content guard: Gemini's safety filters can drop the
+        # candidate's ``.content`` entirely (returns ``content=None`` rather
+        # than an empty parts list). Reach in only after each level proves
+        # non-None — accessing ``.parts`` on ``None.content`` would otherwise
+        # raise AttributeError, which the outer except would misclassify as
+        # ParseError. MIGRATIONS contract says "no candidates / no content
+        # parts" is the EmptyResponse mode.
+        no_content = (
+            not response.candidates
+            or response.candidates[0].content is None
+            or not response.candidates[0].content.parts
+        )
+        if no_content:
+            raise GenerateJSONEmptyResponseError(
+                "Gemini returned no candidates / no content parts."
+            )
 
+        try:
             tool_call = response.candidates[0].content.parts[0].function_call
             if tool_call and tool_call.name == function["name"]:
                 return tool_call.args
-            else:
-                log(f"Response: {response.text}", _print=True)
-                return {}
+            # No matching function_call — the model returned prose or
+            # called a different tool. Surface the raw response so the
+            # caller can decide whether to retry or change the prompt.
+            raw = ""
+            try:
+                raw = response.text or ""
+            except (AttributeError, TypeError) as text_exc:
+                # response.text can raise if the candidate has no text
+                # accessor (tool-only response, or SDK schema drift).
+                # Log it so the failure mode is visible — leaving raw=""
+                # would otherwise look identical to a wrong-tool response.
+                log(
+                    f"==== Could not read Gemini response.text: {text_exc} ====",
+                    _print=True,
+                )
+            log(f"Response: {raw[:500]}", _print=True)
+            raise GenerateJSONParseError(
+                f"Gemini did not call function {function['name']!r}; "
+                f"returned prose or wrong tool.",
+                raw=raw,
+            )
         except (AttributeError, IndexError, KeyError, TypeError) as e:
             log(f"==== Failed to parse ToolCall response: {e} ====")
-            return {}
+            raise GenerateJSONParseError(
+                f"Could not parse Gemini ToolCall response: {e}",
+                raw="",
+            ) from e
 
     def generate_text(self, message, additional_instructions="", uri="", context=None, temperature=None):
         context = context or {}

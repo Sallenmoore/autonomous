@@ -52,7 +52,7 @@ import requests
 # Repo root derived from this file's location, NOT a hardcoded path,
 # so the subprocess-pytest test below works in any checkout (including
 # CI's $GITHUB_WORKSPACE which lives under /home/runner/work/, not
-# /opt/data/).
+# /opt/projects/).
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
@@ -350,7 +350,7 @@ class TestPytestPerfMarkerActuallyApplies:
         #
         # `cwd` is derived from this file's location so the test
         # works in any checkout (including CI's $GITHUB_WORKSPACE
-        # under /home/runner/work/, not the dev tree's /opt/data/).
+        # under /home/runner/work/, not the dev tree's /opt/projects/).
         result = subprocess.run(
             [
                 sys.executable, "-m", "pytest",
