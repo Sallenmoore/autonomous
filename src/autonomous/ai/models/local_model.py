@@ -9,6 +9,10 @@ from pydub import AudioSegment
 
 from autonomous import log
 from autonomous.ai._json_utils import clean_json_response
+from autonomous.ai.exceptions import (
+    GenerateJSONEmptyResponseError,
+    GenerateJSONParseError,
+)
 from autonomous.ai.retry import retry
 from autonomous.model.autoattr import ListAttr, StringAttr
 from autonomous.model.automodel import AutoModel
@@ -186,19 +190,45 @@ class LocalAIModel(AutoModel):
                 # request gets a clean load rather than a corrupted state.
                 self.flush_memory(self._text_model)
 
-        return retry(
-            _attempt,
-            max_attempts=3,
-            sleep_seconds=self._retry_sleep,
-            catch=(
-                requests.RequestException,
-                json.JSONDecodeError,
-                ValueError,
-                KeyError,
-            ),
-            on_retry=_on_retry,
-            default={},
-        )
+        try:
+            return retry(
+                _attempt,
+                max_attempts=3,
+                sleep_seconds=self._retry_sleep,
+                catch=(
+                    requests.RequestException,
+                    json.JSONDecodeError,
+                    ValueError,
+                    KeyError,
+                ),
+                on_retry=_on_retry,
+            )
+        except json.JSONDecodeError as exc:
+            # Order matters: json.JSONDecodeError is a subclass of
+            # ValueError, so this must come before the ValueError clause
+            # below or it gets shadowed.
+            #
+            # _clean_json_response() couldn't extract valid JSON from the
+            # model's free-form output. Model is producing prose; retry
+            # with the same prompt usually won't help.
+            raw = last_raw["text"][:500] if last_raw["text"] else ""
+            raise GenerateJSONParseError(
+                f"Could not parse JSON from Ollama response: {exc}",
+                raw=raw,
+            ) from exc
+        except ValueError as exc:
+            # _attempt() raises ValueError("Ollama returned empty content")
+            # for the empty-body case.
+            raise GenerateJSONEmptyResponseError(
+                f"Ollama returned no parseable content after retries: {exc}"
+            ) from exc
+        except KeyError as exc:
+            # Server returned a shape we don't recognize (missing
+            # "message" / "content"). Treat as empty for caller branching
+            # since there's nothing to parse.
+            raise GenerateJSONEmptyResponseError(
+                f"Ollama response missing expected keys: {exc}"
+            ) from exc
 
     def generate_text(
         self,
