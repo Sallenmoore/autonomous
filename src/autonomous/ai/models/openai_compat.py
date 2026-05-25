@@ -20,6 +20,10 @@ import requests
 
 from autonomous import log
 from autonomous.ai._json_utils import clean_json_response
+from autonomous.ai.exceptions import (
+    GenerateJSONEmptyResponseError,
+    GenerateJSONParseError,
+)
 from autonomous.ai.retry import retry
 from autonomous.model.autoattr import ListAttr, StringAttr
 from autonomous.model.automodel import AutoModel
@@ -217,6 +221,10 @@ class OpenAIClient(AutoModel):
             response_format={"type": "json_object"},
             temperature=temperature,
         )
+        if not raw or not raw.strip():
+            raise GenerateJSONEmptyResponseError(
+                "HPC chat endpoint returned an empty body for generate_json."
+            )
         try:
             return json.loads(raw)
         except json.JSONDecodeError:
@@ -229,7 +237,10 @@ class OpenAIClient(AutoModel):
                     f"--- RAW ---\n{raw[:500]}",
                     _print=True,
                 )
-                return {}
+                raise GenerateJSONParseError(
+                    f"Could not parse JSON from HPC chat response: {exc}",
+                    raw=raw[:500],
+                ) from exc
 
     def summarize_text(self, text, primer=""):
         primer = primer or "Summarize the following text concisely."

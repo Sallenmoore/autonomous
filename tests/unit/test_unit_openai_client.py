@@ -123,13 +123,16 @@ class TestGenerateJson:
             result = client.generate_json("describe a character")
         assert result == {"name": "Aria"}
 
-    def test_returns_empty_on_unparseable_response(self, client):
+    def test_raises_parse_error_on_unparseable_response(self, client):
+        from autonomous.ai.exceptions import GenerateJSONParseError
+
         with patch(
             "autonomous.ai.models.openai_compat._SESSION.post",
             return_value=_mock_chat_response("I cannot help with that."),
         ):
-            result = client.generate_json("anything")
-        assert result == {}
+            with pytest.raises(GenerateJSONParseError) as ctx:
+                client.generate_json("anything")
+        assert "I cannot help" in ctx.value.raw
 
 
 class TestEmbeddings:

@@ -11,6 +11,10 @@ from google.genai.types import Part
 from pydub import AudioSegment
 
 from autonomous import log
+from autonomous.ai.exceptions import (
+    GenerateJSONEmptyResponseError,
+    GenerateJSONParseError,
+)
 from autonomous.model.autoattr import ListAttr, StringAttr
 from autonomous.model.automodel import AutoModel
 
@@ -264,17 +268,33 @@ class GeminiAIModel(AutoModel):
 
         try:
             if not response.candidates or not response.candidates[0].content.parts:
-                return {}
+                raise GenerateJSONEmptyResponseError(
+                    "Gemini returned no candidates / no content parts."
+                )
 
             tool_call = response.candidates[0].content.parts[0].function_call
             if tool_call and tool_call.name == function["name"]:
                 return tool_call.args
-            else:
-                log(f"Response: {response.text}", _print=True)
-                return {}
+            # No matching function_call — the model returned prose or
+            # called a different tool. Surface the raw response so the
+            # caller can decide whether to retry or change the prompt.
+            raw = ""
+            try:
+                raw = (response.text or "")[:500]
+            except (AttributeError, TypeError):
+                pass
+            log(f"Response: {raw}", _print=True)
+            raise GenerateJSONParseError(
+                f"Gemini did not call function {function['name']!r}; "
+                f"returned prose or wrong tool.",
+                raw=raw,
+            )
         except (AttributeError, IndexError, KeyError, TypeError) as e:
             log(f"==== Failed to parse ToolCall response: {e} ====")
-            return {}
+            raise GenerateJSONParseError(
+                f"Could not parse Gemini ToolCall response: {e}",
+                raw="",
+            ) from e
 
     def generate_text(self, message, additional_instructions="", uri="", context=None, temperature=None):
         context = context or {}

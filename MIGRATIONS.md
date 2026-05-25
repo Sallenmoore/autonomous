@@ -5,6 +5,94 @@ recent first.
 
 ## Unreleased
 
+### `generate_json` now raises typed exceptions on failure (Issue #124)
+
+**What changed.** `OpenAIClient.generate_json`, `LocalAIModel.generate_json`,
+and `GeminiAIModel.generate_json` previously returned an empty dict `{}` on
+empty / unparseable responses. They now raise typed exceptions from a new
+module, `autonomous.ai.exceptions`:
+
+| Mode | Exception | When |
+|------|-----------|------|
+| Empty body, no candidates, missing keys | `GenerateJSONEmptyResponseError` | Server returned 200 with empty content, Gemini returned no candidates, Ollama response missing `message.content`. Often transient — retry can help. |
+| Non-JSON / wrong-shape output | `GenerateJSONParseError` | Model returned prose, called a non-matching tool, or produced JSON that `clean_json_response()` still couldn't parse. The first ~500 chars of the raw response is on `.raw` for diagnostics. Retry with the same prompt usually won't help. |
+| Any of the above | `GenerateJSONError` | Base class. Catch this to treat all failure modes uniformly. |
+
+`MockAIModel.generate_json` is unchanged — it still returns a dict (possibly
+empty) by design, since it's the offline testing escape hatch and has no
+failure mode to translate.
+
+**Why.** The silent `{}` return collapsed three distinct failure modes into one
+shape — callers couldn't tell whether the model produced no output (retry
+unlikely to help), the transport blipped (retry likely to help), or the
+model returned prose (prompt change needed). Storyteller's consumer-side
+workaround at `lore_generator.py:174` papered over the symptom by checking
+`if not result.get('responses')`, but the underlying ambiguity stayed.
+Surfaced by StoryTeller#675 on 2026-05-25 — a prod outage where the chat
+endpoint returned an empty/truncated 200 during the same window that the
+embedding endpoint was emitting `[HPC-UNREACHABLE]` events.
+
+**Behavior change scope.** `LocalAIModel.generate_json` previously swallowed
+**transport** failures too (the `retry(..., default={})` shape ate
+`requests.RequestException` after 3 attempts). Those now propagate as the
+underlying `requests` exception, matching `OpenAIClient`'s long-standing
+behavior of raising `HPCUnreachableError` (defined in
+`autonomous.ai.models.openai_compat`) on transport failure. If you
+were relying on `generate_json` to mask network failures with `{}`, wrap
+the call in your own try/except.
+
+**`JSONAgent.generate` is the entry point most consumers hit.** It
+delegates to the underlying provider's `generate_json` without an outer
+try/except (`src/autonomous/ai/jsonagent.py:28`), so the new typed
+exceptions propagate raw through `JSONAgent` to the caller. Note also
+that `JSONAgent.generate` raises `ValueError` for shape-not-dict
+results (line 29-35) — that's distinct from the new `RuntimeError`-based
+hierarchy. Downstream code catching only `ValueError` to mean "any AI
+failure" will start missing the new failure classes; switch to
+`except (ValueError, GenerateJSONError)` or refactor to branch on the
+specific subclass.
+
+**Migration.**
+
+```python
+# Before
+result = agent.generate_json("...")
+if not result or not result.get("responses"):
+    handle_failure()
+else:
+    use(result)
+
+# After (mode-aware)
+from autonomous.ai.exceptions import (
+    GenerateJSONError,
+    GenerateJSONEmptyResponseError,
+    GenerateJSONParseError,
+)
+
+try:
+    result = agent.generate_json("...")
+except GenerateJSONEmptyResponseError:
+    # transient — retry or fall back
+    handle_transient_failure()
+except GenerateJSONParseError as exc:
+    # deterministic — log exc.raw, change prompt
+    handle_parse_failure(exc.raw)
+use(result)
+
+# Or, if you want uniform handling:
+try:
+    result = agent.generate_json("...")
+except GenerateJSONError:
+    handle_failure()
+else:
+    use(result)
+```
+
+Storyteller's `lore_generator.py:174` defensive check (`if not result or not
+result.get('responses')`) will still work — the new exception just escapes
+past it instead of being caught by the `if`. Migration to typed `except` is
+recommended but not required at the call site to avoid breakage.
+
 ### autonomous.db fork — dead surface removal (Item 23)
 
 **What changed.** ~1800 LOC of unreferenced mongoengine carry-over was
