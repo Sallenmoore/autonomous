@@ -23,7 +23,8 @@ RUN pip install --no-cache-dir \
     -r requirements_dev.txt \
     -r requirements-tasks.txt
 
-# Runtime: the repo gets bind-mounted over /var/app/autonomous in
-# docker-compose.yml, so pip install -e .[tasks] just registers the
-# editable autonomous package against already-installed deps (~5s).
-CMD ["sh", "-c", "pip install --no-cache-dir -e .[tasks] && exec rq worker high default low --url redis://cachedb:6379"]
+# No CMD — the worker is invoked exclusively via tests/docker-compose.yml,
+# which sets its own `command:` (kept there to make the rq invocation
+# self-documenting in the service definition). Duplicating it here would
+# be dead code that only fires if someone bypasses compose, which doesn't
+# happen for this image.
