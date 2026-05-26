@@ -112,9 +112,19 @@ class TestAutoTasks:
     def test_autotask_all(self):
         tasks = AutoTasks()
         tasks.clear()
-        (tasks.task(mytask, 5, i) for i in range(3))
-        for t in tasks.get_tasks():
-            assert t.return_value or t.status == "running"
+        # List comprehension (not a generator expression) so the tasks
+        # are actually enqueued — the old `(... for i in range(3))`
+        # form built a generator that was never iterated.
+        [tasks.task(mytask, 5, i) for i in range(3)]
+        # get_tasks() returns dict[str, list[AutoTask]] keyed by
+        # registry name ("started", "finished", "failed", "queued"),
+        # not a flat iterable. Iterate categories → task lists.
+        for category, task_list in tasks.get_tasks().items():
+            for t in task_list:
+                assert t.return_value is not None or t.status in (
+                    "started",
+                    "queued",
+                ), f"task {t.id} in category {category!r} has no return_value and status={t.status!r}"
 
     def test_autotask_fail(self):
         tasks = AutoTasks()
@@ -122,5 +132,13 @@ class TestAutoTasks:
         task = tasks.task(myfailedtask, 5, 5)
         _wait_for_terminal(task)
         assert task.status == "failed"
-        assert task.result["error"]
-        print(task.result["error"])
+        # Failed jobs have no return value — rq.Job.return_value() is
+        # None — so the previous `task.result["error"]` dict-subscript
+        # TypeErrored before this assertion fired. Inspect exc_info
+        # (already exposed via AutoTask.exc_info at autotasks.py:79).
+        # myfailedtask raises TypeError on `int(a) + str(b)`.
+        assert task.exc_info, "failed job has no exc_info"
+        assert "TypeError" in task.exc_info, (
+            f"expected TypeError in exc_info, got: {task.exc_info!r}"
+        )
+        print(task.exc_info)
