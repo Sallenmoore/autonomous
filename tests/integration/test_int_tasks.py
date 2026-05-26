@@ -84,7 +84,7 @@ class TestAutoTasks:
         tasks = AutoTasks()
         tasks.clear()
         job = tasks.task(mytask, 5, 7)
-        while job.status == "running":
+        while job.status not in ("finished", "failed"):
             time.sleep(1)
         assert job.status == "finished"
 
@@ -108,7 +108,7 @@ class TestAutoTasks:
         tasks = AutoTasks()
         tasks.clear()
         task = tasks.task(myfailedtask, 5, 5)
-        while task.status == "running":
+        while task.status not in ("finished", "failed"):
             time.sleep(1)
         assert task.status == "failed"
         assert task.result["error"]
