@@ -12,6 +12,21 @@ import time
 from rq import get_current_job
 
 
+# rq exposes more terminal job states than just finished/failed:
+# `stopped` from send_stop_job_command, `canceled` from queue.cancel_job.
+# A wait-loop that only watches finished/failed would hang if a worker
+# crash or test-teardown SIGTERM lands the job in one of the others.
+# Bound the wait so a hung worker fails the test fast rather than
+# wedging the whole pytest invocation.
+TERMINAL_STATES = ("finished", "failed", "stopped", "canceled")
+
+
+def _wait_for_terminal(job, timeout=30):
+    deadline = time.monotonic() + timeout
+    while job.status not in TERMINAL_STATES and time.monotonic() < deadline:
+        time.sleep(1)
+
+
 def mylongtask():
     job = get_current_job()
     print(f"\nCurrent job 1: {job.id}")
@@ -84,17 +99,14 @@ class TestAutoTasks:
         tasks = AutoTasks()
         tasks.clear()
         job = tasks.task(mytask, 5, 7)
-        while job.status not in ("finished", "failed"):
-            time.sleep(1)
+        _wait_for_terminal(job)
         assert job.status == "finished"
 
     def test_autotask_results(self):
         tasks = AutoTasks()
         tasks.clear()
         job = tasks.task(mytask, 5, 7)
-        while job.status not in ["finished", "failed"]:
-            time.sleep(1)
-            print(job.status)
+        _wait_for_terminal(job)
         assert job.return_value == 12
 
     def test_autotask_all(self):
@@ -108,8 +120,7 @@ class TestAutoTasks:
         tasks = AutoTasks()
         tasks.clear()
         task = tasks.task(myfailedtask, 5, 5)
-        while task.status not in ("finished", "failed"):
-            time.sleep(1)
+        _wait_for_terminal(task)
         assert task.status == "failed"
         assert task.result["error"]
         print(task.result["error"])
