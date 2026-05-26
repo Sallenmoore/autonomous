@@ -7,3 +7,4 @@ setuptools
 build
 pytest-dotenv
 pytest-benchmark
+pyyaml
