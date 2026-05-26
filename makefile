@@ -30,6 +30,15 @@ inittests: cleantests
 	pip install --upgrade -r ./requirements_dev.txt
 	pip install -e ".[all]"
 	cd tests && sudo docker compose up -d --build
+	@echo "Waiting for rq worker to register with redis..."
+	@bash -c 'for i in $$(seq 1 60); do \
+		if sudo docker compose -f tests/docker-compose.yml exec -T cachedb redis-cli SCARD rq:workers 2>/dev/null | grep -qE "^[1-9]"; then \
+			echo "  worker registered after $$((i*5))s"; exit 0; \
+		fi; \
+		sleep 5; \
+	done; \
+	echo "  worker did not register within 300s — check tests/docker-compose.yml worker logs" >&2; \
+	exit 1'
 
 cleantests: clean
 	- cd tests && sudo docker compose down --remove-orphans
