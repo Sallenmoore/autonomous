@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Coordination with the storyteller agent
 
 StoryTeller has its own dev / test agent pair operating on `/opt/projects/storyteller-dev/` and `/opt/projects/storyteller-test/` (moved from `/opt/data/` alongside this tree on 2026-05-25 — autonomous is a project, not a homelab service). Those agents do not edit this tree. The relationship is producer (this tree) ↔ consumer (storyteller's trees), mediated by:
-- **Forgejo issues** for change requests (storyteller → autonomous) — both projects migrated 2026-05-25 from the public github mirror to the private Forgejo instance at `git.stevenamoore.dev`; see `MOORELAB-DEPLOY-NOTES.md` and `AGENT-MIGRATION-HANDOFF-2026-05-25.md`.
+- **Forgejo issues** at `https://git.stevenamoore.dev/samoore/autonomous/issues` for change requests (storyteller → autonomous). Both projects migrated 2026-05-25 from the public github mirror to the private Forgejo instance; the legacy github tracker at `Sallenmoore/autonomous` is a stale public mirror only — do not file there.
 - **PyPI releases** for change deliveries (autonomous → storyteller).
 - The `requirements.txt` pin in each storyteller tree (`autonomous-app>=X.Y.Z`) is the version contract.
 
@@ -17,7 +17,7 @@ Storyteller no longer vendors this repo as a submodule (decoupled 2026-05-05); i
 
 ### Issue body template
 
-When the storyteller agent (or any other consumer) needs an autonomous library change, they file an issue against this repo via the Forgejo API. The canonical repo is `samoore/autonomous` on `git.stevenamoore.dev`; the `gh` CLI does not work against Forgejo. Standard preamble (see `.claude/commands/test-agent.md` for the same shape):
+When the storyteller agent (or any other consumer) needs an autonomous library change, they file an issue against this repo via the Forgejo API. The canonical repo is `samoore/autonomous` on `git.stevenamoore.dev`; the `gh` CLI does not work against Forgejo. Standard preamble (matches the agent slash commands at `.claude/commands/{dev,test,prod}-agent.md`):
 
 ```bash
 TOKEN=$(grep '^FORGEJO_API_KEY=' ~/.secrets/forgejo.env | cut -d= -f2- | tr -d '\r\n"'\'')
@@ -113,7 +113,7 @@ The library is a set of loosely-coupled service wrappers glued together by the `
 
 The autonomous library runs as a closed-loop pipeline with three agents — paired with a downstream consumer (storyteller currently) that files inbound issues. The flow is **consumer issue OR CI release-smoke fail → dev → test → main → [user: `/prod-agent`] → PyPI release → CI release-smoke verify**, with two independent test perspectives, asymmetric review gates, and explicit halt triggers. Full design + history: `~/.claude/plans/autonomous-process-codification.md` and `~/.claude/plans/agent-topology.md`.
 
-**Release ownership (changed 2026-05-14):** autonomous-prod runs `./scripts/release.sh` under the user's manual `/prod-agent` trigger, but **only** when the merged `test → main` PR carries the `auto-release` label. autonomous-test sets the label as the release-intent signal; autonomous-prod gates the actual ship on it. Docs-only / internal-only PRs land on main without a corresponding PyPI bump. autonomous-prod also owns **post-release smoke verification** (`scripts/smoke_test.sh`) on the same `/prod-agent` invocation that produced the release, and files / updates `[smoke-fail]` issues on signature mismatch. CI `release-smoke.yml` runs in parallel on the release commit as a public-audit layer in a clean runner environment (Forgejo Actions reads `.github/workflows/*.yml` directly on this deployment — same workflow file, separate runner from the operator's local smoke); the two layers are complementary, and disagreement between them is itself signal worth investigating. **No polling** — prod is manual-trigger only.
+**Release ownership (changed 2026-05-14):** autonomous-prod runs `./scripts/release.sh` under the user's manual `/prod-agent` trigger, but **only** when the merged `test → main` PR carries the `auto-release` label. autonomous-test sets the label as the release-intent signal; autonomous-prod gates the actual ship on it. Docs-only / internal-only PRs land on main without a corresponding PyPI bump. autonomous-prod also owns **post-release smoke verification** (`scripts/smoke_test.sh`) on the same `/prod-agent` invocation that produced the release, and files / updates `[smoke-fail]` issues on signature mismatch. CI `release-smoke.yml` runs in parallel on the release commit as an audit layer in a clean runner environment (Forgejo Actions reads `.github/workflows/*.yml` directly on this deployment — same workflow file, separate runner from the operator's local smoke); the two layers are complementary, and disagreement between them is itself signal worth investigating. **No polling** — prod is manual-trigger only.
 
 ### Agents at a glance
 
@@ -149,7 +149,7 @@ Manual-triggered (no `/loop`, no polling). Owns the release step (`./scripts/rel
 
 **Per-invocation step protocol lives in [.claude/commands/prod-agent.md](.claude/commands/prod-agent.md)** — that file is the executable form, invoked as `/prod-agent`. This section captures the doctrine; the slash command captures the procedure.
 
-Local smoke (`scripts/smoke_test.sh`, run by prod at step 4 of the protocol) and CI `release-smoke.yml` (runs automatically on release commits to main) form a two-layer post-publish check: local smoke gives the operator immediate feedback under `/prod-agent`; CI provides the public-audit layer that runs in a clean runner environment (Forgejo Actions, since origin is Forgejo — github mirror is opt-in only) and catches things the local environment may mask. **Only local prod files `[smoke-fail]` issues** — CI just runs `smoke_test.sh` and surfaces failure as a red check on the release commit. A red CI release-smoke after a green local smoke is the halt-trigger #5 case (human triage).
+Local smoke (`scripts/smoke_test.sh`, run by prod at step 4 of the protocol) and CI `release-smoke.yml` (runs automatically on release commits to main, via Forgejo Actions reading `.github/workflows/release-smoke.yml`) form a two-layer post-publish check: local smoke gives the operator immediate feedback under `/prod-agent`; CI provides the audit layer that runs in a clean runner environment (Forgejo Actions, since origin is Forgejo — github mirror is opt-in only) and catches things the local environment may mask. **Only local prod files `[smoke-fail]` issues** — CI just runs `smoke_test.sh` and surfaces failure as a red check on the release commit. A red CI release-smoke after a green local smoke is the halt-trigger #5 case (human triage).
 
 ### autonomous-dev loop
 
@@ -165,7 +165,7 @@ Per iteration the command:
 4. **Halts on unclear hypotheses.** Per-issue, not per-batch — the rest of the batch can wait or proceed minus the unclear one (user's call).
 5. **Branches once, fixes all.** `iter/<YYYY-MM-DD>-batch`. Semantic commits OK; they all ride in one PR. Ephemeral tests in `tests/_dev_local/` (gitignored — **not committed**; the test agent will write its own independent committed tests).
 6. **Runs the local gate.** `pytest tests/unit && pytest tests/integration -m integration`, then `/review` over the batch diff. Red after 3 fix attempts on any single failure → halt.
-7. **Opens ONE PR `dev → test`** with `Closes #<N>` for every issue in the body (same-repo refs auto-close on `test → main` merge — Forgejo and Gitea honor the same "Closes" syntax as GitHub).
+7. **Opens ONE PR `dev → test`** via Forgejo `POST /pulls` with `Closes #<N>` for every issue in the body — Forgejo and Gitea honor the same `Closes` / `Fixes` / `Resolves` auto-close keywords as GitHub, and the close propagates through the `test → main` merge.
 8. **Watches own CI** until green or 3 fix-up cycles still red. Fix-ups are **new commits** — never `--amend`, never force-push (CI is keyed to SHAs; rewriting commits the runner already saw can destroy the test agent's review state).
 
 Standing exclusions still apply: dev does not push to `test`, does not edit `tests/unit/` or `tests/integration/` (test agent's exclusive surface per "Two-perspective testing"), does not run `release.sh`, does not `--no-verify`, does not force-push.
@@ -194,7 +194,7 @@ Standing exclusions still apply: test does not edit the dev tree, does not push 
 
 When any fire, the agent stops, posts a summary, and waits for user input. On resume, the agent picks up where it stopped — does not skip the failing item.
 
-1. **Tests red after 3 fix attempts.** Local gate (test) or CI on a PR (Forgejo Actions per `MOORELAB-DEPLOY-NOTES.md`).
+1. **Tests red after 3 fix attempts.** Local gate (test) or Forgejo Actions CI on a PR.
 2. **Issue scope unclear** (dev only).
 3. **Merge conflict on back-merge.** `test → dev` can't auto-resolve.
 4. **Unexpected commit on main.** A commit lands on `main` that wasn't part of any `test → main` PR or a `release.sh` version-bump push. All agents pause, sync from `origin/main`, ask user.
