@@ -81,8 +81,12 @@ class AutoTask:
         return self.job.exc_info
 
     @property
+    def return_value(self):
+        return self.job.return_value()
+
+    @property
     def result(self):
-        return self.job.result
+        return self.job.return_value()
 
     def delete(self):
         self.job.delete()
