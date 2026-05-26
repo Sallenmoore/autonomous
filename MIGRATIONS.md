@@ -5,6 +5,30 @@ recent first.
 
 ## Unreleased
 
+### `AutoTask.exc_info` now reads current job state, not sticky history (Issue #14)
+
+**What changed.** `AutoTask.exc_info` previously delegated to `Job.exc_info` (rq attribute). It now delegates to `Job.latest_result().exc_string`. Return contract `str | None` is unchanged, but the underlying semantics shifted from rq's deprecated "last seen exception" attribute to the modern "current Result's exc_string" accessor.
+
+**Why.** rq 2.x deprecates `Job.exc_info` (a future rq major will remove it). PR #18 migrates ahead of the removal, matching PR #7's earlier `Job.result` → `Job.return_value()` shape. Same pattern, sibling attribute.
+
+**Behavior change scope.** For most consumers the new behavior is identical — a job that failed (and was not retried successfully) still surfaces its formatted traceback via `task.exc_info`, and a job that never failed still returns `None`. The observable difference is for **retried jobs**: pre-PR-#18, `Job.exc_info` remained populated with the most recent exception string even after a successful retry, so `task.exc_info` was effectively a "this job has ever failed" sentinel. Post-PR-#18, `task.exc_info` reflects the *current* state — for a job that failed and then succeeded on retry, it returns `None`.
+
+If your code uses `task.exc_info` as a "did this job ever fail at any point" check, switch to inspecting the full result history (or persist your own failure flag at enqueue time). For the more common case ("is this job currently in a failed terminal state"), the new behavior is what you wanted anyway.
+
+**Migration.**
+
+```python
+# Before — implicitly relied on rq's sticky-attribute semantics
+if task.exc_info:
+    log_error_once(task.exc_info)
+
+# After — explicit current-state check, unchanged for failed/finished jobs
+if task.status == "failed" and task.exc_info:
+    log_error_once(task.exc_info)
+```
+
+No symbol renames; no required code change for the common-case usage.
+
 ### `generate_json` now raises typed exceptions on failure (Issue #124)
 
 **What changed.** `OpenAIClient.generate_json`, `LocalAIModel.generate_json`,
