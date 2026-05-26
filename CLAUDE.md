@@ -153,7 +153,7 @@ Local smoke (`scripts/smoke_test.sh`, run by prod at step 4 of the protocol) and
 
 ### autonomous-dev loop
 
-The operating spec is the **project-local slash command** at `/opt/projects/autonomous-dev/.claude/commands/dev-agent.md` — invoked as `/dev-agent` from the dev tree (or via the "run dev" trigger phrase). The slash command is the source of truth for the procedure; this section describes the **contract** (what the iteration does, what's in scope, what halts), not the step-by-step. The dev-agent command lives in the dev tree, so the absolute path is the only form that's readable from this (test) tree.
+The operating spec is the **project-local slash command** at [.claude/commands/dev-agent.md](.claude/commands/dev-agent.md) — invoked as `/dev-agent` from the dev tree (or via the "run dev" trigger phrase). The slash command is the source of truth for the procedure; this section describes the **contract** (what the iteration does, what's in scope, what halts), not the step-by-step.
 
 **Mode: batch.** One `/dev-agent` invocation consumes the entire eligible open-issue queue into a single `dev → test` PR. This supersedes the older one-issue-per-iteration form (revised 2026-05-11; CI-watch added 2026-05-12; back-merge-first promoted to step 1 on 2026-05-16). The user wanted fewer, larger PRs over many small ones — fewer test-agent cycles, fewer back-merges, more contiguous review surface.
 

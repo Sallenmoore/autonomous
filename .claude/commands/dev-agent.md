@@ -16,12 +16,12 @@ You are the **autonomous-dev agent** — the implementation node in the topology
 TOKEN=$(grep '^FORGEJO_API_KEY=' ~/.secrets/forgejo.env | cut -d= -f2- | tr -d '\r\n"'\'')
 AUTH_H="Authorization: token $TOKEN"
 JSON_H="Content-Type: application/json"
-AUTONOMOUS_BASE="https://git.stevenamoore.dev/api/v1/repos/samoore/autonomous"
+BASE="https://git.stevenamoore.dev/api/v1/repos/samoore/autonomous"
 ```
 
 **Forgejo API quirks worth memorizing (will bite if forgotten):**
 
-- `POST /issues` and `POST /pulls` accept label IDs as **integers, not names**. Build a name→id map once per iteration: `LABEL_MAP=$(curl -sS -H "$AUTH_H" "$AUTONOMOUS_BASE/labels" | jq -c 'map({key:.name,value:.id})|from_entries')`. Then `LABEL_IDS=$(jq -n --argjson m "$LABEL_MAP" '[$m["bug"],$m["auto-filed"]]')`.
+- `POST /issues` and `POST /pulls` accept label IDs as **integers, not names**. Build a name→id map once per iteration: `LABEL_MAP=$(curl -sS -H "$AUTH_H" "$BASE/labels" | jq -c 'map({key:.name,value:.id})|from_entries')`. Then `LABEL_IDS=$(jq -n --argjson m "$LABEL_MAP" '[$m["bug"],$m["auto-filed"]]')`.
 - `GET /issues?labels=name1,name2` — the **list** endpoint's `labels` parameter takes **names**. Asymmetric with POST.
 - `GET /issues` returns issues + PRs combined. Always pass `&type=issues` (or `&type=pulls`).
 - `POST /pulls/<n>/merge` body is `{"Do":"merge"}` — **capital D**, inherited from Gitea.
@@ -35,7 +35,7 @@ Halt and post a one-sentence summary if any fires:
 
 - **Unexpected commit on main:** `git fetch origin main --quiet`, then check that `origin/main`'s tip is either a recent `test → main` merge commit or a `Bump autonomous version to X.Y.Z` (the `release.sh` push). Fetch recent merged PRs to compare:
   ```bash
-  curl -sS -H "$AUTH_H" "$AUTONOMOUS_BASE/pulls?state=closed&base=main&sort=newest&limit=5" \
+  curl -sS -H "$AUTH_H" "$BASE/pulls?state=closed&base=main&sort=newest&limit=5" \
     | jq -r '.[] | select(.merged==true) | "\(.merge_commit_sha) \(.title)"'
   ```
   If `git log -1 origin/main --format=%H` doesn't match any of those SHAs and the commit message isn't a `Bump autonomous version ...`, halt: possible manual hotfix.
@@ -47,14 +47,14 @@ Halt and post a one-sentence summary if any fires:
 The literal first action — even on second/third `/dev-agent` in one conversation, even when the user named a chore. Cutting a new batch branch off stale `dev` (when the test agent's committed coverage is pending back-merge) means the batch can't make lockstep updates to those tests cleanly. The back-merge has to land first.
 
 ```bash
-curl -sS -H "$AUTH_H" "$AUTONOMOUS_BASE/pulls?state=open&base=dev" \
+curl -sS -H "$AUTH_H" "$BASE/pulls?state=open&base=dev" \
   | jq '[.[] | select(.head.ref=="test")]'
 ```
 
 - **PR exists** (jq returns a non-empty array — capture `.[0].number` into `$PR`): merge it via Forgejo (NEVER local-only `git merge origin/test`, that causes divergence the next cycle's `--ff-only` rejects):
   ```bash
   curl -sS -X POST -H "$AUTH_H" -H "$JSON_H" --data-binary '{"Do":"merge"}' \
-    "$AUTONOMOUS_BASE/pulls/$PR/merge"
+    "$BASE/pulls/$PR/merge"
   ```
   Then `git checkout dev && git pull --ff-only origin dev`. Conflict → halt.
 - **Successful merge only:** `rm -f tests/_dev_local/test_*.py` to drop last cycle's ephemerals (preserve `_probe_*.py` — those are intentional manual probes). Gitignored files survive `git checkout`, so stale ephemerals from one cycle silently pin in-flight code from another.
@@ -65,7 +65,7 @@ curl -sS -H "$AUTH_H" "$AUTONOMOUS_BASE/pulls?state=open&base=dev" \
 If step 1 found and merged a back-merge: fetch the diff as text and read what came in — test-agent bug-fix commits and committed tests can change the surface you're about to build on.
 
 ```bash
-curl -sS -H "$AUTH_H" "$AUTONOMOUS_BASE/pulls/$PR.diff"
+curl -sS -H "$AUTH_H" "$BASE/pulls/$PR.diff"
 # or, post-local-merge: git diff origin/dev@{1}..HEAD
 ```
 
@@ -74,7 +74,7 @@ If the back-merge introduces broken state, halt and surface; do **not** layer ne
 ## 3. Triage all open issues (batch mode)
 
 ```bash
-curl -sS -H "$AUTH_H" "$AUTONOMOUS_BASE/issues?state=open&type=issues&limit=100" \
+curl -sS -H "$AUTH_H" "$BASE/issues?state=open&type=issues&limit=100" \
   | jq '[.[] | {number, title, labels: [.labels[].name], assignees: [.assignees[]?.login], createdAt: .created_at, body}]'
 ```
 
@@ -140,7 +140,7 @@ curl -sS -X POST -H "$AUTH_H" -H "$JSON_H" \
 <PR body markdown>
 EOF
 )" --arg h "$BRANCH" '{title:$t, body:$b, head:$h, base:"test"}')" \
-  "$AUTONOMOUS_BASE/pulls" | jq '{number, html_url, state}'
+  "$BASE/pulls" | jq '{number, html_url, state}'
 ```
 
 Body includes `Closes #<N>` (or `Fixes #<N>` / `Resolves #<N>`) for every issue this PR resolves. Forgejo inherits Gitea's auto-close keywords, so the close fires when the PR merges; through the `test → main` chain the close propagates naturally.
@@ -153,7 +153,7 @@ Body includes `Closes #<N>` (or `Fixes #<N>` / `Resolves #<N>`) for every issue 
 PR=<your-pr-number>
 SHA=$(git rev-parse HEAD)
 while true; do
-  STATUS=$(curl -sS -H "$AUTH_H" "$AUTONOMOUS_BASE/commits/$SHA/status")
+  STATUS=$(curl -sS -H "$AUTH_H" "$BASE/commits/$SHA/status")
   STATE=$(echo "$STATUS" | jq -r .state)
   [ "$STATE" != "pending" ] && break
   sleep 30
