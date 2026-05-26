@@ -78,7 +78,8 @@ class AutoTask:
 
     @property
     def exc_info(self):
-        return self.job.exc_info
+        latest = self.job.latest_result()
+        return latest.exc_string if latest else None
 
     @property
     def return_value(self):
