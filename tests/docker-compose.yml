@@ -38,3 +38,34 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  worker:
+    image: python:3.13-slim
+    restart: unless-stopped
+    depends_on:
+      cachedb:
+        condition: service_healthy
+    working_dir: /var/app/autonomous
+    volumes:
+      - ..:/var/app/autonomous
+    environment:
+      REDIS_HOST: cachedb
+      REDIS_PORT: 6379
+      # pytest uses importmode=prepend by default, so test functions enqueued
+      # via rq carry `__module__ == "test_int_tasks"` (no package prefix).
+      # The worker must have the committed integration test directory on its
+      # PYTHONPATH directly so RQ's import_attribute() can resolve those bare
+      # module names.
+      PYTHONPATH: /var/app/autonomous:/var/app/autonomous/tests/integration
+    command:
+      - sh
+      - -c
+      - |
+        pip install --no-cache-dir -e .[tasks] -r requirements_dev.txt 2>&1 | tee /tmp/install.log &&
+        exec rq worker high default low --url redis://cachedb:6379
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import redis,sys; sys.exit(0 if redis.Redis(host='cachedb').scard('rq:workers') else 1)\""]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
