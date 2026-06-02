@@ -36,6 +36,19 @@ def _hybrid_upscale_enabled() -> bool:
     return os.environ.get("IMAGE_HYBRID_UPSCALE", "").lower() in {"1", "true", "yes"}
 
 
+# Static cost-estimate table — useful for trend/comparison, NOT for
+# audit-grade billing. Replace with parsed billing data in a follow-up
+# (see specs/2026-06-02-image-gen-cost-design.md "Necessary follow-ups").
+_COST_USD = {
+    ("gemini", "0.5K"): 0.012,
+    ("gemini", "1K"):   0.039,
+    ("gemini", "2K"):   0.078,
+    ("gemini", "4K"):   0.155,
+    ("flux",   "*"):    0.040,
+    ("local",  "*"):    0.000,
+}
+
+
 class ImageAgent(BaseAgent):
     name = StringAttr(default="imageagent")
 
@@ -59,6 +72,16 @@ class ImageAgent(BaseAgent):
         if overrides is None:
             return aspect_ratio
         return overrides.get(aspect_ratio, aspect_ratio)
+
+    def _estimate_cost_usd(self, provider: str, size: str) -> float:
+        """Look up the static per-call cost estimate. Returns 0.0 for
+        unknown (provider, size) tuples — silently rather than raising,
+        because telemetry must never break an image-gen call."""
+        if (provider, size) in _COST_USD:
+            return _COST_USD[(provider, size)]
+        if (provider, "*") in _COST_USD:
+            return _COST_USD[(provider, "*")]
+        return 0.0
 
     def generate(
         self,
