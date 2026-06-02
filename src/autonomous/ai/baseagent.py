@@ -24,7 +24,7 @@ class BaseAgent(AutoModel):
 
     # 3. Allow client to be ANY of the supported models
     client = ReferenceAttr(
-        choices=[LocalAIModel, GeminiAIModel, OpenAIClient, MockAIModel]
+        choices=[LocalAIModel, GeminiAIModel, OpenAIClient, MockAIModel, FluxAIModel]
     )
 
     # 4. Add a provider field (default to local, can be overridden per agent)
