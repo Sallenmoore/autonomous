@@ -8,26 +8,19 @@ You are the **autonomous-dev agent** — the implementation node in the topology
 
 **Memory.** New project memory lives at `~/.claude/projects/-opt-projects-autonomous-dev/memory/`. References to `-opt-data-autonomous-dev` in older transcripts are pre-2026-05-24 (path moved during the tree relocation that mirrored storyteller's 2026-05-25 move).
 
-**Authorization.** Invocation is authorization to take every action this brief prescribes — back-merge pull, branch creation, code edits across multiple issues, ephemeral tests, pytest runs, `/review`, and Forgejo PR creation via `curl`. Do **not** ask for per-step confirmation.
+**Authorization.** Invocation is authorization to take every action this brief prescribes — back-merge pull, branch creation, code edits across multiple issues, ephemeral tests, pytest runs, `/review`, and PR creation via `gh`. Do **not** ask for per-step confirmation.
 
-**Issue tracker + PR target: Forgejo (`samoore/autonomous` at `https://git.stevenamoore.dev`).** github (`Sallenmoore/autonomous`) is a stale public mirror only — do NOT query, fetch, or push to it. All `gh` invocations have been replaced by `curl` against the Forgejo API. Preamble (run once at the start of every iteration to set environment):
+**Issue tracker + PR target: GitHub (`Sallenmoore/autonomous`).** `gh` is authenticated natively on this host — no token env or auth preamble is needed.
 
-```bash
-TOKEN=$(grep '^FORGEJO_API_KEY=' ~/.secrets/forgejo.env | cut -d= -f2- | tr -d '\r\n"'\'')
-AUTH_H="Authorization: token $TOKEN"
-JSON_H="Content-Type: application/json"
-BASE="https://git.stevenamoore.dev/api/v1/repos/samoore/autonomous"
-```
+**`gh` notes worth memorizing:**
 
-**Forgejo API quirks worth memorizing (will bite if forgotten):**
-
-- `POST /issues` and `POST /pulls` accept label IDs as **integers, not names**. Build a name→id map once per iteration: `LABEL_MAP=$(curl -sS -H "$AUTH_H" "$BASE/labels" | jq -c 'map({key:.name,value:.id})|from_entries')`. Then `LABEL_IDS=$(jq -n --argjson m "$LABEL_MAP" '[$m["bug"],$m["auto-filed"]]')`.
-- `GET /issues?labels=name1,name2` — the **list** endpoint's `labels` parameter takes **names**. Asymmetric with POST.
-- `GET /issues` returns issues + PRs combined. Always pass `&type=issues` (or `&type=pulls`).
-- `POST /pulls/<n>/merge` body is `{"Do":"merge"}` — **capital D**, inherited from Gitea.
-- `GET /pulls/<n>.diff` returns the unified diff as text.
-- `PATCH /issues/<n> {"state":"open"}` reopens; `{"state":"closed"}` closes. No separate `/reopen` endpoint.
-- `Closes #N` / `Fixes #N` / `Resolves #N` in a PR body auto-close issue #N when the PR merges, identical to github's behavior.
+- `gh issue create --label <name>` and `gh pr create --label <name>` take label **names** directly (repeat `--label` per label).
+- `gh issue list --label name1 --label name2` filters by label name.
+- `gh issue list` returns issues only; `gh pr list` returns PRs.
+- `gh pr merge <n> --merge` performs the merge.
+- `gh pr diff <n>` returns the unified diff.
+- `gh issue reopen <n>` reopens; `gh issue close <n>` closes.
+- `Closes #N` / `Fixes #N` / `Resolves #N` in a PR body auto-close issue #N when the PR merges.
 
 ## 0. Halt-trigger preflight
 
@@ -35,8 +28,8 @@ Halt and post a one-sentence summary if any fires:
 
 - **Unexpected commit on main:** `git fetch origin main --quiet`, then check that `origin/main`'s tip is either a recent `test → main` merge commit or a `Bump autonomous version to X.Y.Z` (the `release.sh` push). Fetch recent merged PRs to compare:
   ```bash
-  curl -sS -H "$AUTH_H" "$BASE/pulls?state=closed&base=main&sort=newest&limit=5" \
-    | jq -r '.[] | select(.merged==true) | "\(.merge_commit_sha) \(.title)"'
+  gh pr list --repo Sallenmoore/autonomous --state merged --base main --limit 5 \
+    --json mergeCommit,title | jq -r '.[] | "\(.mergeCommit.oid) \(.title)"'
   ```
   If `git log -1 origin/main --format=%H` doesn't match any of those SHAs and the commit message isn't a `Bump autonomous version ...`, halt: possible manual hotfix.
 - **Integration stack required but down (only if step 7 will need it):** `docker ps --format '{{.Image}}' | grep -E '^mongo:7$'` returns nothing → run `make inittests` to bring it up (or halt and surface if you cannot). Unit-only iterations can skip.
@@ -47,14 +40,13 @@ Halt and post a one-sentence summary if any fires:
 The literal first action — even on second/third `/dev-agent` in one conversation, even when the user named a chore. Cutting a new batch branch off stale `dev` (when the test agent's committed coverage is pending back-merge) means the batch can't make lockstep updates to those tests cleanly. The back-merge has to land first.
 
 ```bash
-curl -sS -H "$AUTH_H" "$BASE/pulls?state=open&base=dev" \
-  | jq '[.[] | select(.head.ref=="test")]'
+gh pr list --repo Sallenmoore/autonomous --state open --base dev --head test \
+  --json number,headRefName,title
 ```
 
-- **PR exists** (jq returns a non-empty array — capture `.[0].number` into `$PR`): merge it via Forgejo (NEVER local-only `git merge origin/test`, that causes divergence the next cycle's `--ff-only` rejects):
+- **PR exists** (non-empty result — capture `.[0].number` into `$PR`): merge it via `gh` (NEVER local-only `git merge origin/test`, that causes divergence the next cycle's `--ff-only` rejects):
   ```bash
-  curl -sS -X POST -H "$AUTH_H" -H "$JSON_H" --data-binary '{"Do":"merge"}' \
-    "$BASE/pulls/$PR/merge"
+  gh pr merge "$PR" --repo Sallenmoore/autonomous --merge
   ```
   Then `git checkout dev && git pull --ff-only origin dev`. Conflict → halt.
 - **Successful merge only:** `rm -f tests/_dev_local/test_*.py` to drop last cycle's ephemerals (preserve `_probe_*.py` — those are intentional manual probes). Gitignored files survive `git checkout`, so stale ephemerals from one cycle silently pin in-flight code from another.
@@ -65,7 +57,7 @@ curl -sS -H "$AUTH_H" "$BASE/pulls?state=open&base=dev" \
 If step 1 found and merged a back-merge: fetch the diff as text and read what came in — test-agent bug-fix commits and committed tests can change the surface you're about to build on.
 
 ```bash
-curl -sS -H "$AUTH_H" "$BASE/pulls/$PR.diff"
+gh pr diff "$PR" --repo Sallenmoore/autonomous
 # or, post-local-merge: git diff origin/dev@{1}..HEAD
 ```
 
@@ -74,15 +66,16 @@ If the back-merge introduces broken state, halt and surface; do **not** layer ne
 ## 3. Triage all open issues (batch mode)
 
 ```bash
-curl -sS -H "$AUTH_H" "$BASE/issues?state=open&type=issues&limit=100" \
-  | jq '[.[] | {number, title, labels: [.labels[].name], assignees: [.assignees[]?.login], createdAt: .created_at, body}]'
+gh issue list --repo Sallenmoore/autonomous --state open --limit 100 \
+  --json number,title,labels,assignees,createdAt,body \
+  | jq '[.[] | {number, title, labels: [.labels[].name], assignees: [.assignees[]?.login], createdAt, body}]'
 ```
 
-The `&type=issues` filter is REQUIRED — without it Forgejo returns issues + PRs combined.
+`gh issue list` returns issues only (PRs are listed via `gh pr list`).
 
 - **In scope (batch mode revision, 2026-05-11):** every label including `bug`, `feature-request`, `smoke-fail`, `auto-filed`, `enhancement`, etc.
 - **Skip only:** `awaiting-upstream` (the upstream change hasn't landed yet) and `human-only` (user-designated as not-for-the-loop).
-- **Drop anything already closed by the back-merge that just landed in step 1.** A `test → main` PR with `Closes #N` auto-closes #N when it reaches main, but the `GET /issues?state=open` query above may have run before that propagated. Re-check each candidate's current state (`GET /issues/<n>` returns `.state`) if the back-merge swept in `Closes` refs.
+- **Drop anything already closed by the back-merge that just landed in step 1.** A `test → main` PR with `Closes #N` auto-closes #N when it reaches main, but the issue-list query above may have run before that propagated. Re-check each candidate's current state (`gh issue view <n> --json state`) if the back-merge swept in `Closes` refs.
 - **Order within the batch:** `smoke-fail` + `auto-filed` first (release health), then other bugs, then features. All land in one PR.
 - **No eligible issues after step 1's back-merge:** say so and stop. Don't invent work, don't open an empty PR.
 
@@ -124,48 +117,39 @@ Use `-d` (safe — refuses if unmerged), never `-D` (force). Past iter branches 
 
 ## 7. One PR, bundled
 
-Push the branch to Forgejo first, then create the PR via the API:
+Push the branch to GitHub first, then create the PR via `gh`:
 
 ```bash
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 git push -u origin "$BRANCH"
 
-PR_BODY=$(jq -Rs . <<'EOF'
+PR_BODY=$(cat <<'EOF'
 <multi-line body including Closes #N lines for every issue>
 EOF
 )
-curl -sS -X POST -H "$AUTH_H" -H "$JSON_H" \
-  --data-binary "$(jq -n --arg t "iter/<YYYY-MM-DD>: <N issues — short theme>" \
-                       --arg b "$(cat <<'EOF'
-<PR body markdown>
-EOF
-)" --arg h "$BRANCH" '{title:$t, body:$b, head:$h, base:"test"}')" \
-  "$BASE/pulls" | jq '{number, html_url, state}'
+gh pr create --repo Sallenmoore/autonomous \
+  --base test --head "$BRANCH" \
+  --title "iter/<YYYY-MM-DD>: <N issues — short theme>" \
+  --body "$PR_BODY"
 ```
 
-Body includes `Closes #<N>` (or `Fixes #<N>` / `Resolves #<N>`) for every issue this PR resolves. Forgejo inherits Gitea's auto-close keywords, so the close fires when the PR merges; through the `test → main` chain the close propagates naturally.
+Body includes `Closes #<N>` (or `Fixes #<N>` / `Resolves #<N>`) for every issue this PR resolves. GitHub's auto-close keywords fire the close when the PR merges; through the `test → main` chain the close propagates naturally.
 
-**Pre-existing issues you didn't open:** use `Closes #N` in the PR body rather than `PATCH /issues/<n> {"state":"closed"}` directly — the documented auto-close path. If an issue is already fixed and no PR is in flight, leave a comment with rationale (`POST /issues/<n>/comments`) and flag in the exit summary.
+**Pre-existing issues you didn't open:** use `Closes #N` in the PR body rather than `gh issue close <n>` directly — the documented auto-close path. If an issue is already fixed and no PR is in flight, leave a comment with rationale (`gh issue comment <n>`) and flag in the exit summary.
 
 ## 8. Watch own CI
 
 ```bash
 PR=<your-pr-number>
-SHA=$(git rev-parse HEAD)
-while true; do
-  STATUS=$(curl -sS -H "$AUTH_H" "$BASE/commits/$SHA/status")
-  STATE=$(echo "$STATUS" | jq -r .state)
-  [ "$STATE" != "pending" ] && break
-  sleep 30
-done
-echo "$STATUS" | jq '{state, total_count, statuses: [.statuses[] | {context, state, target_url}]}'
+gh pr checks "$PR" --repo Sallenmoore/autonomous --watch
+gh pr checks "$PR" --repo Sallenmoore/autonomous
 ```
 
-Until green or **3 fix-up cycles still red**.
+`gh pr checks --watch` blocks until all checks finish, then exits non-zero if any failed. Until green or **3 fix-up cycles still red**.
 
-**Expected at this gate:** the Python package matrix (3.11/3.12/3.13) plus any release-related smoke that fires on `dev → test`. Lint is non-blocking (CI runs `flake8 --select=E9,F63,F7,F82` as the syntax-only gate; the complexity pass is informational). Forgejo Actions reads `.github/workflows/*.yml` directly on this instance (no `.forgejo/workflows/` directory needed). Possible `.state` values: `pending`, `success`, `failure`, `error`, or `null` + `total_count == 0` (no workflows applicable to this PR — treat as no-op, not failure).
+**Expected at this gate:** the Python package matrix (3.11/3.12/3.13) plus any release-related smoke that fires on `dev → test`. Lint is non-blocking (CI runs `flake8 --select=E9,F63,F7,F82` as the syntax-only gate; the complexity pass is informational). GitHub Actions reads `.github/workflows/*.yml`. If no checks apply to this PR (no workflows triggered), `gh pr checks` reports "no checks reported" — treat as a no-op, not failure.
 
-**On red:** diagnose, push a NEW fix-up commit to the PR branch (**never `--amend`, never force-push** — CI is keyed to commit SHAs; rewriting commits Forgejo already saw can destroy the test agent's review state). After 3 cycles still red, halt and notify.
+**On red:** diagnose, push a NEW fix-up commit to the PR branch (**never `--amend`, never force-push** — CI is keyed to commit SHAs; rewriting commits GitHub already saw can destroy the test agent's review state). After 3 cycles still red, halt and notify.
 
 ## 9. Exit summary
 
