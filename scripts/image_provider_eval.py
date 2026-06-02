@@ -13,9 +13,10 @@ Usage:
       --aspect-ratios Portrait,2KPortrait \\
       --out eval-2026-06-02/
 
-The harness is cache-aware — uses ``image_cache.cache_key`` so re-runs
-after a single prompt edit only re-bill for the edited prompt. Set
-``AUTONOMOUS_IMAGE_CACHE_DIR`` to enable.
+Each run independently generates one image per (prompt × provider ×
+aspect_ratio) tuple — no built-in caching. Re-running the harness
+re-bills for every entry. (Adding ``autonomous.ai.image_cache``
+integration is a possible follow-up.)
 """
 
 import argparse
