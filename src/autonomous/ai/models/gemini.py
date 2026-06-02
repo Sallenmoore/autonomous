@@ -421,31 +421,29 @@ class GeminiAIModel(AutoModel):
         Google Gemini API parameters for ratio and size.
         """
         # Default fallback
-        ratio = "1:1"
-        size = "1K"
+        ratio = "3:4"
+        size = "0.5K"
 
         # Logic Mapping
         # Keys match what your App sends in ttrpgbase.py
-        if aspect_ratio_input == "2KPortrait":
+        if aspect_ratio_input == "Portrait":
             ratio = "3:4"
-            size = "2K"  # <--- THIS WAS MISSING BEFORE
-        elif aspect_ratio_input == "Portrait":
-            ratio = "3:4"
-            size = "2K"
+            size = "0.5K"
         elif aspect_ratio_input == "Landscape":
             ratio = "16:9"
+            size = "1K"
+        elif aspect_ratio_input == "2K":
+            ratio = "16:9"
             size = "2K"
-        elif aspect_ratio_input == "4K":
+        elif aspect_ratio_input == "2KPortrait":
+            ratio = "3:4"
+            size = "2K"
+        elif aspect_ratio_input in ["4K", "Map"]:
             ratio = "16:9"
             size = "4K"
         elif aspect_ratio_input == "4KPortrait":
             ratio = "3:4"
             size = "4K"
-        elif aspect_ratio_input == "2K":
-            ratio = "16:9"
-            size = "2K"
-
-        # Pass-through for standard inputs
         elif aspect_ratio_input in ["1:1", "3:4", "4:3", "9:16", "16:9"]:
             ratio = aspect_ratio_input
 

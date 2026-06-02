@@ -56,11 +56,15 @@ class _FakeImageAgent:
     # Bind the actual methods under test to this fake class so the
     # production code path runs, not a re-implementation.
     _resolve_aspect_ratio = ImageAgent._resolve_aspect_ratio
+    _route_provider = ImageAgent._route_provider
+    _estimate_cost_usd = ImageAgent._estimate_cost_usd
+    _resolve_fallback = ImageAgent._resolve_fallback
     generate = ImageAgent.generate
     upscale = ImageAgent.upscale
 
     def __init__(self, provider: str):
         self.provider = provider
+        self.fallback_provider = None  # mirrors StringAttr(default=None) on ImageAgent
         self.name = "test-agent"
         self.instructions = "test"
         self.description = "test"
