@@ -8,8 +8,21 @@ from autonomous.ai.imageagent import ImageAgent, _COST_USD
 
 
 def _agent():
-    """Bare ImageAgent without triggering AutoModel persistence."""
-    return ImageAgent.__new__(ImageAgent)
+    """Bare ImageAgent that bypasses AutoModel persistence but still
+    supports StringAttr descriptor reads/writes.
+
+    Initializes the two AutoModel internals StringAttr.__set__ and
+    .__get__ assume exist: ``_data`` (the field-storage dict) and
+    ``_initialised`` (the change-tracking flag — set False to skip
+    the dirty-tracking branch that requires more Document setup).
+    """
+    agent = ImageAgent.__new__(ImageAgent)
+    agent._data = {}
+    agent._initialised = False
+    # Pre-populate _data with field defaults so descriptor __get__ has
+    # values to return; tests that call _set_provider() will overwrite.
+    agent._data['provider'] = 'local'
+    return agent
 
 
 class TestEstimateCostUsd:
@@ -56,8 +69,8 @@ class TestRouteProvider:
     }
 
     def _set_provider(self, agent, provider):
-        """Set provider directly via __dict__ to bypass descriptor."""
-        agent.__dict__["provider"] = provider
+        """Set provider in _data so descriptor __get__ reads the new value."""
+        agent._data["provider"] = provider
 
     def test_routing_off_passes_through(self, monkeypatch):
         monkeypatch.delenv("IMAGE_PROVIDER_ROUTING", raising=False)
