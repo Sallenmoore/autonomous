@@ -292,32 +292,83 @@ class ImageAgent(BaseAgent):
         aspect_ratio="2KPortrait",
         style=None,
         quality="standard",
+        fallback_provider=_UNSET,
+        route=True,
     ):
         effective_ratio = self._resolve_aspect_ratio(aspect_ratio, quality)
-        provider = os.environ.get("IMAGE_AI_AGENT", self.provider)
+        requested = os.environ.get("IMAGE_AI_AGENT", self.provider)
+        effective_provider = (
+            self._route_provider(effective_ratio)
+            if route
+            else requested
+        )
+        effective_fallback = self._resolve_fallback(fallback_provider)
+
+        size_token = _aspect_to_size_token(effective_ratio)
+        self.add_to_job_meta("effective_provider", effective_provider)
+        self.add_to_job_meta(
+            "cost_estimate_usd",
+            self._estimate_cost_usd(effective_provider, size_token),
+        )
 
         key = image_cache.cache_key(
             prompt=prompt,
             style=style,
             aspect_ratio=effective_ratio,
             files=image_content,
-            provider=provider,
+            provider=effective_provider,
             method="upscale",
         )
         cached = image_cache.get(key)
         if cached is not None:
             log(
-                f"Image cache HIT key={key[:12]} provider={provider} (upscale)",
+                f"Image cache HIT key={key[:12]} provider={effective_provider} (upscale)",
                 _print=False,
             )
             return cached
 
-        result = self.get_client(provider).upscale_image(
-            prompt,
-            image_content=image_content,
-            aspect_ratio=effective_ratio,
-            style=style,
-        )
+        try:
+            result = self.get_client(effective_provider).upscale_image(
+                prompt,
+                image_content=image_content,
+                aspect_ratio=effective_ratio,
+                style=style,
+            )
+        except Exception as exc:
+            if effective_fallback is None or effective_fallback == effective_provider:
+                raise
+            log(
+                f"Upscale fell back from {effective_provider} to "
+                f"{effective_fallback}: {type(exc).__name__}: {exc}",
+                _print=True,
+            )
+            self.add_to_job_meta("provider_fallback_used", True)
+            try:
+                result = self.get_client(effective_fallback).upscale_image(
+                    prompt,
+                    image_content=image_content,
+                    aspect_ratio=effective_ratio,
+                    style=style,
+                )
+                self.add_to_job_meta("fallback_succeeded", True)
+                effective_provider = effective_fallback
+                self.add_to_job_meta("effective_provider", effective_provider)
+                self.add_to_job_meta(
+                    "cost_estimate_usd",
+                    self._estimate_cost_usd(effective_provider, size_token),
+                )
+                key = image_cache.cache_key(
+                    prompt=prompt,
+                    style=style,
+                    aspect_ratio=effective_ratio,
+                    files=image_content,
+                    provider=effective_provider,
+                    method="upscale",
+                )
+            except Exception:
+                self.add_to_job_meta("fallback_succeeded", False)
+                raise
+
         # Provider-agnostic no-op detection: gemini.upscale_image and the
         # local "size already matches target" branch both return the input
         # bytes unchanged. ``is`` is cheap and reliable here because both

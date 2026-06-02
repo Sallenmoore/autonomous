@@ -413,3 +413,36 @@ class TestHybridUpscaleEffectiveProvider:
         )   # 4K routes to gemini
 
         assert local_calls == [{"upscale": True}]
+
+
+class TestUpscaleDispatch:
+    def test_upscale_writes_cost_and_provider_meta(self, monkeypatch):
+        monkeypatch.delenv("IMAGE_PROVIDER_ROUTING", raising=False)
+        from autonomous.ai.imageagent import ImageAgent
+        gemini = _StubProviderClient("gemini")
+        agent = _patched_agent(monkeypatch, {"gemini": gemini})
+
+        ImageAgent.upscale(
+            agent, "prompt", image_content=b"in", aspect_ratio="2KPortrait"
+        )
+
+        flags = {k: v for k, v in agent._meta_log}
+        assert flags["effective_provider"] == "gemini"
+        assert flags["cost_estimate_usd"] == 0.078   # gemini 2K
+
+    def test_upscale_honors_route_false(self, monkeypatch):
+        monkeypatch.setenv("IMAGE_PROVIDER_ROUTING", "1")
+        from autonomous.ai.imageagent import ImageAgent
+        gemini = _StubProviderClient("gemini")
+        flux = _StubProviderClient("flux")
+        agent = _patched_agent(monkeypatch, {"gemini": gemini, "flux": flux})
+        agent._data["provider"] = "gemini"
+
+        ImageAgent.upscale(
+            agent, "prompt", image_content=b"in",
+            aspect_ratio="2KPortrait", route=False
+        )
+
+        # routing would have picked flux for 2KPortrait
+        assert any("upscale" in c for c in gemini.calls)
+        assert flux.calls == []
