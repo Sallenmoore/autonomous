@@ -10,6 +10,7 @@ Test classes:
 import os
 
 import pytest
+import requests
 
 
 def _flux():
@@ -61,9 +62,6 @@ class _FakeResponse:
     def raise_for_status(self):
         if self.status_code >= 400:
             raise requests.HTTPError(f"HTTP {self.status_code}")
-
-
-import requests  # placed after the helper for clarity
 
 
 class TestGenerateImage:
