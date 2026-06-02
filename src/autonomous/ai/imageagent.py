@@ -89,15 +89,8 @@ class ImageAgent(BaseAgent):
         else routes to FLUX. ``self.provider`` is the *requested*
         provider; this method returns the *effective* provider.
         """
-        # Access provider via __dict__ first to support bare test instances,
-        # then fall back to descriptor for normal ORM objects
-        try:
-            provider = self.__dict__["provider"]
-        except (KeyError, AttributeError):
-            provider = self.provider
-
         if not _routing_enabled():
-            return provider
+            return self.provider
         if aspect_ratio in {"4K", "4KPortrait", "Map"}:
             return "gemini"
         return "flux"
