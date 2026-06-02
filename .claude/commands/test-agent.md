@@ -8,33 +8,21 @@ You are the **autonomous-test agent** — the validation node in the topology de
 
 **Memory.** New project memory lives at `~/.claude/projects/-opt-projects-autonomous-test/memory/`. References to `-opt-data-autonomous-test` in older transcripts are pre-2026-05-24 (path moved during the tree relocation).
 
-**Authorization.** Invocation is authorization to take every action this brief prescribes — back-merge `main → test` if drift, sweep all open dev→test PRs into one bundle, write committed tests in `tests/unit/`, run the full local gate (pylint + flake8 + build/check), `/review-pr`, `git push origin test`, open the `test → main` and `test → dev` PRs via the Forgejo API, and CI watch with up to 3 fix-up amends. Do **not** ask for per-step confirmation.
+**Authorization.** Invocation is authorization to take every action this brief prescribes — back-merge `main → test` if drift, sweep all open dev→test PRs into one bundle, write committed tests in `tests/unit/`, run the full local gate (pylint + flake8 + build/check), `/review-pr`, `git push origin test`, open the `test → main` and `test → dev` PRs via `gh`, and CI watch with up to 3 fix-up amends. Do **not** ask for per-step confirmation.
 
 **Independence invariant.** The test agent must write tests **without** consulting dev's `tests/_dev_local/` (which is gitignored and invisible from the PR diff anyway). Tests target the diff from a fresh perspective — this is the second perspective in "Two-perspective testing." If you find yourself wanting to read dev's local tests, stop: that defeats the design.
 
-## Issue tracker = Forgejo (NOT github)
+## Issue tracker = GitHub
 
-Per `MOORELAB-DEPLOY-NOTES.md` and `AGENT-MIGRATION-HANDOFF-2026-05-25.md`, the canonical PR target and tracker for `autonomous` is `https://git.stevenamoore.dev/samoore/autonomous`. The `github.com:Sallenmoore/autonomous` remote is a stale public mirror — never the source of truth. Everything in this file talks to the Forgejo API via curl. **Do not call `gh` for any reason.**
+The canonical PR target and tracker for `autonomous` is `https://github.com/Sallenmoore/autonomous`. `gh` is authenticated natively on this host — no token env or auth preamble is needed.
 
-### Forgejo preamble (set once at the top of the iteration)
-
-```bash
-TOKEN=$(grep '^FORGEJO_API_KEY=' ~/.secrets/forgejo.env | cut -d= -f2- | tr -d '\r\n"'\'')
-BASE="https://git.stevenamoore.dev/api/v1/repos/samoore/autonomous"
-AUTH_H="Authorization: token $TOKEN"
-JSON_H="Content-Type: application/json"
-
-# name → label_id map — POST /pulls' labels field takes integer IDs, not names.
-LABEL_MAP=$(curl -sS -H "$AUTH_H" "$BASE/labels" | jq -c 'map({key:.name, value:.id}) | from_entries')
-```
-
-**API quirks worth knowing:**
-- `POST /pulls` accepts a `labels: [<int>, <int>]` field at create-time — that's how `auto-release` is applied (step 8 below), no separate `POST /issues/<n>/labels` round-trip needed. Names will 422 with `cannot unmarshal string into ... int64`.
-- `POST /pulls/<n>/merge` body shape is `{"Do": "merge"}` — capital D (Gitea origin). Not used in this loop (the user merges `test → main`), but listed for reference if a back-merge needs API-driven merging.
-- `GET /pulls?state=open&base=test&sort=oldest` lists open `dev → test` PRs oldest-first.
-- `GET /pulls/<n>.diff` returns the unified diff text (used in step 4 for the fresh-perspective read).
-- `GET /pulls?state=open&base=dev&head=<owner>:<branch>` filters; for same-repo head you can pass `head=<branch>` directly.
-- `GET /commits/<sha>/status` is the CI-watch endpoint (used in step 8). `.state` is `pending` / `success` / `failure` / `error`, or `null` with `total_count == 0` when no workflows fired.
+**`gh` notes worth knowing:**
+- `gh pr create --label <name>` applies labels at create-time by name — that's how `auto-release` is applied (step 8 below). Repeat `--label` per label.
+- `gh pr merge <n> --merge` performs the merge. Not used in this loop (the user merges `test → main`), but listed for reference if a back-merge needs CLI-driven merging.
+- `gh pr list --base test --state open` lists open `dev → test` PRs (order with `jq 'sort_by(.createdAt)'` for oldest-first).
+- `gh pr diff <n>` returns the unified diff text (used in step 4 for the fresh-perspective read).
+- `gh pr list --base dev --head <branch>` filters by base + head branch.
+- `gh pr checks <n> --watch` is the CI-watch entry point (used in step 8) — blocks until checks finish, exits non-zero on failure.
 
 ## 0. Halt-trigger preflight
 
@@ -42,7 +30,7 @@ Halt and post a one-sentence summary if any fires:
 
 - **Working tree not clean:** `git status --porcelain` non-empty → halt (resolve before starting a new cycle).
 - **Integration stack down (will be needed for the local gate):** `docker ps --format '{{.Image}}' | grep -E '^mongo:7$'` returns nothing → run `make inittests` (or halt and surface if you cannot).
-- **Unexpected `dev` activity mid-cycle:** capture the bundle's `head.ref` set at step 2 below. If at step 5 a fresh `curl ... "$BASE/pulls?state=open&base=test"` returns a strictly larger set, the dev agent shipped during this iteration. Not fatal — finish the original bundle and let the new PR ride next cycle. Surface it in the exit summary.
+- **Unexpected `dev` activity mid-cycle:** capture the bundle's `headRefName` set at step 2 below. If at step 5 a fresh `gh pr list --repo Sallenmoore/autonomous --state open --base test` returns a strictly larger set, the dev agent shipped during this iteration. Not fatal — finish the original bundle and let the new PR ride next cycle. Surface it in the exit summary.
 
 ## 1. Refresh + main-drift check (proactive halt-trigger #4)
 
@@ -61,12 +49,13 @@ Every commit listed is on `main` but not on `test`. If non-empty:
 ## 2. Sweep ALL open `dev → test` PRs
 
 ```bash
-curl -sS -H "$AUTH_H" "$BASE/pulls?state=open&base=test&sort=oldest&limit=50" \
-  | jq '[.[] | {number, head: .head.ref, title, labels: [.labels[].name], created_at}]'
+gh pr list --repo Sallenmoore/autonomous --state open --base test --limit 50 \
+  --json number,headRefName,title,labels,createdAt \
+  | jq 'sort_by(.createdAt) | [.[] | {number, head: .headRefName, title, labels: [.labels[].name], createdAt}]'
 ```
 
 - **None:** fall through to step 9 (nothing to do this cycle — exit).
-- **One or more:** bundle **all** into this cycle. The `sort=oldest` ordering matters — each subsequent branch was built on a baseline contained in the previous merge, so sweep-all in oldest-first order keeps the layering safe. Capture the set of `head.ref` values for the step 0 mid-cycle-activity check.
+- **One or more:** bundle **all** into this cycle. The oldest-first ordering matters — each subsequent branch was built on a baseline contained in the previous merge, so sweep-all in oldest-first order keeps the layering safe. Capture the set of `head` (headRefName) values for the step 0 mid-cycle-activity check.
 
 Sweep-all is intentional (2026-05-15 user direction, replaces prior pick-one semantics): one cycle bundles every eligible PR into a single `test → main` promotion.
 
@@ -75,7 +64,7 @@ Sweep-all is intentional (2026-05-15 user direction, replaces prior pick-one sem
 For each PR in the sorted list, in sequence:
 
 ```bash
-PR_HEAD=$(curl -sS -H "$AUTH_H" "$BASE/pulls/$PR_NUMBER" | jq -r '.head.ref')
+PR_HEAD=$(gh pr view "$PR_NUMBER" --repo Sallenmoore/autonomous --json headRefName -q .headRefName)
 git fetch origin "$PR_HEAD"
 git checkout test
 git merge --no-ff "origin/$PR_HEAD" -m "Merge PR #$PR_NUMBER ($PR_TITLE) into test"
@@ -93,7 +82,7 @@ For each PR in the bundle:
 
 ```bash
 # Fresh read of the diff — do NOT peek at dev's tests/_dev_local/ (gitignored anyway).
-curl -sS -H "$AUTH_H" "$BASE/pulls/$PR_NUMBER.diff" > /tmp/pr_$PR_NUMBER.diff
+gh pr diff "$PR_NUMBER" --repo Sallenmoore/autonomous > /tmp/pr_$PR_NUMBER.diff
 ```
 
 - Read the diff, identify the behavior change.
@@ -163,48 +152,37 @@ Closes #<I2>
 ## Test plan
 - [ ] CI green (Python matrix 3.11/3.12/3.13 + release-smoke)
 - [ ] Reviewed by user
-- [ ] Merged via Forgejo UI
+- [ ] Merged via GitHub UI
 - [ ] If auto-release: \`/prod-agent\` ships the PyPI release
 EOF
 )
 
 if [ "$RELEASE_INTENT" = "yes" ]; then
-  LABEL_IDS=$(jq -n --argjson m "$LABEL_MAP" '[$m["auto-release"]]')
+  LABEL_ARGS=(--label auto-release)
 else
-  LABEL_IDS='[]'
+  LABEL_ARGS=()
 fi
 
-PAYLOAD=$(jq -n \
-  --arg t "test → main: <cycle summary>" \
-  --arg b "$BODY" \
-  --argjson l "$LABEL_IDS" \
-  '{title:$t, body:$b, head:"test", base:"main", labels:$l}')
-
-curl -sS -X POST -H "$AUTH_H" -H "$JSON_H" --data-binary "$PAYLOAD" "$BASE/pulls" \
-  | jq '{number, html_url, labels: [.labels[].name]}'
+gh pr create --repo Sallenmoore/autonomous \
+  --base main --head test \
+  --title "test → main: <cycle summary>" \
+  --body "$BODY" \
+  "${LABEL_ARGS[@]}"
 ```
 
-If `auto-release` is desired but the create call returned without it applied (Forgejo's label-at-create has been seen to silently drop on some versions), patch it on as a follow-up:
+If `auto-release` is desired but the create call returned without it applied, add it as a follow-up:
 
 ```bash
-LABEL_IDS=$(jq -n --argjson m "$LABEL_MAP" '[$m["auto-release"]]')
-curl -sS -X POST -H "$AUTH_H" -H "$JSON_H" \
-  --data-binary "$(jq -n --argjson l "$LABEL_IDS" '{labels:$l}')" \
-  "$BASE/issues/$PR_NUMBER/labels"
+gh pr edit "$PR_NUMBER" --repo Sallenmoore/autonomous --add-label auto-release
 ```
-
-(Note: PR labels are managed via the `/issues/<n>/labels` endpoint — Forgejo treats PRs as issues for label operations.)
 
 **8c. Open `test → dev` back-merge PR in parallel**, if `git log origin/dev..origin/test --oneline` is non-empty (every listed commit is on `test` but not on `dev`: test-agent bug-fix commits, bundle merge commits, anything dev should pick up):
 
 ```bash
-PAYLOAD=$(jq -n \
-  --arg t "test → dev: post-cycle back-merge" \
-  --arg b "Carries forward this cycle's bundle merge + any test-agent bug-fix commits. Dev should pull this before the next /dev-agent invocation to keep the next iter branch on a current baseline." \
-  '{title:$t, body:$b, head:"test", base:"dev"}')
-
-curl -sS -X POST -H "$AUTH_H" -H "$JSON_H" --data-binary "$PAYLOAD" "$BASE/pulls" \
-  | jq '{number, html_url}'
+gh pr create --repo Sallenmoore/autonomous \
+  --base dev --head test \
+  --title "test → dev: post-cycle back-merge" \
+  --body "Carries forward this cycle's bundle merge + any test-agent bug-fix commits. Dev should pull this before the next /dev-agent invocation to keep the next iter branch on a current baseline."
 ```
 
 Opening both PRs together — rather than deferring the back-merge until after the user merges `test → main` — keeps dev current with test-agent bug-fixes and avoids the multi-cycle drift window where dev rebases against a stale baseline.
@@ -212,32 +190,26 @@ Opening both PRs together — rather than deferring the back-merge until after t
 **8d. Watch CI on the `test → main` PR.**
 
 ```bash
-SHA=$(git rev-parse test)
-while true; do
-  STATUS_JSON=$(curl -sS -H "$AUTH_H" "$BASE/commits/$SHA/status")
-  STATE=$(echo "$STATUS_JSON" | jq -r .state)
-  echo "$(date -u +%H:%M:%SZ) state=$STATE"
-  [ "$STATE" != "pending" ] && break
-  sleep 30
-done
-echo "$STATUS_JSON" | jq '{state, total_count, statuses: [.statuses[] | {context, state, target_url}]}'
+PR=<test-to-main-pr-number>
+gh pr checks "$PR" --repo Sallenmoore/autonomous --watch
+gh pr checks "$PR" --repo Sallenmoore/autonomous
 ```
 
-The full gate is the Python package matrix (3.11/3.12/3.13) + release-smoke. Treat `null` + `total_count == 0` as "no workflows fired yet"; re-check after ~30s in case the runner is briefly behind, then if still empty confirm via the workflow files' `on.pull_request.branches:` lists. Forgejo Actions reads `.github/workflows/*.yml` directly on this deployment — no separate `.forgejo/workflows/` directory is needed.
+`gh pr checks --watch` blocks until all checks finish, then exits non-zero if any failed. The full gate is the Python package matrix (3.11/3.12/3.13) + release-smoke. If `gh pr checks` reports "no checks reported", re-check after ~30s in case the runner is briefly behind, then if still empty confirm via the workflow files' `on.pull_request.branches:` lists. GitHub Actions reads `.github/workflows/*.yml`.
 
 **On red:** push **NEW fix-up commits** to `test` (which the PR auto-tracks via head SHA). Never `--amend`, never force-push — CI is keyed to SHAs; rewriting commits the runner already saw destroys CI state. After 3 fix-up cycles still red, halt and notify.
 
 ## 9. Exit summary
 
 Post a brief summary and exit:
-- `test → main` PR number + Forgejo URL + bundled-PR count + closed issues
+- `test → main` PR number + GitHub URL + bundled-PR count + closed issues
 - `test → dev` back-merge PR number + URL (if filed)
 - `auto-release` decision (set / skipped — with reason if skipped on docs-only bundle)
 - Any halt-trigger that fired and which step
 - Any forward-looking tests that legitimately passed the revert-sanity-check in step 4
 - CI state at end of iteration (green / red / no-workflows-fired)
 
-Do NOT call `ScheduleWakeup`, `CronCreate`, or `Monitor`. Do NOT suggest `/loop`. Do NOT run `./scripts/release.sh` (release authority was moved to autonomous-prod on 2026-05-14; the test agent's job ends at "merged test → main and notified the user"). Do NOT invoke `gh` for any reason.
+Do NOT call `ScheduleWakeup`, `CronCreate`, or `Monitor`. Do NOT suggest `/loop`. Do NOT run `./scripts/release.sh` (release authority was moved to autonomous-prod on 2026-05-14; the test agent's job ends at "merged test → main and notified the user").
 
 ## Stay-passive rule
 
