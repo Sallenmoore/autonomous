@@ -245,10 +245,9 @@ class ImageAgent(BaseAgent):
         # the upscale tier. Sets ``hybrid_upscale`` job-meta to
         # ``succeeded`` / ``failed:<exc-class>`` / ``returned-base`` so a
         # billing-conscious caller can detect a silent-downgrade.
-        # NOTE: gate still uses self.provider — intentionally left for Task 11.
         if (
             result
-            and self.provider == "gemini"
+            and effective_provider == "gemini"
             and _hybrid_upscale_enabled()
             and effective_ratio in {"2K", "2KPortrait", "4K", "4KPortrait"}
         ):

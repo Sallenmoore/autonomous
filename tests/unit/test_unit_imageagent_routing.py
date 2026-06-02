@@ -352,3 +352,64 @@ class TestGenerateFallback:
         flags = {k: v for k, v in agent._meta_log}
         assert flags["provider_fallback_used"] is True
         assert flags["fallback_succeeded"] is False
+
+
+class TestHybridUpscaleEffectiveProvider:
+    """The hybrid-upscale gate must look at the *effective* provider
+    (after routing), not self.provider. Otherwise a routing-on call to
+    FLUX would still trigger the local upscaler designed for Gemini
+    output."""
+
+    def test_hybrid_not_invoked_when_effective_provider_is_flux(
+        self, monkeypatch
+    ):
+        monkeypatch.setenv("IMAGE_PROVIDER_ROUTING", "1")
+        monkeypatch.setenv("IMAGE_HYBRID_UPSCALE", "1")
+
+        from autonomous.ai.imageagent import ImageAgent
+        flux = _StubProviderClient("flux", bytes_=b"flux-base")
+        local = _StubProviderClient("local")
+        agent = _patched_agent(monkeypatch, {"flux": flux, "local": local})
+        agent._data["provider"] = "gemini"   # requested
+        # Wire MODEL_REGISTRY["local"] to a class that returns our stub.
+        class _LocalCls:
+            def __init__(self, **kw):
+                pass
+            def upscale_image(self, *a, **k):
+                local.calls.append({"upscale": True})
+                return b"upscaled"
+        agent.MODEL_REGISTRY = {"local": _LocalCls}
+
+        ImageAgent.generate(
+            agent, "prompt", aspect_ratio="2K"
+        )   # routes to flux
+
+        assert flux.calls != []
+        assert local.calls == []   # local upscaler NOT invoked
+
+    def test_hybrid_invoked_when_effective_provider_is_gemini(
+        self, monkeypatch
+    ):
+        monkeypatch.setenv("IMAGE_PROVIDER_ROUTING", "1")
+        monkeypatch.setenv("IMAGE_HYBRID_UPSCALE", "1")
+
+        from autonomous.ai.imageagent import ImageAgent
+        gemini = _StubProviderClient("gemini", bytes_=b"gem-base")
+        local_calls = []
+
+        class _LocalCls:
+            def __init__(self, **kw):
+                pass
+            def upscale_image(self, *a, **k):
+                local_calls.append({"upscale": True})
+                return b"upscaled"
+
+        agent = _patched_agent(monkeypatch, {"gemini": gemini})
+        agent._data["provider"] = "gemini"
+        agent.MODEL_REGISTRY = {"local": _LocalCls}
+
+        ImageAgent.generate(
+            agent, "prompt", aspect_ratio="4K"
+        )   # 4K routes to gemini
+
+        assert local_calls == [{"upscale": True}]
