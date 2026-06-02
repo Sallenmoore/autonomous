@@ -303,6 +303,7 @@ class TestGenerateFallback:
         # job_meta breadcrumbs
         flags = {k: v for k, v in agent._meta_log}
         assert flags["provider_fallback_used"] is True
+        assert flags["fallback_succeeded"] is True
         assert flags["effective_provider"] == "gemini"   # updated after fallback
         # cost reflects the actual provider — gemini Portrait → 0.5K = 0.012
         assert flags["cost_estimate_usd"] == 0.012
@@ -352,6 +353,30 @@ class TestGenerateFallback:
         flags = {k: v for k, v in agent._meta_log}
         assert flags["provider_fallback_used"] is True
         assert flags["fallback_succeeded"] is False
+
+    def test_self_fallback_propagates_original_exception(self, monkeypatch):
+        """When effective_fallback equals effective_provider (e.g.
+        routing off + self.provider == fallback_provider), no second
+        attempt is made — the original exception propagates."""
+        monkeypatch.delenv("IMAGE_PROVIDER_ROUTING", raising=False)
+        from autonomous.ai.imageagent import ImageAgent
+        gemini = _RaisingProviderClient(RuntimeError("gemini down"))
+        agent = _patched_agent(monkeypatch, {"gemini": gemini})
+        # self.provider is "gemini" by default in _patched_agent;
+        # fallback_provider="gemini" matches → guard prevents recursion.
+
+        with pytest.raises(RuntimeError, match="gemini down"):
+            ImageAgent.generate(
+                agent, "prompt",
+                aspect_ratio="Portrait",
+                fallback_provider="gemini",
+            )
+
+        # No fallback breadcrumbs because the guard short-circuited
+        # before the fallback try block.
+        flags = {k: v for k, v in agent._meta_log}
+        assert "provider_fallback_used" not in flags
+        assert gemini.calls == 1   # Original provider called exactly once
 
 
 class TestHybridUpscaleEffectiveProvider:
