@@ -5,6 +5,57 @@ recent first.
 
 ## Unreleased
 
+### Image-gen FLUX provider + routing layer (Item 24)
+
+**What changed.**
+
+- New provider `FluxAIModel` under `autonomous.ai.models.flux`. Registered
+  in `BaseAgent.MODEL_REGISTRY` as `"flux"`. Targets fal.ai's
+  `fal-ai/flux-pro/v1.1-ultra` endpoint.
+- New env var `IMAGE_PROVIDER_ROUTING` (default off). When set to a
+  truthy value (`1`/`true`/`yes`), `ImageAgent` overrides `self.provider`
+  on dispatch: high-tier calls (`4K`, `4KPortrait`, `Map`) go to
+  `gemini`; everything else goes to `flux`.
+- New env var `FAL_KEY` (required when FLUX is dispatched). Module
+  imports without it; the first dispatch raises `RuntimeError`.
+- New env vars (defaults shown): `FLUX_IMAGE_MODEL=fal-ai/flux-pro/v1.1-ultra`,
+  `FLUX_URL_BASE=https://fal.run`, `FLUX_TIMEOUT_S=120`,
+  `FLUX_MAX_ATTEMPTS=3`, `FLUX_RETRY_SLEEP=1.0`.
+- New `ImageAgent.fallback_provider` instance attribute (default `None`).
+- New `ImageAgent.generate(..., fallback_provider, route)` kwargs.
+  `fallback_provider` defaults to a sentinel; pass `None` to disable
+  fallback for the call, a provider string to override the instance
+  default. `route=False` bypasses the routing layer for that call.
+- Same new kwargs on `ImageAgent.upscale()`.
+- New unconditional job_meta keys written by `generate`/`upscale`:
+  `effective_provider`, `cost_estimate_usd`, and (on fallback)
+  `provider_fallback_used`, `fallback_succeeded`.
+- **Fix:** the existing hybrid-upscale gate (`IMAGE_HYBRID_UPSCALE=1`)
+  now checks the *effective* (routed) provider instead of `self.provider`.
+  Calls that route from gemini to flux no longer double-process through
+  the local upscaler.
+
+**Migration.**
+
+No source change required for existing consumers. With
+`IMAGE_PROVIDER_ROUTING` unset, behavior is identical to pre-change.
+
+To opt in:
+1. `export FAL_KEY=<your fal.ai key>` in the deployment env.
+2. Run `python scripts/image_provider_eval.py --prompts
+   scripts/_eval_prompts.json --providers gemini,flux,local --out
+   eval-YYYY-MM-DD/` and review `index.html` for creative-quality parity.
+3. `export IMAGE_PROVIDER_ROUTING=1`.
+
+Roll back by `unset IMAGE_PROVIDER_ROUTING`. Instant; no data migration.
+
+**Cost-estimate caveat.**
+
+`cost_estimate_usd` job_meta is from a static table —
+useful for trend/comparison but **not audit-grade**. Replacing it with
+parsed billing data is a necessary follow-up
+(spec: `docs/superpowers/specs/2026-06-02-image-gen-cost-design.md`).
+
 ### `AutoTask.exc_info` now reads current job state, not sticky history (Issue #14)
 
 **What changed.** `AutoTask.exc_info` previously delegated to `Job.exc_info` (rq attribute). It now delegates to `Job.latest_result().exc_string`. Return contract `str | None` is unchanged, but the underlying semantics shifted from rq's deprecated "last seen exception" attribute to the modern "current Result's exc_string" accessor.

@@ -6,6 +6,11 @@ from autonomous.ai.baseagent import BaseAgent
 from autonomous.model.autoattr import StringAttr
 
 
+# Sentinel object distinguishes "caller did not pass kwarg" from
+# "caller explicitly passed None to disable fallback"
+_UNSET = object()
+
+
 # Quality dial maps a caller-facing intent ("draft" / "standard" / "high")
 # to an effective aspect_ratio sent to the provider. The aspect_ratio
 # vocabulary is the providers' existing one — we just remap it before
@@ -36,10 +41,51 @@ def _hybrid_upscale_enabled() -> bool:
     return os.environ.get("IMAGE_HYBRID_UPSCALE", "").lower() in {"1", "true", "yes"}
 
 
+def _routing_enabled() -> bool:
+    """True iff IMAGE_PROVIDER_ROUTING is set to a truthy string."""
+    return os.environ.get("IMAGE_PROVIDER_ROUTING", "").lower() in {
+        "1", "true", "yes"
+    }
+
+
+# Static cost-estimate table — useful for trend/comparison, NOT for
+# audit-grade billing. Replace with parsed billing data in a follow-up
+# (see specs/2026-06-02-image-gen-cost-design.md "Necessary follow-ups").
+_COST_USD = {
+    ("gemini", "0.5K"): 0.012,
+    ("gemini", "1K"):   0.039,
+    ("gemini", "2K"):   0.078,
+    ("gemini", "4K"):   0.155,
+    ("flux",   "*"):    0.040,
+    ("local",  "*"):    0.000,
+}
+
+
+def _aspect_to_size_token(aspect_ratio: str) -> str:
+    """Map effective aspect_ratio to the cost-table size key.
+
+    The cost table is keyed by provider + size class. Raw aspect tokens
+    (Portrait, Landscape, 1:1, 16:9, etc.) bill at the provider's
+    cheapest tier (gemini=0.5K for Portrait per the spec mapping;
+    gemini=1K for Landscape). Tier tokens (2K, 2KPortrait, 4K, etc.)
+    bill at their named size.
+    """
+    if aspect_ratio in {"2K", "2KPortrait"}:
+        return "2K"
+    if aspect_ratio in {"4K", "4KPortrait", "Map"}:
+        return "4K"
+    if aspect_ratio == "Landscape":
+        return "1K"
+    # Portrait + bare aspect ratios fall through to 0.5K (the cheap default)
+    return "0.5K"
+
+
 class ImageAgent(BaseAgent):
     name = StringAttr(default="imageagent")
 
     provider = StringAttr(default="local")
+
+    fallback_provider = StringAttr(default=None)
 
     instructions = StringAttr(
         default="You are highly skilled AI trained to assist with generating images."
@@ -60,6 +106,41 @@ class ImageAgent(BaseAgent):
             return aspect_ratio
         return overrides.get(aspect_ratio, aspect_ratio)
 
+    def _route_provider(self, aspect_ratio: str) -> str:
+        """Resolve which provider actually receives the call.
+
+        When IMAGE_PROVIDER_ROUTING is off (default), returns
+        ``self.provider`` unchanged. When on, dispatches by aspect_ratio
+        tier — high-resolution / map calls stay on Gemini, everything
+        else routes to FLUX. ``self.provider`` is the *requested*
+        provider; this method returns the *effective* provider.
+        """
+        if not _routing_enabled():
+            return self.provider
+        if aspect_ratio in {"4K", "4KPortrait", "Map"}:
+            return "gemini"
+        return "flux"
+
+    def _estimate_cost_usd(self, provider: str, size: str) -> float:
+        """Look up the static per-call cost estimate. Returns 0.0 for
+        unknown (provider, size) tuples — silently rather than raising,
+        because telemetry must never break an image-gen call."""
+        if (provider, size) in _COST_USD:
+            return _COST_USD[(provider, size)]
+        if (provider, "*") in _COST_USD:
+            return _COST_USD[(provider, "*")]
+        return 0.0
+
+    def _resolve_fallback(self, fallback_provider):
+        """Apply the _UNSET-sentinel resolution rule.
+
+        Returns the effective fallback provider string, or None to
+        disable fallback for this call.
+        """
+        if fallback_provider is _UNSET:
+            return self.fallback_provider
+        return fallback_provider
+
     def generate(
         self,
         prompt,
@@ -69,13 +150,26 @@ class ImageAgent(BaseAgent):
         style=None,
         temperature=None,
         quality="standard",
+        fallback_provider=_UNSET,
+        route=True,
     ):
         effective_ratio = self._resolve_aspect_ratio(aspect_ratio, quality)
+        effective_provider = (
+            self._route_provider(effective_ratio) if route else self.provider
+        )
+        effective_fallback = self._resolve_fallback(fallback_provider)
 
         self.add_to_job_meta("prompt", prompt)
         self.add_to_job_meta("provider", self.provider)
+        self.add_to_job_meta("effective_provider", effective_provider)
         self.add_to_job_meta("quality", quality)
         self.add_to_job_meta("aspect_ratio", effective_ratio)
+
+        size_token = _aspect_to_size_token(effective_ratio)
+        self.add_to_job_meta(
+            "cost_estimate_usd",
+            self._estimate_cost_usd(effective_provider, size_token),
+        )
 
         key = image_cache.cache_key(
             prompt=prompt,
@@ -83,24 +177,65 @@ class ImageAgent(BaseAgent):
             style=style,
             aspect_ratio=effective_ratio,
             files=files,
-            provider=self.provider,
+            provider=effective_provider,
             method="generate",
         )
         cached = image_cache.get(key)
         if cached is not None:
             log(
-                f"Image cache HIT key={key[:12]} provider={self.provider}",
+                f"Image cache HIT key={key[:12]} provider={effective_provider}",
                 _print=False,
             )
             return cached
 
-        result = self.get_client(self.provider).generate_image(
-            prompt,
-            negative_prompt=negative_prompt,
-            aspect_ratio=effective_ratio,
-            files=files,
-            style=style,
-        )
+        try:
+            result = self.get_client(effective_provider).generate_image(
+                prompt,
+                negative_prompt=negative_prompt,
+                aspect_ratio=effective_ratio,
+                files=files,
+                style=style,
+            )
+        except Exception as exc:
+            if effective_fallback is None or effective_fallback == effective_provider:
+                raise
+            log(
+                f"Image gen fell back from {effective_provider} to "
+                f"{effective_fallback}: {type(exc).__name__}: {exc}",
+                _print=True,
+            )
+            self.add_to_job_meta("provider_fallback_used", True)
+            try:
+                result = self.get_client(effective_fallback).generate_image(
+                    prompt,
+                    negative_prompt=negative_prompt,
+                    aspect_ratio=effective_ratio,
+                    files=files,
+                    style=style,
+                )
+                self.add_to_job_meta("fallback_succeeded", True)
+                # Update effective-provider + cost to reflect reality.
+                effective_provider = effective_fallback
+                self.add_to_job_meta("effective_provider", effective_provider)
+                self.add_to_job_meta(
+                    "cost_estimate_usd",
+                    self._estimate_cost_usd(effective_provider, size_token),
+                )
+                # Recompute the cache key under the actual provider so future
+                # direct-FLUX requests don't find Gemini bytes (see spec
+                # "Cache key semantics on fallback").
+                key = image_cache.cache_key(
+                    prompt=prompt,
+                    negative_prompt=negative_prompt,
+                    style=style,
+                    aspect_ratio=effective_ratio,
+                    files=files,
+                    provider=effective_provider,
+                    method="generate",
+                )
+            except Exception:
+                self.add_to_job_meta("fallback_succeeded", False)
+                raise
 
         # Hybrid path: when the caller asked Gemini for a high-resolution
         # output (2K/4K) AND the operator opted in via env var, hand the
@@ -112,7 +247,7 @@ class ImageAgent(BaseAgent):
         # billing-conscious caller can detect a silent-downgrade.
         if (
             result
-            and self.provider == "gemini"
+            and effective_provider == "gemini"
             and _hybrid_upscale_enabled()
             and effective_ratio in {"2K", "2KPortrait", "4K", "4KPortrait"}
         ):
@@ -157,32 +292,83 @@ class ImageAgent(BaseAgent):
         aspect_ratio="2KPortrait",
         style=None,
         quality="standard",
+        fallback_provider=_UNSET,
+        route=True,
     ):
         effective_ratio = self._resolve_aspect_ratio(aspect_ratio, quality)
-        provider = os.environ.get("IMAGE_AI_AGENT", self.provider)
+        requested = os.environ.get("IMAGE_AI_AGENT", self.provider)
+        effective_provider = (
+            self._route_provider(effective_ratio)
+            if route
+            else requested
+        )
+        effective_fallback = self._resolve_fallback(fallback_provider)
+
+        size_token = _aspect_to_size_token(effective_ratio)
+        self.add_to_job_meta("effective_provider", effective_provider)
+        self.add_to_job_meta(
+            "cost_estimate_usd",
+            self._estimate_cost_usd(effective_provider, size_token),
+        )
 
         key = image_cache.cache_key(
             prompt=prompt,
             style=style,
             aspect_ratio=effective_ratio,
             files=image_content,
-            provider=provider,
+            provider=effective_provider,
             method="upscale",
         )
         cached = image_cache.get(key)
         if cached is not None:
             log(
-                f"Image cache HIT key={key[:12]} provider={provider} (upscale)",
+                f"Image cache HIT key={key[:12]} provider={effective_provider} (upscale)",
                 _print=False,
             )
             return cached
 
-        result = self.get_client(provider).upscale_image(
-            prompt,
-            image_content=image_content,
-            aspect_ratio=effective_ratio,
-            style=style,
-        )
+        try:
+            result = self.get_client(effective_provider).upscale_image(
+                prompt,
+                image_content=image_content,
+                aspect_ratio=effective_ratio,
+                style=style,
+            )
+        except Exception as exc:
+            if effective_fallback is None or effective_fallback == effective_provider:
+                raise
+            log(
+                f"Upscale fell back from {effective_provider} to "
+                f"{effective_fallback}: {type(exc).__name__}: {exc}",
+                _print=True,
+            )
+            self.add_to_job_meta("provider_fallback_used", True)
+            try:
+                result = self.get_client(effective_fallback).upscale_image(
+                    prompt,
+                    image_content=image_content,
+                    aspect_ratio=effective_ratio,
+                    style=style,
+                )
+                self.add_to_job_meta("fallback_succeeded", True)
+                effective_provider = effective_fallback
+                self.add_to_job_meta("effective_provider", effective_provider)
+                self.add_to_job_meta(
+                    "cost_estimate_usd",
+                    self._estimate_cost_usd(effective_provider, size_token),
+                )
+                key = image_cache.cache_key(
+                    prompt=prompt,
+                    style=style,
+                    aspect_ratio=effective_ratio,
+                    files=image_content,
+                    provider=effective_provider,
+                    method="upscale",
+                )
+            except Exception:
+                self.add_to_job_meta("fallback_succeeded", False)
+                raise
+
         # Provider-agnostic no-op detection: gemini.upscale_image and the
         # local "size already matches target" branch both return the input
         # bytes unchanged. ``is`` is cheap and reliable here because both
