@@ -137,3 +137,130 @@ class TestFallbackResolution:
         agent = _agent()
         # Don't set fallback_provider — should default to None via StringAttr(default=None)
         assert ImageAgent._resolve_fallback(agent, _UNSET) is None
+
+
+class _StubProviderClient:
+    """Records calls to generate_image; returns deterministic bytes."""
+
+    def __init__(self, name, bytes_=b"img"):
+        self.name = name
+        self.bytes_ = bytes_
+        self.calls = []
+
+    def generate_image(self, prompt, negative_prompt="", aspect_ratio="",
+                       files=None, style=None):
+        self.calls.append({
+            "prompt": prompt, "aspect_ratio": aspect_ratio,
+            "negative_prompt": negative_prompt,
+        })
+        return self.bytes_
+
+    def upscale_image(self, prompt, image_content=None,
+                      aspect_ratio="", style=None):
+        self.calls.append({"prompt": prompt, "upscale": True})
+        return image_content
+
+
+def _patched_agent(monkeypatch, clients_by_provider):
+    """Build an ImageAgent that routes get_client to provided stubs and
+    captures add_to_job_meta calls."""
+    from autonomous.ai.imageagent import ImageAgent
+    agent = _agent()
+    agent._data["provider"] = "gemini"
+    agent._data["fallback_provider"] = None
+    agent._meta_log = []
+
+    def fake_get_client(provider):
+        return clients_by_provider[provider]
+    agent.get_client = fake_get_client
+
+    def fake_add_meta(k, v):
+        agent._meta_log.append((k, v))
+    agent.add_to_job_meta = fake_add_meta
+
+    # Default: short-circuit the cache (treat as miss + no-op put).
+    from autonomous.ai import image_cache
+    monkeypatch.setattr(image_cache, "get", lambda _: None)
+    monkeypatch.setattr(image_cache, "put", lambda *_a, **_k: None)
+    return agent
+
+
+class TestGenerateDispatch:
+    def test_routing_off_uses_self_provider(self, monkeypatch):
+        monkeypatch.delenv("IMAGE_PROVIDER_ROUTING", raising=False)
+        from autonomous.ai.imageagent import ImageAgent
+        gemini = _StubProviderClient("gemini")
+        flux = _StubProviderClient("flux")
+        agent = _patched_agent(monkeypatch, {"gemini": gemini, "flux": flux})
+
+        ImageAgent.generate(agent, "prompt", aspect_ratio="Portrait")
+
+        assert len(gemini.calls) == 1
+        assert flux.calls == []
+
+    def test_routing_on_low_tier_uses_flux(self, monkeypatch):
+        monkeypatch.setenv("IMAGE_PROVIDER_ROUTING", "1")
+        from autonomous.ai.imageagent import ImageAgent
+        gemini = _StubProviderClient("gemini")
+        flux = _StubProviderClient("flux")
+        agent = _patched_agent(monkeypatch, {"gemini": gemini, "flux": flux})
+
+        ImageAgent.generate(agent, "prompt", aspect_ratio="Portrait")
+
+        assert len(flux.calls) == 1
+        assert gemini.calls == []
+
+    def test_routing_on_high_tier_uses_gemini(self, monkeypatch):
+        monkeypatch.setenv("IMAGE_PROVIDER_ROUTING", "1")
+        from autonomous.ai.imageagent import ImageAgent
+        gemini = _StubProviderClient("gemini")
+        flux = _StubProviderClient("flux")
+        agent = _patched_agent(monkeypatch, {"gemini": gemini, "flux": flux})
+        agent._data["provider"] = "flux"   # even when caller asked flux
+
+        ImageAgent.generate(agent, "prompt", aspect_ratio="4K")
+
+        assert len(gemini.calls) == 1
+        assert flux.calls == []
+
+    def test_route_false_bypasses_routing(self, monkeypatch):
+        monkeypatch.setenv("IMAGE_PROVIDER_ROUTING", "1")
+        from autonomous.ai.imageagent import ImageAgent
+        gemini = _StubProviderClient("gemini")
+        flux = _StubProviderClient("flux")
+        agent = _patched_agent(monkeypatch, {"gemini": gemini, "flux": flux})
+        agent._data["provider"] = "gemini"
+
+        ImageAgent.generate(agent, "prompt", aspect_ratio="Portrait",
+                            route=False)
+
+        # routing would have picked flux; route=False keeps gemini
+        assert len(gemini.calls) == 1
+        assert flux.calls == []
+
+
+class TestGenerateCostTelemetry:
+    def test_writes_cost_estimate_to_job_meta(self, monkeypatch):
+        monkeypatch.delenv("IMAGE_PROVIDER_ROUTING", raising=False)
+        from autonomous.ai.imageagent import ImageAgent
+        agent = _patched_agent(
+            monkeypatch, {"gemini": _StubProviderClient("gemini")}
+        )
+
+        ImageAgent.generate(agent, "prompt", aspect_ratio="Portrait")
+
+        cost_entries = [v for k, v in agent._meta_log if k == "cost_estimate_usd"]
+        assert cost_entries == [0.012]   # gemini @ 0.5K
+
+    def test_writes_effective_provider_to_job_meta(self, monkeypatch):
+        monkeypatch.setenv("IMAGE_PROVIDER_ROUTING", "1")
+        from autonomous.ai.imageagent import ImageAgent
+        agent = _patched_agent(
+            monkeypatch,
+            {"gemini": _StubProviderClient("gemini"), "flux": _StubProviderClient("flux")},
+        )
+
+        ImageAgent.generate(agent, "prompt", aspect_ratio="Portrait")
+
+        eff = [v for k, v in agent._meta_log if k == "effective_provider"]
+        assert eff == ["flux"]

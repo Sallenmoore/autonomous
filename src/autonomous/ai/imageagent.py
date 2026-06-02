@@ -61,6 +61,25 @@ _COST_USD = {
 }
 
 
+def _aspect_to_size_token(aspect_ratio: str) -> str:
+    """Map effective aspect_ratio to the cost-table size key.
+
+    The cost table is keyed by provider + size class. Raw aspect tokens
+    (Portrait, Landscape, 1:1, 16:9, etc.) bill at the provider's
+    cheapest tier (gemini=0.5K for Portrait per the spec mapping;
+    gemini=1K for Landscape). Tier tokens (2K, 2KPortrait, 4K, etc.)
+    bill at their named size.
+    """
+    if aspect_ratio in {"2K", "2KPortrait"}:
+        return "2K"
+    if aspect_ratio in {"4K", "4KPortrait", "Map"}:
+        return "4K"
+    if aspect_ratio == "Landscape":
+        return "1K"
+    # Portrait + bare aspect ratios fall through to 0.5K (the cheap default)
+    return "0.5K"
+
+
 class ImageAgent(BaseAgent):
     name = StringAttr(default="imageagent")
 
@@ -131,13 +150,25 @@ class ImageAgent(BaseAgent):
         style=None,
         temperature=None,
         quality="standard",
+        fallback_provider=_UNSET,
+        route=True,
     ):
         effective_ratio = self._resolve_aspect_ratio(aspect_ratio, quality)
+        effective_provider = (
+            self._route_provider(effective_ratio) if route else self.provider
+        )
 
         self.add_to_job_meta("prompt", prompt)
         self.add_to_job_meta("provider", self.provider)
+        self.add_to_job_meta("effective_provider", effective_provider)
         self.add_to_job_meta("quality", quality)
         self.add_to_job_meta("aspect_ratio", effective_ratio)
+
+        size_token = _aspect_to_size_token(effective_ratio)
+        self.add_to_job_meta(
+            "cost_estimate_usd",
+            self._estimate_cost_usd(effective_provider, size_token),
+        )
 
         key = image_cache.cache_key(
             prompt=prompt,
@@ -145,18 +176,18 @@ class ImageAgent(BaseAgent):
             style=style,
             aspect_ratio=effective_ratio,
             files=files,
-            provider=self.provider,
+            provider=effective_provider,
             method="generate",
         )
         cached = image_cache.get(key)
         if cached is not None:
             log(
-                f"Image cache HIT key={key[:12]} provider={self.provider}",
+                f"Image cache HIT key={key[:12]} provider={effective_provider}",
                 _print=False,
             )
             return cached
 
-        result = self.get_client(self.provider).generate_image(
+        result = self.get_client(effective_provider).generate_image(
             prompt,
             negative_prompt=negative_prompt,
             aspect_ratio=effective_ratio,
@@ -172,6 +203,7 @@ class ImageAgent(BaseAgent):
         # the upscale tier. Sets ``hybrid_upscale`` job-meta to
         # ``succeeded`` / ``failed:<exc-class>`` / ``returned-base`` so a
         # billing-conscious caller can detect a silent-downgrade.
+        # NOTE: gate still uses self.provider — intentionally left for Task 11.
         if (
             result
             and self.provider == "gemini"

@@ -56,6 +56,8 @@ class _FakeImageAgent:
     # Bind the actual methods under test to this fake class so the
     # production code path runs, not a re-implementation.
     _resolve_aspect_ratio = ImageAgent._resolve_aspect_ratio
+    _route_provider = ImageAgent._route_provider
+    _estimate_cost_usd = ImageAgent._estimate_cost_usd
     generate = ImageAgent.generate
     upscale = ImageAgent.upscale
 
