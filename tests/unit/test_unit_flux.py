@@ -101,3 +101,96 @@ class TestGenerateImage:
         assert captured["json"]["image_size"] == "square_hd"
         assert captured["json"]["negative_prompt"] == "blurry"
         assert captured["fetch_url"] == "https://cdn/x.webp"
+
+    def test_files_kwarg_raises_not_implemented(self, monkeypatch):
+        monkeypatch.setenv("FAL_KEY", "fal-test-key")
+        from autonomous.ai.models.flux import FluxAIModel
+        with pytest.raises(NotImplementedError, match="img2img"):
+            FluxAIModel.generate_image(
+                _flux(), "prompt", files={"ref.webp": b"\x00"}
+            )
+
+    def test_missing_fal_key_raises_runtime_error(self, monkeypatch):
+        monkeypatch.delenv("FAL_KEY", raising=False)
+        from autonomous.ai.models.flux import FluxAIModel
+        with pytest.raises(RuntimeError, match="FAL_KEY"):
+            FluxAIModel.generate_image(_flux(), "prompt")
+
+    def test_blank_fal_key_raises_runtime_error(self, monkeypatch):
+        monkeypatch.setenv("FAL_KEY", "   ")
+        from autonomous.ai.models.flux import FluxAIModel
+        with pytest.raises(RuntimeError, match="FAL_KEY"):
+            FluxAIModel.generate_image(_flux(), "prompt")
+
+    def test_5xx_retries_then_eventually_succeeds(self, monkeypatch):
+        monkeypatch.setenv("FAL_KEY", "fal-test-key")
+        calls = {"post": 0}
+
+        def flaky_post(url, headers=None, json=None, timeout=None):
+            calls["post"] += 1
+            if calls["post"] < 3:
+                raise requests.ConnectionError("simulated 5xx")
+            return _FakeResponse(
+                json_data={"images": [{"url": "https://cdn/x.webp"}]}
+            )
+
+        def fake_get(url, timeout=None):
+            return _FakeResponse(content=b"OK")
+
+        from autonomous.ai.models import flux as flux_mod
+        monkeypatch.setattr(flux_mod._SESSION, "post", flaky_post)
+        monkeypatch.setattr(flux_mod._SESSION, "get", fake_get)
+        # Speed up retries — sleep_seconds is env-overridable.
+        monkeypatch.setattr(flux_mod.FluxAIModel, "_retry_sleep", 0.0)
+
+        result = flux_mod.FluxAIModel.generate_image(_flux(), "prompt")
+        assert result == b"OK"
+        assert calls["post"] == 3   # 2 failures + 1 success
+
+    def test_5xx_after_max_attempts_raises(self, monkeypatch):
+        monkeypatch.setenv("FAL_KEY", "fal-test-key")
+        calls = {"post": 0}
+
+        def always_fail(url, headers=None, json=None, timeout=None):
+            calls["post"] += 1
+            raise requests.ConnectionError("permanent")
+
+        from autonomous.ai.models import flux as flux_mod
+        monkeypatch.setattr(flux_mod._SESSION, "post", always_fail)
+        monkeypatch.setattr(flux_mod.FluxAIModel, "_retry_sleep", 0.0)
+
+        with pytest.raises(requests.ConnectionError, match="permanent"):
+            flux_mod.FluxAIModel.generate_image(_flux(), "prompt")
+        assert calls["post"] == 3   # _max_attempts default
+
+    def test_empty_images_array_raises_value_error(self, monkeypatch):
+        monkeypatch.setenv("FAL_KEY", "fal-test-key")
+
+        def fake_post(url, headers=None, json=None, timeout=None):
+            return _FakeResponse(json_data={"images": []})
+
+        from autonomous.ai.models import flux as flux_mod
+        monkeypatch.setattr(flux_mod._SESSION, "post", fake_post)
+
+        with pytest.raises(ValueError, match="no images"):
+            flux_mod.FluxAIModel.generate_image(_flux(), "prompt")
+
+    def test_image_missing_url_raises_value_error(self, monkeypatch):
+        monkeypatch.setenv("FAL_KEY", "fal-test-key")
+
+        def fake_post(url, headers=None, json=None, timeout=None):
+            return _FakeResponse(json_data={"images": [{"width": 1024}]})
+
+        from autonomous.ai.models import flux as flux_mod
+        monkeypatch.setattr(flux_mod._SESSION, "post", fake_post)
+
+        with pytest.raises(ValueError, match="image URL"):
+            flux_mod.FluxAIModel.generate_image(_flux(), "prompt")
+
+
+class TestUpscaleImage:
+    def test_upscale_returns_input_unchanged(self):
+        from autonomous.ai.models.flux import FluxAIModel
+        original = b"original-image-bytes"
+        out = FluxAIModel.upscale_image(_flux(), "prompt", image_content=original)
+        assert out is original
