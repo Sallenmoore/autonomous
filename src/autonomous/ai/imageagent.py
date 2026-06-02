@@ -36,6 +36,13 @@ def _hybrid_upscale_enabled() -> bool:
     return os.environ.get("IMAGE_HYBRID_UPSCALE", "").lower() in {"1", "true", "yes"}
 
 
+def _routing_enabled() -> bool:
+    """True iff IMAGE_PROVIDER_ROUTING is set to a truthy string."""
+    return os.environ.get("IMAGE_PROVIDER_ROUTING", "").lower() in {
+        "1", "true", "yes"
+    }
+
+
 # Static cost-estimate table — useful for trend/comparison, NOT for
 # audit-grade billing. Replace with parsed billing data in a follow-up
 # (see specs/2026-06-02-image-gen-cost-design.md "Necessary follow-ups").
@@ -72,6 +79,28 @@ class ImageAgent(BaseAgent):
         if overrides is None:
             return aspect_ratio
         return overrides.get(aspect_ratio, aspect_ratio)
+
+    def _route_provider(self, aspect_ratio: str) -> str:
+        """Resolve which provider actually receives the call.
+
+        When IMAGE_PROVIDER_ROUTING is off (default), returns
+        ``self.provider`` unchanged. When on, dispatches by aspect_ratio
+        tier — high-resolution / map calls stay on Gemini, everything
+        else routes to FLUX. ``self.provider`` is the *requested*
+        provider; this method returns the *effective* provider.
+        """
+        # Access provider via __dict__ first to support bare test instances,
+        # then fall back to descriptor for normal ORM objects
+        try:
+            provider = self.__dict__["provider"]
+        except (KeyError, AttributeError):
+            provider = self.provider
+
+        if not _routing_enabled():
+            return provider
+        if aspect_ratio in {"4K", "4KPortrait", "Map"}:
+            return "gemini"
+        return "flux"
 
     def _estimate_cost_usd(self, provider: str, size: str) -> float:
         """Look up the static per-call cost estimate. Returns 0.0 for

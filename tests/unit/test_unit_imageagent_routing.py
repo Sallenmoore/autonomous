@@ -42,3 +42,54 @@ def test_cost_table_keys_are_complete():
     must be updated so cost telemetry doesn't silently zero out."""
     expected_gemini_sizes = {"0.5K", "1K", "2K", "4K"}
     assert {size for (p, size) in _COST_USD if p == "gemini"} == expected_gemini_sizes
+
+
+class TestRouteProvider:
+    """Routing matrix: every aspect_ratio × routing-on/off × self.provider
+    combination must resolve correctly. Aspect-ratio names match the
+    keys the existing _QUALITY_ASPECT_MAP can emit."""
+
+    HIGH_TIER = {"4K", "4KPortrait", "Map"}
+    LOW_AND_MID_TIER = {
+        "Portrait", "Landscape", "2K", "2KPortrait",
+        "1:1", "3:4", "4:3", "9:16", "16:9",
+    }
+
+    def _set_provider(self, agent, provider):
+        """Set provider directly via __dict__ to bypass descriptor."""
+        agent.__dict__["provider"] = provider
+
+    def test_routing_off_passes_through(self, monkeypatch):
+        monkeypatch.delenv("IMAGE_PROVIDER_ROUTING", raising=False)
+        agent = _agent()
+        self._set_provider(agent, "gemini")
+        for ratio in self.HIGH_TIER | self.LOW_AND_MID_TIER:
+            assert ImageAgent._route_provider(agent, ratio) == "gemini", ratio
+
+    def test_routing_on_high_tier_to_gemini(self, monkeypatch):
+        monkeypatch.setenv("IMAGE_PROVIDER_ROUTING", "1")
+        agent = _agent()
+        self._set_provider(agent, "flux")  # even if caller asked flux
+        for ratio in self.HIGH_TIER:
+            assert ImageAgent._route_provider(agent, ratio) == "gemini", ratio
+
+    def test_routing_on_low_mid_tier_to_flux(self, monkeypatch):
+        monkeypatch.setenv("IMAGE_PROVIDER_ROUTING", "1")
+        agent = _agent()
+        self._set_provider(agent, "gemini")  # even if caller asked gemini
+        for ratio in self.LOW_AND_MID_TIER:
+            assert ImageAgent._route_provider(agent, ratio) == "flux", ratio
+
+    def test_routing_env_truthy_values(self, monkeypatch):
+        agent = _agent()
+        self._set_provider(agent, "gemini")
+        for val in ("1", "true", "TRUE", "yes", "Yes"):
+            monkeypatch.setenv("IMAGE_PROVIDER_ROUTING", val)
+            assert ImageAgent._route_provider(agent, "Portrait") == "flux", val
+
+    def test_routing_env_falsy_values(self, monkeypatch):
+        agent = _agent()
+        self._set_provider(agent, "gemini")
+        for val in ("0", "false", "no", "", "off"):
+            monkeypatch.setenv("IMAGE_PROVIDER_ROUTING", val)
+            assert ImageAgent._route_provider(agent, "Portrait") == "gemini", val
