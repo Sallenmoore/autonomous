@@ -4,6 +4,8 @@ one concern so failures localize. All tests are hermetic — they exercise
 ImageAgent methods on stub instances and mock the MODEL_REGISTRY entries
 through monkeypatch."""
 
+import pytest
+
 from autonomous.ai.imageagent import ImageAgent, _COST_USD
 
 
@@ -264,3 +266,89 @@ class TestGenerateCostTelemetry:
 
         eff = [v for k, v in agent._meta_log if k == "effective_provider"]
         assert eff == ["flux"]
+
+
+class _RaisingProviderClient:
+    """Provider stub that always raises on generate_image."""
+
+    def __init__(self, exc):
+        self.exc = exc
+        self.calls = 0
+
+    def generate_image(self, *_a, **_k):
+        self.calls += 1
+        raise self.exc
+
+    def upscale_image(self, *_a, **_k):
+        raise self.exc
+
+
+class TestGenerateFallback:
+    def test_fallback_on_routed_provider_failure(self, monkeypatch):
+        monkeypatch.setenv("IMAGE_PROVIDER_ROUTING", "1")
+        from autonomous.ai.imageagent import ImageAgent
+        flux = _RaisingProviderClient(RuntimeError("flux down"))
+        gemini = _StubProviderClient("gemini", bytes_=b"gemini-img")
+        agent = _patched_agent(monkeypatch, {"flux": flux, "gemini": gemini})
+
+        result = ImageAgent.generate(
+            agent, "prompt",
+            aspect_ratio="Portrait",
+            fallback_provider="gemini",
+        )
+
+        assert result == b"gemini-img"
+        assert flux.calls == 1
+        assert len(gemini.calls) == 1
+        # job_meta breadcrumbs
+        flags = {k: v for k, v in agent._meta_log}
+        assert flags["provider_fallback_used"] is True
+        assert flags["effective_provider"] == "gemini"   # updated after fallback
+        # cost reflects the actual provider — gemini Portrait → 0.5K = 0.012
+        assert flags["cost_estimate_usd"] == 0.012
+
+    def test_no_fallback_when_kwarg_is_none(self, monkeypatch):
+        monkeypatch.setenv("IMAGE_PROVIDER_ROUTING", "1")
+        from autonomous.ai.imageagent import ImageAgent
+        flux = _RaisingProviderClient(RuntimeError("flux down"))
+        gemini = _StubProviderClient("gemini")
+        agent = _patched_agent(monkeypatch, {"flux": flux, "gemini": gemini})
+        agent._data["fallback_provider"] = "gemini"  # instance default
+
+        with pytest.raises(RuntimeError, match="flux down"):
+            ImageAgent.generate(
+                agent, "prompt",
+                aspect_ratio="Portrait",
+                fallback_provider=None,   # explicit override of instance default
+            )
+        assert gemini.calls == []
+
+    def test_inherits_instance_fallback_when_kwarg_unset(self, monkeypatch):
+        monkeypatch.setenv("IMAGE_PROVIDER_ROUTING", "1")
+        from autonomous.ai.imageagent import ImageAgent
+        flux = _RaisingProviderClient(RuntimeError("flux down"))
+        gemini = _StubProviderClient("gemini", bytes_=b"gem")
+        agent = _patched_agent(monkeypatch, {"flux": flux, "gemini": gemini})
+        agent._data["fallback_provider"] = "gemini"
+
+        result = ImageAgent.generate(
+            agent, "prompt", aspect_ratio="Portrait"
+        )
+        assert result == b"gem"
+
+    def test_fallback_itself_raises_propagates(self, monkeypatch):
+        monkeypatch.setenv("IMAGE_PROVIDER_ROUTING", "1")
+        from autonomous.ai.imageagent import ImageAgent
+        flux = _RaisingProviderClient(RuntimeError("flux down"))
+        gemini = _RaisingProviderClient(RuntimeError("gemini also down"))
+        agent = _patched_agent(monkeypatch, {"flux": flux, "gemini": gemini})
+
+        with pytest.raises(RuntimeError, match="gemini also down"):
+            ImageAgent.generate(
+                agent, "prompt", aspect_ratio="Portrait",
+                fallback_provider="gemini",
+            )
+
+        flags = {k: v for k, v in agent._meta_log}
+        assert flags["provider_fallback_used"] is True
+        assert flags["fallback_succeeded"] is False

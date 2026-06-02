@@ -157,6 +157,7 @@ class ImageAgent(BaseAgent):
         effective_provider = (
             self._route_provider(effective_ratio) if route else self.provider
         )
+        effective_fallback = self._resolve_fallback(fallback_provider)
 
         self.add_to_job_meta("prompt", prompt)
         self.add_to_job_meta("provider", self.provider)
@@ -187,13 +188,54 @@ class ImageAgent(BaseAgent):
             )
             return cached
 
-        result = self.get_client(effective_provider).generate_image(
-            prompt,
-            negative_prompt=negative_prompt,
-            aspect_ratio=effective_ratio,
-            files=files,
-            style=style,
-        )
+        try:
+            result = self.get_client(effective_provider).generate_image(
+                prompt,
+                negative_prompt=negative_prompt,
+                aspect_ratio=effective_ratio,
+                files=files,
+                style=style,
+            )
+        except Exception as exc:
+            if effective_fallback is None or effective_fallback == effective_provider:
+                raise
+            log(
+                f"Image gen fell back from {effective_provider} to "
+                f"{effective_fallback}: {type(exc).__name__}: {exc}",
+                _print=True,
+            )
+            self.add_to_job_meta("provider_fallback_used", True)
+            try:
+                result = self.get_client(effective_fallback).generate_image(
+                    prompt,
+                    negative_prompt=negative_prompt,
+                    aspect_ratio=effective_ratio,
+                    files=files,
+                    style=style,
+                )
+                self.add_to_job_meta("fallback_succeeded", True)
+                # Update effective-provider + cost to reflect reality.
+                effective_provider = effective_fallback
+                self.add_to_job_meta("effective_provider", effective_provider)
+                self.add_to_job_meta(
+                    "cost_estimate_usd",
+                    self._estimate_cost_usd(effective_provider, size_token),
+                )
+                # Recompute the cache key under the actual provider so future
+                # direct-FLUX requests don't find Gemini bytes (see spec
+                # "Cache key semantics on fallback").
+                key = image_cache.cache_key(
+                    prompt=prompt,
+                    negative_prompt=negative_prompt,
+                    style=style,
+                    aspect_ratio=effective_ratio,
+                    files=files,
+                    provider=effective_provider,
+                    method="generate",
+                )
+            except Exception:
+                self.add_to_job_meta("fallback_succeeded", False)
+                raise
 
         # Hybrid path: when the caller asked Gemini for a high-resolution
         # output (2K/4K) AND the operator opted in via env var, hand the
