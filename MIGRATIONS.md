@@ -34,11 +34,33 @@ recent first.
   now checks the *effective* (routed) provider instead of `self.provider`.
   Calls that route from gemini to flux no longer double-process through
   the local upscaler.
+- **Behavior change (affects callers regardless of routing):**
+  `GeminiAIModel._get_image_config` aspect-ratio table was rebalanced
+  so the cheap-default tier maps to `0.5K` rather than `1K`/`2K`.
+  Concretely:
+  - `Portrait` → `(3:4, 2K)` is now `(3:4, 0.5K)` (4x resolution + cost
+    reduction)
+  - Default fallback for unknown aspect_ratio: `(1:1, 1K)` is now
+    `(3:4, 0.5K)` (consistent with the new cheap-default contract)
+  - `Landscape` continues to map to `(16:9, 1K)`; `2K`/`2KPortrait`
+    continue to map to `2K`; `4K`/`Map`/`4KPortrait` continue to map
+    to `4K`.
+
+  This matches the new caller contract: the bare `Portrait`/`Landscape`
+  tokens are the cheap default, and callers wanting 2K must opt in
+  explicitly via `2K`/`2KPortrait` (or use the new `quality="high"`
+  dial which remaps `Portrait → 4KPortrait`).
 
 **Migration.**
 
-No source change required for existing consumers. With
-`IMAGE_PROVIDER_ROUTING` unset, behavior is identical to pre-change.
+For routing (the FLUX dispatch layer): no source change required for
+existing consumers. With `IMAGE_PROVIDER_ROUTING` unset, dispatch
+behavior is identical to pre-change.
+
+For the aspect-ratio resolution remap: consumers that pass bare
+`Portrait` to `ImageAgent.generate()` and expected 2K-resolution output
+must now pass `2KPortrait` explicitly. The visible symptom of an
+un-migrated caller is smaller image files at the same prompt.
 
 To opt in:
 1. `export FAL_KEY=<your fal.ai key>` in the deployment env.

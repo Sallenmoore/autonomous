@@ -123,8 +123,12 @@ class ImageAgent(BaseAgent):
 
     def _estimate_cost_usd(self, provider: str, size: str) -> float:
         """Look up the static per-call cost estimate. Returns 0.0 for
-        unknown (provider, size) tuples — silently rather than raising,
-        because telemetry must never break an image-gen call."""
+        unknown (provider, size) tuples — pure dict lookup that never
+        raises (telemetry on the image-gen hot path must not be a
+        failure source). Note this only guarantees *this lookup* is
+        safe — the surrounding ``add_to_job_meta`` calls in
+        ``generate``/``upscale`` can still raise if the meta sink is
+        broken; see the broader contract at the call sites."""
         if (provider, size) in _COST_USD:
             return _COST_USD[(provider, size)]
         if (provider, "*") in _COST_USD:
@@ -166,10 +170,6 @@ class ImageAgent(BaseAgent):
         self.add_to_job_meta("aspect_ratio", effective_ratio)
 
         size_token = _aspect_to_size_token(effective_ratio)
-        self.add_to_job_meta(
-            "cost_estimate_usd",
-            self._estimate_cost_usd(effective_provider, size_token),
-        )
 
         key = image_cache.cache_key(
             prompt=prompt,
@@ -186,7 +186,18 @@ class ImageAgent(BaseAgent):
                 f"Image cache HIT key={key[:12]} provider={effective_provider}",
                 _print=False,
             )
+            # Cache hit incurs zero real cost — billing telemetry must
+            # reflect that. Setting the estimate AFTER the cache check
+            # (rather than before) keeps the breadcrumb honest.
+            self.add_to_job_meta("cost_estimate_usd", 0.0)
             return cached
+
+        # Cache miss — we will actually dispatch to a provider, so the
+        # estimate reflects the chargeable call.
+        self.add_to_job_meta(
+            "cost_estimate_usd",
+            self._estimate_cost_usd(effective_provider, size_token),
+        )
 
         try:
             result = self.get_client(effective_provider).generate_image(
@@ -205,6 +216,12 @@ class ImageAgent(BaseAgent):
                 _print=True,
             )
             self.add_to_job_meta("provider_fallback_used", True)
+            # Stash the original error in job-meta so the operator can
+            # see WHY we fell back even after a successful fallback.
+            self.add_to_job_meta(
+                "original_provider_error",
+                f"{type(exc).__name__}: {exc}",
+            )
             try:
                 result = self.get_client(effective_fallback).generate_image(
                     prompt,
@@ -223,7 +240,11 @@ class ImageAgent(BaseAgent):
                 )
                 # Recompute the cache key under the actual provider so future
                 # direct-FLUX requests don't find Gemini bytes (see spec
-                # "Cache key semantics on fallback").
+                # "Cache key semantics on fallback"). The cost-amplification
+                # variant: while FLUX is failing, every FLUX-routed call
+                # misses the FLUX cache, falls back to Gemini, and bills the
+                # Gemini call — rewriting the key under Gemini lets the next
+                # identical request hit cache instead of billing again.
                 key = image_cache.cache_key(
                     prompt=prompt,
                     negative_prompt=negative_prompt,
@@ -233,9 +254,12 @@ class ImageAgent(BaseAgent):
                     provider=effective_provider,
                     method="generate",
                 )
-            except Exception:
+            except Exception as fallback_exc:
                 self.add_to_job_meta("fallback_succeeded", False)
-                raise
+                # Chain via `from exc` so the operator sees BOTH the
+                # fallback failure (now) and the original provider error
+                # (the cause) in the traceback.
+                raise fallback_exc from exc
 
         # Hybrid path: when the caller asked Gemini for a high-resolution
         # output (2K/4K) AND the operator opted in via env var, hand the
@@ -272,7 +296,16 @@ class ImageAgent(BaseAgent):
                     self.add_to_job_meta("hybrid_upscale", "succeeded")
                 else:
                     self.add_to_job_meta("hybrid_upscale", "returned-base")
-            except (OSError, ValueError, RuntimeError) as exc:
+            except Exception as exc:
+                # Hybrid upscale is opt-in (IMAGE_HYBRID_UPSCALE env).
+                # A failure here must NOT lose the successful Gemini
+                # base image — the caller would prefer the lower-res
+                # Gemini bytes over a 500. Broad except covers all the
+                # ways the local upscaler can fail: requests.Timeout
+                # (not OSError-derived), PIL.UnidentifiedImageError,
+                # KeyError/AttributeError from a malformed media-API
+                # JSON response. The breadcrumb carries the exception
+                # class so an operator can grep for systemic failures.
                 log(
                     f"Hybrid upscale failed; using Gemini base image: {exc}",
                     _print=False,
@@ -343,6 +376,10 @@ class ImageAgent(BaseAgent):
                 _print=True,
             )
             self.add_to_job_meta("provider_fallback_used", True)
+            self.add_to_job_meta(
+                "original_provider_error",
+                f"{type(exc).__name__}: {exc}",
+            )
             try:
                 result = self.get_client(effective_fallback).upscale_image(
                     prompt,
@@ -365,9 +402,9 @@ class ImageAgent(BaseAgent):
                     provider=effective_provider,
                     method="upscale",
                 )
-            except Exception:
+            except Exception as fallback_exc:
                 self.add_to_job_meta("fallback_succeeded", False)
-                raise
+                raise fallback_exc from exc
 
         # Provider-agnostic no-op detection: gemini.upscale_image and the
         # local "size already matches target" branch both return the input

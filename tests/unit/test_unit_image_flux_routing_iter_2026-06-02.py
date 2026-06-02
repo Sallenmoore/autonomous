@@ -6,7 +6,7 @@ anyway) or dev's committed ``test_unit_flux.py`` /
 surface from the source diff alone — the second perspective in the
 two-perspective testing design described in CLAUDE.md.
 
-Five concerns are covered:
+Eight concerns are covered:
 
 1. ``FluxAIModel`` — adapter contract: aspect-ratio mapping table,
    FAL_KEY env contract, ``files=`` rejection, upscale no-op,
@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -67,6 +68,10 @@ class _FakeImageAgent:
     _route_provider = ImageAgent._route_provider
     _estimate_cost_usd = ImageAgent._estimate_cost_usd
     _resolve_fallback = ImageAgent._resolve_fallback
+    # Bind the full methods so the integration-style tests below run
+    # the production code path, not a re-implementation.
+    generate = ImageAgent.generate
+    upscale = ImageAgent.upscale
 
     def __init__(self, provider: str = "local", fallback_provider=None):
         self.provider = provider
@@ -74,6 +79,25 @@ class _FakeImageAgent:
         self.name = "test-agent"
         self.instructions = "test"
         self.description = "test"
+        self.meta_calls: list[tuple] = []
+
+    def get_client(self, provider=None, *, persist: bool = True):
+        # Override per-test via monkeypatch.
+        raise NotImplementedError("patch get_client per-test")
+
+    def add_to_job_meta(self, k, v):
+        # Capture rather than dispatch — keeps tests free of any
+        # AutoTasks / RQ / Redis dependency.
+        self.meta_calls.append((k, v))
+
+    def meta_dict(self) -> dict:
+        """Most-recent value per key (job_meta semantics: later writes
+        win — important for fallback paths that re-set effective_provider
+        and cost_estimate_usd)."""
+        d = {}
+        for k, v in self.meta_calls:
+            d[k] = v
+        return d
 
 
 # ---------------------------------------------------------------------------
@@ -485,3 +509,323 @@ class TestMockAbsorbsNewKwargs:
             extra=None,
         )
         assert isinstance(out, bytes)
+
+
+# ---------------------------------------------------------------------------
+# Coverage gaps surfaced by /review-pr — cache, fallback, hybrid, upscale
+# ---------------------------------------------------------------------------
+#
+# These exercise full ``generate``/``upscale`` (not just helpers) to pin
+# behavior that the helper-level tests above can't observe in isolation.
+# ``_FakeImageAgent`` borrows the production methods; we stub
+# ``image_cache.get/put`` and ``get_client`` per-test.
+
+
+@pytest.fixture
+def patched_cache(monkeypatch):
+    """Stub image_cache.get + put with controllable state."""
+    from autonomous.ai import image_cache
+
+    state = {"store": {}, "puts": [], "force_hit": None}
+
+    def fake_get(key):
+        if state["force_hit"] is not None:
+            return state["force_hit"]
+        return state["store"].get(key)
+
+    def fake_put(key, value):
+        state["puts"].append((key, value))
+        state["store"][key] = value
+
+    monkeypatch.setattr(image_cache, "get", fake_get)
+    monkeypatch.setattr(image_cache, "put", fake_put)
+    return state
+
+
+class TestCacheHitTelemetry:
+    """When ``image_cache.get`` returns bytes, ``generate``/``upscale``
+    must short-circuit before dispatching to any provider AND must
+    record the cost estimate as 0.0 (no real call → no charge)."""
+
+    def test_generate_cache_hit_does_not_call_provider(self, patched_cache):
+        agent = _FakeImageAgent(provider="local")
+        patched_cache["force_hit"] = b"cached-image-bytes"
+
+        called = []
+
+        def get_client(provider=None, *, persist=True):
+            called.append(provider)
+            raise AssertionError("Cache hit must not dispatch to provider")
+
+        agent.get_client = get_client  # type: ignore[assignment]
+
+        result = agent.generate(prompt="x", aspect_ratio="2KPortrait")
+        assert result == b"cached-image-bytes"
+        assert called == []
+
+    def test_generate_cache_hit_records_zero_cost(self, patched_cache):
+        agent = _FakeImageAgent(provider="gemini")
+        patched_cache["force_hit"] = b"cached"
+        agent.get_client = lambda *a, **kw: pytest.fail(  # noqa: ARG005
+            "cache hit must not dispatch"
+        )
+
+        agent.generate(prompt="x", aspect_ratio="2K")
+        meta = agent.meta_dict()
+        # Cache hit → no real charge. The bug-fix this pins: previously
+        # cost_estimate_usd was written BEFORE the cache check and
+        # showed a non-zero value on hits.
+        assert meta["cost_estimate_usd"] == 0.0
+
+    def test_upscale_cache_hit_does_not_call_provider(self, patched_cache):
+        agent = _FakeImageAgent(provider="local")
+        patched_cache["force_hit"] = b"cached-upscale"
+        agent.get_client = lambda *a, **kw: pytest.fail(  # noqa: ARG005
+            "cache hit must not dispatch"
+        )
+
+        result = agent.upscale(
+            prompt="x", image_content=b"in", aspect_ratio="2KPortrait"
+        )
+        assert result == b"cached-upscale"
+
+
+class TestCacheKeyRewriteOnFallback:
+    """When generate falls back to a different provider, the cache
+    entry must be stored under the FALLBACK provider's key — otherwise
+    the next direct request to the original provider would replay
+    bytes from the wrong provider."""
+
+    def test_fallback_writes_under_fallback_provider_key(self, patched_cache):
+        from autonomous.ai import image_cache
+
+        agent = _FakeImageAgent(provider="flux", fallback_provider="gemini")
+
+        flux_client = MagicMock()
+        flux_client.generate_image.side_effect = RuntimeError("flux down")
+        gemini_client = MagicMock()
+        gemini_client.generate_image.return_value = b"gemini-bytes"
+
+        def get_client(provider=None, *, persist=True):
+            if provider == "flux":
+                return flux_client
+            return gemini_client
+
+        agent.get_client = get_client  # type: ignore[assignment]
+
+        result = agent.generate(prompt="x", aspect_ratio="Portrait")
+        assert result == b"gemini-bytes"
+
+        # Recompute what the cache key SHOULD be under the fallback provider.
+        expected_key = image_cache.cache_key(
+            prompt="x",
+            negative_prompt=(
+                "blurry, low quality, distorted, deformed, "
+                "disfigured, poorly drawn"
+            ),
+            style=None,
+            aspect_ratio="Portrait",
+            files=None,
+            provider="gemini",
+            method="generate",
+        )
+        put_keys = [k for k, _ in patched_cache["puts"]]
+        assert expected_key in put_keys, (
+            f"Expected cache.put under fallback provider's key "
+            f"{expected_key[:16]}...; saw {[k[:16] for k in put_keys]}"
+        )
+
+
+class TestFallbackPreservesOriginalError:
+    """Bug-fix: when fallback ALSO fails, raise the fallback exception
+    chained via ``raise from`` so the original provider error remains
+    visible in the traceback. Also: stash the original error in
+    job_meta as `original_provider_error` so an operator can see WHY
+    we fell back even after a successful fallback."""
+
+    def test_original_error_recorded_on_successful_fallback(self, patched_cache):
+        agent = _FakeImageAgent(provider="flux", fallback_provider="gemini")
+
+        flux_client = MagicMock()
+        flux_client.generate_image.side_effect = RuntimeError(
+            "FAL_KEY missing"
+        )
+        gemini_client = MagicMock()
+        gemini_client.generate_image.return_value = b"gemini-bytes"
+
+        agent.get_client = (
+            lambda provider=None, *, persist=True: (
+                flux_client if provider == "flux" else gemini_client
+            )
+        )
+
+        agent.generate(prompt="x", aspect_ratio="Portrait")
+        meta = agent.meta_dict()
+        assert meta.get("provider_fallback_used") is True
+        assert meta.get("fallback_succeeded") is True
+        # Pin the new breadcrumb — operator visibility for "why did we
+        # fall back even though the call succeeded?"
+        assert "RuntimeError: FAL_KEY missing" in meta.get(
+            "original_provider_error", ""
+        )
+
+    def test_chained_exception_when_fallback_fails(self, patched_cache):
+        agent = _FakeImageAgent(provider="flux", fallback_provider="gemini")
+
+        primary_exc = RuntimeError("primary error")
+        fallback_exc = ValueError("fallback error")
+        flux_client = MagicMock()
+        flux_client.generate_image.side_effect = primary_exc
+        gemini_client = MagicMock()
+        gemini_client.generate_image.side_effect = fallback_exc
+
+        agent.get_client = (
+            lambda provider=None, *, persist=True: (
+                flux_client if provider == "flux" else gemini_client
+            )
+        )
+
+        with pytest.raises(ValueError, match="fallback error") as exc_info:
+            agent.generate(prompt="x", aspect_ratio="Portrait")
+
+        # `raise fallback_exc from primary_exc` sets __cause__.
+        assert exc_info.value.__cause__ is primary_exc
+        meta = agent.meta_dict()
+        assert meta.get("fallback_succeeded") is False
+
+
+class TestUpscaleFallbackPath:
+    """Mirror of TestFallbackPreservesOriginalError for upscale()."""
+
+    def test_upscale_falls_back_to_secondary(self, patched_cache):
+        agent = _FakeImageAgent(provider="flux", fallback_provider="local")
+
+        flux_client = MagicMock()
+        flux_client.upscale_image.side_effect = RuntimeError("flux err")
+        local_client = MagicMock()
+        local_client.upscale_image.return_value = b"local-upscaled"
+
+        agent.get_client = (
+            lambda provider=None, *, persist=True: (
+                flux_client if provider == "flux" else local_client
+            )
+        )
+
+        result = agent.upscale(
+            prompt="x", image_content=b"in", aspect_ratio="2KPortrait"
+        )
+        assert result == b"local-upscaled"
+        meta = agent.meta_dict()
+        assert meta.get("provider_fallback_used") is True
+        assert meta.get("fallback_succeeded") is True
+        # The effective_provider meta is written multiple times; the
+        # final value (post-fallback) must be the fallback provider.
+        assert meta["effective_provider"] == "local"
+
+    def test_upscale_no_op_sets_upscale_supported_false(self, patched_cache):
+        """The ``is image_content`` identity check pins
+        ``upscale_supported=False`` job-meta so the caller can detect
+        a silent-downgrade."""
+        agent = _FakeImageAgent(provider="flux")
+
+        flux_client = MagicMock()
+        # FluxAIModel.upscale_image returns input by identity (no-op).
+        # Simulate by returning the exact reference.
+        flux_client.upscale_image.side_effect = (
+            lambda prompt, image_content, **kw: image_content
+        )
+        agent.get_client = lambda *a, **kw: flux_client  # noqa: ARG005
+
+        in_bytes = b"input-image-data"
+        result = agent.upscale(
+            prompt="x", image_content=in_bytes, aspect_ratio="2KPortrait"
+        )
+        assert result is in_bytes
+        meta = agent.meta_dict()
+        assert meta.get("upscale_supported") is False
+
+
+class TestHybridUpscaleBranches:
+    """The hybrid-upscale gate (IMAGE_HYBRID_UPSCALE=1, effective
+    provider gemini, ratio in {2K,2KPortrait,4K,4KPortrait}) has three
+    breadcrumb states — only ``succeeded`` was previously tested via
+    the dev path. Pin ``returned-base`` (silent-downgrade) and
+    ``failed:<exc>`` (exception trap)."""
+
+    def _setup(self, monkeypatch, patched_cache):
+        """Common fixture wiring for hybrid-upscale tests."""
+        monkeypatch.setenv("IMAGE_HYBRID_UPSCALE", "1")
+        monkeypatch.delenv("IMAGE_PROVIDER_ROUTING", raising=False)
+        agent = _FakeImageAgent(provider="gemini")
+        gemini_client = MagicMock()
+        gemini_client.generate_image.return_value = b"gemini-base"
+        local_client = MagicMock()
+        agent.get_client = (
+            lambda provider=None, *, persist=True: gemini_client
+        )
+        agent.MODEL_REGISTRY = {  # type: ignore[assignment]
+            "local": lambda **kw: local_client
+        }
+        return agent, gemini_client, local_client
+
+    def test_returned_base_on_falsy_upscale(
+        self, monkeypatch, patched_cache
+    ):
+        """When local.upscale_image returns None/empty, the agent must
+        keep the Gemini base (not crash) and flag the breadcrumb."""
+        agent, _gemini, local = self._setup(monkeypatch, patched_cache)
+        local.upscale_image.return_value = None
+
+        result = agent.generate(prompt="x", aspect_ratio="2KPortrait")
+        assert result == b"gemini-base"  # base preserved
+        assert agent.meta_dict()["hybrid_upscale"] == "returned-base"
+
+    def test_returned_base_on_identity_upscale(
+        self, monkeypatch, patched_cache
+    ):
+        """When local.upscale_image returns the input reference
+        unchanged (no-op), surface as ``returned-base``."""
+        agent, _gemini, local = self._setup(monkeypatch, patched_cache)
+        # Return the input reference unchanged — `upscaled is not result`
+        # check should detect this.
+        local.upscale_image.side_effect = (
+            lambda prompt, image_content, **kw: image_content
+        )
+
+        agent.generate(prompt="x", aspect_ratio="2KPortrait")
+        assert agent.meta_dict()["hybrid_upscale"] == "returned-base"
+
+    def test_failed_breadcrumb_on_exception(
+        self, monkeypatch, patched_cache
+    ):
+        """When the upscaler raises, the Gemini base survives and the
+        breadcrumb records the exception class — proving the broad
+        except in the hybrid-upscale block is doing its job."""
+        agent, _gemini, local = self._setup(monkeypatch, patched_cache)
+        local.upscale_image.side_effect = RuntimeError("hybrid blew up")
+
+        result = agent.generate(prompt="x", aspect_ratio="2KPortrait")
+        assert result == b"gemini-base"  # base survives
+        assert (
+            agent.meta_dict()["hybrid_upscale"]
+            == "failed:RuntimeError"
+        )
+
+    def test_failed_breadcrumb_on_non_oserror_exception(
+        self, monkeypatch, patched_cache
+    ):
+        """Bug-fix: the previous narrow ``except (OSError, ValueError,
+        RuntimeError)`` would have let exceptions like AttributeError
+        / KeyError escape and crash a successful Gemini call. Pin the
+        broadened except by raising a non-OSError-derived class."""
+        agent, _gemini, local = self._setup(monkeypatch, patched_cache)
+        local.upscale_image.side_effect = AttributeError(
+            "media-api JSON malformed"
+        )
+
+        result = agent.generate(prompt="x", aspect_ratio="2KPortrait")
+        assert result == b"gemini-base"
+        assert (
+            agent.meta_dict()["hybrid_upscale"]
+            == "failed:AttributeError"
+        )
