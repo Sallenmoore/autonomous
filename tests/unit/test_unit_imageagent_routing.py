@@ -106,3 +106,34 @@ class TestRouteProvider:
         for val in ("0", "false", "no", "", "off"):
             monkeypatch.setenv("IMAGE_PROVIDER_ROUTING", val)
             assert ImageAgent._route_provider(agent, "Portrait") == "gemini", val
+
+
+class TestFallbackResolution:
+    """The _UNSET sentinel distinguishes 'caller did not pass kwarg'
+    from 'caller passed None to disable.' Instance default is used when
+    the kwarg is _UNSET; explicit None disables fallback; explicit string
+    selects that provider."""
+
+    def test_unset_inherits_instance_default(self):
+        from autonomous.ai.imageagent import ImageAgent, _UNSET
+        agent = _agent()
+        agent._data["fallback_provider"] = "gemini"
+        assert ImageAgent._resolve_fallback(agent, _UNSET) == "gemini"
+
+    def test_explicit_none_disables_fallback(self):
+        from autonomous.ai.imageagent import ImageAgent
+        agent = _agent()
+        agent._data["fallback_provider"] = "gemini"
+        assert ImageAgent._resolve_fallback(agent, None) is None
+
+    def test_explicit_string_overrides_instance_default(self):
+        from autonomous.ai.imageagent import ImageAgent
+        agent = _agent()
+        agent._data["fallback_provider"] = "gemini"
+        assert ImageAgent._resolve_fallback(agent, "local") == "local"
+
+    def test_unset_with_no_instance_default_returns_none(self):
+        from autonomous.ai.imageagent import ImageAgent, _UNSET
+        agent = _agent()
+        # Don't set fallback_provider — should default to None via StringAttr(default=None)
+        assert ImageAgent._resolve_fallback(agent, _UNSET) is None

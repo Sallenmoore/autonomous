@@ -6,6 +6,11 @@ from autonomous.ai.baseagent import BaseAgent
 from autonomous.model.autoattr import StringAttr
 
 
+# Sentinel object distinguishes "caller did not pass kwarg" from
+# "caller explicitly passed None to disable fallback"
+_UNSET = object()
+
+
 # Quality dial maps a caller-facing intent ("draft" / "standard" / "high")
 # to an effective aspect_ratio sent to the provider. The aspect_ratio
 # vocabulary is the providers' existing one — we just remap it before
@@ -61,6 +66,8 @@ class ImageAgent(BaseAgent):
 
     provider = StringAttr(default="local")
 
+    fallback_provider = StringAttr(default=None)
+
     instructions = StringAttr(
         default="You are highly skilled AI trained to assist with generating images."
     )
@@ -104,6 +111,16 @@ class ImageAgent(BaseAgent):
         if (provider, "*") in _COST_USD:
             return _COST_USD[(provider, "*")]
         return 0.0
+
+    def _resolve_fallback(self, fallback_provider):
+        """Apply the _UNSET-sentinel resolution rule.
+
+        Returns the effective fallback provider string, or None to
+        disable fallback for this call.
+        """
+        if fallback_provider is _UNSET:
+            return self.fallback_provider
+        return fallback_provider
 
     def generate(
         self,
