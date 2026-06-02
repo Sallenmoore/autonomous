@@ -77,6 +77,7 @@ exclude_patterns = [
     "_templates",
     "Thumbs.db",
     ".DS_Store",
+    "superpowers/**",
 ]
 
 # -- Autodoc / autosummary ---------------------------------------------------
