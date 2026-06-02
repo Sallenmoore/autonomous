@@ -16,7 +16,6 @@ HTTP: plain ``requests`` (already required), routed through
 ``autonomous.ai.retry.retry`` for bounded retries with backoff.
 """
 
-import io
 import json
 import os
 
