@@ -7,6 +7,10 @@ ignored by the served model).
 
 import re
 
+import jsonschema
+
+from autonomous.ai.exceptions import GenerateJSONParseError
+
 
 def clean_json_response(text):
     """
@@ -50,3 +54,31 @@ def clean_json_response(text):
         text = "{" + stripped + "}"
 
     return text.strip()
+
+
+def _schema_validate(payload, schema, raw=""):
+    """Validate ``payload`` against a JSON Schema.
+
+    No-op when ``schema`` is None — the validation safety net is opt-in
+    via the ``json_schema=`` kwarg on ``JSONAgent.generate``. When set,
+    raises ``GenerateJSONParseError`` with ``raw`` populated for caller
+    diagnostics.
+
+    Called centrally from ``JSONAgent.generate`` after every provider
+    returns, including gemini's strict function-calling response —
+    defense in depth against provider bugs.
+    """
+    if schema is None:
+        return
+    try:
+        jsonschema.validate(instance=payload, schema=schema)
+    except jsonschema.ValidationError as exc:
+        raise GenerateJSONParseError(
+            f"Response failed schema validation: {exc.message}",
+            raw=raw or "",
+        ) from exc
+    except jsonschema.SchemaError as exc:
+        raise GenerateJSONParseError(
+            f"Caller-supplied schema is invalid: {exc.message}",
+            raw=raw or "",
+        ) from exc
