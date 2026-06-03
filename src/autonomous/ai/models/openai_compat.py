@@ -322,9 +322,9 @@ class OpenAIClient(AutoModel):
                     response_format={"type": "json_object"},
                     temperature=temperature,
                 )
-            except (KeyError, IndexError, TypeError) as inner_exc:
+            except (KeyError, IndexError, TypeError, requests.HTTPError) as inner_exc:
                 raise GenerateJSONEmptyResponseError(
-                    f"HPC chat endpoint returned a malformed body after fallback: {inner_exc}"
+                    f"HPC chat endpoint returned an error after fallback retry: {inner_exc}"
                 ) from inner_exc
         except (KeyError, IndexError, TypeError) as exc:
             raise GenerateJSONEmptyResponseError(
