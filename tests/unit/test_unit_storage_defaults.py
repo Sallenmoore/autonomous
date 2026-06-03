@@ -32,12 +32,19 @@ class TestLocalStorageDefaults:
         assert storage.base_path == "/explicit"
 
     def test_base_url_without_app_base_url(self):
+        """Issue #24 resolution (Option A): when APP_BASE_URL is unset,
+        LocalStorage defaults to ``http://localhost`` rather than
+        falling back to a site-relative path. This aligns with the
+        ``geturl()`` "public URL" docstring promise and resolves the
+        unit-vs-integration contract conflict (integration test pinned
+        absolute via ``urlparse(url).scheme and .netloc``). A deployment
+        that forgets ``APP_BASE_URL`` now gets ``http://localhost`` —
+        clearly wrong for production, not a latent silent-relative trap.
+        """
         from autonomous.storage.localstorage import LocalStorage
 
         storage = LocalStorage(path="uploads")
-        # No APP_BASE_URL set; the old code produced "None/uploads". Now it
-        # falls back to a site-relative path.
-        assert storage.base_url == "/uploads"
+        assert storage.base_url == "http://localhost/uploads"
 
     def test_base_url_with_app_base_url(self, monkeypatch):
         monkeypatch.setenv("APP_BASE_URL", "https://cdn.example.com")

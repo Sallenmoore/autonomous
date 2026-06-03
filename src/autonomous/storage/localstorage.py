@@ -41,12 +41,15 @@ class LocalStorage:
         self.base_path = path if path is not None else _default_storage_path()
         # Resolved absolute base used to validate every derived path.
         self._base_resolved = Path(self.base_path).resolve()
-        base_url = os.getenv("APP_BASE_URL", "")
-        self.base_url = (
-            f"{base_url.rstrip('/')}/{self.base_path}"
-            if base_url
-            else f"/{self.base_path}"
-        )
+        # Default to "http://localhost" rather than "" — the geturl()
+        # docstring promises a "public URL" (absolute), and a relative
+        # fallback ("/uploads") broke the integration test contract
+        # while also being a latent silent-failure mode for deployments
+        # that forget to set APP_BASE_URL. With this default, every
+        # path through __init__ produces a scheme+host+path URL. See
+        # issue #24 for the contract conflict that motivated the change.
+        base_url = os.getenv("APP_BASE_URL", "http://localhost")
+        self.base_url = f"{base_url.rstrip('/')}/{self.base_path}"
 
     def _safe_join(self, *parts: str) -> str:
         """Join ``parts`` under ``base_path`` and verify the result stays in.
