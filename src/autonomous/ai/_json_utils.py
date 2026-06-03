@@ -56,6 +56,29 @@ def clean_json_response(text):
     return text.strip()
 
 
+def _schema_check(schema):
+    """Validate that ``schema`` is itself a structurally-valid JSON Schema.
+
+    Called at the ``JSONAgent.generate`` entry point BEFORE any HTTP work
+    so a malformed caller-supplied schema surfaces as a clear
+    ``GenerateJSONParseError`` instead of triggering a server-side 400
+    that ``OpenAIClient.generate_json``'s strict-mode fallback heuristic
+    might misclassify as "endpoint doesn't support strict mode" — the
+    false-positive caching bug tracked in issue #20.
+
+    No-op when ``schema`` is None (the opt-out path).
+    """
+    if schema is None:
+        return
+    try:
+        jsonschema.Draft202012Validator.check_schema(schema)
+    except jsonschema.SchemaError as exc:
+        raise GenerateJSONParseError(
+            f"Caller-supplied json_schema is invalid: {exc.message}",
+            raw="",
+        ) from exc
+
+
 def _schema_validate(payload, schema, raw=""):
     """Validate ``payload`` against a JSON Schema.
 
