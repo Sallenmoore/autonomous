@@ -212,3 +212,63 @@ class TestDispatchGeminiTranslation:
         )
 
         assert client.calls[0].get("additional_instructions") == "you are concise"
+
+
+from autonomous.ai.exceptions import GenerateJSONParseError
+
+
+class TestCentralizedValidation:
+    """The centralized _schema_validate call runs after every provider's
+    response is parsed to a dict. Catches drift even when the provider
+    claims strict-mode compliance — defense in depth."""
+
+    def test_conforming_response_passes(self, monkeypatch):
+        client = _StubProviderClient({"value": "ok"})
+        agent = _patched_agent(monkeypatch, "openai", client)
+
+        result = JSONAgent.generate(
+            agent, "prompt", json_schema=SAMPLE_SCHEMA
+        )
+        assert result == {"value": "ok"}
+
+    def test_missing_required_raises_parse_error(self, monkeypatch):
+        # Provider returns dict missing required "value" field.
+        client = _StubProviderClient({"other": "field"})
+        agent = _patched_agent(monkeypatch, "openai", client)
+
+        with pytest.raises(GenerateJSONParseError):
+            JSONAgent.generate(agent, "prompt", json_schema=SAMPLE_SCHEMA)
+
+    def test_extra_property_raises_parse_error(self, monkeypatch):
+        # additionalProperties=False on SAMPLE_SCHEMA forbids extras.
+        client = _StubProviderClient({"value": "ok", "unexpected": True})
+        agent = _patched_agent(monkeypatch, "openai", client)
+
+        with pytest.raises(GenerateJSONParseError):
+            JSONAgent.generate(agent, "prompt", json_schema=SAMPLE_SCHEMA)
+
+    def test_validation_skipped_when_no_schema(self, monkeypatch):
+        # Non-conforming would-be result — but no schema → no validation.
+        client = _StubProviderClient({"anything": "goes"})
+        agent = _patched_agent(monkeypatch, "openai", client)
+
+        result = JSONAgent.generate(agent, "prompt")  # no json_schema
+        assert result == {"anything": "goes"}
+
+    def test_validation_runs_for_gemini_too(self, monkeypatch):
+        """Defense in depth: gemini's strict function-calling can still
+        produce wrong-shape output (provider bugs); validate it too."""
+        client = _GeminiStubClient({"other": "field"})  # missing "value"
+        agent = _patched_agent(monkeypatch, "gemini", client)
+
+        with pytest.raises(GenerateJSONParseError):
+            JSONAgent.generate(agent, "prompt", json_schema=SAMPLE_SCHEMA)
+
+    def test_validation_error_raw_populated(self, monkeypatch):
+        client = _StubProviderClient({"other": "field"})
+        agent = _patched_agent(monkeypatch, "openai", client)
+
+        with pytest.raises(GenerateJSONParseError) as exc_info:
+            JSONAgent.generate(agent, "prompt", json_schema=SAMPLE_SCHEMA)
+        # raw should contain (at least a prefix of) the failing response
+        assert "other" in exc_info.value.raw or "field" in exc_info.value.raw

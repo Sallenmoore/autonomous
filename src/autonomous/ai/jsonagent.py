@@ -2,6 +2,7 @@ import json
 import os
 
 from autonomous.ai.baseagent import BaseAgent
+from autonomous.ai._json_utils import _schema_validate
 from autonomous.model.autoattr import StringAttr
 
 
@@ -74,7 +75,11 @@ class JSONAgent(BaseAgent):
         elif not isinstance(result, dict):
             raise ValueError(f"Invalid JSON response from AI model.\n\n{result}")
 
-        # Centralized client-side validation lands in Task 11.
+        # Defense in depth: validate every provider's output. Catches
+        # provider bugs even when the provider claims schema compliance
+        # (gemini function-calling, OpenAI strict mode). No-op when
+        # json_schema is None.
+        _schema_validate(result, json_schema, raw=json.dumps(result)[:500])
 
         self.add_to_job_meta("Last JSON", result)
         return result
