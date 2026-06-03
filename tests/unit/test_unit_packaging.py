@@ -64,6 +64,7 @@ class TestCore:
         expected_core = {
             "python-dotenv",
             "pymongo",
+            "jsonschema",
             "blinker",
             "Authlib",
             "requests",

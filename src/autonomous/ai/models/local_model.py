@@ -35,6 +35,11 @@ from autonomous.taskrunner.autotasks import AutoTasks
 # to a stub.
 _SESSION = requests.Session()
 
+# Module-level cache of (model, endpoint) combos we've already logged
+# the "no structured outputs support" marker for. Avoids log spam on
+# every JSON call. Cleared by process restart only.
+_STRUCTURED_OUTPUTS_LOGGED: set[tuple[str, str]] = set()
+
 
 class LocalAIModel(AutoModel):
     messages = ListAttr(StringAttr(default=[]))
@@ -97,8 +102,36 @@ class LocalAIModel(AutoModel):
             log(f"Failed to flush memory: {e}", _print=True)
 
     def generate_json(
-        self, message, system_prompt=None, uri="", context=None, temperature=0.7, evaluation=False
+        self,
+        message,
+        system_prompt=None,
+        uri="",
+        context=None,
+        temperature=0.7,
+        evaluation=False,
+        json_schema=None,
+        schema_name="response",
     ):
+        # The local Ollama path has no equivalent of OpenAI's strict-mode
+        # response_format. Log once per (model, endpoint) so operators know
+        # they're on the prompt-only enforcement path, and proceed as today.
+        # Client-side validation in JSONAgent.generate provides the safety net.
+        if json_schema is not None:
+            key = (self._text_model, self._ollama_url)
+            if key not in _STRUCTURED_OUTPUTS_LOGGED:
+                _STRUCTURED_OUTPUTS_LOGGED.add(key)
+                # _print=False — symmetric with openai_compat. The log
+                # file is authoritative; stdout interleaves with other
+                # process output and worker-pool log streams.
+                log(
+                    f"[STRUCTURED-OUTPUTS-UNAVAILABLE] LocalAIModel does not "
+                    f"support strict-mode schema enforcement. "
+                    f"model={self._text_model} endpoint={self._ollama_url}. "
+                    f"Falling back to prompt-only shape guidance + "
+                    f"client-side validation.",
+                    _print=False,
+                )
+
         context = context or {}
         system_prompt = system_prompt or self.instructions
         system_prompt = system_prompt.rstrip(". ") + "."
