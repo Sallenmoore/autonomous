@@ -135,6 +135,27 @@ class TestSchemaCheckMalformed:
             _schema_check({"type": "garbage"})
         assert exc_info.value.raw == ""
 
+    @pytest.mark.parametrize(
+        "not_a_dict",
+        [
+            [],  # list passes `is not None` but is not a JSON Schema dict
+            ["type", "object"],  # non-empty list
+            "type: object",  # string
+            42,  # int
+            True,  # bool
+        ],
+    )
+    def test_non_dict_schema_raises_parse_error_not_typeerror(
+        self, not_a_dict
+    ):
+        """jsonschema's ``check_schema`` raises ``TypeError`` (not
+        ``SchemaError``) on a non-dict input — that would have escaped
+        the typed wrapper as a raw TypeError pre-fix. The dict pre-check
+        catches this so the caller sees one consistent exception class."""
+        with pytest.raises(GenerateJSONParseError) as exc_info:
+            _schema_check(not_a_dict)
+        assert "must be a dict" in str(exc_info.value)
+
 
 # ---------------------------------------------------------------------------
 # 2. JSONAgent.generate — schema-check ordering (no HTTP on malformed)
@@ -219,6 +240,26 @@ class TestSchemaCheckOrdering:
             },
         )
         assert client.generate_json.call_count == 1
+
+    def test_schema_check_runs_before_json_ai_agent_env_read(
+        self, monkeypatch
+    ):
+        """The pre-check must run BEFORE ``os.environ.get('JSON_AI_AGENT',
+        self.provider)``. A regression-on-refactor that swaps the
+        ordering would break the anti-poisoning contract for callers
+        on configured non-default providers. Pin the ordering by
+        setting JSON_AI_AGENT='openai' on a gemini-default agent
+        with a malformed schema, asserting no get_client call."""
+        monkeypatch.setenv("JSON_AI_AGENT", "openai")
+        agent = _FakeJSONAgent(provider="gemini")
+        get_client_calls = []
+        agent.get_client = lambda provider=None, *, persist=True: (
+            get_client_calls.append(provider) or MagicMock()
+        )
+
+        with pytest.raises(GenerateJSONParseError):
+            agent.generate("p", json_schema={"type": "garbage"})
+        assert get_client_calls == []
 
 
 # ---------------------------------------------------------------------------
@@ -315,17 +356,20 @@ class TestMockOverrides:
         return MockAIModel.__new__(MockAIModel)
 
     def test_per_call_override_returns_verbatim(self, mock):
+        """The override returns the same content the caller passed.
+        Equality (not identity) — the contract is "verbatim", not
+        "same object reference"; a defensive copy.deepcopy by a
+        future maintainer would be reasonable and shouldn't break
+        the contract."""
         override = {"name": "Aria", "level": 5, "class": "Fighter"}
         result = mock.generate_json("prompt", _mock_response=override)
-        # Must be the SAME object — not a copy — so caller can rely
-        # on identity-based assertions.
-        assert result is override
+        assert result == override
 
     def test_per_instance_override_returns_verbatim(self, mock):
         override = {"name": "Beren", "stat": 42}
         mock._mock_json_response = override
         result = mock.generate_json("prompt")
-        assert result is override
+        assert result == override
 
     def test_per_instance_override_survives_multiple_calls(self, mock):
         """Unlike per-call (which only applies to a single call),
@@ -336,7 +380,7 @@ class TestMockOverrides:
         mock._mock_json_response = override
 
         for _ in range(3):
-            assert mock.generate_json("any prompt") is override
+            assert mock.generate_json("any prompt") == override
 
     def test_per_call_wins_over_per_instance(self, mock):
         """When both are set, per-call should take precedence — the
@@ -345,7 +389,29 @@ class TestMockOverrides:
         mock._mock_json_response = {"who": "instance-default"}
         per_call = {"who": "per-call-winner"}
         result = mock.generate_json("p", _mock_response=per_call)
-        assert result is per_call
+        assert result == per_call
+
+    def test_explicit_none_per_call_falls_through_to_per_instance(self, mock):
+        """A defensive caller passing ``_mock_response=None`` explicitly
+        (rather than omitting the kwarg) must NOT override the
+        per-instance default with None. The source does
+        ``if effective_override is None: fall back to per-instance``,
+        so explicit-None is indistinguishable from "kwarg omitted" —
+        both fall through to the per-instance value. Pin this so a
+        future sentinel-introduction refactor surfaces in the diff."""
+        mock._mock_json_response = {"who": "instance-default"}
+        result = mock.generate_json("p", _mock_response=None)
+        assert result == {"who": "instance-default"}
+
+    def test_explicit_none_per_call_with_no_per_instance_falls_to_heuristic(
+        self, mock
+    ):
+        """Same explicit-None case but with NO per-instance set —
+        falls through all the way to the heuristic default dict."""
+        # Don't set _mock_json_response.
+        result = mock.generate_json("p", _mock_response=None)
+        # Heuristic default for an empty-context prompt is {}.
+        assert result == {}
 
     def test_no_override_falls_through_to_heuristic_default(self, mock):
         """Without either override the existing heuristic-dict path
@@ -368,7 +434,7 @@ class TestMockOverrides:
             {},  # empty dict is a legitimate override
         ]:
             result = mock.generate_json("p", _mock_response=shape)
-            assert result is shape
+            assert result == shape
 
     def test_underscore_prefix_kwarg_in_signature(self, mock):
         """The underscore-prefix on ``_mock_response`` is a naming

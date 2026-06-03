@@ -67,9 +67,27 @@ def _schema_check(schema):
     false-positive caching bug tracked in issue #20.
 
     No-op when ``schema`` is None (the opt-out path).
+
+    **Limitation:** ``check_schema`` validates against the JSON Schema
+    meta-schema only; it does NOT enforce OpenAI strict-output dialect
+    restrictions (every property in ``required``, ``additionalProperties:
+    false`` mandatory, no ``format``/``$ref``). A meta-schema-valid but
+    OpenAI-strict-invalid schema can still trip the negative cache. That
+    narrower closure is tracked separately — the right fix lives in
+    ``_looks_like_unsupported_strict_mode`` (tighten markers to capability
+    phrases) rather than here.
     """
     if schema is None:
         return
+    # Pre-check: jsonschema's check_schema raises TypeError on non-dict
+    # input (e.g. a bare list). Surface as the typed parse error here so
+    # the caller gets one consistent exception class to catch.
+    if not isinstance(schema, dict):
+        raise GenerateJSONParseError(
+            f"Caller-supplied json_schema must be a dict, "
+            f"got {type(schema).__name__}.",
+            raw="",
+        )
     try:
         jsonschema.Draft202012Validator.check_schema(schema)
     except jsonschema.SchemaError as exc:

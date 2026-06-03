@@ -46,9 +46,13 @@ class LocalStorage:
         # fallback ("/uploads") broke the integration test contract
         # while also being a latent silent-failure mode for deployments
         # that forget to set APP_BASE_URL. With this default, every
-        # path through __init__ produces a scheme+host+path URL. See
-        # issue #24 for the contract conflict that motivated the change.
-        base_url = os.getenv("APP_BASE_URL", "http://localhost")
+        # path through __init__ produces a scheme+host+path URL.
+        #
+        # ``getenv(..., default)`` returns "" for set-but-empty env
+        # vars (likely a deployment misconfiguration). ``or`` truthy-
+        # fallback covers both "unset" and "empty" so neither produces
+        # the latent relative-URL trap that issue #24 set out to fix.
+        base_url = os.getenv("APP_BASE_URL") or "http://localhost"
         self.base_url = f"{base_url.rstrip('/')}/{self.base_path}"
 
     def _safe_join(self, *parts: str) -> str:
