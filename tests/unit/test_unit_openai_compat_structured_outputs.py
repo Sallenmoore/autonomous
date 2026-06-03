@@ -306,3 +306,94 @@ class TestStrictModeFallback:
             OpenAIClient.generate_json(client, "prompt")  # no json_schema
 
         assert calls["count"] == 1
+
+
+class TestStrictModeCacheShortCircuit:
+    SAMPLE_SCHEMA = {
+        "type": "object",
+        "properties": {"v": {"type": "string"}},
+        "required": ["v"],
+    }
+
+    def setup_method(self):
+        _reset_unsupported_cache()
+
+    def _client(self, monkeypatch, captured):
+        from autonomous.ai.models.openai_compat import OpenAIClient
+
+        client = OpenAIClient.__new__(OpenAIClient)
+        # Mirror the descriptor-state initialization used by other test classes
+        # in this file (see TestStrictModePayload._client and
+        # TestStrictModeFallback._client — same pattern).
+        try:
+            object.__setattr__(client, "_data", {})
+            object.__setattr__(client, "_dynamic_fields", {})
+            object.__setattr__(client, "_changed_fields", [])
+            object.__setattr__(client, "_initialised", False)
+            object.__setattr__(client, "_created", True)
+        except AttributeError:
+            pass
+        client._json_model = "cache-model"
+        client._base_url = "https://cache-endpoint/api"
+        client._api_key = "k"
+        client.instructions = "Be a helpful AI."
+
+        def fake_chat(model, system, user, response_format=None, temperature=0.7):
+            captured["response_formats"].append(response_format)
+            return '{"v": "cached"}'
+
+        monkeypatch.setattr(client, "_chat", fake_chat)
+        captured.setdefault("response_formats", [])
+        return client
+
+    def test_pre_populated_cache_skips_strict(self, monkeypatch):
+        from autonomous.ai.models.openai_compat import OpenAIClient
+        # Simulate "we already discovered this combo doesn't support strict."
+        _UNSUPPORTED_STRICT_MODE.add(("cache-model", "https://cache-endpoint/api"))
+
+        captured = {}
+        client = self._client(monkeypatch, captured)
+
+        OpenAIClient.generate_json(
+            client, "prompt", json_schema=self.SAMPLE_SCHEMA
+        )
+
+        # Only ONE call — went directly to loose mode, no strict attempt.
+        assert len(captured["response_formats"]) == 1
+        assert captured["response_formats"][0] == {"type": "json_object"}
+
+    def test_different_endpoint_still_tries_strict(self, monkeypatch):
+        """Cache is per (model, endpoint). A different endpoint isn't
+        short-circuited just because some other combo failed."""
+        from autonomous.ai.models.openai_compat import OpenAIClient
+        _UNSUPPORTED_STRICT_MODE.add(("other-model", "https://other-endpoint/api"))
+
+        captured = {}
+        client = self._client(monkeypatch, captured)
+        # Our client is ("cache-model", "https://cache-endpoint/api")
+
+        OpenAIClient.generate_json(
+            client, "prompt", json_schema=self.SAMPLE_SCHEMA
+        )
+
+        assert len(captured["response_formats"]) == 1
+        assert captured["response_formats"][0]["type"] == "json_schema"
+
+    def test_cache_persists_across_generate_json_calls(self, monkeypatch):
+        """Once cached, every subsequent call to the same combo
+        short-circuits — no per-call wasted attempts."""
+        from autonomous.ai.models.openai_compat import OpenAIClient
+        captured = {"response_formats": []}
+        client = self._client(monkeypatch, captured)
+
+        # Pre-populate as if a previous fallback discovered unsupported-ness.
+        _UNSUPPORTED_STRICT_MODE.add(("cache-model", "https://cache-endpoint/api"))
+
+        for _ in range(3):
+            OpenAIClient.generate_json(
+                client, "prompt", json_schema=self.SAMPLE_SCHEMA
+            )
+
+        assert len(captured["response_formats"]) == 3
+        for rf in captured["response_formats"]:
+            assert rf == {"type": "json_object"}
