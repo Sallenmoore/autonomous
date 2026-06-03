@@ -340,26 +340,31 @@ class TestJSONAgentDefenseInDepth:
         result = agent.generate("p", json_schema=schema)
         assert result == {"name": "Aria"}
 
-    def test_invalid_json_string_raises_value_error(self, monkeypatch):
+    def test_invalid_json_string_raises_parse_error(self, monkeypatch):
+        """Post-fix: bare ValueError replaced by typed
+        GenerateJSONParseError. See TestJSONAgentParseErrorTypedHierarchy
+        below for the full typed-exception coverage."""
         monkeypatch.delenv("JSON_AI_AGENT", raising=False)
         agent = _FakeJSONAgent(provider="openai")
         client = MagicMock()
         client.generate_json.return_value = "not even json"
         agent.get_client = lambda *a, **kw: client  # noqa: ARG005
 
-        with pytest.raises(ValueError, match="Invalid JSON"):
+        with pytest.raises(GenerateJSONParseError, match="Invalid JSON"):
             agent.generate("p")
 
-    def test_non_dict_non_string_response_raises_value_error(
+    def test_non_dict_non_string_response_raises_parse_error(
         self, monkeypatch
     ):
+        """Post-fix: bare ValueError replaced by typed
+        GenerateJSONParseError for the wrong-result-type case too."""
         monkeypatch.delenv("JSON_AI_AGENT", raising=False)
         agent = _FakeJSONAgent(provider="openai")
         client = MagicMock()
         client.generate_json.return_value = ["a", "list", "is", "not", "ok"]
         agent.get_client = lambda *a, **kw: client  # noqa: ARG005
 
-        with pytest.raises(ValueError, match="Invalid JSON"):
+        with pytest.raises(GenerateJSONParseError, match="Invalid JSON"):
             agent.generate("p")
 
 
@@ -482,12 +487,34 @@ class TestLocalAIModelLogOnce:
         yield
         local_model._STRUCTURED_OUTPUTS_LOGGED.clear()
 
-    def test_no_log_when_json_schema_is_none(self):
+    def test_no_log_when_json_schema_is_none(self, monkeypatch):
         """No schema → no UNAVAILABLE marker. The marker would be
-        noise on every non-schema call."""
+        noise on every non-schema call. Actually call generate_json
+        (rather than just asserting the cache is empty post-fixture-
+        cleanup, which would be a tautology)."""
         from autonomous.ai.models import local_model
-        # Don't actually call generate_json — just verify the cache
-        # state stays empty when no schema is passed.
+
+        instance = self._make_instance("llama3", "http://ollama:11434")
+        log_calls = []
+        monkeypatch.setattr(
+            local_model, "log",
+            lambda *a, _print=False: log_calls.append(a[0] if a else ""),
+        )
+        monkeypatch.setattr(
+            local_model, "retry",
+            lambda *a, **kw: (_ for _ in ()).throw(  # noqa: ARG005
+                RuntimeError("stop-here")
+            ),
+        )
+
+        # Call WITHOUT json_schema. The logging block at the top of
+        # generate_json should be skipped entirely.
+        with pytest.raises(RuntimeError, match="stop-here"):
+            instance.generate_json("p", system_prompt="t")  # no json_schema
+
+        markers = [m for m in log_calls if "STRUCTURED-OUTPUTS-UNAVAILABLE" in m]
+        assert markers == []
+        # Cache stays empty too.
         assert len(local_model._STRUCTURED_OUTPUTS_LOGGED) == 0
 
     def _make_instance(self, model: str, endpoint: str):
@@ -666,3 +693,181 @@ class TestJsonSchemaIsCoreDep:
         the pin, the import must succeed in the test env (else the
         validation layer would be dead code)."""
         import jsonschema  # noqa: F401
+
+    def test_requirements_pin_includes_major_version_floor(self):
+        """A weaker pin (no ``>=`` floor) would let a downstream's
+        resolver pull jsonschema 0.x — substring 'jsonschema' alone
+        would still pass. Pin the major-version floor explicitly."""
+        import re
+        repo_root = Path(__file__).resolve().parents[2]
+        req_lines = (repo_root / "requirements.txt").read_text().splitlines()
+        # Find the jsonschema line (uncommented).
+        matches = [
+            line for line in req_lines
+            if line.strip()
+            and not line.strip().startswith("#")
+            and re.match(r"^jsonschema[\[=<>!~ ]", line.strip())
+        ]
+        assert len(matches) == 1, (
+            f"Expected exactly one uncommented jsonschema line, got {matches}"
+        )
+        assert ">=4" in matches[0] or ">=4.0" in matches[0], (
+            f"Expected >=4 floor in pin; got: {matches[0]!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Coverage gaps surfaced by /review-pr — fallback-failure typed exception
+# ---------------------------------------------------------------------------
+
+
+class TestOpenAIFallbackFailurePath:
+    """When the strict-mode HTTPError triggers fallback AND the
+    fallback retry ALSO fails, ``generate_json`` must raise
+    ``GenerateJSONEmptyResponseError`` (not a bare requests.HTTPError)
+    with ``__cause__`` set to the inner exception. This is the typed-
+    exception contract MIGRATIONS promises.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _isolate(self):
+        from autonomous.ai.models import openai_compat
+        openai_compat._reset_unsupported_cache()
+        yield
+        openai_compat._reset_unsupported_cache()
+
+    def _make_instance(self):
+        from autonomous.ai.models import openai_compat
+        instance = openai_compat.OpenAIClient.__new__(openai_compat.OpenAIClient)
+        object.__setattr__(instance, "_json_model", "gpt-4")
+        object.__setattr__(instance, "_base_url", "http://endpoint")
+        # _chat is patched per-test.
+        return instance
+
+    def _make_http_error(self, status: int, body: str):
+        import requests
+        resp = requests.Response()
+        resp.status_code = status
+        resp._content = body.encode("utf-8")
+        err = requests.HTTPError(response=resp)
+        return err
+
+    def _wire_fake_chat(self, instance, strict_err, loose_err):
+        """Bind a fake _chat on the INSTANCE (not class) so the method
+        receives positional args without ``self`` collision. Records
+        the response_format of each call for assertion."""
+        chat_calls = []
+
+        def fake_chat(model, system, user, response_format, temperature):
+            chat_calls.append(response_format)
+            if response_format.get("type") == "json_schema":
+                raise strict_err
+            raise loose_err
+
+        # Plain instance attribute assignment — _chat has no StringAttr
+        # descriptor on it (it's a regular method on the class).
+        object.__setattr__(instance, "_chat", fake_chat)
+        return chat_calls
+
+    def test_fallback_retry_failure_raises_typed_exception(self):
+        """The fallback retry's own failure must become
+        ``GenerateJSONEmptyResponseError`` with chained cause."""
+        from autonomous.ai.exceptions import GenerateJSONEmptyResponseError
+
+        instance = self._make_instance()
+        strict_err = self._make_http_error(
+            400, '{"error": "json_schema not supported"}'
+        )
+        loose_err = self._make_http_error(500, "internal error")
+        chat_calls = self._wire_fake_chat(instance, strict_err, loose_err)
+
+        with pytest.raises(GenerateJSONEmptyResponseError) as exc_info:
+            instance.generate_json(
+                "p",
+                system_prompt="sys",
+                json_schema={"type": "object"},
+            )
+
+        # Chained cause is the inner (loose-mode) HTTPError.
+        assert exc_info.value.__cause__ is loose_err
+        assert len(chat_calls) == 2
+        assert chat_calls[0]["type"] == "json_schema"
+        assert chat_calls[1]["type"] == "json_object"
+
+    def test_cache_survives_fallback_failure(self):
+        """Even when the loose-mode retry also failed, the negative
+        cache entry must persist — strict-mode-unsupported is still
+        true regardless of whether loose worked. Documented in the
+        inline comment at openai_compat.py."""
+        from autonomous.ai.models import openai_compat
+        from autonomous.ai.exceptions import GenerateJSONEmptyResponseError
+
+        instance = self._make_instance()
+        strict_err = self._make_http_error(400, '{"json_schema": "no"}')
+        loose_err = self._make_http_error(500, "internal error")
+        self._wire_fake_chat(instance, strict_err, loose_err)
+
+        with pytest.raises(GenerateJSONEmptyResponseError):
+            instance.generate_json(
+                "p",
+                system_prompt="sys",
+                json_schema={"type": "object"},
+            )
+
+        assert (
+            "gpt-4", "http://endpoint"
+        ) in openai_compat._UNSUPPORTED_STRICT_MODE
+
+
+class TestJSONAgentParseErrorTypedHierarchy:
+    """Bug-fix from /review-pr: ``JSONAgent.generate`` previously
+    raised bare ``ValueError`` on invalid JSON / wrong-type response.
+    MIGRATIONS' typed-exception contract promises
+    ``GenerateJSONParseError`` for parse failures. Pin the typed
+    behavior so a regression to bare ValueError is caught.
+    """
+
+    def _make_agent(self, return_value, provider="openai"):
+        agent = _FakeJSONAgent(provider=provider)
+        client = MagicMock()
+        client.generate_json.return_value = return_value
+        agent.get_client = lambda *a, **kw: client  # noqa: ARG005
+        return agent
+
+    def test_invalid_json_string_raises_parse_error_not_value_error(
+        self, monkeypatch
+    ):
+        monkeypatch.delenv("JSON_AI_AGENT", raising=False)
+        agent = self._make_agent("this is definitely not json")
+
+        with pytest.raises(GenerateJSONParseError) as exc_info:
+            agent.generate("p")
+
+        # GenerateJSONParseError is a subclass of GenerateJSONError;
+        # bare ValueError is NOT in the typed hierarchy.
+        assert not isinstance(exc_info.value, ValueError) or isinstance(
+            exc_info.value, GenerateJSONParseError
+        )
+        # .raw captures the unparseable body (truncated to _RAW_MAX).
+        assert "this is definitely not json" in exc_info.value.raw
+
+    def test_invalid_json_chains_decode_error(self, monkeypatch):
+        """``raise from exc`` preserves the underlying
+        ``json.JSONDecodeError`` as ``__cause__`` for debugger
+        introspection."""
+        import json as json_mod
+        monkeypatch.delenv("JSON_AI_AGENT", raising=False)
+        agent = self._make_agent("{invalid")
+
+        with pytest.raises(GenerateJSONParseError) as exc_info:
+            agent.generate("p")
+        assert isinstance(exc_info.value.__cause__, json_mod.JSONDecodeError)
+
+    def test_non_dict_non_string_raises_parse_error(self, monkeypatch):
+        monkeypatch.delenv("JSON_AI_AGENT", raising=False)
+        agent = self._make_agent(["a", "list"])  # neither dict nor string
+
+        with pytest.raises(GenerateJSONParseError) as exc_info:
+            agent.generate("p")
+        # Message names the offending type for diagnostics.
+        assert "list" in str(exc_info.value)

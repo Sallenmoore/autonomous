@@ -305,13 +305,22 @@ class OpenAIClient(AutoModel):
             )
             if not should_fallback:
                 raise
+            # Cache before retry: even if loose-mode also fails, the
+            # strict-mode-unsupported signal is still valid — a future
+            # call to the same (model, endpoint) should go straight to
+            # loose without re-probing. Do NOT move this .add() below
+            # the retry branch; that would cause repeated probe failures.
             _UNSUPPORTED_STRICT_MODE.add(endpoint_key)
+            # _print=False: the entry lands in logs/current_run_error_log.log
+            # regardless. Avoiding stdout keeps the marker from interleaving
+            # with structured loggers in embedding environments (web request
+            # logs, JSON-emitting workers). Operators grep the log file.
             log(
                 f"[STRUCTURED-OUTPUTS-UNAVAILABLE] First detection: "
                 f"model={self._json_model} endpoint={self._base_url} "
                 f"status={resp.status_code} body_excerpt={resp.text[:200]!r} "
                 f"(cached for this process)",
-                _print=True,
+                _print=False,
             )
             # Retry once with loose mode.
             try:

@@ -3,6 +3,7 @@ import os
 
 from autonomous.ai.baseagent import BaseAgent
 from autonomous.ai._json_utils import _schema_validate
+from autonomous.ai.exceptions import GenerateJSONParseError
 from autonomous.model.autoattr import StringAttr
 
 
@@ -70,10 +71,21 @@ class JSONAgent(BaseAgent):
         if isinstance(result, str):
             try:
                 result = json.loads(result)
-            except json.JSONDecodeError:
-                raise ValueError(f"Invalid JSON response from AI model.\n\n{result}")
+            except json.JSONDecodeError as exc:
+                # Per MIGRATIONS' typed-exception contract, JSON parse
+                # failures surface as GenerateJSONParseError (not bare
+                # ValueError) so callers can catch the typed hierarchy.
+                # Raw body is preserved on .raw for diagnostics.
+                raise GenerateJSONParseError(
+                    f"Invalid JSON response from AI model.",
+                    raw=result,
+                ) from exc
         elif not isinstance(result, dict):
-            raise ValueError(f"Invalid JSON response from AI model.\n\n{result}")
+            raise GenerateJSONParseError(
+                f"Invalid JSON response from AI model: "
+                f"expected dict or JSON string, got {type(result).__name__}.",
+                raw=str(result),
+            )
 
         # Defense in depth: validate every provider's output. Catches
         # provider bugs even when the provider claims schema compliance

@@ -123,18 +123,26 @@ class TestStringResponseParsing:
 
         assert result == {"value": "ok"}
 
-    def test_invalid_string_raises_value_error(self, monkeypatch):
+    def test_invalid_string_raises_parse_error(self, monkeypatch):
+        """Post test-agent fix: bare ValueError replaced by typed
+        GenerateJSONParseError so callers can catch the typed
+        hierarchy per MIGRATIONS' contract."""
+        from autonomous.ai.exceptions import GenerateJSONParseError
+
         client = _StubProviderClient("not valid json")
         agent = _patched_agent(monkeypatch, "openai", client)
 
-        with pytest.raises(ValueError, match="Invalid JSON response"):
+        with pytest.raises(GenerateJSONParseError, match="Invalid JSON response"):
             JSONAgent.generate(agent, "prompt")
 
-    def test_non_dict_non_string_raises_value_error(self, monkeypatch):
+    def test_non_dict_non_string_raises_parse_error(self, monkeypatch):
+        """Wrong-type response also surfaces as the typed exception."""
+        from autonomous.ai.exceptions import GenerateJSONParseError
+
         client = _StubProviderClient(42)   # provider returns int
         agent = _patched_agent(monkeypatch, "openai", client)
 
-        with pytest.raises(ValueError, match="Invalid JSON response"):
+        with pytest.raises(GenerateJSONParseError, match="Invalid JSON response"):
             JSONAgent.generate(agent, "prompt")
 
 

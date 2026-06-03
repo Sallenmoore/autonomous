@@ -120,13 +120,16 @@ class LocalAIModel(AutoModel):
             key = (self._text_model, self._ollama_url)
             if key not in _STRUCTURED_OUTPUTS_LOGGED:
                 _STRUCTURED_OUTPUTS_LOGGED.add(key)
+                # _print=False — symmetric with openai_compat. The log
+                # file is authoritative; stdout interleaves with other
+                # process output and worker-pool log streams.
                 log(
                     f"[STRUCTURED-OUTPUTS-UNAVAILABLE] LocalAIModel does not "
                     f"support strict-mode schema enforcement. "
                     f"model={self._text_model} endpoint={self._ollama_url}. "
                     f"Falling back to prompt-only shape guidance + "
                     f"client-side validation.",
-                    _print=True,
+                    _print=False,
                 )
 
         context = context or {}
