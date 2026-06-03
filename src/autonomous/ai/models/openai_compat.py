@@ -49,6 +49,46 @@ class HPCUnreachableError(RuntimeError):
 # revoked" — the user has to re-auth, same recovery path as a VPN drop.
 _TRANSPORT_FAILURE_CODES = frozenset({401, 502, 503, 504})
 
+# Module-level negative cache: (model, base_url) tuples known to NOT
+# support strict-mode response_format. Populated on first conservative
+# 400 detection. Cleared by _reset_unsupported_cache() (tests + manual
+# operator override). Process-lifetime granularity is appropriate —
+# servers gain strict-mode support via deploys, deploys typically
+# accompany worker restarts.
+_UNSUPPORTED_STRICT_MODE: set[tuple[str, str]] = set()
+
+# Substrings that indicate a 4xx response was specifically about
+# strict-mode unsupported-ness (rather than a real client bug like
+# bad schema or bad model name). Conservative — only fall back on
+# explicit signals to avoid masking real errors.
+_STRICT_MODE_ERROR_MARKERS = (
+    "json_schema",
+    "response_format",
+    "unsupported_parameter",
+    "structured output",
+)
+
+
+def _reset_unsupported_cache() -> None:
+    """Clear the negative cache. Tests use this for isolation; operators
+    use it after deploying a server-side fix to re-probe strict-mode
+    support without restarting the worker."""
+    _UNSUPPORTED_STRICT_MODE.clear()
+
+
+def _looks_like_unsupported_strict_mode(status: int, body_text: str) -> bool:
+    """Conservative heuristic: only flag responses whose body explicitly
+    mentions strict-mode-specific terms. A bare 400 (real client bug,
+    e.g. bad schema or bad model name) is intentionally NOT flagged —
+    silently retrying in loose mode would mask the real error.
+
+    Accepts 400 and 422 (some servers use 422 for validation rejections).
+    """
+    if status not in (400, 422):
+        return False
+    body_lower = body_text.lower()
+    return any(m in body_lower for m in _STRICT_MODE_ERROR_MARKERS)
+
 
 class OpenAIClient(AutoModel):
     messages = ListAttr(StringAttr(default=[]))
