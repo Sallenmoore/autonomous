@@ -2,7 +2,7 @@ import json
 import os
 
 from autonomous.ai.baseagent import BaseAgent
-from autonomous.ai._json_utils import _schema_validate
+from autonomous.ai._json_utils import _schema_check, _schema_validate
 from autonomous.ai.exceptions import GenerateJSONParseError
 from autonomous.model.autoattr import StringAttr
 
@@ -30,6 +30,14 @@ class JSONAgent(BaseAgent):
         json_schema=None,
         schema_name="response",
     ):
+        # Validate the caller-supplied schema's STRUCTURE before any HTTP
+        # work — a malformed schema raises GenerateJSONParseError here
+        # rather than triggering a server-side 400 that
+        # OpenAIClient.generate_json's fallback heuristic might
+        # misclassify as "endpoint doesn't support strict mode" (issue
+        # #20). No-op when json_schema is None.
+        _schema_check(json_schema)
+
         provider = os.environ.get("JSON_AI_AGENT", self.provider)
         client = self.get_client(provider)
 
