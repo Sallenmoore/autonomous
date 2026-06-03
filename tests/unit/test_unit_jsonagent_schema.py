@@ -136,3 +136,79 @@ class TestStringResponseParsing:
 
         with pytest.raises(ValueError, match="Invalid JSON response"):
             JSONAgent.generate(agent, "prompt")
+
+
+class _GeminiStubClient:
+    """Captures gemini's distinct call signature: generate_json(message, function, ...)"""
+
+    def __init__(self, return_value):
+        self.return_value = return_value
+        self.calls = []
+
+    def generate_json(self, message, function=None, **kwargs):
+        self.calls.append({"message": message, "function": function, **kwargs})
+        return self.return_value
+
+
+class TestDispatchGeminiTranslation:
+    def test_json_schema_synthesizes_function_dict(self, monkeypatch):
+        client = _GeminiStubClient({"value": "ok"})
+        agent = _patched_agent(monkeypatch, "gemini", client)
+
+        JSONAgent.generate(
+            agent, "prompt",
+            json_schema=SAMPLE_SCHEMA,
+            schema_name="lore_blueprint",
+        )
+
+        assert len(client.calls) == 1
+        call = client.calls[0]
+        # Function dict synthesized with the schema as parameters.
+        assert call["function"] == {
+            "name": "lore_blueprint",
+            "description": "Structured response shape.",
+            "parameters": SAMPLE_SCHEMA,
+        }
+        # Should NOT have json_schema= or schema_name= leaked through
+        # to gemini (it doesn't accept them).
+        assert "json_schema" not in call
+        assert "schema_name" not in call
+
+    def test_default_schema_name_used_in_function_dict(self, monkeypatch):
+        client = _GeminiStubClient({"value": "ok"})
+        agent = _patched_agent(monkeypatch, "gemini", client)
+
+        JSONAgent.generate(agent, "prompt", json_schema=SAMPLE_SCHEMA)
+
+        assert client.calls[0]["function"]["name"] == "response"
+
+    def test_no_schema_passes_no_function(self, monkeypatch):
+        """When json_schema is None, gemini call MUST NOT receive a
+        synthesized function dict — leaving caller free to use gemini's
+        existing function= parameter directly (which JSONAgent doesn't
+        forward today; this is preserved no-function behavior)."""
+        client = _GeminiStubClient({"value": "ok"})
+        agent = _patched_agent(monkeypatch, "gemini", client)
+
+        JSONAgent.generate(agent, "prompt")
+
+        # Gemini got called WITHOUT a function= kwarg.
+        # (Hidden caveat: existing JSONAgent has a latent
+        # signature-mismatch bug routing to gemini without function. This
+        # test pins the new behavior: when json_schema is None, we do
+        # NOT manufacture a function dict.)
+        assert client.calls[0]["function"] is None
+
+    def test_additional_instructions_passes_system_prompt(self, monkeypatch):
+        """Gemini's signature: generate_json(message, function, additional_instructions, ...)
+        Our system_prompt kwarg maps to additional_instructions on gemini."""
+        client = _GeminiStubClient({"value": "ok"})
+        agent = _patched_agent(monkeypatch, "gemini", client)
+
+        JSONAgent.generate(
+            agent, "prompt",
+            system_prompt="you are concise",
+            json_schema=SAMPLE_SCHEMA,
+        )
+
+        assert client.calls[0].get("additional_instructions") == "you are concise"
