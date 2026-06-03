@@ -144,3 +144,165 @@ class TestStrictModePayload:
 
         assert captured["response_format"]["json_schema"]["name"] == "party_reactions"
         assert captured["response_format"]["json_schema"]["strict"] is True
+
+
+import requests
+
+
+class _FakeHTTPError(requests.HTTPError):
+    """HTTPError with a controllable response attached, mimicking what
+    requests.Response.raise_for_status() produces."""
+
+    def __init__(self, status, body):
+        class _Resp:
+            status_code = status
+            text = body
+        super().__init__(f"HTTP {status}")
+        self.response = _Resp()
+
+
+class TestStrictModeFallback:
+    SAMPLE_SCHEMA = {
+        "type": "object",
+        "properties": {"v": {"type": "string"}},
+        "required": ["v"],
+    }
+
+    def setup_method(self):
+        _reset_unsupported_cache()
+
+    def _client(self, monkeypatch, chat_side_effects):
+        """Build a client whose _chat raises or returns per the side-effect list."""
+        from autonomous.ai.models.openai_compat import OpenAIClient
+
+        client = OpenAIClient.__new__(OpenAIClient)
+        # Match the descriptor-state init pattern that TestStrictModePayload uses.
+        # If TestStrictModePayload's _client uses object.__setattr__ for _data,
+        # _initialised, etc., do the same here. Inspect TestStrictModePayload
+        # (above in this file) and mirror its setup.
+        try:
+            object.__setattr__(client, "_data", {})
+            object.__setattr__(client, "_dynamic_fields", {})
+            object.__setattr__(client, "_changed_fields", [])
+            object.__setattr__(client, "_initialised", False)
+            object.__setattr__(client, "_created", True)
+        except AttributeError:
+            pass
+        client._json_model = "fallback-model"
+        client._base_url = "https://fallback-endpoint/api"
+        client._api_key = "k"
+        client.instructions = "Be a helpful AI."
+
+        calls = {"count": 0, "response_formats": []}
+        effects = list(chat_side_effects)
+
+        def fake_chat(model, system, user, response_format=None, temperature=0.7):
+            calls["count"] += 1
+            calls["response_formats"].append(response_format)
+            effect = effects.pop(0) if effects else None
+            if isinstance(effect, Exception):
+                raise effect
+            return effect
+
+        monkeypatch.setattr(client, "_chat", fake_chat)
+        return client, calls
+
+    def test_400_with_marker_falls_back_to_loose(self, monkeypatch):
+        from autonomous.ai.models.openai_compat import OpenAIClient
+        client, calls = self._client(
+            monkeypatch,
+            chat_side_effects=[
+                _FakeHTTPError(400, "Invalid response_format type 'json_schema'"),
+                '{"v": "ok"}',
+            ],
+        )
+
+        result = OpenAIClient.generate_json(
+            client, "prompt", json_schema=self.SAMPLE_SCHEMA
+        )
+
+        assert result == {"v": "ok"}
+        assert calls["count"] == 2
+        # First attempt was strict
+        assert calls["response_formats"][0]["type"] == "json_schema"
+        # Retry was loose
+        assert calls["response_formats"][1] == {"type": "json_object"}
+        # Endpoint cached
+        assert (
+            "fallback-model",
+            "https://fallback-endpoint/api",
+        ) in _UNSUPPORTED_STRICT_MODE
+
+    def test_400_with_unsupported_parameter_marker_falls_back(self, monkeypatch):
+        from autonomous.ai.models.openai_compat import OpenAIClient
+        client, calls = self._client(
+            monkeypatch,
+            chat_side_effects=[
+                _FakeHTTPError(
+                    400,
+                    '{"error":{"code":"unsupported_parameter","message":"x"}}',
+                ),
+                '{"v": "ok"}',
+            ],
+        )
+
+        result = OpenAIClient.generate_json(
+            client, "prompt", json_schema=self.SAMPLE_SCHEMA
+        )
+
+        assert result == {"v": "ok"}
+        assert calls["count"] == 2
+
+    def test_422_with_marker_falls_back(self, monkeypatch):
+        from autonomous.ai.models.openai_compat import OpenAIClient
+        client, calls = self._client(
+            monkeypatch,
+            chat_side_effects=[
+                _FakeHTTPError(422, "json_schema validation error"),
+                '{"v": "ok"}',
+            ],
+        )
+
+        result = OpenAIClient.generate_json(
+            client, "prompt", json_schema=self.SAMPLE_SCHEMA
+        )
+        assert result == {"v": "ok"}
+        assert calls["count"] == 2
+
+    def test_400_without_marker_propagates(self, monkeypatch):
+        from autonomous.ai.models.openai_compat import OpenAIClient
+        client, calls = self._client(
+            monkeypatch,
+            chat_side_effects=[
+                _FakeHTTPError(400, "Model 'fallback-model' not found"),
+            ],
+        )
+
+        with pytest.raises(requests.HTTPError, match="HTTP 400"):
+            OpenAIClient.generate_json(
+                client, "prompt", json_schema=self.SAMPLE_SCHEMA
+            )
+
+        # Only the strict attempt was made; no fallback.
+        assert calls["count"] == 1
+        # NOT cached — this is a real client bug, not unsupported strict mode.
+        assert (
+            "fallback-model",
+            "https://fallback-endpoint/api",
+        ) not in _UNSUPPORTED_STRICT_MODE
+
+    def test_no_fallback_when_json_schema_none(self, monkeypatch):
+        """If we didn't ask for strict mode in the first place, an HTTPError
+        from _chat is a real error, not an unsupported-mode signal."""
+        from autonomous.ai.models.openai_compat import OpenAIClient
+        client, calls = self._client(
+            monkeypatch,
+            chat_side_effects=[
+                _FakeHTTPError(400, "json_schema mentioned somehow"),
+            ],
+        )
+
+        with pytest.raises(requests.HTTPError):
+            OpenAIClient.generate_json(client, "prompt")  # no json_schema
+
+        assert calls["count"] == 1

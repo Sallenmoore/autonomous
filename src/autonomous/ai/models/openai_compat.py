@@ -294,6 +294,38 @@ class OpenAIClient(AutoModel):
                 response_format=response_format,
                 temperature=temperature,
             )
+        except requests.HTTPError as exc:
+            # Detect "this endpoint doesn't support strict mode" specifically
+            # and fall back to loose. Bare 4xx (real client bug) propagates.
+            resp = exc.response
+            should_fallback = (
+                use_strict
+                and resp is not None
+                and _looks_like_unsupported_strict_mode(resp.status_code, resp.text)
+            )
+            if not should_fallback:
+                raise
+            _UNSUPPORTED_STRICT_MODE.add(endpoint_key)
+            log(
+                f"[STRUCTURED-OUTPUTS-UNAVAILABLE] First detection: "
+                f"model={self._json_model} endpoint={self._base_url} "
+                f"status={resp.status_code} body_excerpt={resp.text[:200]!r} "
+                f"(cached for this process)",
+                _print=True,
+            )
+            # Retry once with loose mode.
+            try:
+                raw = self._chat(
+                    self._json_model,
+                    system,
+                    user,
+                    response_format={"type": "json_object"},
+                    temperature=temperature,
+                )
+            except (KeyError, IndexError, TypeError) as inner_exc:
+                raise GenerateJSONEmptyResponseError(
+                    f"HPC chat endpoint returned a malformed body after fallback: {inner_exc}"
+                ) from inner_exc
         except (KeyError, IndexError, TypeError) as exc:
             raise GenerateJSONEmptyResponseError(
                 f"HPC chat endpoint returned a malformed body: {exc}"
