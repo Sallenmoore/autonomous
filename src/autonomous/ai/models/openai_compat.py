@@ -237,7 +237,15 @@ class OpenAIClient(AutoModel):
         return self._chat(self._text_model, system, user, temperature=temperature)
 
     def generate_json(
-        self, message, system_prompt=None, uri="", context=None, temperature=0.7, evaluation=False
+        self,
+        message,
+        system_prompt=None,
+        uri="",
+        context=None,
+        temperature=0.7,
+        evaluation=False,
+        json_schema=None,
+        schema_name="response",
     ):
         system = system_prompt or self.instructions
         system = system.rstrip(". ") + ".\nYour response MUST be a single valid JSON object."
@@ -251,10 +259,27 @@ class OpenAIClient(AutoModel):
             user += f"\nUse the following URI for reference: {uri}"
         user += "\n\nRespond with ONLY a valid JSON object."
 
-        # First try with response_format. If the served model honors it the
-        # body is already valid JSON; if not, fall through to the same cleaner
-        # used by LocalAIModel.
-        #
+        # Build the response_format payload. Strict mode when:
+        #   - caller passed a schema
+        #   - this (model, endpoint) is not in the negative cache
+        # Otherwise loose mode (preserved existing behavior).
+        endpoint_key = (self._json_model, self._base_url)
+        use_strict = (
+            json_schema is not None
+            and endpoint_key not in _UNSUPPORTED_STRICT_MODE
+        )
+        if use_strict:
+            response_format = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": schema_name,
+                    "schema": json_schema,
+                    "strict": True,
+                },
+            }
+        else:
+            response_format = {"type": "json_object"}
+
         # ``_chat`` reaches into ``body["choices"][0]["message"]["content"]``
         # — a real prod outage shape is ``{"choices": []}`` or ``{}``,
         # which leaks KeyError/IndexError/TypeError raw. MIGRATIONS promises
@@ -266,7 +291,7 @@ class OpenAIClient(AutoModel):
                 self._json_model,
                 system,
                 user,
-                response_format={"type": "json_object"},
+                response_format=response_format,
                 temperature=temperature,
             )
         except (KeyError, IndexError, TypeError) as exc:

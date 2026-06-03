@@ -61,3 +61,86 @@ class TestUnsupportedDetectionHelpers:
         _UNSUPPORTED_STRICT_MODE.add(("model-b", "http://host-1"))
         assert len(_UNSUPPORTED_STRICT_MODE) == 3
         _reset_unsupported_cache()
+
+
+class TestStrictModePayload:
+    """generate_json with json_schema= set builds the OpenAI strict-mode
+    response_format payload. Without json_schema, the existing loose-mode
+    payload is preserved (regression guard)."""
+
+    SAMPLE_SCHEMA = {
+        "type": "object",
+        "properties": {"value": {"type": "string"}},
+        "required": ["value"],
+    }
+
+    def setup_method(self):
+        _reset_unsupported_cache()
+
+    def _client(self, monkeypatch, captured):
+        """Build a bare OpenAIClient and stub _chat to capture the
+        response_format that generate_json builds."""
+        from autonomous.ai.models.openai_compat import OpenAIClient
+
+        client = OpenAIClient.__new__(OpenAIClient)
+        # Prime MongoEngine descriptor state so field reads work without Mongo.
+        object.__setattr__(client, "_data", {"instructions": "Be a helpful AI."})
+        object.__setattr__(client, "_dynamic_fields", {})
+        object.__setattr__(client, "_changed_fields", [])
+        object.__setattr__(client, "_initialised", True)
+        object.__setattr__(client, "_created", False)
+        client._json_model = "test-model"
+        client._base_url = "https://test-endpoint/api"
+        client._api_key = "test-key"
+
+        def fake_chat(model, system, user, response_format=None, temperature=0.7):
+            captured["response_format"] = response_format
+            captured["model"] = model
+            return '{"value": "ok"}'
+
+        monkeypatch.setattr(client, "_chat", fake_chat)
+        return client
+
+    def test_json_schema_none_uses_loose_mode(self, monkeypatch):
+        """Regression guard: backward compatibility when json_schema not set."""
+        captured = {}
+        from autonomous.ai.models.openai_compat import OpenAIClient
+        client = self._client(monkeypatch, captured)
+
+        result = OpenAIClient.generate_json(client, "prompt")
+
+        assert captured["response_format"] == {"type": "json_object"}
+        assert result == {"value": "ok"}
+
+    def test_json_schema_set_uses_strict_mode(self, monkeypatch):
+        captured = {}
+        from autonomous.ai.models.openai_compat import OpenAIClient
+        client = self._client(monkeypatch, captured)
+
+        OpenAIClient.generate_json(
+            client, "prompt", json_schema=self.SAMPLE_SCHEMA
+        )
+
+        assert captured["response_format"] == {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "response",  # default schema_name
+                "schema": self.SAMPLE_SCHEMA,
+                "strict": True,
+            },
+        }
+
+    def test_schema_name_kwarg_threads_through(self, monkeypatch):
+        captured = {}
+        from autonomous.ai.models.openai_compat import OpenAIClient
+        client = self._client(monkeypatch, captured)
+
+        OpenAIClient.generate_json(
+            client,
+            "prompt",
+            json_schema=self.SAMPLE_SCHEMA,
+            schema_name="party_reactions",
+        )
+
+        assert captured["response_format"]["json_schema"]["name"] == "party_reactions"
+        assert captured["response_format"]["json_schema"]["strict"] is True
