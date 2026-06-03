@@ -1,0 +1,52 @@
+[
+  {
+    "slug": "character-rogue",
+    "category": "character",
+    "prompt": "Half-elf rogue, dark cloak with silver clasp, twin daggers at hips, alley moonlight, faint scar across jaw, expression of calculation. Painterly fantasy illustration."
+  },
+  {
+    "slug": "character-wizard",
+    "category": "character",
+    "prompt": "Elderly human wizard, indigo robes embroidered with stars, gnarled staff topped with raw quartz, half-lidded eyes, soft library candlelight, faint motes of dust in beams."
+  },
+  {
+    "slug": "scene-tavern-interior",
+    "category": "scene",
+    "prompt": "Crowded medieval tavern interior at evening, warm hearth fire, long wooden tables, patrons mid-conversation, motes of dust in lamplight, painterly atmospheric."
+  },
+  {
+    "slug": "scene-forest-ruin",
+    "category": "scene",
+    "prompt": "Overgrown stone ruin in dense forest, moss-covered pillars, shafts of sunlight through canopy, small wildflowers in foreground, vines climbing the walls, sense of stillness."
+  },
+  {
+    "slug": "scene-stormy-coast",
+    "category": "scene",
+    "prompt": "Rugged northern coastline under stormy sky, waves crashing against black basalt cliffs, single weathered lighthouse silhouette, gulls in the gusts, dramatic lighting."
+  },
+  {
+    "slug": "hero-dragon-encounter",
+    "category": "hero",
+    "prompt": "Adventuring party facing a copper dragon perched on a cliff above a misty valley at dawn, scale and detail emphasized, sense of consequence, cinematic composition."
+  },
+  {
+    "slug": "hero-throne-room",
+    "category": "hero",
+    "prompt": "Vaulted throne hall of an ancient elven king, polished marble floors reflecting torch flames, massive stained-glass windows pouring colored light, intricate architectural detail."
+  },
+  {
+    "slug": "map-overland-region",
+    "category": "map",
+    "prompt": "Top-down regional fantasy map: rolling hills, a winding river splitting the territory east-to-west, three small towns (north, southeast, southwest), one mountain range to the north, painted in classic hand-drawn cartographic style."
+  },
+  {
+    "slug": "map-dungeon-level",
+    "category": "map",
+    "prompt": "Top-down dungeon level map: stone-walled corridors connecting six rooms of varying sizes, secret passage marked with dashed lines, two trap symbols, hand-drawn ink-and-paper cartographic style, labeled rooms."
+  },
+  {
+    "slug": "item-magical-tome",
+    "category": "item",
+    "prompt": "Single magical tome at center, leather-bound with iron clasps, runic glyphs faintly glowing on the cover, set on a dark cloth, warm dramatic lighting, fine detail."
+  }
+]

@@ -78,12 +78,18 @@ class MockAIModel(AutoModel):
         files=None,
         aspect_ratio="2KPortrait",
         style=None,
+        **kwargs,  # accept fallback_provider, route, and future kwargs
     ):
         log(f"⚡ [MOCK] Generating Image ({aspect_ratio})...", _print=True)
         return self._MOCK_IMAGE_BYTES
 
     def upscale_image(
-        self, prompt, image_content=None, aspect_ratio="2KPortrait", style=None
+        self,
+        prompt,
+        image_content=None,
+        aspect_ratio="2KPortrait",
+        style=None,
+        **kwargs,
     ):
         log(f"⚡ [MOCK] Upscaling Image ({aspect_ratio})...", _print=True)
         return self._MOCK_IMAGE_BYTES
