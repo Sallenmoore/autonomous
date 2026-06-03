@@ -77,3 +77,8 @@ def _schema_validate(payload, schema, raw=""):
             f"Response failed schema validation: {exc.message}",
             raw=raw or "",
         ) from exc
+    except jsonschema.SchemaError as exc:
+        raise GenerateJSONParseError(
+            f"Caller-supplied schema is invalid: {exc.message}",
+            raw=raw or "",
+        ) from exc

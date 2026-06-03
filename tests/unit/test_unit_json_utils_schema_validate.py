@@ -57,3 +57,12 @@ class TestSchemaValidate:
                 {"name": "x"}, SAMPLE_SCHEMA, raw="<<the raw response>>"
             )
         assert exc_info.value.raw == "<<the raw response>>"
+
+    def test_malformed_schema_raises_parse_error(self):
+        """A SchemaError (caller passed an invalid schema) is wrapped
+        in GenerateJSONParseError to preserve the typed-exception contract.
+        Without this guard, jsonschema.SchemaError would leak through
+        JSONAgent.generate to callers who don't import jsonschema."""
+        bad_schema = {"type": 12345}  # type must be a string or list of strings
+        with pytest.raises(GenerateJSONParseError, match="schema is invalid"):
+            _schema_validate({"any": "payload"}, bad_schema, raw="x")
