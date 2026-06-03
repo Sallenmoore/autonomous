@@ -29,12 +29,41 @@ class MockAIModel(AutoModel):
         "UklGRigAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAEA"
     )
 
-    def generate_json(self, message, system_prompt=None, uri="", context=None, temperature=None, **kwargs):
+    def generate_json(self, message, system_prompt=None, uri="", context=None, temperature=None, _mock_response=None, **kwargs):
         """
         Returns a rich dummy JSON object.
         It attempts to guess the context based on keys found in the prompt,
         otherwise returns a safe default TTRPG object.
+
+        ``_mock_response`` is a test-only override (underscore-prefix marks
+        it as not-for-production). When set, the mock returns it verbatim
+        — useful for schema-aware tests that need a response conforming to
+        a specific ``json_schema`` passed through JSONAgent.generate
+        (issue #22). Without this hook, schema-validating tests against
+        the mock provider would always fail because the default
+        heuristic-built dict rarely matches an arbitrary caller schema.
+
+        Two override paths:
+          - Per-call: ``mock.generate_json(prompt, _mock_response={...})``
+            — useful when calling the mock directly.
+          - Per-instance: ``mock._mock_json_response = {...}`` set on the
+            instance — survives across multiple calls and is the right
+            choice when test code calls ``JSONAgent.generate`` (which
+            doesn't thread per-call test overrides through to providers).
+
+        Per-call wins over per-instance when both are set.
         """
+        effective_override = _mock_response
+        if effective_override is None:
+            effective_override = getattr(self, "_mock_json_response", None)
+        if effective_override is not None:
+            log(
+                f"⚡ [MOCK] Returning override response for prompt: "
+                f"{message[:50]}...",
+                _print=True,
+            )
+            return effective_override
+
         context = context or {}
         log(f"⚡ [MOCK] Generating JSON for prompt: {message[:50]}...", _print=True)
 
