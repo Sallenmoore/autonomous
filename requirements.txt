@@ -21,3 +21,6 @@ Authlib
 
 # HTTP for db_sync, AutoAuth callbacks, AI HTTP backends
 requests
+
+# JSON Schema validation for structured outputs
+jsonschema>=4.0
