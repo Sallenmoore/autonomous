@@ -68,14 +68,25 @@ class TestSanitizeRelative:
 
 class TestLocalStorageTraversal:
     def test_save_into_safe_folder(self, storage_root):
+        from urllib.parse import urlparse
+
         from autonomous.storage.localstorage import LocalStorage
 
         s = LocalStorage()
         result = s.save(b"data", file_type="bin", folder="ok")
-        assert (
-            os.path.commonpath([result["url"], "/"])
-            and "../" not in result["url"]
+        # The URL is now absolute (issue #24 resolution: LocalStorage
+        # defaults APP_BASE_URL to "http://localhost"). os.path.commonpath
+        # doesn't handle URL schemes, so we verify (a) it parses as a
+        # URL with scheme+netloc, and (b) no traversal segments leaked
+        # into the path. The traversal-rejection tests below already
+        # cover the negative cases at save-time, so this test pins
+        # the happy path's URL shape.
+        parsed = urlparse(result["url"])
+        assert parsed.scheme and parsed.netloc, (
+            f"Expected absolute URL, got {result['url']!r}"
         )
+        assert "../" not in result["url"]
+        assert "ok" in parsed.path
 
     def test_save_with_traversal_folder_rejected(self, storage_root):
         from autonomous.storage.localstorage import LocalStorage
