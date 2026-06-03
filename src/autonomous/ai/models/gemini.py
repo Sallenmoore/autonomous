@@ -113,6 +113,17 @@ class GeminiAIModel(AutoModel):
         return self._client
 
     def _add_function(self, user_function):
+        # Guard against None — the canonical failure mode when JSONAgent
+        # dispatches to gemini without a json_schema= (or a caller invokes
+        # GeminiAIModel.generate_json directly with function= omitted /
+        # passed as None). Pre-guard, this raised AttributeError on
+        # `.get("name")` from deep inside this method (issue #21);
+        # surface ValueError with a pointer to the API instead.
+        if user_function is None:
+            raise ValueError(
+                "GeminiAIModel.generate_json requires function= (or "
+                "json_schema= via JSONAgent.generate). Got None."
+            )
         tool_schema = {
             "name": user_function.get("name"),
             "description": user_function.get("description"),
