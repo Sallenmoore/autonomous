@@ -5,6 +5,81 @@ recent first.
 
 ## Unreleased
 
+### JSON Schema / Structured Outputs support (Item 25)
+
+**What changed.**
+
+- New optional kwargs on `JSONAgent.generate`: `json_schema=None`,
+  `schema_name="response"`. When `json_schema` is set, the response is
+  validated against the schema before return; mismatches raise
+  `GenerateJSONParseError` with the raw response on `.raw`.
+- New optional kwargs on `OpenAIClient.generate_json`: `json_schema=None`,
+  `schema_name="response"`. When set AND the (model, endpoint) is not
+  known-unsupported, builds an OpenAI strict-mode `response_format`
+  payload (`{"type": "json_schema", "json_schema": {...}, "strict": true}`).
+  Conservative 400/422 detection (looks for `json_schema`,
+  `response_format`, `unsupported_parameter`, `structured output` in the
+  error body) triggers a one-time fallback to loose mode and caches the
+  combo for the rest of the process. Operator log marker on first
+  detection: `[STRUCTURED-OUTPUTS-UNAVAILABLE]`.
+- New optional kwargs on `LocalAIModel.generate_json`: `json_schema=None`,
+  `schema_name="response"`. Local has no equivalent of strict mode;
+  passing a schema logs `[STRUCTURED-OUTPUTS-UNAVAILABLE]` once per
+  (model, endpoint) and proceeds via the existing prompt-only path.
+  Client-side validation in `JSONAgent.generate` still applies.
+- `MockAIModel.generate_json` absorbs the new kwargs via `**kwargs`.
+- `GeminiAIModel.generate_json` is unchanged — its existing `function=`
+  parameter already takes a JSON schema. `JSONAgent.generate` translates
+  `json_schema=` into the gemini `function` dict at the dispatch layer.
+- New core dependency: `jsonschema>=4.0`. The client-side validation
+  safety net is unconditionally available (not gated on the `[ai]` extra).
+- New helper: `autonomous.ai.models.openai_compat._reset_unsupported_cache()`
+  — clears the negative cache. Tests use this for isolation; operators
+  may use it after deploying a server-side fix to re-probe strict-mode
+  support without restarting the worker.
+
+**Migration.**
+
+No source change required for existing consumers. With `json_schema`
+unset (the default), `JSONAgent.generate` behaves identically to today,
+and the validation no-ops.
+
+To opt in (per call site):
+
+```python
+LORE_BLUEPRINT_SCHEMA = {
+    "type": "object",
+    "properties": {...},
+    "required": [...],
+    "additionalProperties": False,
+}
+
+result = self.world.system.generate_json(
+    prompt=stage1_prompt,
+    primer=stage1_primer,
+    json_schema=LORE_BLUEPRINT_SCHEMA,
+    schema_name="lore_blueprint",   # optional; defaults to "response"
+)
+```
+
+Behavior when something goes wrong:
+- Strict-mode unavailable on the (model, endpoint): one-time
+  `[STRUCTURED-OUTPUTS-UNAVAILABLE]` log + fallback to loose mode +
+  cache for the process. Subsequent calls go directly to loose mode.
+- Response fails client-side validation: `GenerateJSONParseError`
+  raised with `.raw` populated.
+
+**Provider support matrix (as known on 2026-06-02).**
+
+| Provider | Strict-mode native | Client-side validation |
+|---|---|---|
+| `GeminiAIModel` (via `function=`) | Yes (function-calling) | Yes (defense in depth) |
+| `OpenAIClient` (chat.binghamton.edu, OpenAI direct) | Endpoint-dependent — fallback handles mismatch | Yes |
+| `LocalAIModel` (Ollama) | No (prompt-only) | Yes |
+| `MockAIModel` | n/a (deterministic) | Yes — test authors must construct conforming mock data |
+
+**Tracked in:** `Sallenmoore/storyteller#12` (filed against the consumer's tracker; library work happens in autonomous).
+
 ### `AutoTask.exc_info` now reads current job state, not sticky history (Issue #14)
 
 **What changed.** `AutoTask.exc_info` previously delegated to `Job.exc_info` (rq attribute). It now delegates to `Job.latest_result().exc_string`. Return contract `str | None` is unchanged, but the underlying semantics shifted from rq's deprecated "last seen exception" attribute to the modern "current Result's exc_string" accessor.
