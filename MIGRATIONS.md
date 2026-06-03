@@ -5,6 +5,154 @@ recent first.
 
 ## Unreleased
 
+### JSON Schema / Structured Outputs support (Item 25)
+
+**What changed.**
+
+- New optional kwargs on `JSONAgent.generate`: `json_schema=None`,
+  `schema_name="response"`. When `json_schema` is set, the response is
+  validated against the schema before return; mismatches raise
+  `GenerateJSONParseError` with the raw response on `.raw`.
+- New optional kwargs on `OpenAIClient.generate_json`: `json_schema=None`,
+  `schema_name="response"`. When set AND the (model, endpoint) is not
+  known-unsupported, builds an OpenAI strict-mode `response_format`
+  payload (`{"type": "json_schema", "json_schema": {...}, "strict": true}`).
+  Conservative 400/422 detection (looks for `json_schema`,
+  `response_format`, `unsupported_parameter`, `structured output` in the
+  error body) triggers a one-time fallback to loose mode and caches the
+  combo for the rest of the process. Operator log marker on first
+  detection: `[STRUCTURED-OUTPUTS-UNAVAILABLE]`.
+- New optional kwargs on `LocalAIModel.generate_json`: `json_schema=None`,
+  `schema_name="response"`. Local has no equivalent of strict mode;
+  passing a schema logs `[STRUCTURED-OUTPUTS-UNAVAILABLE]` once per
+  (model, endpoint) and proceeds via the existing prompt-only path.
+  Client-side validation in `JSONAgent.generate` still applies.
+- `MockAIModel.generate_json` absorbs the new kwargs via `**kwargs`.
+- `GeminiAIModel.generate_json` is unchanged — its existing `function=`
+  parameter already takes a JSON schema. `JSONAgent.generate` translates
+  `json_schema=` into the gemini `function` dict at the dispatch layer.
+- New core dependency: `jsonschema>=4.0`. The client-side validation
+  safety net is unconditionally available (not gated on the `[ai]` extra).
+- New helper: `autonomous.ai.models.openai_compat._reset_unsupported_cache()`
+  — clears the negative cache. Tests use this for isolation; operators
+  may use it after deploying a server-side fix to re-probe strict-mode
+  support without restarting the worker.
+
+**Migration.**
+
+No source change required for existing consumers. With `json_schema`
+unset (the default), `JSONAgent.generate` behaves identically to today,
+and the validation no-ops.
+
+To opt in (per call site):
+
+```python
+LORE_BLUEPRINT_SCHEMA = {
+    "type": "object",
+    "properties": {...},
+    "required": [...],
+    "additionalProperties": False,
+}
+
+result = self.world.system.generate_json(
+    prompt=stage1_prompt,
+    primer=stage1_primer,
+    json_schema=LORE_BLUEPRINT_SCHEMA,
+    schema_name="lore_blueprint",   # optional; defaults to "response"
+)
+```
+
+Behavior when something goes wrong:
+- Strict-mode unavailable on the (model, endpoint): one-time
+  `[STRUCTURED-OUTPUTS-UNAVAILABLE]` log + fallback to loose mode +
+  cache for the process. Subsequent calls go directly to loose mode.
+- Response fails client-side validation: `GenerateJSONParseError`
+  raised with `.raw` populated.
+
+**Provider support matrix (as known on 2026-06-02).**
+
+| Provider | Strict-mode native | Client-side validation |
+|---|---|---|
+| `GeminiAIModel` (via `function=`) | Yes (function-calling) | Yes (defense in depth) |
+| `OpenAIClient` (chat.binghamton.edu, OpenAI direct) | Endpoint-dependent — fallback handles mismatch | Yes |
+| `LocalAIModel` (Ollama) | No (prompt-only) | Yes |
+| `MockAIModel` | n/a (deterministic) | Yes — test authors must construct conforming mock data |
+
+**Tracked in:** `Sallenmoore/storyteller#12` (filed against the consumer's tracker; library work happens in autonomous).
+
+### Image-gen FLUX provider + routing layer (Item 24)
+
+**What changed.**
+
+- New provider `FluxAIModel` under `autonomous.ai.models.flux`. Registered
+  in `BaseAgent.MODEL_REGISTRY` as `"flux"`. Targets fal.ai's
+  `fal-ai/flux-pro/v1.1-ultra` endpoint.
+- New env var `IMAGE_PROVIDER_ROUTING` (default off). When set to a
+  truthy value (`1`/`true`/`yes`), `ImageAgent` overrides `self.provider`
+  on dispatch: high-tier calls (`4K`, `4KPortrait`, `Map`) go to
+  `gemini`; everything else goes to `flux`.
+- New env var `FAL_KEY` (required when FLUX is dispatched). Module
+  imports without it; the first dispatch raises `RuntimeError`.
+- New env vars (defaults shown): `FLUX_IMAGE_MODEL=fal-ai/flux-pro/v1.1-ultra`,
+  `FLUX_URL_BASE=https://fal.run`, `FLUX_TIMEOUT_S=120`,
+  `FLUX_MAX_ATTEMPTS=3`, `FLUX_RETRY_SLEEP=1.0`.
+- New `ImageAgent.fallback_provider` instance attribute (default `None`).
+- New `ImageAgent.generate(..., fallback_provider, route)` kwargs.
+  `fallback_provider` defaults to a sentinel; pass `None` to disable
+  fallback for the call, a provider string to override the instance
+  default. `route=False` bypasses the routing layer for that call.
+- Same new kwargs on `ImageAgent.upscale()`.
+- New unconditional job_meta keys written by `generate`/`upscale`:
+  `effective_provider`, `cost_estimate_usd`, and (on fallback)
+  `provider_fallback_used`, `fallback_succeeded`.
+- **Fix:** the existing hybrid-upscale gate (`IMAGE_HYBRID_UPSCALE=1`)
+  now checks the *effective* (routed) provider instead of `self.provider`.
+  Calls that route from gemini to flux no longer double-process through
+  the local upscaler.
+- **Behavior change (affects callers regardless of routing):**
+  `GeminiAIModel._get_image_config` aspect-ratio table was rebalanced
+  so the cheap-default tier maps to `0.5K` rather than `1K`/`2K`.
+  Concretely:
+  - `Portrait` → `(3:4, 2K)` is now `(3:4, 0.5K)` (4x resolution + cost
+    reduction)
+  - Default fallback for unknown aspect_ratio: `(1:1, 1K)` is now
+    `(3:4, 0.5K)` (consistent with the new cheap-default contract)
+  - `Landscape` continues to map to `(16:9, 1K)`; `2K`/`2KPortrait`
+    continue to map to `2K`; `4K`/`Map`/`4KPortrait` continue to map
+    to `4K`.
+
+  This matches the new caller contract: the bare `Portrait`/`Landscape`
+  tokens are the cheap default, and callers wanting 2K must opt in
+  explicitly via `2K`/`2KPortrait` (or use the new `quality="high"`
+  dial which remaps `Portrait → 4KPortrait`).
+
+**Migration.**
+
+For routing (the FLUX dispatch layer): no source change required for
+existing consumers. With `IMAGE_PROVIDER_ROUTING` unset, dispatch
+behavior is identical to pre-change.
+
+For the aspect-ratio resolution remap: consumers that pass bare
+`Portrait` to `ImageAgent.generate()` and expected 2K-resolution output
+must now pass `2KPortrait` explicitly. The visible symptom of an
+un-migrated caller is smaller image files at the same prompt.
+
+To opt in:
+1. `export FAL_KEY=<your fal.ai key>` in the deployment env.
+2. Run `python scripts/image_provider_eval.py --prompts
+   scripts/_eval_prompts.json --providers gemini,flux,local --out
+   eval-YYYY-MM-DD/` and review `index.html` for creative-quality parity.
+3. `export IMAGE_PROVIDER_ROUTING=1`.
+
+Roll back by `unset IMAGE_PROVIDER_ROUTING`. Instant; no data migration.
+
+**Cost-estimate caveat.**
+
+`cost_estimate_usd` job_meta is from a static table —
+useful for trend/comparison but **not audit-grade**. Replacing it with
+parsed billing data is a necessary follow-up
+(spec: `docs/superpowers/specs/2026-06-02-image-gen-cost-design.md`).
+
 ### `AutoTask.exc_info` now reads current job state, not sticky history (Issue #14)
 
 **What changed.** `AutoTask.exc_info` previously delegated to `Job.exc_info` (rq attribute). It now delegates to `Job.latest_result().exc_string`. Return contract `str | None` is unchanged, but the underlying semantics shifted from rq's deprecated "last seen exception" attribute to the modern "current Result's exc_string" accessor.

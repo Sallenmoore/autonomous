@@ -3,6 +3,7 @@ from autonomous.model.autoattr import ReferenceAttr, StringAttr
 from autonomous.model.automodel import AutoModel
 from autonomous.taskrunner.autotasks import AutoTasks
 
+from .models.flux import FluxAIModel
 from .models.gemini import GeminiAIModel
 from .models.local_model import LocalAIModel
 from .models.mock_model import MockAIModel
@@ -18,11 +19,12 @@ class BaseAgent(AutoModel):
         "gemini": GeminiAIModel,
         "openai": OpenAIClient,
         "mock": MockAIModel,
+        "flux": FluxAIModel,
     }
 
     # 3. Allow client to be ANY of the supported models
     client = ReferenceAttr(
-        choices=[LocalAIModel, GeminiAIModel, OpenAIClient, MockAIModel]
+        choices=[LocalAIModel, GeminiAIModel, OpenAIClient, MockAIModel, FluxAIModel]
     )
 
     # 4. Add a provider field (default to local, can be overridden per agent)

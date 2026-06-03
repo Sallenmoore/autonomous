@@ -49,6 +49,46 @@ class HPCUnreachableError(RuntimeError):
 # revoked" — the user has to re-auth, same recovery path as a VPN drop.
 _TRANSPORT_FAILURE_CODES = frozenset({401, 502, 503, 504})
 
+# Module-level negative cache: (model, base_url) tuples known to NOT
+# support strict-mode response_format. Populated on first conservative
+# 400 detection. Cleared by _reset_unsupported_cache() (tests + manual
+# operator override). Process-lifetime granularity is appropriate —
+# servers gain strict-mode support via deploys, deploys typically
+# accompany worker restarts.
+_UNSUPPORTED_STRICT_MODE: set[tuple[str, str]] = set()
+
+# Substrings that indicate a 4xx response was specifically about
+# strict-mode unsupported-ness (rather than a real client bug like
+# bad schema or bad model name). Conservative — only fall back on
+# explicit signals to avoid masking real errors.
+_STRICT_MODE_ERROR_MARKERS = (
+    "json_schema",
+    "response_format",
+    "unsupported_parameter",
+    "structured output",
+)
+
+
+def _reset_unsupported_cache() -> None:
+    """Clear the negative cache. Tests use this for isolation; operators
+    use it after deploying a server-side fix to re-probe strict-mode
+    support without restarting the worker."""
+    _UNSUPPORTED_STRICT_MODE.clear()
+
+
+def _looks_like_unsupported_strict_mode(status: int, body_text: str) -> bool:
+    """Conservative heuristic: only flag responses whose body explicitly
+    mentions strict-mode-specific terms. A bare 400 (real client bug,
+    e.g. bad schema or bad model name) is intentionally NOT flagged —
+    silently retrying in loose mode would mask the real error.
+
+    Accepts 400 and 422 (some servers use 422 for validation rejections).
+    """
+    if status not in (400, 422):
+        return False
+    body_lower = body_text.lower()
+    return any(m in body_lower for m in _STRICT_MODE_ERROR_MARKERS)
+
 
 class OpenAIClient(AutoModel):
     messages = ListAttr(StringAttr(default=[]))
@@ -197,7 +237,15 @@ class OpenAIClient(AutoModel):
         return self._chat(self._text_model, system, user, temperature=temperature)
 
     def generate_json(
-        self, message, system_prompt=None, uri="", context=None, temperature=0.7, evaluation=False
+        self,
+        message,
+        system_prompt=None,
+        uri="",
+        context=None,
+        temperature=0.7,
+        evaluation=False,
+        json_schema=None,
+        schema_name="response",
     ):
         system = system_prompt or self.instructions
         system = system.rstrip(". ") + ".\nYour response MUST be a single valid JSON object."
@@ -211,10 +259,27 @@ class OpenAIClient(AutoModel):
             user += f"\nUse the following URI for reference: {uri}"
         user += "\n\nRespond with ONLY a valid JSON object."
 
-        # First try with response_format. If the served model honors it the
-        # body is already valid JSON; if not, fall through to the same cleaner
-        # used by LocalAIModel.
-        #
+        # Build the response_format payload. Strict mode when:
+        #   - caller passed a schema
+        #   - this (model, endpoint) is not in the negative cache
+        # Otherwise loose mode (preserved existing behavior).
+        endpoint_key = (self._json_model, self._base_url)
+        use_strict = (
+            json_schema is not None
+            and endpoint_key not in _UNSUPPORTED_STRICT_MODE
+        )
+        if use_strict:
+            response_format = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": schema_name,
+                    "schema": json_schema,
+                    "strict": True,
+                },
+            }
+        else:
+            response_format = {"type": "json_object"}
+
         # ``_chat`` reaches into ``body["choices"][0]["message"]["content"]``
         # — a real prod outage shape is ``{"choices": []}`` or ``{}``,
         # which leaks KeyError/IndexError/TypeError raw. MIGRATIONS promises
@@ -226,9 +291,50 @@ class OpenAIClient(AutoModel):
                 self._json_model,
                 system,
                 user,
-                response_format={"type": "json_object"},
+                response_format=response_format,
                 temperature=temperature,
             )
+        except requests.HTTPError as exc:
+            # Detect "this endpoint doesn't support strict mode" specifically
+            # and fall back to loose. Bare 4xx (real client bug) propagates.
+            resp = exc.response
+            should_fallback = (
+                use_strict
+                and resp is not None
+                and _looks_like_unsupported_strict_mode(resp.status_code, resp.text)
+            )
+            if not should_fallback:
+                raise
+            # Cache before retry: even if loose-mode also fails, the
+            # strict-mode-unsupported signal is still valid — a future
+            # call to the same (model, endpoint) should go straight to
+            # loose without re-probing. Do NOT move this .add() below
+            # the retry branch; that would cause repeated probe failures.
+            _UNSUPPORTED_STRICT_MODE.add(endpoint_key)
+            # _print=False: the entry lands in logs/current_run_error_log.log
+            # regardless. Avoiding stdout keeps the marker from interleaving
+            # with structured loggers in embedding environments (web request
+            # logs, JSON-emitting workers). Operators grep the log file.
+            log(
+                f"[STRUCTURED-OUTPUTS-UNAVAILABLE] First detection: "
+                f"model={self._json_model} endpoint={self._base_url} "
+                f"status={resp.status_code} body_excerpt={resp.text[:200]!r} "
+                f"(cached for this process)",
+                _print=False,
+            )
+            # Retry once with loose mode.
+            try:
+                raw = self._chat(
+                    self._json_model,
+                    system,
+                    user,
+                    response_format={"type": "json_object"},
+                    temperature=temperature,
+                )
+            except (KeyError, IndexError, TypeError, requests.HTTPError) as inner_exc:
+                raise GenerateJSONEmptyResponseError(
+                    f"HPC chat endpoint returned an error after fallback retry: {inner_exc}"
+                ) from inner_exc
         except (KeyError, IndexError, TypeError) as exc:
             raise GenerateJSONEmptyResponseError(
                 f"HPC chat endpoint returned a malformed body: {exc}"
