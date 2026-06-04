@@ -23,6 +23,7 @@ import requests
 
 from autonomous import log
 from autonomous.ai.retry import retry
+from autonomous.model.autoattr import StringAttr
 from autonomous.model.automodel import AutoModel
 
 
@@ -31,6 +32,23 @@ _SESSION = requests.Session()
 
 class FluxAIModel(AutoModel):
     _client = None
+
+    # BaseAgent.get_client constructs every provider with
+    # ``name=`` / ``instructions=`` / ``description=`` kwargs forwarded
+    # from the agent instance. The other adapters inherit these via
+    # BaseAgent's MRO; FluxAIModel inherits AutoModel directly (so
+    # ``messages`` isn't declared either). Without these StringAttr
+    # declarations the Document's strict-field validator raises
+    # ``FieldDoesNotExist`` and every routed-to-FLUX call fails before
+    # any HTTP work. The fields are no-ops for fal.ai (the API doesn't
+    # consume them) but they satisfy the Mongo schema. Tracks issue #34.
+    name = StringAttr(default="flux_agent")
+    instructions = StringAttr(
+        default="You are an AI image generation assistant using FLUX.1 [pro]."
+    )
+    description = StringAttr(
+        default="FLUX.1 [pro] image generation adapter (fal.ai)."
+    )
 
     # Model defaults are env-overridable so deployments can chase fal.ai's
     # model churn without a library release.
