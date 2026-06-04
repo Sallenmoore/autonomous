@@ -469,9 +469,29 @@ class GeminiAIModel(AutoModel):
         elif aspect_ratio_input in ["4K", "Map"]:
             ratio = "16:9"
             size = "2K"   # was "4K" — issue #30 (flash-image-preview rejects 4K)
+            # Breadcrumb so a 4K caller can detect the silent downgrade.
+            # The clamp policy is correct (return *something* rather than
+            # hard-fail), but the silence was: storyteller workers stored
+            # the WebP and had no way to know the resolution contract was
+            # downgraded. Mirrors the breadcrumb pattern at
+            # imageagent.py (hybrid_upscale / provider_fallback_used).
+            log(
+                f"[GEMINI-IMAGE-CLAMP] aspect_ratio={aspect_ratio_input!r} "
+                f"requested 4K resolution; clamped to image_size='2K' "
+                f"(model {self._image_model!r} rejects 4K). Set "
+                f"GEMINI_IMAGE_MODEL to a 4K-capable variant to lift.",
+                _print=False,
+            )
         elif aspect_ratio_input == "4KPortrait":
             ratio = "3:4"
             size = "2K"   # was "4K" — issue #30 (flash-image-preview rejects 4K)
+            log(
+                f"[GEMINI-IMAGE-CLAMP] aspect_ratio='4KPortrait' "
+                f"requested 4K resolution; clamped to image_size='2K' "
+                f"(model {self._image_model!r} rejects 4K). Set "
+                f"GEMINI_IMAGE_MODEL to a 4K-capable variant to lift.",
+                _print=False,
+            )
         elif aspect_ratio_input in ["1:1", "3:4", "4:3", "9:16", "16:9"]:
             ratio = aspect_ratio_input
             # size stays at "1K" default (previously the invalid "0.5K")

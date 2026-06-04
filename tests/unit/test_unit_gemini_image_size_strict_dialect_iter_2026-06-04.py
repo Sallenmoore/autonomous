@@ -154,7 +154,11 @@ class TestTier1OverridesTier2:
     capability marker (e.g. the server explains "json_schema field:
     additionalProperties must be false") must resolve as Tier-1
     (False). If precedence reversed, the negative cache would still
-    poison on dialect violations and #28 would reopen."""
+    poison on dialect violations and #28 would reopen.
+
+    Parametrized across ALL nine Tier-1 markers so a future
+    contributor who adds a 10th dialect marker but breaks the
+    override property gets a red test."""
 
     @pytest.fixture(autouse=True)
     def _isolate(self):
@@ -163,25 +167,39 @@ class TestTier1OverridesTier2:
         yield
         openai_compat._reset_unsupported_cache()
 
-    def test_dialect_and_capability_both_present_returns_false(self):
-        from autonomous.ai.models.openai_compat import (
-            _looks_like_unsupported_strict_mode,
-        )
-        # Both "additionalproperties must be false" (Tier-1) AND
-        # "json_schema" (Tier-2 capability) present.
-        body = (
-            "json_schema validation error: additionalProperties must "
-            "be false in strict mode"
-        )
-        assert _looks_like_unsupported_strict_mode(400, body) is False
+    # The full Tier-1 marker set; pair each with a Tier-2 capability
+    # marker to verify Tier-1 reject wins for every combination.
+    ALL_DIALECT_MARKERS = [
+        "invalid schema",
+        "additionalProperties must be false",
+        "missing required field",
+        "must be in 'required'",
+        "must be in `required`",
+        "in 'required' array",
+        "not allowed in strict",
+        "invalid type for 'type'",
+        "schema must be an object",
+    ]
 
-    def test_dialect_marker_with_response_format_returns_false(self):
+    @pytest.mark.parametrize("dialect_marker", ALL_DIALECT_MARKERS)
+    @pytest.mark.parametrize(
+        "capability_marker",
+        ["json_schema", "response_format", "unsupported_parameter",
+         "structured output"],
+    )
+    def test_dialect_marker_overrides_any_capability_marker(
+        self, dialect_marker, capability_marker
+    ):
+        """Property test: for every (Tier-1, Tier-2) combination, a
+        body containing BOTH must return False (Tier-1 wins). This is
+        the load-bearing #28 close — if a 10th dialect marker is
+        added without preserving the override property, this fails."""
         from autonomous.ai.models.openai_compat import (
             _looks_like_unsupported_strict_mode,
         )
         body = (
-            "response_format error: missing required field 'name' in "
-            "the schema's required array"
+            f"Server error: {capability_marker} is involved but the "
+            f"real cause is {dialect_marker}."
         )
         assert _looks_like_unsupported_strict_mode(400, body) is False
 
@@ -210,17 +228,17 @@ class TestNegativeCacheNotPoisonedByDialectViolation:
         openai_compat._reset_unsupported_cache()
 
     def test_heuristic_signals_real_error_for_dialect_violation(self):
-        """The heuristic returns False, so the calling code re-raises
-        the original HTTPError rather than retrying in loose mode.
-        Pin via the heuristic's return value directly — the negative
-        cache state is exercised in the openai_compat call path."""
+        """A realistic OpenAI strict-dialect rejection body — uses
+        the ``"invalid type for 'type'"`` marker specifically (NOT
+        also exercised by the case-insensitive test elsewhere). The
+        heuristic returns False, so the calling code re-raises the
+        original HTTPError rather than retrying in loose mode."""
         from autonomous.ai.models.openai_compat import (
             _looks_like_unsupported_strict_mode,
         )
-        # Real-shaped OpenAI strict-mode dialect rejection.
         body = (
-            "Invalid schema for response_format 'response': In context"
-            "=schema, additionalProperties must be false."
+            "Invalid request: invalid type for 'type' field in your "
+            "response_format json_schema (expected 'string', got int)."
         )
         # Heuristic says "this is NOT a capability gap"; caller's
         # generate_json then re-raises rather than caching+falling-back.
@@ -307,3 +325,77 @@ class TestImageSizeRegressionGuard:
                 f"aspect_ratio_input={aspect!r} regressed to size='0.5K' "
                 f"(issue #29 — rejected by Gemini API)."
             )
+
+
+# ---------------------------------------------------------------------------
+# 4. Clamp breadcrumb — silent-failure-hunter #1 close
+# ---------------------------------------------------------------------------
+
+
+class TestGeminiClampBreadcrumb:
+    """The clamp from 4K → 2K is silent at the API contract level
+    (caller gets a successful response with smaller bytes). But the
+    operator MUST be able to detect the downgrade — otherwise a
+    storyteller worker that stored the WebP has no way to know the
+    resolution contract was violated. Pin the [GEMINI-IMAGE-CLAMP]
+    log breadcrumb that surfaces this."""
+
+    @pytest.fixture
+    def gemini(self):
+        from autonomous.ai.models.gemini import GeminiAIModel
+        return GeminiAIModel.__new__(GeminiAIModel)
+
+    @pytest.mark.parametrize("aspect", ["4K", "Map", "4KPortrait"])
+    def test_clamp_emits_breadcrumb(self, gemini, aspect, monkeypatch):
+        """Each 4K-tier aspect input must emit the
+        ``[GEMINI-IMAGE-CLAMP]`` marker. The marker name is
+        load-bearing — operators grep logs for it when investigating
+        unexpected resolution downgrades."""
+        from autonomous.ai.models import gemini as gemini_module
+
+        log_calls = []
+        monkeypatch.setattr(
+            gemini_module, "log",
+            lambda msg, _print=False: log_calls.append(msg),
+        )
+        gemini._get_image_config(aspect)
+        markers = [m for m in log_calls if "GEMINI-IMAGE-CLAMP" in m]
+        assert len(markers) == 1, (
+            f"Expected one clamp breadcrumb for aspect={aspect!r}; "
+            f"got {len(markers)}: {markers!r}"
+        )
+
+    @pytest.mark.parametrize(
+        "non_clamp_aspect",
+        ["Portrait", "Landscape", "2K", "2KPortrait", "1:1", "3:4", ""],
+    )
+    def test_non_clamp_path_emits_no_breadcrumb(
+        self, gemini, non_clamp_aspect, monkeypatch
+    ):
+        """Non-4K-tier paths must NOT emit the breadcrumb — would be
+        noise on every Portrait/2K/etc. call."""
+        from autonomous.ai.models import gemini as gemini_module
+
+        log_calls = []
+        monkeypatch.setattr(
+            gemini_module, "log",
+            lambda msg, _print=False: log_calls.append(msg),
+        )
+        gemini._get_image_config(non_clamp_aspect)
+        assert not any("GEMINI-IMAGE-CLAMP" in m for m in log_calls)
+
+    def test_breadcrumb_includes_model_pointer(self, gemini, monkeypatch):
+        """The breadcrumb mentions ``GEMINI_IMAGE_MODEL`` so the
+        operator can find the env var that lifts the clamp without
+        digging through code. Pin this so a future maintainer can't
+        silently strip the actionable diagnostic."""
+        from autonomous.ai.models import gemini as gemini_module
+
+        log_calls = []
+        monkeypatch.setattr(
+            gemini_module, "log",
+            lambda msg, _print=False: log_calls.append(msg),
+        )
+        gemini._get_image_config("4K")
+        marker = next(m for m in log_calls if "GEMINI-IMAGE-CLAMP" in m)
+        assert "GEMINI_IMAGE_MODEL" in marker

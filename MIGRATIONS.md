@@ -110,21 +110,31 @@ Behavior when something goes wrong:
   Calls that route from gemini to flux no longer double-process through
   the local upscaler.
 - **Behavior change (affects callers regardless of routing):**
-  `GeminiAIModel._get_image_config` aspect-ratio table was rebalanced
-  so the cheap-default tier maps to `0.5K` rather than `1K`/`2K`.
-  Concretely:
-  - `Portrait` → `(3:4, 2K)` is now `(3:4, 0.5K)` (4x resolution + cost
-    reduction)
+  `GeminiAIModel._get_image_config` aspect-ratio table was rebalanced.
+  The cheap-default tier maps to `1K` (smallest Gemini-accepted size);
+  4K-tier callers are clamped to `2K` against the current default model
+  (`gemini-3.1-flash-image-preview`) which rejects `4K`. The original
+  cycle (PR #19/#23) targeted `0.5K`/`4K` but those are NOT valid
+  values for the Gemini API — issues #29/#30 corrected the table in
+  PR #31 (this section reflects the post-correction shipping values):
+  - `Portrait` → `(3:4, 2K)` is now `(3:4, 1K)`
   - Default fallback for unknown aspect_ratio: `(1:1, 1K)` is now
-    `(3:4, 0.5K)` (consistent with the new cheap-default contract)
-  - `Landscape` continues to map to `(16:9, 1K)`; `2K`/`2KPortrait`
-    continue to map to `2K`; `4K`/`Map`/`4KPortrait` continue to map
-    to `4K`.
+    `(3:4, 1K)`
+  - `Landscape` continues to map to `(16:9, 1K)`
+  - `2K`/`2KPortrait` continue to map to `2K`
+  - `4K`/`Map`/`4KPortrait` are silently clamped to `2K` (the model
+    rejects `4K`). A `[GEMINI-IMAGE-CLAMP]` breadcrumb is emitted to
+    the log so the downgrade is visible to operators. Set
+    `GEMINI_IMAGE_MODEL` to a 4K-capable variant to lift the clamp.
+  - Bare ratio inputs (`1:1`/`3:4`/`4:3`/`9:16`/`16:9`) inherit the
+    `1K` default.
 
   This matches the new caller contract: the bare `Portrait`/`Landscape`
   tokens are the cheap default, and callers wanting 2K must opt in
   explicitly via `2K`/`2KPortrait` (or use the new `quality="high"`
-  dial which remaps `Portrait → 4KPortrait`).
+  dial which remaps `Portrait → 4KPortrait`). Note that the `quality`
+  dial's `4KPortrait` output is now clamped to `2K` against
+  `flash-image-preview`.
 
 **Migration.**
 
@@ -135,7 +145,11 @@ behavior is identical to pre-change.
 For the aspect-ratio resolution remap: consumers that pass bare
 `Portrait` to `ImageAgent.generate()` and expected 2K-resolution output
 must now pass `2KPortrait` explicitly. The visible symptom of an
-un-migrated caller is smaller image files at the same prompt.
+un-migrated caller is smaller image files at the same prompt. Callers
+on `4K`/`Map`/`4KPortrait` get 2K against `flash-image-preview` and
+should monitor for `[GEMINI-IMAGE-CLAMP]` log entries if 4K is
+required (then either swap the model via `GEMINI_IMAGE_MODEL` or
+re-route the high-res path through a 4K-capable provider).
 
 To opt in:
 1. `export FAL_KEY=<your fal.ai key>` in the deployment env.
