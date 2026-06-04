@@ -68,6 +68,26 @@ _STRICT_MODE_ERROR_MARKERS = (
     "structured output",
 )
 
+# Phrases that indicate the SERVER supports strict mode but the caller's
+# SCHEMA violates OpenAI's strict-output dialect (which is stricter than
+# the JSON Schema meta-schema — requires additionalProperties:false,
+# every property in required, no format/$ref, etc.). When matched, the
+# heuristic returns False because caching the endpoint as unsupported
+# would silently downgrade future calls against an endpoint that's
+# actually working correctly. The right fix is for the caller to repair
+# their schema, not for us to retry in loose mode. Tracks issue #28.
+_STRICT_DIALECT_VIOLATION_MARKERS = (
+    "invalid schema",
+    "additionalproperties must be false",
+    "missing required field",
+    "must be in 'required'",
+    "must be in `required`",
+    "in 'required' array",
+    "not allowed in strict",
+    "invalid type for 'type'",
+    "schema must be an object",
+)
+
 
 def _reset_unsupported_cache() -> None:
     """Clear the negative cache. Tests use this for isolation; operators
@@ -83,10 +103,33 @@ def _looks_like_unsupported_strict_mode(status: int, body_text: str) -> bool:
     silently retrying in loose mode would mask the real error.
 
     Accepts 400 and 422 (some servers use 422 for validation rejections).
+
+    Two-tier classification (issue #28):
+      1. **Early reject on dialect-violation phrasings.** OpenAI strict
+         mode rejects schemas that pass JSON Schema meta-validation but
+         violate the strict-output dialect (additionalProperties:false,
+         every property in required, no format/$ref). The error body
+         mentions strict-mode terms — without this reject, the original
+         markers would match and we'd cache the endpoint as unsupported
+         when in fact it's working correctly and the caller's schema is
+         broken.
+      2. **Capability-marker fallback.** If the body doesn't match any
+         dialect-violation phrasing, fall through to the existing
+         broad-marker check. Non-OpenAI servers (HPC's Open WebUI proxy,
+         vLLM, etc.) emit less-structured error bodies, so we keep the
+         broad markers as a belt-and-suspenders for those.
     """
     if status not in (400, 422):
         return False
     body_lower = body_text.lower()
+
+    # Tier 1: explicit signal that the server supports strict mode but
+    # the schema is bad. Don't cache; let the 400 propagate as a real
+    # error so the caller fixes their schema.
+    if any(m in body_lower for m in _STRICT_DIALECT_VIOLATION_MARKERS):
+        return False
+
+    # Tier 2: capability-unsupported signal. Cache and fall back.
     return any(m in body_lower for m in _STRICT_MODE_ERROR_MARKERS)
 
 
