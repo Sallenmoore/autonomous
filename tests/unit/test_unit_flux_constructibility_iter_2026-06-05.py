@@ -1,20 +1,14 @@
 """FluxAIModel must accept the BaseAgent.get_client construction kwargs
 without raising FieldDoesNotExist.
 
-Behavioral pin for the PR #35 / issue #34 fix: BaseAgent.get_client
-constructs every provider via ``model_class(name=..., instructions=...,
-description=...)`` (baseagent.py:93-97). FluxAIModel(AutoModel) does
-NOT inherit BaseAgent, so it doesn't pick up those fields through
-MRO — they must be declared directly on the class. Without the
-StringAttr declarations the strict Document validator raises
-``FieldDoesNotExist: {'description', 'instructions', 'name'}`` and the
-FLUX routing layer silently falls back to the configured fallback
-provider (Gemini for storyteller), defeating the cost-reduction the
-router was added for.
-
-This file is the test-agent's independent second perspective — written
-from PR #35's diff and the BaseAgent.get_client call site, NOT from
-dev's gitignored tests/_dev_local/ coverage.
+BaseAgent.get_client constructs every provider via
+``model_class(name=..., instructions=..., description=...)``.
+FluxAIModel(AutoModel) does NOT inherit BaseAgent, so it doesn't pick
+up those fields through MRO — they must be declared directly on the
+class. Without the StringAttr declarations the strict Document
+validator raises ``FieldDoesNotExist`` and the FLUX routing layer
+silently falls back to the configured fallback provider (Gemini for
+storyteller), defeating the cost-reduction the router was added for.
 """
 
 import pytest
@@ -68,12 +62,10 @@ class TestConstructibilityWithBaseAgentKwargs:
     makes must not raise."""
 
     def test_construct_with_all_three_kwargs(self):
-        """The literal failure mode reported in issue #34.
-
-        Before PR #35, this raised
-        ``FieldDoesNotExist: {'description', 'instructions', 'name'}``
-        inside the Document validator. With the fix, construction
-        succeeds and the kwargs land on the instance.
+        """Without the StringAttr declarations the Document validator
+        raises ``FieldDoesNotExist: {'description', 'instructions',
+        'name'}``. With them, construction succeeds and the kwargs
+        land on the instance.
         """
         flux_cls = _fresh_flux_class()
         instance = flux_cls(
@@ -100,12 +92,11 @@ class TestConstructibilityWithBaseAgentKwargs:
         )
 
     def test_baseagent_get_client_construction_pattern(self):
-        """Exact reproduction of baseagent.py:93-97.
-
-        ``model_class(name=self.name, instructions=self.instructions,
-        description=self.description)`` is the exact call inside
-        ``BaseAgent.get_client``. Replicate the kwarg shape (not just
-        the values) so a future signature change there is caught here.
+        """Mirror the kwarg shape ``BaseAgent.get_client`` uses to
+        construct adapters — ``model_class(name=self.name,
+        instructions=self.instructions, description=self.description)``.
+        Replicate the call shape (not just the values) so a future
+        signature change there is caught here.
         """
         flux_cls = _fresh_flux_class()
 
@@ -127,7 +118,7 @@ class TestConstructibilityWithBaseAgentKwargs:
 
 
 class TestDocumentedDefaults:
-    """Pin the FLUX-specific default values declared in PR #35.
+    """Pin the FLUX-specific default values.
 
     Comments in flux.py describe the defaults as 'no-ops for fal.ai'
     but they are still operator-visible identifiers — pinning them
@@ -157,8 +148,7 @@ class TestDocumentedDefaults:
 
         Without this, a caller doing ``FluxAIModel()`` (no kwargs) would
         get None on these fields and serialization back to Mongo would
-        either fail validation or persist nulls. Either is a regression
-        from PR #35's stated intent.
+        either fail validation or persist nulls.
         """
         flux_cls = _fresh_flux_class()
         instance = flux_cls()
@@ -168,47 +158,47 @@ class TestDocumentedDefaults:
         )
 
 
-class TestRegressionGuard:
-    """Cross-file contract pin: BaseAgent.get_client's forwarded kwargs
-    and FluxAIModel's declared fields must stay aligned.
+class TestRegressionGuardEndToEnd:
+    """Drive the real ``BaseAgent.get_client`` path with provider='flux'.
 
-    Failure modes this catches that the per-field tests above don't:
-    - BaseAgent.get_client drops one of the kwargs (silent partial
-      construction; instance ends up with only some fields populated).
-    - A future refactor renames the kwargs at the call site without
-      updating FluxAIModel.
-
-    Does NOT catch additive divergence — if BaseAgent.get_client adds a
-    NEW kwarg (e.g. ``role=self.role``), the test as written only
-    verifies the original three are still forwarded. That gap is fine:
-    a new kwarg failing the FluxAIModel constructor would surface
-    immediately as a runtime FieldDoesNotExist that the other tests
-    here would catch on the next iteration.
+    This is the strongest pin against ``FieldDoesNotExist`` resurrecting
+    in production: it exercises the actual call site rather than
+    inspecting source text. A kwarg drop, rename, or new-field add at
+    the call site that diverges from FluxAIModel's declared fields
+    surfaces as a constructor failure here.
     """
 
-    def test_baseagent_forwards_only_known_fields(self):
-        """The kwarg set forwarded by BaseAgent.get_client must remain
-        a subset of FluxAIModel's declared fields.
+    def test_get_client_constructs_flux_without_field_error(self):
+        """``BaseAgent.get_client`` with ``provider='flux'`` must
+        instantiate ``FluxAIModel`` successfully when called through the
+        real code path.
 
-        If someone adds a new kwarg to the get_client call site (or to
-        the FluxAIModel constructor) without updating the other, the
-        next FLUX dispatch would FieldDoesNotExist again. Caught here.
+        Mirrors the existing ``_StubAgent`` pattern from
+        ``test_unit_baseagent_get_client_persist.py`` to avoid the
+        AutoModel/Mongo construction cost. ``persist=False`` skips the
+        DB writes the real path would do — we're pinning the
+        constructor call shape, not persistence.
         """
-        import inspect
+        from autonomous.ai.baseagent import BaseAgent
+        from autonomous.ai.models.flux import FluxAIModel
 
-        from autonomous.ai import baseagent
-        flux_cls = _fresh_flux_class()
-        source = inspect.getsource(baseagent.BaseAgent.get_client)
-        # The kwargs forwarded into model_class(...) — strict subset check.
-        forwarded = {"name", "instructions", "description"}
-        for kw in forwarded:
-            assert f"{kw}=self.{kw}" in source, (
-                f"BaseAgent.get_client must forward '{kw}=self.{kw}' "
-                f"to the adapter constructor; if this changes, every "
-                f"adapter (including FluxAIModel) needs a matching "
-                f"field declaration."
-            )
-            assert kw in flux_cls._fields, (
-                f"FluxAIModel must declare '{kw}' to receive the "
-                f"forwarded kwarg without FieldDoesNotExist."
-            )
+        class _StubAgent:
+            MODEL_REGISTRY = BaseAgent.MODEL_REGISTRY
+
+            def __init__(self):
+                self.provider = "flux"
+                self.name = "image_agent"
+                self.instructions = "Generate a fantasy portrait."
+                self.description = "ImageAgent for storyteller character art."
+                self.client = None
+
+            def save(self):
+                pass
+
+        agent = _StubAgent()
+        client = BaseAgent.get_client(agent, persist=False)
+
+        assert isinstance(client, FluxAIModel)
+        assert client.name == agent.name
+        assert client.instructions == agent.instructions
+        assert client.description == agent.description
