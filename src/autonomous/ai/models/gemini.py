@@ -430,16 +430,33 @@ class GeminiAIModel(AutoModel):
         """
         Parses custom aspect ratio keys (e.g., '2KPortrait') into valid
         Google Gemini API parameters for ratio and size.
+
+        Image-size constraints (issues #29, #30):
+        - Gemini's ``types.ImageConfig.image_size`` accepts ``"1K"`` /
+          ``"2K"`` / ``"4K"``. ``"0.5K"`` is NOT a valid value — the
+          API returns ``400 INVALID_ARGUMENT``.
+        - The current default model ``gemini-3.1-flash-image-preview``
+          additionally rejects ``"4K"`` (only ``"1K"`` / ``"2K"`` work
+          against it). A future model wired via ``GEMINI_IMAGE_MODEL``
+          may accept ``"4K"``; this mapping clamps to ``"2K"`` for now
+          so high-resolution callers degrade gracefully rather than
+          hard-fail.
+
+        The cheap-default tier maps to ``"1K"`` (smallest valid size).
+        Bare ratio inputs (``"1:1"``, ``"3:4"`` etc.) inherit the
+        default size — previously they inherited the now-invalid
+        ``"0.5K"`` default, breaking every bare-ratio caller.
         """
-        # Default fallback
+        # Default fallback — "1K" is the smallest size Gemini actually
+        # accepts. Previously "0.5K" (issue #29) which the API rejected.
         ratio = "3:4"
-        size = "0.5K"
+        size = "1K"
 
         # Logic Mapping
         # Keys match what your App sends in ttrpgbase.py
         if aspect_ratio_input == "Portrait":
             ratio = "3:4"
-            size = "0.5K"
+            size = "1K"   # was "0.5K" — issue #29 (invalid for Gemini)
         elif aspect_ratio_input == "Landscape":
             ratio = "16:9"
             size = "1K"
@@ -451,12 +468,13 @@ class GeminiAIModel(AutoModel):
             size = "2K"
         elif aspect_ratio_input in ["4K", "Map"]:
             ratio = "16:9"
-            size = "4K"
+            size = "2K"   # was "4K" — issue #30 (flash-image-preview rejects 4K)
         elif aspect_ratio_input == "4KPortrait":
             ratio = "3:4"
-            size = "4K"
+            size = "2K"   # was "4K" — issue #30 (flash-image-preview rejects 4K)
         elif aspect_ratio_input in ["1:1", "3:4", "4:3", "9:16", "16:9"]:
             ratio = aspect_ratio_input
+            # size stays at "1K" default (previously the invalid "0.5K")
 
         return ratio, size
 
