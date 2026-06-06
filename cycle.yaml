@@ -2,9 +2,9 @@ project: autonomous
 repo: Sallenmoore/autonomous
 
 trees:
-  dev: /opt/projects/autonomous-dev
-  test: /opt/projects/autonomous-test
-  prod: /opt/projects/autonomous
+  dev: /opt/projects/autonomous/dev
+  test: /opt/projects/autonomous/test
+  prod: /opt/projects/autonomous/prod
 
 branches:
   dev: dev
