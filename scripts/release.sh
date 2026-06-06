@@ -25,6 +25,9 @@
 
 set -euo pipefail
 
+# shellcheck source=scripts/treepaths.sh
+. "$(dirname "$0")/treepaths.sh"
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 INIT_FILE="${ROOT}/src/autonomous/__init__.py"
 
@@ -127,5 +130,5 @@ cat <<EOF
 
 Next: in each consumer repo, bump the autonomous-app pin to >=${NEW_VERSION}.
 For StoryTeller, that means:
-   cd /opt/projects/storyteller-dev && ./scripts/bump-autonomous.sh ${NEW_VERSION}
+   cd "$(tree_path storyteller dev 2>/dev/null || echo /opt/projects/storyteller-dev)" && ./scripts/bump-autonomous.sh ${NEW_VERSION}
 EOF
