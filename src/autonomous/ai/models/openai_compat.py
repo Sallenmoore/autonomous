@@ -54,7 +54,7 @@ class HPCUnreachableError(RuntimeError):
 _TRANSPORT_FAILURE_CODES = frozenset({401})
 
 
-def _is_transport_failure(status: int) -> bool:
+def _is_transport_failure(status) -> bool:
     """True iff ``status`` is a transport-class failure eligible for retry.
 
     Used to translate HTTP responses into ``HPCUnreachableError`` so the
@@ -62,8 +62,19 @@ def _is_transport_failure(status: int) -> bool:
     engages. Issue #39: the previous fixed-set check missed 500, so HPC
     500 responses bypassed retry entirely — every chunk in a degraded
     sync printed its own ``[HPC-UNREACHABLE]`` line.
+
+    Robust to non-integer inputs: a ``MagicMock`` from a test fixture
+    is neither in the set nor orderable against an int. Treating the
+    type error as "not transport" preserves the old behavior of those
+    tests (which relied on the fixed-set ``in`` check returning False
+    against a MagicMock and falling through to ``raise_for_status``).
     """
-    return status in _TRANSPORT_FAILURE_CODES or status >= 500
+    if status in _TRANSPORT_FAILURE_CODES:
+        return True
+    try:
+        return status >= 500
+    except TypeError:
+        return False
 
 # Module-level negative cache: (model, base_url) tuples known to NOT
 # support strict-mode response_format. Populated on first conservative

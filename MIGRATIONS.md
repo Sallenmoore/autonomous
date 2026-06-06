@@ -5,6 +5,38 @@ recent first.
 
 ## Unreleased
 
+### Embedding `[HPC-UNREACHABLE]` log throttle + 500 retry coverage (#39)
+
+**What changed.**
+
+- `openai_compat._TRANSPORT_FAILURE_CODES` was previously `{401, 502,
+  503, 504}` — HTTP 500 was missing, so 500 responses bypassed the
+  `retry()` wrapper entirely (`retry` catches
+  `HPCUnreachableError`; 500 raised `requests.HTTPError`). The check
+  is now a function `_is_transport_failure(status)` covering 401 plus
+  the full 5xx range (500, 501, ..., 599, including partner-CDN codes
+  521-529). Bounded retry (default 3 attempts, 10s backoff,
+  env-tunable via `HPC_RETRY_ATTEMPTS` / `HPC_RETRY_BACKOFF`) now
+  engages on 500.
+- New helper `db_sync._emit_hpc_unreachable(signature, message)`
+  replaces direct `print()` calls in `_get_vector_local` /
+  `_get_vector_openai`. Default behavior is unchanged — the message
+  prints verbatim with the same `[HPC-UNREACHABLE]` prefix.
+- New opt-in env var `HPC_UNREACHABLE_THROTTLE_SECONDS` (default 0 =
+  off). When set to a positive integer N, identical-signature prints
+  within N seconds are throttled per process; the next print outside
+  the window includes a `(M suppressed in last Ns)` annotation. The
+  upstream-health counter `record_embedding_sync_event` is NOT
+  throttled — every failure still bumps the Redis bucket.
+
+**Migration.**
+
+No source change required for existing consumers — the marker string,
+print destination, and per-call print rate are unchanged at default
+settings. Operators wanting log-volume dedup during sustained
+upstream degradation set `HPC_UNREACHABLE_THROTTLE_SECONDS=60` (or
+similar) in their worker env.
+
 ### OAuth (provider, sub) identity on `AutoUser` (#40)
 
 **What changed.**

@@ -137,16 +137,26 @@ class AutoAuth:
         data = userinfo.json()
         # Inject the OIDC-stable identity pair (#40) so
         # :meth:`AutoUser.authenticate` can prefer it over email-based
-        # lookup. Non-overriding — a caller that has already shaped the
-        # dict (tests, custom flows) wins. ``provider_name`` is "" on
-        # base AutoAuth, so the branch is a no-op unless a subclass
-        # (GoogleAuth / GithubAuth) declared its identifier.
-        if self.provider_name and "oauth_provider" not in data:
-            data["oauth_provider"] = self.provider_name
+        # lookup. Both-or-neither: a provider name without a sub can't
+        # be used for lookup (the pair IS the key), so inject the
+        # provider name only when ``_extract_sub`` actually surfaces a
+        # subject identifier. Userinfo responses without ``id`` / ``sub``
+        # therefore round-trip unchanged — preserves test contracts that
+        # pin the raw provider response shape.
+        # Non-overriding: a caller that has already shaped the dict
+        # (tests, custom flows) keeps its own ``oauth_provider`` /
+        # ``oauth_sub`` values.
         if "oauth_sub" not in data:
             sub = self._extract_sub(data)
             if sub is not None:
                 data["oauth_sub"] = str(sub)
+                if self.provider_name and "oauth_provider" not in data:
+                    data["oauth_provider"] = self.provider_name
+        elif self.provider_name and "oauth_provider" not in data:
+            # ``oauth_sub`` was already in the dict (caller-supplied or
+            # native to the provider's response). Stamp the provider
+            # name to complete the pair.
+            data["oauth_provider"] = self.provider_name
         return data, token
 
     def _extract_sub(self, raw_userinfo: dict) -> Any | None:
