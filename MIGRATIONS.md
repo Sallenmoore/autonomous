@@ -60,8 +60,9 @@ user = User.authenticate(user_info, token)
 ```
 
 **Not included — Sign in with Apple (deferred).** Apple was named in
-#44 but is intentionally NOT in this change. Unlike the four
-HTTP-userinfo providers, "Sign in with Apple" requires (a) a client
+#44 but is intentionally NOT in this change. Unlike every other
+provider — all of which source identity via an HTTP userinfo GET —
+"Sign in with Apple" requires (a) a client
 secret that is an ES256-signed JWT generated from a `.p8` private key
 (team id + key id + services id), regenerated before expiry, and
 (b) identity sourced from the `id_token` JWT returned in the **token
