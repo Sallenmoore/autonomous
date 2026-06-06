@@ -17,6 +17,78 @@ from autonomous import log
 # Tests can monkeypatch this attribute directly.
 _HTTP_SESSION = requests.Session()
 
+# Per-process log throttle for ``[HPC-UNREACHABLE]`` prints (#39).
+# OPT-IN via ``HPC_UNREACHABLE_THROTTLE_SECONDS`` env var — default 0
+# (disabled). During a sustained upstream degradation StoryTeller
+# observed ~60 identical-signature prints per 24h drowning unrelated
+# signal; operators can set the env var (e.g. ``60``) to enable
+# per-signature deduplication within that window. Within the window:
+# first occurrence prints verbatim; subsequent occurrences increment a
+# suppression counter and the next print outside the window includes
+# ``(N suppressed in last Ws)``.
+#
+# Default-off keeps existing observability tests passing unchanged —
+# each ``[HPC-UNREACHABLE]`` print fires exactly as before until ops
+# enable the throttle. Granularity is per-process, not per-worker-
+# cluster: a worker restart clears throttle state, which matches the
+# goal (operators care about steady-state floods, not the first batch
+# after restart). The upstream-health counter
+# (``record_embedding_sync_event``) is NEVER throttled regardless of
+# this setting — every failure still counts in the Redis bucket so the
+# health dashboard remains accurate.
+_HPC_UNREACHABLE_LAST_LOGGED: dict[str, float] = {}
+_HPC_UNREACHABLE_SUPPRESSED: dict[str, int] = {}
+
+
+def _throttle_window_seconds() -> int:
+    """Read the throttle window from env each call so a config flip
+    lands without restart. Returns 0 (disabled) when the var is unset
+    or malformed."""
+    try:
+        return int(os.environ.get("HPC_UNREACHABLE_THROTTLE_SECONDS", "0"))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _emit_hpc_unreachable(signature: str, message: str) -> None:
+    """Print an ``[HPC-UNREACHABLE]`` line, optionally throttled.
+
+    With ``HPC_UNREACHABLE_THROTTLE_SECONDS=0`` (the default) the
+    message prints verbatim — identical to the pre-#39 contract.
+
+    With the env var set to a positive integer N, prints are
+    per-signature throttled within an N-second window. ``signature``
+    keys the throttle bucket — pick something stable across the same
+    failure class (e.g. ``"openai:HPCUnreachableError"``,
+    ``"local:http:500"``) so the dedup actually fires. New error
+    shapes should use a distinct signature so they print on first
+    occurrence rather than being swept into an unrelated bucket.
+
+    Best-effort — never raises. The ``[HPC-UNREACHABLE]`` prefix is
+    preserved verbatim regardless of throttling so downstream log
+    scrapers keep matching.
+    """
+    window = _throttle_window_seconds()
+    if window <= 0:
+        # Throttle disabled — print verbatim, preserves old behavior.
+        print(message)
+        return
+    now = time.monotonic()
+    last = _HPC_UNREACHABLE_LAST_LOGGED.get(signature)
+    if last is not None and (now - last) < window:
+        _HPC_UNREACHABLE_SUPPRESSED[signature] = (
+            _HPC_UNREACHABLE_SUPPRESSED.get(signature, 0) + 1
+        )
+        return
+    suppressed = _HPC_UNREACHABLE_SUPPRESSED.pop(signature, 0)
+    if suppressed:
+        print(
+            f"{message} ({suppressed} suppressed in last {window}s)"
+        )
+    else:
+        print(message)
+    _HPC_UNREACHABLE_LAST_LOGGED[signature] = now
+
 EmbeddingSyncEvent = Literal["success", "hpc_failure", "silent_skip"]
 EMBEDDING_SYNC_HEALTH_KEY_PREFIX = "embedding_sync_health"
 _EMBEDDING_SYNC_HEALTH_TTL_SECONDS = 7 * 24 * 3600  # 7 days
@@ -220,14 +292,16 @@ def _get_vector_local(text):
         # counter. Surface it under the same marker family as the
         # except-clause case so the consumer dashboard captures both.
         record_embedding_sync_event("hpc_failure")
-        print(
-            f"[HPC-UNREACHABLE] local embedding failed: HTTP {resp.status_code}"
+        _emit_hpc_unreachable(
+            f"local:http:{resp.status_code}",
+            f"[HPC-UNREACHABLE] local embedding failed: HTTP {resp.status_code}",
         )
     except Exception as e:
         record_embedding_sync_event("hpc_failure")
-        print(
+        _emit_hpc_unreachable(
+            f"local:exc:{type(e).__name__}",
             f"[HPC-UNREACHABLE] local embedding failed: "
-            f"{type(e).__name__}: {e}"
+            f"{type(e).__name__}: {e}",
         )
     return None
 
@@ -249,15 +323,19 @@ def _get_vector_openai(text):
         # dashboards disambiguate provider in mixed-deployment grep —
         # the local path includes the same word in its marker lines.
         record_embedding_sync_event("hpc_failure")
-        print(f"[HPC-UNREACHABLE] openai embedding failed: {e}")
+        _emit_hpc_unreachable(
+            "openai:HPCUnreachableError",
+            f"[HPC-UNREACHABLE] openai embedding failed: {e}",
+        )
         return None
     except Exception as e:
         # Same sentinel for unexpected errors so any HPC-path failure
         # surfaces under one marker family.
         record_embedding_sync_event("hpc_failure")
-        print(
+        _emit_hpc_unreachable(
+            f"openai:exc:{type(e).__name__}",
             f"[HPC-UNREACHABLE] openai embedding failed "
-            f"(unexpected {type(e).__name__}): {e}"
+            f"(unexpected {type(e).__name__}): {e}",
         )
         return None
 

@@ -27,6 +27,13 @@ class AutoAuth:
     #: :meth:`auth_required`. Set to 0 to write on every authenticated
     #: request (the legacy behaviour).
     last_login_throttle_seconds: int = 60
+    #: Short identifier for this OAuth provider ("google", "github",
+    #: "apple", ...). Set on each :class:`AutoAuth` subclass. Empty by
+    #: default so callers that pass raw ``user_info`` dicts to
+    #: :meth:`AutoUser.authenticate` without going through this layer
+    #: keep working — the (provider, sub) identity branch only fires
+    #: when the subclass declares its name. Issue #40.
+    provider_name: str = ""
 
     def __init__(
         self,
@@ -127,7 +134,52 @@ class AutoAuth:
                 pass
 
         userinfo = requests.get(self.req_uri, auth=OAuth2Auth(token))
-        return userinfo.json(), token
+        raw = userinfo.json()
+        # Inject the OIDC-stable identity pair (#40) only when we can
+        # produce BOTH halves. The pair has no lookup value alone, so
+        # both-or-neither is the contract: provider_name must be set
+        # AND ``_extract_sub`` must surface a subject identifier. Base
+        # ``AutoAuth`` (provider_name="") + a userinfo response with
+        # ``sub`` no longer injects an orphan ``oauth_sub`` — round-
+        # trips the response unchanged so callers depending on the
+        # exact dict shape aren't surprised.
+        #
+        # Copy the dict before mutating so test fixtures that share the
+        # underlying object across calls (a common ``MagicMock(json=
+        # MagicMock(return_value=fake))`` pattern) don't see their
+        # fixture grow oauth_provider/oauth_sub keys silently.
+        if not isinstance(raw, dict):
+            # Pre-#40 behavior returned whatever .json() produced. A
+            # malformed (list/scalar) response can't carry the pair —
+            # round-trip unchanged so error paths surface naturally.
+            return raw, token
+        data = dict(raw)
+        if self.provider_name and "oauth_sub" not in data:
+            sub = self._extract_sub(data)
+            if sub is not None:
+                data["oauth_sub"] = str(sub)
+                if "oauth_provider" not in data:
+                    data["oauth_provider"] = self.provider_name
+        elif self.provider_name and "oauth_provider" not in data:
+            # Caller pre-shaped the dict with oauth_sub. Stamp the
+            # provider name to complete the pair.
+            data["oauth_provider"] = self.provider_name
+        return data, token
+
+    def _extract_sub(self, raw_userinfo: dict) -> Any | None:
+        """Extract the provider's stable subject identifier from a
+        userinfo response.
+
+        The OIDC standard returns ``sub`` on the userinfo endpoint, so
+        the base implementation reads that key. Some providers expose
+        the same value under a different name on legacy userinfo
+        endpoints — Google's ``oauth2/v2/userinfo`` returns ``id``,
+        GitHub's ``/user`` returns numeric ``id``. Subclasses override
+        to read the right field. Returning ``None`` leaves
+        ``oauth_sub`` unset — :meth:`AutoUser.authenticate` then falls
+        back to email-based lookup, which preserves legacy behaviour.
+        """
+        return raw_userinfo.get("sub")
 
     @classmethod
     def _touch_user(cls, user: User) -> None:
