@@ -106,20 +106,53 @@ class ImageAgent(BaseAgent):
             return aspect_ratio
         return overrides.get(aspect_ratio, aspect_ratio)
 
-    def _route_provider(self, aspect_ratio: str) -> str:
+    def _route_provider(self, aspect_ratio: str, requested: str | None = None) -> str:
         """Resolve which provider actually receives the call.
 
-        When IMAGE_PROVIDER_ROUTING is off (default), returns
-        ``self.provider`` unchanged. When on, dispatches by aspect_ratio
-        tier — high-resolution / map calls stay on Gemini, everything
-        else routes to FLUX. ``self.provider`` is the *requested*
-        provider; this method returns the *effective* provider.
+        Only entered when the caller passed ``route=True`` — both
+        ``generate`` and ``upscale`` short-circuit to a direct provider
+        choice when ``route=False`` without entering this method. So
+        the breadcrumb logic below only ever fires on the routing-ON
+        path; the routing-off return at the top is for the
+        ``IMAGE_PROVIDER_ROUTING`` env-var disabled case, not the
+        per-call ``route=False`` case.
+
+        When ``IMAGE_PROVIDER_ROUTING`` is off (default), returns
+        ``self.provider`` immediately and emits no log. When on,
+        dispatches by aspect_ratio tier (high-resolution / map →
+        Gemini, else FLUX).
+
+        ``requested`` is the provider the caller asked for. ``generate``
+        does NOT thread an env-var override, so ``requested`` defaults
+        to ``self.provider`` and the breadcrumb compares the routing
+        decision against the agent instance's provider. ``upscale``
+        threads the ``IMAGE_AI_AGENT`` env-var (falling back to
+        ``self.provider``) through as ``requested``, so the breadcrumb
+        on the upscale path names the env-overridden provider when set.
+        The asymmetry is intentional — only ``upscale`` is the place ops
+        switch providers per-request via env today.
+
+        Emits a one-line ``log()`` whenever routing re-targets the
+        provider (``effective != requested``). Without this the silent
+        fallback path that hid issue #34 (FLUX FieldDoesNotExist → every
+        FLUX call degraded to Gemini for an unknown duration) would
+        remain invisible to operators reading prod logs.
         """
         if not _routing_enabled():
             return self.provider
+        if requested is None:
+            requested = self.provider
         if aspect_ratio in {"4K", "4KPortrait", "Map"}:
-            return "gemini"
-        return "flux"
+            effective = "gemini"
+        else:
+            effective = "flux"
+        if effective != requested:
+            log(
+                f"Image route: requested={requested} effective={effective} "
+                f"ratio={aspect_ratio}",
+                _print=True,
+            )
+        return effective
 
     def _estimate_cost_usd(self, provider: str, size: str) -> float:
         """Look up the static per-call cost estimate. Returns 0.0 for
@@ -331,7 +364,7 @@ class ImageAgent(BaseAgent):
         effective_ratio = self._resolve_aspect_ratio(aspect_ratio, quality)
         requested = os.environ.get("IMAGE_AI_AGENT", self.provider)
         effective_provider = (
-            self._route_provider(effective_ratio)
+            self._route_provider(effective_ratio, requested=requested)
             if route
             else requested
         )

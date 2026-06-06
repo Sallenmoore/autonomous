@@ -5,6 +5,93 @@ recent first.
 
 ## Unreleased
 
+### Embedding `[HPC-UNREACHABLE]` log throttle + 5xx retry coverage (#39)
+
+**What changed.**
+
+- `openai_compat._TRANSPORT_FAILURE_CODES` was previously the fixed
+  set `{401, 502, 503, 504}` — every other 5xx code (500, 501, 505,
+  and the partner-CDN range 521-529) bypassed the `retry()` wrapper
+  entirely because `retry` catches `HPCUnreachableError` and those
+  statuses raised `requests.HTTPError` from `raise_for_status`
+  instead. The check is now a function `_is_transport_failure(status)`
+  covering 401 plus the full 5xx range (500-599 via a single
+  `status >= 500` branch, so the partner-CDN 5xx tier is included by
+  construction rather than by enumeration). Bounded retry (default
+  3 attempts, 10s backoff, env-tunable via `HPC_RETRY_ATTEMPTS` /
+  `HPC_RETRY_BACKOFF`) now engages on the entire 5xx family — the
+  headline observed-in-prod case was 500 (issue #39's reported flood),
+  but the same fix closes 501/505/521-529.
+- New helper `db_sync._emit_hpc_unreachable(signature, message)`
+  replaces direct `print()` calls in `_get_vector_local` /
+  `_get_vector_openai`. Default behavior is unchanged — the message
+  prints verbatim with the same `[HPC-UNREACHABLE]` prefix.
+- New opt-in env var `HPC_UNREACHABLE_THROTTLE_SECONDS` (default 0 =
+  off). When set to a positive integer N, identical-signature prints
+  within N seconds are throttled per process; the next print outside
+  the window includes a `(M suppressed in last Ns)` annotation. The
+  upstream-health counter `record_embedding_sync_event` is NOT
+  throttled — every failure still bumps the Redis bucket.
+
+**Migration.**
+
+No source change required for existing consumers — the marker string,
+print destination, and per-call print rate are unchanged at default
+settings. Operators wanting log-volume dedup during sustained
+upstream degradation set `HPC_UNREACHABLE_THROTTLE_SECONDS=60` (or
+similar) in their worker env.
+
+### OAuth (provider, sub) identity on `AutoUser` (#40)
+
+**What changed.**
+
+- Two new optional fields on `AutoUser` (and therefore the default
+  `User` subclass): `oauth_provider: StringAttr` and
+  `oauth_sub: StringAttr`. The pair stores the OIDC-stable identity —
+  the provider name plus its `sub` claim (or its provider-specific
+  equivalent, e.g. Google's `id` from `oauth2/v2/userinfo`, GitHub's
+  numeric `id` from `/user`).
+- `AutoUser.authenticate(user_info, token=None)` now looks up by
+  `(oauth_provider, oauth_sub)` first when both are present in
+  `user_info`, then falls back to email-based lookup for legacy
+  records. The OAuth pair is backfilled on every successful login so
+  the next call uses the preferred lookup.
+- New base-class machinery on `AutoAuth`:
+  - `provider_name: str = ""` — short identifier for the IdP. Set on
+    subclasses (`GoogleAuth.provider_name = "google"`,
+    `GithubAuth.provider_name = "github"`).
+  - `_extract_sub(raw_userinfo) -> Any | None` — provider-specific
+    extraction of the stable subject identifier. Base implementation
+    returns `raw_userinfo.get("sub")`; `GoogleAuth` reads
+    `sub or id` (since `oauth2/v2/userinfo` returns the value under
+    `id`); `GithubAuth` reads numeric `id`. Override on custom
+    `AutoAuth` subclasses that use a different userinfo shape.
+- `AutoAuth.handle_response` now injects `oauth_provider` and
+  `oauth_sub` into the returned `user_info` dict before returning it
+  (non-overriding — callers that pre-populated those keys win).
+  Consumers that pass the dict straight to `User.authenticate` get
+  the new lookup automatically.
+
+**Migration.**
+
+No source change required for existing consumers. Callers that pass
+plain `{"name", "email"}` user_info dicts (tests, custom OAuth flows
+that don't use `AutoAuth.handle_response`) keep working — the
+(provider, sub) lookup branch is skipped when those keys are absent
+and the existing email-based lookup runs.
+
+Consumers building a custom `AutoAuth` subclass should set
+`provider_name` and override `_extract_sub` to point at the right
+field in their provider's userinfo shape.
+
+Out of scope (filed as follow-ups in the issue body):
+- `linked_accounts: ListAttr` of `(provider, sub)` pairs so one user
+  can authenticate via multiple providers.
+- Migration helper for existing records to populate
+  `(oauth_provider, oauth_sub)` from the next successful login's ID
+  token. (Backfill already happens on next login for users that
+  re-authenticate; explicit batch backfill is the follow-up.)
+
 ### JSON Schema / Structured Outputs support (Item 25)
 
 **What changed.**
