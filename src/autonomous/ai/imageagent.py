@@ -109,19 +109,28 @@ class ImageAgent(BaseAgent):
     def _route_provider(self, aspect_ratio: str, requested: str | None = None) -> str:
         """Resolve which provider actually receives the call.
 
-        When IMAGE_PROVIDER_ROUTING is off (default), returns
-        ``self.provider`` — preserves the prior routing-off contract
-        where the env-var override (``IMAGE_AI_AGENT``) only matters
-        outside the ``route=True`` branch. When on, dispatches by
-        aspect_ratio tier (high-resolution / map → Gemini, else FLUX)
-        and uses ``requested`` for the log line so the operator-facing
-        breadcrumb names the env-var-overridden provider where one
-        exists.
+        Only entered when the caller passed ``route=True`` — both
+        ``generate`` and ``upscale`` short-circuit to a direct provider
+        choice when ``route=False`` without entering this method. So
+        the breadcrumb logic below only ever fires on the routing-ON
+        path; the routing-off return at the top is for the
+        ``IMAGE_PROVIDER_ROUTING`` env-var disabled case, not the
+        per-call ``route=False`` case.
 
-        ``requested`` is the provider the caller asked for. In
-        ``generate`` that's ``self.provider``; in ``upscale`` it's the
-        env-var-overridden ``IMAGE_AI_AGENT`` (falling back to
-        ``self.provider``). When omitted, defaults to ``self.provider``.
+        When ``IMAGE_PROVIDER_ROUTING`` is off (default), returns
+        ``self.provider`` immediately and emits no log. When on,
+        dispatches by aspect_ratio tier (high-resolution / map →
+        Gemini, else FLUX).
+
+        ``requested`` is the provider the caller asked for. ``generate``
+        does NOT thread an env-var override, so ``requested`` defaults
+        to ``self.provider`` and the breadcrumb compares the routing
+        decision against the agent instance's provider. ``upscale``
+        threads the ``IMAGE_AI_AGENT`` env-var (falling back to
+        ``self.provider``) through as ``requested``, so the breadcrumb
+        on the upscale path names the env-overridden provider when set.
+        The asymmetry is intentional — only ``upscale`` is the place ops
+        switch providers per-request via env today.
 
         Emits a one-line ``log()`` whenever routing re-targets the
         provider (``effective != requested``). Without this the silent

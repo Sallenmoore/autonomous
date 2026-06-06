@@ -5,19 +5,23 @@ recent first.
 
 ## Unreleased
 
-### Embedding `[HPC-UNREACHABLE]` log throttle + 500 retry coverage (#39)
+### Embedding `[HPC-UNREACHABLE]` log throttle + 5xx retry coverage (#39)
 
 **What changed.**
 
-- `openai_compat._TRANSPORT_FAILURE_CODES` was previously `{401, 502,
-  503, 504}` — HTTP 500 was missing, so 500 responses bypassed the
-  `retry()` wrapper entirely (`retry` catches
-  `HPCUnreachableError`; 500 raised `requests.HTTPError`). The check
-  is now a function `_is_transport_failure(status)` covering 401 plus
-  the full 5xx range (500, 501, ..., 599, including partner-CDN codes
-  521-529). Bounded retry (default 3 attempts, 10s backoff,
-  env-tunable via `HPC_RETRY_ATTEMPTS` / `HPC_RETRY_BACKOFF`) now
-  engages on 500.
+- `openai_compat._TRANSPORT_FAILURE_CODES` was previously the fixed
+  set `{401, 502, 503, 504}` — every other 5xx code (500, 501, 505,
+  and the partner-CDN range 521-529) bypassed the `retry()` wrapper
+  entirely because `retry` catches `HPCUnreachableError` and those
+  statuses raised `requests.HTTPError` from `raise_for_status`
+  instead. The check is now a function `_is_transport_failure(status)`
+  covering 401 plus the full 5xx range (500-599 via a single
+  `status >= 500` branch, so the partner-CDN 5xx tier is included by
+  construction rather than by enumeration). Bounded retry (default
+  3 attempts, 10s backoff, env-tunable via `HPC_RETRY_ATTEMPTS` /
+  `HPC_RETRY_BACKOFF`) now engages on the entire 5xx family — the
+  headline observed-in-prod case was 500 (issue #39's reported flood),
+  but the same fix closes 501/505/521-529.
 - New helper `db_sync._emit_hpc_unreachable(signature, message)`
   replaces direct `print()` calls in `_get_vector_local` /
   `_get_vector_openai`. Default behavior is unchanged — the message

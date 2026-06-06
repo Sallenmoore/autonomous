@@ -755,13 +755,29 @@ class TestAuthenticateMissingEmail:
     """GitHub users with private email + no ``user:email`` scope arrive
     with ``email=None``. Pre-#40 ``user_info['email'].strip()`` would
     raise AttributeError; #40's ``.get(...)`` + truthy-guard keeps the
-    flow alive."""
+    flow alive.
 
-    def test_missing_email_does_not_crash(self):
-        """The (provider, sub) path runs even when email is absent."""
-        new_user = None  # confirms a new user is created
+    The "alive" contract is split: existing-user paths (pair-match,
+    legacy-record-lookup) tolerate missing email; new-user creation
+    refuses missing email with a clear ValueError because
+    ``AutoUser.email = StringAttr(required=True)`` would otherwise
+    surface a generic MongoEngine ValidationError deep in save().
+    The /review-pr pass caught that the original new-user-no-email path
+    would have crashed in production with an unattributable error; the
+    explicit raise makes the OAuth-provider-scope misconfiguration
+    diagnostic at the call site."""
+
+    def test_missing_email_pair_match_succeeds(self):
+        """Existing user matched by (provider, sub) — email absent in
+        user_info is fine because the stored email isn't touched."""
+        existing = _UserStub()
+        existing.email = "private-stored@example.com"
+        existing.oauth_provider = "github"
+        existing.oauth_sub = "GH999"
 
         def _returns(kw):
+            if kw == {"oauth_provider": "github", "oauth_sub": "GH999"}:
+                return existing
             return None
 
         stub = _fresh_stub(_returns)
@@ -771,14 +787,58 @@ class TestAuthenticateMissingEmail:
                 "oauth_provider": "github",
                 "oauth_sub": "GH999",
                 "name": "Alice",
-                # no email key at all
+                # no email key at all — pair match means we don't need it
             },
         )
-        assert user.oauth_provider == "github"
-        assert user.oauth_sub == "GH999"
-        # email stays None on the new user — we did NOT pass email,
-        # construction used cls(name=name, email=email=None).
-        assert user.email is None
+        assert user is existing
+        assert user.email == "private-stored@example.com"  # not touched
+
+    def test_missing_email_new_user_raises_value_error(self):
+        """No pair-match, no email → no way to create a user (schema
+        constraint StringAttr(required=True) on AutoUser.email). Raise
+        a clear, attributable ValueError at the OAuth boundary instead
+        of letting MongoEngine surface ValidationError deep in save()
+        — operators need to see the provider/scope problem, not a
+        generic schema error.
+
+        This test was tightened post-/review-pr: the original assertion
+        expected user creation to succeed (passed only because the
+        _UserStub.save() is a no-op masking the real schema constraint)."""
+        def _returns(kw):
+            return None  # no pair match, no email match → would create
+
+        stub = _fresh_stub(_returns)
+        with pytest.raises(ValueError, match="no email available"):
+            _authenticate(
+                stub,
+                {
+                    "oauth_provider": "github",
+                    "oauth_sub": "GH999",
+                    "name": "Alice",
+                    # no email
+                },
+            )
+
+    def test_missing_email_value_error_mentions_provider_and_sub(self):
+        """The diagnostic must surface the (provider, sub) pair so
+        operators can attribute the failure to the specific identity
+        without grepping logs for surrounding context."""
+        def _returns(kw):
+            return None
+
+        stub = _fresh_stub(_returns)
+        with pytest.raises(ValueError) as excinfo:
+            _authenticate(
+                stub,
+                {
+                    "oauth_provider": "github",
+                    "oauth_sub": "GH999",
+                    "name": "Alice",
+                },
+            )
+        msg = str(excinfo.value)
+        assert "github" in msg
+        assert "GH999" in msg
 
     def test_none_email_does_not_overwrite_stored(self):
         """If a user has a stored email and a subsequent login arrives
@@ -810,27 +870,30 @@ class TestAuthenticateMissingEmail:
 
     def test_empty_email_does_not_crash_strip(self):
         """An empty-string email arriving from a provider must not crash
-        the .strip() call; the truthy guard catches that case."""
+        the .strip() call; the truthy guard catches that case. With no
+        pair-match either, the new-user path then raises ValueError —
+        same diagnostic as the missing-email case (empty and absent
+        collapse to the same lookup-falsy and creation-impossible
+        state)."""
         def _returns(kw):
             return None
 
         stub = _fresh_stub(_returns)
-        user = _authenticate(
-            stub,
-            {
-                "oauth_provider": "github",
-                "oauth_sub": "GH999",
-                "email": "",
-                "name": "Alice",
-            },
-        )
-        # Construction goes through; email becomes None per the
-        # `if raw_email else None` ternary on raw_email="".
-        assert user.email is None
+        with pytest.raises(ValueError, match="no email available"):
+            _authenticate(
+                stub,
+                {
+                    "oauth_provider": "github",
+                    "oauth_sub": "GH999",
+                    "email": "",
+                    "name": "Alice",
+                },
+            )
 
     def test_missing_name_does_not_crash(self):
         """Pre-#40 ``user_info['name'].strip()`` would KeyError without
-        a name. Now ``.get('name') or ''`` keeps the flow alive."""
+        a name. Now ``.get('name') or ''`` keeps the flow alive — at
+        least when an email is present so the new-user path can run."""
         def _returns(kw):
             return None
 
@@ -840,7 +903,7 @@ class TestAuthenticateMissingEmail:
             {
                 "oauth_provider": "github",
                 "oauth_sub": "GH999",
-                "email": "a@b.c",
+                "email": "a@b.c",  # present so new-user creation can run
                 # no name
             },
         )

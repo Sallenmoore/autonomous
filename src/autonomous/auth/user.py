@@ -70,10 +70,19 @@ class AutoUser(AutoModel):
         Existing call sites that pass plain ``{"name", "email"}``
         user_info dicts (tests, consumers not yet migrated) keep working
         — the (provider, sub) branch is skipped when those keys are
-        absent. ``email`` is also optional now (GitHub users with private
-        email + no ``user:email`` scope get ``email=None`` from the
-        provider); callers that supply it get email-fallback lookup,
-        those that don't only get the (provider, sub) path.
+        absent. ``email`` is optional for the LOOKUP side (the
+        (provider, sub) path skips email entirely; an absent email also
+        won't overwrite a record matched by the pair) but NEW-USER
+        creation still requires a non-empty email because
+        :attr:`AutoUser.email` is ``required=True`` at the schema layer.
+        Callers integrating with providers that omit email under the
+        configured scope (GitHub with no ``user:email`` scope, etc.)
+        must either (a) configure the provider to request email scope,
+        or (b) override :meth:`authenticate` on a subclass to provide a
+        fallback identity. Calling this method with ``email=None`` for
+        a not-yet-registered user raises ``ValueError`` at the OAuth
+        boundary rather than letting MongoEngine surface a generic
+        ValidationError deep in the save path — diagnostic-attributable.
         """
         raw_email = user_info.get("email")
         email = raw_email.strip() if raw_email else None
@@ -96,6 +105,21 @@ class AutoUser(AutoModel):
             user = cls.find(email=email)
         log(email, user)
         if not user:
+            if not email:
+                # New-user creation needs a non-empty email — the
+                # schema (StringAttr(required=True) on AutoUser.email)
+                # blocks save() otherwise, and a ValidationError surfacing
+                # from deep in MongoEngine is hard to attribute. Raise
+                # at the OAuth boundary so the operator can see the
+                # provider/scope misconfiguration directly.
+                raise ValueError(
+                    f"Cannot create new user for OAuth "
+                    f"(provider={oauth_provider!r}, sub={oauth_sub_str!r}): "
+                    "no email available. The provider's userinfo did "
+                    "not include an email claim — likely the OAuth "
+                    "client needs additional scope (e.g. 'user:email' "
+                    "for GitHub) or a subclass override of authenticate."
+                )
             log(f"Creating new user for {email}")
             user = cls(name=name, email=email)
         # Backfill OIDC identity:
