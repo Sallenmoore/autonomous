@@ -6,6 +6,19 @@ from autonomous.auth import AutoAuth
 
 
 class GoogleAuth(AutoAuth):
+    provider_name = "google"
+
+    def _extract_sub(self, raw_userinfo):
+        """Google's stable subject identifier.
+
+        OIDC's ``sub`` claim is the spec answer, but ``req_uri`` here
+        points at ``oauth2/v2/userinfo`` which returns the same value
+        under ``id``. Prefer ``sub`` so a future swap to the OIDC
+        userinfo endpoint or a discovery-driven config doesn't silently
+        change the (provider, sub) identity for existing users.
+        """
+        return raw_userinfo.get("sub") or raw_userinfo.get("id")
+
     def __init__(self, state=None):
         self.req_uri = (
             "https://www.googleapis.com/oauth2/v2/userinfo?fields=id,email,name,picture"
