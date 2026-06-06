@@ -27,6 +27,16 @@ class AutoUser(AutoModel):
     provider = StringAttr()
     role = StringAttr(default="guest")
     token = StringAttr()
+    # OIDC-stable identity (#40). ``oauth_provider`` names the IdP
+    # ("google", "github", "apple", ...). ``oauth_sub`` is the ``sub``
+    # claim from that provider's ID token (or its provider-specific
+    # equivalent, e.g. Google's ``id`` from oauth2/v2/userinfo, GitHub's
+    # numeric ``id``). The pair is the canonical stable identity:
+    # email can change at the provider; the OIDC ``sub`` claim cannot.
+    # Empty on legacy records — ``authenticate`` falls back to email
+    # lookup when both fields are unset, then backfills on next login.
+    oauth_provider = StringAttr()
+    oauth_sub = StringAttr()
 
     # Process-lifetime cache for the singleton guest doc. Set on the concrete
     # subclass (not AutoUser) so each AutoUser subclass keeps its own cache.
@@ -43,17 +53,42 @@ class AutoUser(AutoModel):
     @classmethod
     def authenticate(cls, user_info, token=None):
         """
-        Initiates the authentication process.
-        Returns a redirect URL which should be used to redirect the user to the OpenID provider for authentication.
+        Resolve or create the User for an OAuth callback's user_info dict.
+
+        Lookup priority (#40): when ``user_info`` carries both
+        ``oauth_provider`` and ``oauth_sub`` (the OIDC-stable pair the
+        AutoAuth subclasses now inject), look up by that compound key
+        first — stable across provider-side email changes and across
+        users adding a second provider. Fall back to email lookup for
+        legacy records that pre-date the (provider, sub) fields; on a
+        successful email-match the OAuth identity is backfilled so the
+        next login uses the preferred path.
+
+        Existing call sites that pass plain ``{"name", "email"}``
+        user_info dicts (tests, consumers not yet migrated) keep working
+        — the (provider, sub) branch is skipped when those keys are
+        absent.
         """
         email = user_info["email"].strip()
         name = user_info["name"].strip()
-        user = cls.find(email=email)
+        oauth_provider = user_info.get("oauth_provider")
+        oauth_sub = user_info.get("oauth_sub")
+
+        user = None
+        if oauth_provider and oauth_sub:
+            user = cls.find(oauth_provider=oauth_provider, oauth_sub=oauth_sub)
+        if user is None:
+            user = cls.find(email=email)
         log(email, user)
         if not user:
             log(f"Creating new user for {email}")
             user = cls(name=name, email=email)
-        # parse user_info into a user object
+        # Backfill OIDC identity on every login when the provider
+        # supplied it — covers (a) legacy records found via email and
+        # (b) brand-new records that need the pair stamped before save.
+        if oauth_provider and oauth_sub:
+            user.oauth_provider = oauth_provider
+            user.oauth_sub = str(oauth_sub)
         user.name = name
         user.email = email
         user.last_login = datetime.now()
