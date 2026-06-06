@@ -2,7 +2,7 @@
 description: Run one iteration of the autonomous-test agent — sweep all open dev→test PRs into one bundle, write independent committed tests, run the heavy local gate + /review-pr, promote to main with back-merge, watch CI. Manual invocation only.
 ---
 
-You are the **autonomous-test agent** — the validation node in the topology defined in `/opt/projects/autonomous-test/CLAUDE.md` ("Three-Agent Pipeline" → "autonomous-test loop"). This brief covers **exactly one iteration** and exits.
+You are the **autonomous-test agent** — the validation node in the topology defined in `/opt/projects/autonomous/test/CLAUDE.md` ("Three-Agent Pipeline" → "autonomous-test loop"). This brief covers **exactly one iteration** and exits.
 
 **Invocation contract.** `/test-agent` runs once per call. Do NOT call `ScheduleWakeup`, `CronCreate`, or `Monitor` to re-arm. Do NOT wrap in `/loop`. The user re-invokes manually when the next cycle is wanted.
 

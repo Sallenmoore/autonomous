@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Coordination with the storyteller agent
 
-StoryTeller has its own dev / test agent pair operating on `/opt/projects/storyteller-dev/` and `/opt/projects/storyteller-test/` (moved from `/opt/data/` alongside this tree on 2026-05-25 — autonomous is a project, not a homelab service). Those agents do not edit this tree. The relationship is producer (this tree) ↔ consumer (storyteller's trees), mediated by:
+StoryTeller has its own dev / test agent pair operating on `/opt/projects/storyteller/dev/` and `/opt/projects/storyteller/test/` (moved from `/opt/data/` alongside this tree on 2026-05-25 — autonomous is a project, not a homelab service). Those agents do not edit this tree. The relationship is producer (this tree) ↔ consumer (storyteller's trees), mediated by:
 - **GitHub issues** at `https://github.com/Sallenmoore/autonomous/issues` for change requests (storyteller → autonomous).
 - **PyPI releases** for change deliveries (autonomous → storyteller).
 - The `requirements.txt` pin in each storyteller tree (`autonomous-app>=X.Y.Z`) is the version contract.
@@ -113,9 +113,9 @@ The autonomous library runs as a closed-loop pipeline with three agents — pair
 
 | Agent | Branch | Tree | Triggered by | Writes | Review skill |
 |---|---|---|---|---|---|
-| **autonomous-prod** | `main` | `/opt/projects/autonomous/` | manual `/prod-agent` from user (no polling) | merges any open `test → main` PR; `./scripts/release.sh` (version bump + PyPI upload + push) when PR has `auto-release`; `[smoke-fail] <v>: <signature>` issues against `Sallenmoore/autonomous` on GitHub when smoke fails | n/a |
-| **autonomous-dev** | `dev` | `/opt/projects/autonomous-dev/` | open `Sallenmoore/autonomous` issues on GitHub | library code + ephemeral tests in `tests/_dev_local/` (gitignored) | `/review` before opening `dev → test` |
-| **autonomous-test** | `test` | `/opt/projects/autonomous-test/` | open `dev → test` PRs | committed tests + bug-fix commits | `/review-pr` (multi-agent) before opening `test → main` |
+| **autonomous-prod** | `main` | `/opt/projects/autonomous/prod/` | manual `/prod-agent` from user (no polling) | merges any open `test → main` PR; `./scripts/release.sh` (version bump + PyPI upload + push) when PR has `auto-release`; `[smoke-fail] <v>: <signature>` issues against `Sallenmoore/autonomous` on GitHub when smoke fails | n/a |
+| **autonomous-dev** | `dev` | `/opt/projects/autonomous/dev/` | open `Sallenmoore/autonomous` issues on GitHub | library code + ephemeral tests in `tests/_dev_local/` (gitignored) | `/review` before opening `dev → test` |
+| **autonomous-test** | `test` | `/opt/projects/autonomous/test/` | open `dev → test` PRs | committed tests + bug-fix commits | `/review-pr` (multi-agent) before opening `test → main` |
 
 dev and test run as `/loop` in dynamic / self-paced mode. **prod does NOT loop** — it runs one iteration per `/prod-agent` user command and then stops. The dev agent does not push to `test`. The test agent does not edit the dev tree. Coordination is through PRs, issues, and labels (`smoke-fail`, `auto-filed`, `auto-release`, `awaiting-upstream`, `human-only`, `feature-request`). `auto-release` is set by the test agent and read by the prod agent as the ship-or-skip gate.
 
@@ -133,7 +133,7 @@ The procedures below describe how the contract is satisfied today. The contract 
 
 ### Interactive mode
 
-When a human invokes Claude Code interactively in any of the three trees (most often `/opt/projects/autonomous/` since that's the canonical clone), the loop discipline above is suspended in favor of explicit human direction. The agent may edit files, push branches, and open PRs from the prod tree under direct human prompts without violating the read-only constraint — that constraint applies to *autonomous* (loop-driven) operation, not human-prompted work. Project conventions (PRs target `main`, run `/review` before opening, ultrareview before merging, etc.) still apply.
+When a human invokes Claude Code interactively in any of the three trees (most often `/opt/projects/autonomous/prod/` since that's the canonical clone), the loop discipline above is suspended in favor of explicit human direction. The agent may edit files, push branches, and open PRs from the prod tree under direct human prompts without violating the read-only constraint — that constraint applies to *autonomous* (loop-driven) operation, not human-prompted work. Project conventions (PRs target `main`, run `/review` before opening, ultrareview before merging, etc.) still apply.
 
 In short: tree assignment dictates default loop behavior, not absolute capability. Outside an interactive session, the agent in each tree obeys its role; inside one, it follows the human.
 
@@ -166,7 +166,7 @@ Standing exclusions still apply: dev does not push to `test`, does not edit `tes
 
 ### autonomous-test loop
 
-The operating spec is the **project-local slash command** at `/opt/projects/autonomous-test/.claude/commands/test-agent.md` — invoked as `/test-agent` from the test tree. The slash command is the source of truth for the procedure; this section describes the **contract** (what the iteration does, what's in scope, what halts), not the step-by-step.
+The operating spec is the **project-local slash command** at `/opt/projects/autonomous/test/.claude/commands/test-agent.md` — invoked as `/test-agent` from the test tree. The slash command is the source of truth for the procedure; this section describes the **contract** (what the iteration does, what's in scope, what halts), not the step-by-step.
 
 **Mode: sweep-all.** One `/test-agent` invocation bundles **every** open `dev → test` PR into a single cycle (oldest-first by `createdAt`), produces one `test → main` PR for the whole bundle, and opens a `test → dev` back-merge PR in parallel. This supersedes the older pick-one-PR-per-iteration form (revised 2026-05-15 user direction). Each subsequent PR in the sort was built on a baseline contained in the previous merge, so sequential layering is safe absent diff overlap.
 

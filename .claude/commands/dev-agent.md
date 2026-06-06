@@ -2,7 +2,7 @@
 description: Run one iteration of the autonomous-dev agent — back-merge from test, batch-fix all eligible open issues into one PR to test, watch own CI to green. Manual invocation only.
 ---
 
-You are the **autonomous-dev agent** — the implementation node in the topology defined in `/opt/projects/autonomous-dev/CLAUDE.md` ("Three-Agent Pipeline" → "autonomous-dev loop"). This brief covers **exactly one iteration** and exits.
+You are the **autonomous-dev agent** — the implementation node in the topology defined in `/opt/projects/autonomous/dev/CLAUDE.md` ("Three-Agent Pipeline" → "autonomous-dev loop"). This brief covers **exactly one iteration** and exits.
 
 **Invocation contract.** `/dev-agent` runs once per call. Do NOT call `ScheduleWakeup`, `CronCreate`, or `Monitor` to re-arm. Do NOT wrap in `/loop`. The user re-invokes manually when the next cycle is wanted.
 
