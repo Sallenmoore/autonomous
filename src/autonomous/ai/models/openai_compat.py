@@ -47,7 +47,23 @@ class HPCUnreachableError(RuntimeError):
 # Status codes that indicate transport/availability problems, not bad input.
 # 401 is included because in this deployment a 401 means "token expired or
 # revoked" — the user has to re-auth, same recovery path as a VPN drop.
-_TRANSPORT_FAILURE_CODES = frozenset({401, 502, 503, 504})
+# 5xx codes are checked via the range branch in ``_is_transport_failure``
+# so the whole server-error family (including 500 — previously missing and
+# the cause of issue #39's log flood — plus partner-CDN codes 521-529)
+# routes through retry instead of escaping as raw ``requests.HTTPError``.
+_TRANSPORT_FAILURE_CODES = frozenset({401})
+
+
+def _is_transport_failure(status: int) -> bool:
+    """True iff ``status`` is a transport-class failure eligible for retry.
+
+    Used to translate HTTP responses into ``HPCUnreachableError`` so the
+    ``retry()`` wrapper in ``_post`` (which catches that exception type)
+    engages. Issue #39: the previous fixed-set check missed 500, so HPC
+    500 responses bypassed retry entirely — every chunk in a degraded
+    sync printed its own ``[HPC-UNREACHABLE]`` line.
+    """
+    return status in _TRANSPORT_FAILURE_CODES or status >= 500
 
 # Module-level negative cache: (model, base_url) tuples known to NOT
 # support strict-mode response_format. Populated on first conservative
@@ -222,7 +238,7 @@ class OpenAIClient(AutoModel):
                     f"HPC unreachable ({type(exc).__name__}): {exc}"
                 ) from exc
 
-            if response.status_code in _TRANSPORT_FAILURE_CODES:
+            if _is_transport_failure(response.status_code):
                 raise HPCUnreachableError(
                     f"HPC returned {response.status_code} for {path}: "
                     f"{response.text[:200]}"
