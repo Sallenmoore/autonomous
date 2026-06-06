@@ -62,35 +62,58 @@ class AutoUser(AutoModel):
         users adding a second provider. Fall back to email lookup for
         legacy records that pre-date the (provider, sub) fields; on a
         successful email-match the OAuth identity is backfilled so the
-        next login uses the preferred path.
+        next login uses the preferred path — but ONLY when the matched
+        record has no existing (provider, sub) bound to a different
+        provider, so a user who signs in via Google then via GitHub
+        (same email) doesn't have their stored Google pair overwritten.
 
         Existing call sites that pass plain ``{"name", "email"}``
         user_info dicts (tests, consumers not yet migrated) keep working
         — the (provider, sub) branch is skipped when those keys are
-        absent.
+        absent. ``email`` is also optional now (GitHub users with private
+        email + no ``user:email`` scope get ``email=None`` from the
+        provider); callers that supply it get email-fallback lookup,
+        those that don't only get the (provider, sub) path.
         """
-        email = user_info["email"].strip()
-        name = user_info["name"].strip()
+        raw_email = user_info.get("email")
+        email = raw_email.strip() if raw_email else None
+        raw_name = user_info.get("name") or ""
+        name = raw_name.strip()
         oauth_provider = user_info.get("oauth_provider")
         oauth_sub = user_info.get("oauth_sub")
+        # Coerce to str so callers passing a raw int sub (GitHub /user
+        # returns numeric ``id``; tests sometimes mirror that) match
+        # the StringAttr-stored value persisted by previous logins.
+        oauth_sub_str = str(oauth_sub) if oauth_sub is not None else None
 
         user = None
-        if oauth_provider and oauth_sub:
-            user = cls.find(oauth_provider=oauth_provider, oauth_sub=oauth_sub)
-        if user is None:
+        matched_by_oauth = False
+        if oauth_provider and oauth_sub_str:
+            user = cls.find(oauth_provider=oauth_provider, oauth_sub=oauth_sub_str)
+            if user is not None:
+                matched_by_oauth = True
+        if user is None and email:
             user = cls.find(email=email)
         log(email, user)
         if not user:
             log(f"Creating new user for {email}")
             user = cls(name=name, email=email)
-        # Backfill OIDC identity on every login when the provider
-        # supplied it — covers (a) legacy records found via email and
-        # (b) brand-new records that need the pair stamped before save.
-        if oauth_provider and oauth_sub:
-            user.oauth_provider = oauth_provider
-            user.oauth_sub = str(oauth_sub)
+        # Backfill OIDC identity:
+        # - matched_by_oauth: just stamp (same pair, idempotent).
+        # - record found via email AND no existing oauth_provider:
+        #   safe to claim — this is a legacy upgrade.
+        # - record found via email WITH a different existing
+        #   oauth_provider: do NOT overwrite. A user has two records'
+        #   worth of identity on one email; preserving the original
+        #   pair stops the second provider's login from churning it.
+        if oauth_provider and oauth_sub_str:
+            existing_provider = getattr(user, "oauth_provider", None)
+            if matched_by_oauth or not existing_provider:
+                user.oauth_provider = oauth_provider
+                user.oauth_sub = oauth_sub_str
         user.name = name
-        user.email = email
+        if email:
+            user.email = email
         user.last_login = datetime.now()
         user.state = "authenticated"
         user.role = "user"

@@ -134,28 +134,35 @@ class AutoAuth:
                 pass
 
         userinfo = requests.get(self.req_uri, auth=OAuth2Auth(token))
-        data = userinfo.json()
-        # Inject the OIDC-stable identity pair (#40) so
-        # :meth:`AutoUser.authenticate` can prefer it over email-based
-        # lookup. Both-or-neither: a provider name without a sub can't
-        # be used for lookup (the pair IS the key), so inject the
-        # provider name only when ``_extract_sub`` actually surfaces a
-        # subject identifier. Userinfo responses without ``id`` / ``sub``
-        # therefore round-trip unchanged — preserves test contracts that
-        # pin the raw provider response shape.
-        # Non-overriding: a caller that has already shaped the dict
-        # (tests, custom flows) keeps its own ``oauth_provider`` /
-        # ``oauth_sub`` values.
-        if "oauth_sub" not in data:
+        raw = userinfo.json()
+        # Inject the OIDC-stable identity pair (#40) only when we can
+        # produce BOTH halves. The pair has no lookup value alone, so
+        # both-or-neither is the contract: provider_name must be set
+        # AND ``_extract_sub`` must surface a subject identifier. Base
+        # ``AutoAuth`` (provider_name="") + a userinfo response with
+        # ``sub`` no longer injects an orphan ``oauth_sub`` — round-
+        # trips the response unchanged so callers depending on the
+        # exact dict shape aren't surprised.
+        #
+        # Copy the dict before mutating so test fixtures that share the
+        # underlying object across calls (a common ``MagicMock(json=
+        # MagicMock(return_value=fake))`` pattern) don't see their
+        # fixture grow oauth_provider/oauth_sub keys silently.
+        if not isinstance(raw, dict):
+            # Pre-#40 behavior returned whatever .json() produced. A
+            # malformed (list/scalar) response can't carry the pair —
+            # round-trip unchanged so error paths surface naturally.
+            return raw, token
+        data = dict(raw)
+        if self.provider_name and "oauth_sub" not in data:
             sub = self._extract_sub(data)
             if sub is not None:
                 data["oauth_sub"] = str(sub)
-                if self.provider_name and "oauth_provider" not in data:
+                if "oauth_provider" not in data:
                     data["oauth_provider"] = self.provider_name
         elif self.provider_name and "oauth_provider" not in data:
-            # ``oauth_sub`` was already in the dict (caller-supplied or
-            # native to the provider's response). Stamp the provider
-            # name to complete the pair.
+            # Caller pre-shaped the dict with oauth_sub. Stamp the
+            # provider name to complete the pair.
             data["oauth_provider"] = self.provider_name
         return data, token
 

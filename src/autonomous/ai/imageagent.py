@@ -109,16 +109,19 @@ class ImageAgent(BaseAgent):
     def _route_provider(self, aspect_ratio: str, requested: str | None = None) -> str:
         """Resolve which provider actually receives the call.
 
-        When IMAGE_PROVIDER_ROUTING is off (default), returns the
-        requested provider unchanged. When on, dispatches by
-        aspect_ratio tier — high-resolution / map calls stay on Gemini,
-        everything else routes to FLUX.
+        When IMAGE_PROVIDER_ROUTING is off (default), returns
+        ``self.provider`` — preserves the prior routing-off contract
+        where the env-var override (``IMAGE_AI_AGENT``) only matters
+        outside the ``route=True`` branch. When on, dispatches by
+        aspect_ratio tier (high-resolution / map → Gemini, else FLUX)
+        and uses ``requested`` for the log line so the operator-facing
+        breadcrumb names the env-var-overridden provider where one
+        exists.
 
         ``requested`` is the provider the caller asked for. In
         ``generate`` that's ``self.provider``; in ``upscale`` it's the
         env-var-overridden ``IMAGE_AI_AGENT`` (falling back to
-        ``self.provider``). When omitted, defaults to ``self.provider``
-        — preserves the prior single-arg call shape.
+        ``self.provider``). When omitted, defaults to ``self.provider``.
 
         Emits a one-line ``log()`` whenever routing re-targets the
         provider (``effective != requested``). Without this the silent
@@ -126,10 +129,10 @@ class ImageAgent(BaseAgent):
         FLUX call degraded to Gemini for an unknown duration) would
         remain invisible to operators reading prod logs.
         """
+        if not _routing_enabled():
+            return self.provider
         if requested is None:
             requested = self.provider
-        if not _routing_enabled():
-            return requested
         if aspect_ratio in {"4K", "4KPortrait", "Map"}:
             effective = "gemini"
         else:
@@ -138,7 +141,7 @@ class ImageAgent(BaseAgent):
             log(
                 f"Image route: requested={requested} effective={effective} "
                 f"ratio={aspect_ratio}",
-                _print=False,
+                _print=True,
             )
         return effective
 
