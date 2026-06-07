@@ -105,6 +105,12 @@ def _schema_validate(payload, schema, raw=""):
     raises ``GenerateJSONParseError`` with ``raw`` populated for caller
     diagnostics.
 
+    On a validation miss the full parsed ``payload`` is forwarded
+    un-truncated on the exception's ``.payload`` so consumers can run
+    tolerant recovery (key normalization, default-fill, re-validate) on
+    the object already in hand instead of burning a second generation
+    round-trip. ``.raw`` stays the bounded diagnostic string.
+
     Called centrally from ``JSONAgent.generate`` after every provider
     returns, including gemini's strict function-calling response —
     defense in depth against provider bugs.
@@ -117,6 +123,7 @@ def _schema_validate(payload, schema, raw=""):
         raise GenerateJSONParseError(
             f"Response failed schema validation: {exc.message}",
             raw=raw or "",
+            payload=payload,
         ) from exc
     except jsonschema.SchemaError as exc:
         raise GenerateJSONParseError(

@@ -99,7 +99,9 @@ class JSONAgent(BaseAgent):
         # provider bugs even when the provider claims schema compliance
         # (gemini function-calling, OpenAI strict mode). No-op when
         # json_schema is None.
-        _schema_validate(result, json_schema, raw=json.dumps(result)[:500])
+        # Pass the full dump as `raw`; the GenerateJSONParseError constructor
+        # owns the _RAW_MAX bound (see its docstring), so don't re-truncate here.
+        _schema_validate(result, json_schema, raw=json.dumps(result))
 
         self.add_to_job_meta("Last JSON", result)
         return result

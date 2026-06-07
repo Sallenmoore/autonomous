@@ -5,6 +5,47 @@ recent first.
 
 ## Unreleased
 
+### `GenerateJSONParseError.payload` exposes the parsed object on schema-validation failure (#54)
+
+**What changed.**
+
+- `GenerateJSONParseError` gained an optional, **un-truncated**
+  `.payload` attribute carrying the fully-parsed object (dict/list)
+  that failed `json_schema` validation. Previously the only artifact
+  of a schema miss was `.raw`, a *500-char truncated re-dump* — so any
+  payload larger than ~500 chars was unrecoverable: `json.loads(e.raw)`
+  on the fragment raised, and consumers had no way to run tolerant
+  recovery (synonym/key normalization, default-fill, re-validate) short
+  of re-calling the model without a schema.
+- `.payload` is populated only on the schema-*validation*-miss path
+  (`JSONAgent.generate(..., json_schema=...)` where the body parsed but
+  didn't match the shape). It is `None` for every other failure mode —
+  unparseable text, empty body, non-dict result, or a structurally
+  invalid caller-supplied schema (where the model output isn't at
+  fault).
+- `.raw` semantics are **unchanged**: still the bounded
+  (`_RAW_MAX = 500`) human-diagnostic string. The constructor signature
+  gained a keyword-only `payload=None`; all existing positional/keyword
+  call sites are unaffected.
+
+**Migration.**
+
+No source change required — purely additive. Consumers driving
+key-drifting models (gemma/llama over Ollama, which don't enforce
+`required` in their structured-output grammar) can now recover in-hand:
+
+```python
+from autonomous.ai.exceptions import GenerateJSONParseError
+
+try:
+    data = JSONAgent().generate(prompt, json_schema=schema, schema_name="lore")
+except GenerateJSONParseError as e:
+    if e.payload is not None:
+        data = my_tolerant_normalizer(e.payload)  # no second round-trip
+    else:
+        raise
+```
+
 ### Additional OAuth providers: Facebook, Discord, Microsoft (#44)
 
 **What changed.**
