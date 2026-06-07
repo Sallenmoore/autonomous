@@ -99,7 +99,17 @@ class JSONAgent(BaseAgent):
         # provider bugs even when the provider claims schema compliance
         # (gemini function-calling, OpenAI strict mode). No-op when
         # json_schema is None.
-        _schema_validate(result, json_schema, raw=json.dumps(result)[:500])
+        # Pass the full dump as `raw`; the GenerateJSONParseError constructor
+        # owns the _RAW_MAX bound (see its docstring), so don't re-truncate here.
+        # ``default=str`` guards the diagnostic surface against non-JSON-native
+        # values (datetime, bytes, Decimal) that a provider might surface inside
+        # an otherwise-parseable response — without it, json.dumps raises
+        # TypeError BEFORE _schema_validate even runs and the consumer sees a
+        # bare TypeError instead of the typed GenerateJSONParseError that
+        # carries `.raw` + `.payload`. The str-fallback is diagnostic-only;
+        # validation still operates on the original `result`, so any schema
+        # `type` constraint sees the real shape.
+        _schema_validate(result, json_schema, raw=json.dumps(result, default=str))
 
         self.add_to_job_meta("Last JSON", result)
         return result

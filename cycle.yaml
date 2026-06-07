@@ -1,0 +1,32 @@
+project: autonomous
+repo: Sallenmoore/autonomous
+
+trees:
+  dev: /opt/projects/autonomous/dev
+  test: /opt/projects/autonomous/test
+  prod: /opt/projects/autonomous/prod
+
+branches:
+  dev: dev
+  test: test
+  main: main
+
+deploy:
+  type: pypi
+  cmd: "scripts/release.sh"
+  verify:
+    type: pypi_probe
+    pypi_package: "autonomous-app"
+    smoke_cmd: "scripts/smoke_test.sh"
+
+test_runner:
+  cmd: "python -m pytest"
+
+# No `containers:` block — autonomous is a library, no running services.
+
+labels:
+  enhancement: feature-request
+  human_only: human-only
+  awaiting_upstream: awaiting-upstream
+
+# No `upstream:` block — autonomous IS the upstream for storyteller.
