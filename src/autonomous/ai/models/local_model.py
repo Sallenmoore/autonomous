@@ -1,6 +1,5 @@
 import io
 import json
-import os
 import random
 import time
 
@@ -14,6 +13,7 @@ from autonomous.ai.exceptions import (
     GenerateJSONParseError,
 )
 from autonomous.ai.retry import retry
+from autonomous.config import env_str, settings
 from autonomous.model.autoattr import ListAttr, StringAttr
 from autonomous.model.automodel import AutoModel
 from autonomous.taskrunner.autotasks import AutoTasks
@@ -47,20 +47,23 @@ class LocalAIModel(AutoModel):
     instructions = StringAttr(default="You are a helpful AI.")
     description = StringAttr(default="A Local AI Model using Ollama and Media AI.")
 
-    # Config — rstrip trailing '/' so path joins produce "<url>/<path>" not "<url>//<path>"
-    _ollama_url = os.environ.get("OLLAMA_API_BASE_URL", "").rstrip("/")
-    _media_url = os.environ.get("MEDIA_API_BASE_URL", "").rstrip("/")
-    _audio_url = os.environ.get("MEDIA_AUDIO_API_BASE_URL", "").rstrip("/")
-    _image_url = os.environ.get("MEDIA_IMAGE_API_BASE_URL", "").rstrip("/")
-    _text_model = os.environ.get("OLLAMA_MODEL", "gemma4:26b")
-    _context_limit = int(os.environ.get("OLLAMA_CONTEXT_LIMIT", 32768))
+    # Config — read from the central typed catalog (autonomous.config).
+    # URLs are rstrip'd so path joins produce "<url>/<path>" not "<url>//<path>";
+    # guarded int parsing means a malformed timeout falls back to the default
+    # instead of crashing import.
+    _ollama_url = settings.ollama_api_base_url.rstrip("/")
+    _media_url = settings.media_api_base_url.rstrip("/")
+    _audio_url = settings.media_audio_api_base_url.rstrip("/")
+    _image_url = settings.media_image_api_base_url.rstrip("/")
+    _text_model = settings.ollama_model
+    _context_limit = settings.ollama_context_limit
 
     # Timeouts (seconds) — CPU-only Ollama is slow; these prevent indefinite hangs
-    _retry_sleep = int(os.environ.get("OLLAMA_RETRY_SLEEP", 30))       # sleep between JSON retries
-    _json_timeout = int(os.environ.get("OLLAMA_JSON_TIMEOUT", 1200))   # 20 min
-    _text_timeout = int(os.environ.get("OLLAMA_TEXT_TIMEOUT", 900))    # 15 min
-    _summary_timeout = int(os.environ.get("OLLAMA_SUMMARY_TIMEOUT", 600))   # 10 min/chunk
-    _media_timeout = int(os.environ.get("MEDIA_REQUEST_TIMEOUT", 300))  # 5 min
+    _retry_sleep = settings.ollama_retry_sleep       # sleep between JSON retries
+    _json_timeout = settings.ollama_json_timeout     # 20 min
+    _text_timeout = settings.ollama_text_timeout     # 15 min
+    _summary_timeout = settings.ollama_summary_timeout   # 10 min/chunk
+    _media_timeout = settings.media_request_timeout  # 5 min
 
     def _convert_tools_to_json_schema(self, user_function):
         schema = {
@@ -75,7 +78,10 @@ class LocalAIModel(AutoModel):
 
     def _evaluate_response(self, instruction, content, goal):
         eval_prompt = {
-            "model": os.environ.get("OLLAMA_TEXT_MODEL", "gemma4:26b"),
+            # Read live (not via the settings snapshot) so an OLLAMA_TEXT_MODEL
+            # flip lands without a restart — mirrors the original os.environ.get
+            # at this call site. Do not switch to settings.ollama_text_model.
+            "model": env_str("OLLAMA_TEXT_MODEL", "gemma4:26b"),
             "messages": [
                 {
                     "role": "user",

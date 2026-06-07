@@ -10,6 +10,7 @@ import pymongo
 import requests
 
 from autonomous import log
+from autonomous.config import env_int
 
 # Module-level Session for the media_ai embeddings POST. Keeps the TCP
 # connection to the local media service warm across calls in the RQ
@@ -43,11 +44,14 @@ _HPC_UNREACHABLE_SUPPRESSED: dict[str, int] = {}
 def _throttle_window_seconds() -> int:
     """Read the throttle window from env each call so a config flip
     lands without restart. Returns 0 (disabled) when the var is unset
-    or malformed."""
-    try:
-        return int(os.environ.get("HPC_UNREACHABLE_THROTTLE_SECONDS", "0"))
-    except (TypeError, ValueError):
-        return 0
+    or malformed.
+
+    Uses the shared ``autonomous.config.env_int`` guard (issue #49) — the
+    bespoke try/except this replaced was the poster-child for the missing
+    central parser. ``env_int`` reads ``os.environ`` live on each call, so
+    the no-restart semantics are preserved.
+    """
+    return env_int("HPC_UNREACHABLE_THROTTLE_SECONDS", 0)
 
 
 def _emit_hpc_unreachable(signature: str, message: str) -> None:

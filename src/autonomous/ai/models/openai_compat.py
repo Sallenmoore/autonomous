@@ -14,7 +14,6 @@ the user instead of degrading silently.
 
 import io
 import json
-import os
 
 import requests
 
@@ -25,6 +24,7 @@ from autonomous.ai.exceptions import (
     GenerateJSONParseError,
 )
 from autonomous.ai.retry import retry
+from autonomous.config import settings
 from autonomous.model.autoattr import ListAttr, StringAttr
 from autonomous.model.automodel import AutoModel
 from autonomous.taskrunner.autotasks import AutoTasks
@@ -167,20 +167,19 @@ class OpenAIClient(AutoModel):
     description = StringAttr(default="OpenAI-compatible client (Open WebUI / HPC).")
 
     # Defaults reflect the chat.binghamton.edu Open WebUI inventory; override
-    # via env per-deployment. Any value here just keeps construction working
-    # if the env vars are unset (tests, packaging build).
-    _base_url = os.environ.get("HPC_API_BASE_URL", "").rstrip("/")
-    _api_key = os.environ.get("HPC_API_KEY", "")
-    _text_model = os.environ.get("HPC_TEXT_MODEL", "gpt-oss:20b")
-    _json_model = os.environ.get("HPC_JSON_MODEL", _text_model)
-    _summary_model = os.environ.get("HPC_SUMMARY_MODEL", "gemma4:26b")
-    _embedding_model = os.environ.get(
-        "HPC_EMBEDDING_MODEL", "dengcao/Qwen3-Embedding-8B:F16"
-    )
-    _stt_model = os.environ.get("HPC_STT_MODEL", "whisper-1")
-    _timeout = int(os.environ.get("HPC_REQUEST_TIMEOUT", 120))
-    _retry_attempts = int(os.environ.get("HPC_RETRY_ATTEMPTS", 3))
-    _retry_backoff = int(os.environ.get("HPC_RETRY_BACKOFF", 10))
+    # via env per-deployment. Read from the central typed catalog
+    # (autonomous.config) — guarded int parsing means a malformed
+    # HPC_REQUEST_TIMEOUT falls back to the default instead of crashing import.
+    _base_url = settings.hpc_api_base_url.rstrip("/")
+    _api_key = settings.hpc_api_key
+    _text_model = settings.hpc_text_model
+    _json_model = settings.hpc_json_model
+    _summary_model = settings.hpc_summary_model
+    _embedding_model = settings.hpc_embedding_model
+    _stt_model = settings.hpc_stt_model
+    _timeout = settings.hpc_request_timeout
+    _retry_attempts = settings.hpc_retry_attempts
+    _retry_backoff = settings.hpc_retry_backoff
 
     def _headers(self, content_type="application/json"):
         h = {"Authorization": f"Bearer {self._api_key}"}

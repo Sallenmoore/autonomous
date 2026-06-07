@@ -5,6 +5,49 @@ recent first.
 
 ## Unreleased
 
+### Centralized typed configuration — `autonomous.config` (#49, first slice)
+
+**What changed.**
+
+- New module `autonomous.config` provides a single typed catalog of every
+  environment variable the framework reads. Two layers:
+  - **Guarded parsers** — `env_str`, `env_int`, `env_float`, `env_bool`,
+    `env_list`. They read `os.environ` live on each call, coerce, and fall
+    back to the documented default (with a logged breadcrumb) instead of
+    raising. A malformed/empty numeric env value that previously raised
+    `ValueError` *at import time* (e.g. `int(os.environ.get("HPC_REQUEST_TIMEOUT", 120))`)
+    now falls back to the default.
+  - **`Settings`** — a typed snapshot of the catalog, plus the module
+    singleton `settings` (built once at import). `settings.reload()`
+    re-reads the environment; `settings.as_dict()` / `validate()` /
+    `Settings.describe()` support introspection and doc generation.
+- **Migrated this slice** (call sites now read from the catalog): the AI
+  model adapters `openai_compat`, `local_model`, and `flux`, plus
+  `db_sync._throttle_window_seconds`. The remaining subpackages (database
+  connection helpers, redis/taskrunner, auth providers, storage, Gemini
+  adapter, GitHub API wrappers, per-agent provider overrides) still read
+  `os.environ` directly and are catalogued for a follow-up per-subpackage
+  migration — both forms co-exist.
+- New stdlib-only implementation; **no new core dependency** (no pydantic).
+- New doc page `docs/guides/configuration.md` lists every variable, its
+  type, default, and migration status.
+
+**Migration.**
+
+No source change required for consumers. All existing env-var **names and
+defaults are unchanged** — `Settings` reads them by name and every default
+mirrors the prior call-site default, so behavior is preserved. The only
+behavioral difference is strictly more robust: a malformed numeric env value
+now falls back to the default (with a logged note) rather than crashing the
+import. New code can read typed values via:
+
+```python
+from autonomous.config import settings, env_int
+
+timeout = settings.hpc_request_timeout            # snapshot (int)
+window  = env_int("HPC_UNREACHABLE_THROTTLE_SECONDS", 0)   # live read
+```
+
 ### `GenerateJSONParseError.payload` exposes the parsed object on schema-validation failure (#54)
 
 **What changed.**

@@ -59,6 +59,7 @@ guides/ai
 guides/web
 guides/storage
 guides/tasks
+guides/configuration
 ```
 
 ```{toctree}

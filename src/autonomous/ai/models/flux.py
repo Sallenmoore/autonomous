@@ -17,12 +17,12 @@ HTTP: plain ``requests`` (already required), routed through
 """
 
 import json
-import os
 
 import requests
 
 from autonomous import log
 from autonomous.ai.retry import retry
+from autonomous.config import env_str, settings
 from autonomous.model.autoattr import StringAttr
 from autonomous.model.automodel import AutoModel
 
@@ -50,14 +50,14 @@ class FluxAIModel(AutoModel):
     )
 
     # Model defaults are env-overridable so deployments can chase fal.ai's
-    # model churn without a library release.
-    _image_model = os.environ.get(
-        "FLUX_IMAGE_MODEL", "fal-ai/flux-pro/v1.1-ultra"
-    )
-    _image_url_base = os.environ.get("FLUX_URL_BASE", "https://fal.run")
-    _media_timeout = int(os.environ.get("FLUX_TIMEOUT_S", "120"))
-    _max_attempts = int(os.environ.get("FLUX_MAX_ATTEMPTS", "3"))
-    _retry_sleep = float(os.environ.get("FLUX_RETRY_SLEEP", "1.0"))
+    # model churn without a library release. Read from the central typed
+    # catalog (autonomous.config) — guarded parsing means a malformed
+    # FLUX_TIMEOUT_S falls back to the default instead of crashing import.
+    _image_model = settings.flux_image_model
+    _image_url_base = settings.flux_url_base
+    _media_timeout = settings.flux_timeout_s
+    _max_attempts = settings.flux_max_attempts
+    _retry_sleep = settings.flux_retry_sleep
 
     def _get_image_config(self, aspect_ratio_input):
         """Map autonomous's aspect-ratio vocabulary to fal.ai's
@@ -90,7 +90,7 @@ class FluxAIModel(AutoModel):
         """Read FAL_KEY at call time, not import time. Raises with a
         pointer to the env var if missing — easier to debug than a 401
         from fal.ai's API."""
-        key = os.environ.get("FAL_KEY", "").strip()
+        key = env_str("FAL_KEY", "").strip()
         if not key:
             raise RuntimeError(
                 "FluxAIModel: FAL_KEY environment variable is not set. "
