@@ -37,6 +37,10 @@ key-drifting models (gemma/llama over Ollama, which don't enforce
 ```python
 from autonomous.ai.exceptions import GenerateJSONParseError
 
+# Note: JSONAgent.generate(message, ...) — the first positional arg is
+# named ``message``, not ``prompt``. The example below passes it
+# positionally; if you switch to a keyword form, use ``message=`` to
+# avoid TypeError.
 try:
     data = JSONAgent().generate(prompt, json_schema=schema, schema_name="lore")
 except GenerateJSONParseError as e:

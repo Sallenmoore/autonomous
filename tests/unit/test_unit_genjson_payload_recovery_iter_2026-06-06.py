@@ -211,3 +211,48 @@ class TestGenerateEndToEnd:
         ok = {"name": "x", "count": 1}
         agent = _patched_agent(monkeypatch, _StubProviderClient(ok))
         assert JSONAgent.generate(agent, "prompt", json_schema=SCHEMA) == ok
+
+    def test_non_json_native_value_in_response_does_not_leak_typeerror(
+        self, monkeypatch
+    ):
+        """/review-pr regression guard: dropping the redundant ``[:500]`` at
+        the call site is correct for length, but ``json.dumps(result)``
+        un-guarded raises TypeError on non-JSON-native values (datetime,
+        bytes, Decimal) BEFORE ``_schema_validate`` runs. Without
+        ``default=str``, the consumer's ``except GenerateJSONParseError``
+        handler sees a bare TypeError and loses the entire typed-exception
+        surface (no ``.raw``, no ``.payload``, no diagnostic context).
+
+        This test passes a dict containing a ``datetime`` (a common
+        non-native value providers sometimes surface through tool-call
+        return-shaping) and asserts the consumer still gets a typed
+        ``GenerateJSONParseError`` with the recovery surface intact —
+        not a leaked TypeError.
+
+        The schema misses on the datetime value (validator type:integer
+        for count), so we exercise the ValidationError branch end-to-end
+        WITH the non-serializable diagnostic-dump path. ``.raw`` is the
+        ``default=str``-stringified diagnostic; ``.payload`` is the live
+        dict including the original datetime value (unmodified).
+        """
+        from datetime import datetime
+        when = datetime(2026, 6, 6, 12, 0, 0)
+        drifted = {"name": "x", "count": when}  # count should be int
+        agent = _patched_agent(monkeypatch, _StubProviderClient(drifted))
+
+        # MUST be GenerateJSONParseError, NOT TypeError. The whole point
+        # of the typed-exception design is preserved across the
+        # non-serializable case.
+        with pytest.raises(GenerateJSONParseError) as ei:
+            JSONAgent.generate(agent, "prompt", json_schema=SCHEMA)
+
+        # Recovery surface intact: payload is the live dict with the
+        # original (non-serializable) value untouched.
+        assert ei.value.payload is drifted
+        assert ei.value.payload["count"] is when
+        # Diagnostic surface intact: .raw is a non-empty string. The
+        # default=str fallback stringified the datetime so the dump
+        # succeeded; what specifically went into .raw is an
+        # implementation detail (any string repr is acceptable).
+        assert isinstance(ei.value.raw, str)
+        assert len(ei.value.raw) > 0
