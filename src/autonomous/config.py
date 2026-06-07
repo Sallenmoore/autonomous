@@ -161,6 +161,9 @@ _KIND_PARSERS = {
     "list": env_list,
 }
 
+#: Valid ``Field.kind`` values — checked at Field construction time.
+_VALID_KINDS: frozenset[str] = frozenset(_KIND_PARSERS)
+
 
 @dataclass(frozen=True)
 class Field:
@@ -174,6 +177,12 @@ class Field:
     description: str = ""
     secret: bool = False   # redact value in describe()/as_dict()
     migrated: bool = True   # False = catalogued but call site still reads os.environ directly
+
+    def __post_init__(self) -> None:
+        if self.kind not in _VALID_KINDS:
+            raise TypeError(
+                f"Field {self.attr!r}: kind={self.kind!r} is not one of {sorted(_VALID_KINDS)}"
+            )
 
 
 # NOTE: defaults below intentionally mirror the original call-site defaults

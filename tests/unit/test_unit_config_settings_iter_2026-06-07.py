@@ -368,6 +368,20 @@ class TestThrottleWindowLiveReads:
         assert db_sync._throttle_window_seconds() == 20
 
 
+class TestFieldPostInit:
+    """N2 — Field.__post_init__ validates kind at construction time."""
+
+    def test_valid_kind_accepted(self):
+        from autonomous.config import Field
+        for kind in ("str", "int", "float", "bool", "list"):
+            Field("x", "X", kind, "" if kind in ("str", "list") else 0, "test")
+
+    def test_invalid_kind_raises_type_error(self):
+        from autonomous.config import Field
+        with pytest.raises(TypeError, match="kind="):
+            Field("x", "X", "date", "", "test")
+
+
 class TestMigratedAdapterImportSafety:
     """End-to-end proof of the headline claim: a malformed numeric env var no
     longer crashes the import of a migrated AI adapter. Pre-PR these class

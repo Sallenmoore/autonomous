@@ -39,7 +39,7 @@ window = env_int("HPC_UNREACHABLE_THROTTLE_SECONDS", 0)   # 0 on unset/empty/mal
 | `env_str(key, default="")` | Returns the raw value; empty string is meaningful (returned as-is). |
 | `env_int(key, default)` | `int()` with fallback to `default` on unset/empty/non-numeric. |
 | `env_float(key, default)` | `float()` with the same guard. |
-| `env_bool(key, default=False)` | `1/true/yes/on/y/t` → True; `0/false/no/off/n/f`/empty → False. |
+| `env_bool(key, default=False)` | `1/true/yes/on/y/t` → True; `0/false/no/off/n/f`/empty → False. **Note:** an empty value returns `False` regardless of `default` (it is an explicit falsy override), whereas `env_int("")` falls back to `default` (empty is treated as absent for numeric types). |
 | `env_list(key, default, sep=",")` | Splits on `sep` and whitespace, dropping empties. |
 
 ## Snapshot vs. live reads
@@ -103,7 +103,7 @@ forms co-exist during the transition, so existing deployments are unaffected. Th
 | `HPC_API_BASE_URL` | str | _(empty)_ | `hpc_api_base_url` | ✅ | Open WebUI / HPC base URL |
 | `HPC_API_KEY` | str | _(secret)_ | `hpc_api_key` | ✅ | HPC API key |
 | `HPC_TEXT_MODEL` | str | `gpt-oss:20b` | `hpc_text_model` | ✅ | Default text model |
-| `HPC_JSON_MODEL` | str | _(empty)_ | `hpc_json_model` | ✅ | JSON model (defaults to text model) |
+| `HPC_JSON_MODEL` | str | _(HPC_TEXT_MODEL)_ | `hpc_json_model` | ✅ | JSON model; unset → falls back to resolved `HPC_TEXT_MODEL` value. An explicit empty value is preserved. |
 | `HPC_SUMMARY_MODEL` | str | `gemma4:26b` | `hpc_summary_model` | ✅ | Summary model |
 | `HPC_EMBEDDING_MODEL` | str | `dengcao/Qwen3-Embedding-8B:F16` | `hpc_embedding_model` | ✅ | Embedding model |
 | `HPC_STT_MODEL` | str | `whisper-1` | `hpc_stt_model` | ✅ | Speech-to-text model |
