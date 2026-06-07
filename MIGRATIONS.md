@@ -5,6 +5,119 @@ recent first.
 
 ## Unreleased
 
+### `GenerateJSONParseError.payload` exposes the parsed object on schema-validation failure (#54)
+
+**What changed.**
+
+- `GenerateJSONParseError` gained an optional, **un-truncated**
+  `.payload` attribute carrying the fully-parsed object (dict/list)
+  that failed `json_schema` validation. Previously the only artifact
+  of a schema miss was `.raw`, a *500-char truncated re-dump* — so any
+  payload larger than ~500 chars was unrecoverable: `json.loads(e.raw)`
+  on the fragment raised, and consumers had no way to run tolerant
+  recovery (synonym/key normalization, default-fill, re-validate) short
+  of re-calling the model without a schema.
+- `.payload` is populated only on the schema-*validation*-miss path
+  (`JSONAgent.generate(..., json_schema=...)` where the body parsed but
+  didn't match the shape). It is `None` for every other failure mode —
+  unparseable text, empty body, non-dict result, or a structurally
+  invalid caller-supplied schema (where the model output isn't at
+  fault).
+- `.raw` semantics are **unchanged**: still the bounded
+  (`_RAW_MAX = 500`) human-diagnostic string. The constructor signature
+  gained a keyword-only `payload=None`; all existing positional/keyword
+  call sites are unaffected.
+
+**Migration.**
+
+No source change required — purely additive. Consumers driving
+key-drifting models (gemma/llama over Ollama, which don't enforce
+`required` in their structured-output grammar) can now recover in-hand:
+
+```python
+from autonomous.ai.exceptions import GenerateJSONParseError
+
+# Note: JSONAgent.generate(message, ...) — the first positional arg is
+# named ``message``, not ``prompt``. The example below passes it
+# positionally; if you switch to a keyword form, use ``message=`` to
+# avoid TypeError.
+try:
+    data = JSONAgent().generate(prompt, json_schema=schema, schema_name="lore")
+except GenerateJSONParseError as e:
+    if e.payload is not None:
+        data = my_tolerant_normalizer(e.payload)  # no second round-trip
+    else:
+        raise
+```
+
+### Additional OAuth providers: Facebook, Discord, Microsoft (#44)
+
+**What changed.**
+
+- Three new `AutoAuth` subclasses, exported from `autonomous.auth`
+  alongside the existing `GoogleAuth` / `GithubAuth`:
+  - `FacebookAuth` — Facebook Login via the Graph API. Stable subject
+    is the Graph `/me` `id`.
+  - `DiscordAuth` — Discord OAuth2. Stable subject is the `/users/@me`
+    numeric snowflake `id`.
+  - `MicrosoftAuth` — Microsoft identity platform (Azure AD + personal
+    accounts). Stable subject is the OIDC `sub` (falls back to `oid`).
+- All three follow the **static-endpoint** idiom of `GithubAuth`
+  (no discovery-doc fetch at construction → no network call when
+  instantiated, unlike `GoogleAuth`), but ship with the providers'
+  well-known authorize/token/userinfo endpoints baked in as defaults,
+  so the minimal config is just client id/secret/redirect.
+- Each reads `<PROVIDER>_AUTH_*` env vars mirroring the existing
+  convention:
+  - `FACEBOOK_AUTH_CLIENT_ID`, `FACEBOOK_AUTH_CLIENT_SECRET`,
+    `FACEBOOK_AUTH_REDIRECT_URL`, `FACEBOOK_AUTH_SCOPE`
+    (default `["email", "public_profile"]`), and optional
+    `FACEBOOK_AUTH_{AUTHORIZE_URL,TOKEN_URL,USERINFO_URL}` overrides.
+  - `DISCORD_AUTH_CLIENT_ID`, `DISCORD_AUTH_CLIENT_SECRET`,
+    `DISCORD_AUTH_REDIRECT_URL`, `DISCORD_AUTH_SCOPE`
+    (default `["identify", "email"]`), and optional
+    `DISCORD_AUTH_{AUTHORIZE_URL,TOKEN_URL,USERINFO_URL}` overrides.
+  - `MICROSOFT_AUTH_CLIENT_ID`, `MICROSOFT_AUTH_CLIENT_SECRET`,
+    `MICROSOFT_AUTH_REDIRECT_URL`, `MICROSOFT_AUTH_SCOPE`
+    (default `["openid", "email", "profile"]`),
+    `MICROSOFT_AUTH_TENANT` (default `common`; selects the tenant
+    segment of the authorize/token URLs), and optional
+    `MICROSOFT_AUTH_{AUTHORIZE_URL,TOKEN_URL,USERINFO_URL}` full-URL
+    overrides (a full URL wins over the tenant-built default).
+
+**Migration.**
+
+No change required for existing consumers — purely additive. To wire a
+new provider, instantiate it like the existing ones and route its
+callback through `handle_response`, then `User.authenticate(user_info,
+token)`; the `(oauth_provider, oauth_sub)` stable-identity pair from
+#40 is injected automatically because each subclass sets
+`provider_name` and overrides `_extract_sub`. Example:
+
+```python
+from autonomous.auth import DiscordAuth
+
+auth = DiscordAuth()
+url, state = auth.authenticate()          # redirect the user here
+# ... on the callback route:
+user_info, token = auth.handle_response(callback_url)
+user = User.authenticate(user_info, token)
+```
+
+**Not included — Sign in with Apple (deferred).** Apple was named in
+#44 but is intentionally NOT in this change. Unlike every other
+provider — all of which source identity via an HTTP userinfo GET —
+"Sign in with Apple" requires (a) a client
+secret that is an ES256-signed JWT generated from a `.p8` private key
+(team id + key id + services id), regenerated before expiry, and
+(b) identity sourced from the `id_token` JWT returned in the **token
+response** — Apple exposes no userinfo GET endpoint, so it does not
+fit `AutoAuth.handle_response`'s `requests.get(self.req_uri)` flow.
+Adding it cleanly needs a small base-class seam (e.g. an overridable
+`_fetch_userinfo(token)` hook so a subclass can decode the id_token
+instead of GETting a URL) plus JWT-client-secret generation. Tracked
+as a follow-up rather than shipped half-working.
+
 ### Embedding `[HPC-UNREACHABLE]` log throttle + 5xx retry coverage (#39)
 
 **What changed.**

@@ -43,10 +43,30 @@ class GenerateJSONParseError(GenerateJSONError):
     ``.raw`` for diagnostics — caller code can log it without re-fetching.
     Truncation lives in the constructor (not at each provider's call
     site) so a future provider can't forget the bound.
+
+    When the failure is a *schema-validation* miss (the body parsed as
+    JSON but didn't match the requested shape), the fully-parsed object
+    is also attached, un-truncated, on ``.payload``. ``.raw`` stays the
+    bounded human-diagnostic string; ``.payload`` is the programmatic
+    recovery surface, letting a consumer normalize drifted keys / fill
+    defaults / re-validate on the object already in hand instead of
+    re-calling the model. It is ``None`` for every other failure mode:
+    unparseable text, empty body, non-dict result (the model returned
+    a list / scalar where an object was expected), AND the deliberate
+    edge case where the *caller's schema* itself is structurally
+    invalid (``jsonschema.SchemaError``). In the SchemaError case a
+    parsed object DOES exist but ``.payload`` stays ``None`` because
+    the model output is not the recovery surface — the caller's
+    schema is the problem, not the response.
+
+    ``.payload`` is the *live* parsed object, not a copy — a recovery
+    routine that mutates it in place mutates the only artifact of the
+    failed call. Deep-copy first if a pristine snapshot is needed.
     """
 
     _RAW_MAX = 500
 
-    def __init__(self, msg: str, *, raw: str = "") -> None:
+    def __init__(self, msg: str, *, raw: str = "", payload=None) -> None:
         super().__init__(msg)
         self.raw = (raw or "")[: self._RAW_MAX]
+        self.payload = payload
