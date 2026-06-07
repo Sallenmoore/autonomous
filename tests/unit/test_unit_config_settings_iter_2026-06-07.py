@@ -395,7 +395,15 @@ class TestMigratedAdapterImportSafety:
     """
 
     def _import_in_subprocess(self, env_overrides, snippet):
+        from pathlib import Path
         env = dict(os.environ, **env_overrides)
+        # Inject src/ into PYTHONPATH so the subprocess can find `autonomous`
+        # under all setuptools editable-install modes (including the direct-URL
+        # mode used by setuptools 64+ in GitHub Actions, which does not create
+        # a .pth file discoverable by a fresh interpreter).
+        src = Path(__file__).resolve().parent.parent.parent / "src"
+        existing = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = f"{src}:{existing}" if existing else str(src)
         proc = subprocess.run(
             [sys.executable, "-c", snippet],
             env=env, capture_output=True, text=True,
