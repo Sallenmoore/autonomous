@@ -56,37 +56,63 @@ class TestProdAgentCommandFile:
             "prod-agent.md frontmatter has no description: line"
         )
 
-    def test_no_loop_or_polling_instruction(self):
-        """The procedure explicitly tells the agent NOT to loop or
-        poll — prod is a manual-trigger agent per CLAUDE.md. If a
-        future edit accidentally invites looping behaviour, the
-        whole "no polling" invariant collapses."""
+    # NOTE (2026-06-06): prod-agent.md was converted to a *thin
+    # dispatcher* (commit c5aef99, mirroring the test-agent.md conversion
+    # in f093772). The step-by-step procedure — the "Do NOT loop / no
+    # polling" invariant, the auto-release ship-or-skip gate, and the
+    # [smoke-fail] issue lifecycle — moved OUT of this file into the
+    # shared template at /opt/stacks/agent-runner/templates/prod-agent.md.
+    # That template lives in the agent-runner repo, NOT here, and is
+    # absent in CI's clean checkout, so this repo can no longer assert the
+    # procedure prose. What it CAN pin is that the dispatcher's delegation
+    # is intact and the project values it injects are correct — a
+    # dispatcher that forgets to reference the template, or hands the
+    # wrong deploy/verify values, silently reverts prod to "whatever
+    # Claude remembers today", the exact failure mode PR #126 fixed.
+    # The procedure-prose invariants are now the agent-runner repo's test
+    # surface.
+
+    def test_dispatcher_delegates_to_shared_template(self):
+        """A thin dispatcher must name the canonical template and tell the
+        agent to read + execute it. Losing this reference is the
+        regression class PR #126 guarded against (procedure goes missing)."""
         text = (COMMANDS / "prod-agent.md").read_text(encoding="utf-8")
-        assert re.search(r"\bDo NOT loop\b", text), (
-            "/prod-agent procedure lost the 'Do NOT loop' instruction"
+        assert "templates/prod-agent.md" in text, (
+            "/prod-agent dispatcher no longer references the shared "
+            "template — the procedure becomes unreachable."
         )
-        assert re.search(r"\bDo NOT poll\b|\bno polling\b|\bNo polling\b", text), (
-            "/prod-agent procedure lost the 'no polling' instruction"
+        assert re.search(r"\bRead that file\b", text) and "execute it" in text, (
+            "/prod-agent dispatcher no longer instructs the agent to "
+            "read + execute the referenced template."
         )
 
-    def test_release_gate_documented(self):
-        """The auto-release label is the ship-or-skip gate (changed
-        2026-05-14). If the procedure file stops mentioning it, the
-        gate becomes invisible to the operator running /prod-agent."""
+    def test_pypi_release_values_declared(self):
+        """The dispatcher hands the shared template the pypi-deploy values
+        so the template's §4/§5 run the release+smoke flow (vs a service
+        deploy). If DEPLOY_TYPE / DEPLOY_CMD drift, the auto-release gate
+        the template enforces gets the wrong deploy command to gate."""
         text = (COMMANDS / "prod-agent.md").read_text(encoding="utf-8")
-        assert "auto-release" in text, (
-            "/prod-agent procedure no longer mentions the auto-release "
-            "label gate — without it, the release becomes unconditional "
-            "which is the pre-2026-05-14 behaviour."
+        assert re.search(r"DEPLOY_TYPE\s*=\s*pypi", text), (
+            "/prod-agent dispatcher dropped DEPLOY_TYPE = pypi — the "
+            "template would no longer select the release flow."
+        )
+        assert "scripts/release.sh" in text, (
+            "/prod-agent dispatcher no longer declares scripts/release.sh "
+            "as the deploy command."
         )
 
-    def test_smoke_test_invocation_documented(self):
-        """smoke_test.sh is what produces the SIGNATURE line that the
-        issue-filing logic parses. If the procedure stops invoking it,
-        the [smoke-fail] issue lifecycle has no input."""
+    def test_smoke_verification_value_declared(self):
+        """smoke_test.sh produces the SIGNATURE line the template's
+        [smoke-fail] issue lifecycle parses. The dispatcher must pass it
+        as SMOKE_CMD and select the pypi_probe verify type. (The
+        [smoke-fail] lifecycle prose itself now lives in the shared
+        template, out of this repo.)"""
         text = (COMMANDS / "prod-agent.md").read_text(encoding="utf-8")
-        assert "smoke_test.sh" in text
-        assert "[smoke-fail]" in text
+        assert "scripts/smoke_test.sh" in text
+        assert re.search(r"VERIFY_TYPE\s*=\s*pypi_probe", text), (
+            "/prod-agent dispatcher no longer selects pypi_probe "
+            "verification — post-release smoke would not run."
+        )
 
 
 # ---------------------------------------------------------------------------
