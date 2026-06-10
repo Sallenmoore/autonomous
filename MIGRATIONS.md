@@ -5,6 +5,89 @@ recent first.
 
 ## Unreleased
 
+### `autonomous.db.dereference` eagerly bound at package import (#63)
+
+**What changed.**
+
+- `autonomous.db.__init__.py` now eagerly imports the `dereference`
+  submodule alongside `connection`, `db_sync`, `document`, etc. The
+  submodule had been omitted from the import tuple, which meant the
+  lazy `_import_class("DeReference")` call in
+  `autonomous.db.common.py:56` (`from autonomous.db import dereference`)
+  raced on cold workers and intermittently raised
+  `ImportError: cannot import name 'dereference' from 'autonomous.db'`
+  on the first `ReferenceAttr` deref of the process lifetime.
+
+**Migration.**
+
+No source change required for consumers. The storyteller-side workaround
+(`import autonomous.db.dereference` at app startup) can come out once
+the consumer upgrades to a release containing this fix.
+
+### `db_sync.HPC-UNREACHABLE` events now bump an in-process Counter (#51, slice 2)
+
+**What's new.**
+
+- A process-wide `Counter("hpc_unreachable_total", label_names=("signature",))`
+  from the default `autonomous.observability` registry is now bumped
+  by every call to `db_sync._emit_hpc_unreachable` — **including
+  throttle-suppressed calls** — so dashboards see the true HPC-failure
+  rate even when the printed-line stream is silenced. Read via
+  `autonomous.observability.REGISTRY.get("hpc_unreachable_total").collect()`.
+
+**Not changed.**
+
+- The printed-line wire shape (raw stdout, `[HPC-UNREACHABLE]` prefix
+  at line-start, `(N suppressed in last Ws)` annotation appended) is
+  intentionally preserved. The structured-event line shape from
+  `observability.event()` (`[MARKER] event=<name> key=value ...`) is
+  incompatible with the committed-test contract pinning
+  `out.startswith("[HPC-UNREACHABLE]")` and verbatim-message
+  substrings. A later slice can flip the wire shape once consumer
+  log scrapers (e.g. storyteller's `/debug/lore/health`) migrate
+  off the prefix-grep contract.
+- `record_embedding_sync_event` Redis hour-bucket counter unchanged.
+
+**Migration.**
+
+No source change required. The Counter is observable from any process
+that imports `autonomous.observability`; integrate via:
+
+```python
+from autonomous.observability import REGISTRY
+data = REGISTRY.get("hpc_unreachable_total").collect()
+# {("openai:HPCUnreachableError",): 12, ("local:http:500",): 3, ...}
+```
+
+### `openai_compat._is_transport_failure` delegates to the central predicate (#50, slice 2)
+
+**What changed.**
+
+- `autonomous.ai.models.openai_compat._is_transport_failure` is now a
+  thin wrapper around `autonomous.http.is_transport_failure`,
+  passing `_TRANSPORT_FAILURE_CODES` as the extras set. Behavior is
+  identical (same 5xx-range + 401-extra semantics, same defensive
+  `False` return on non-orderable inputs) — the consolidation just
+  moves the implementation to one place so a future transport-class
+  refinement (opt-in 408/429 for throttle-aware adapters, etc.)
+  ships to every adopter via the central helper rather than being
+  redundantly maintained per-adapter.
+
+**Migration.**
+
+No source change required. The symbol name, call signature, and
+return semantics are unchanged. `_TRANSPORT_FAILURE_CODES` is still
+the per-deployment extras set — passes through to the central
+predicate.
+
+The wider `_post()` → `HttpClient` migration is **deferred** to a
+future slice: committed tests across the suite patch
+`openai_compat._SESSION.post` directly (and `requests.get` in
+`autoauth`), which assumes the call shape `Session.post(...)`. A
+clean `HttpClient.post(url, ...)` migration that funnels through
+`session.request("POST", ...)` would break those patches; the
+migration needs test-fixture coordination to land safely.
+
 ### New `autonomous.http` module — consolidated HTTP client (#50, slice 1)
 
 **What's new.**

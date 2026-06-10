@@ -11,6 +11,7 @@ import requests
 
 from autonomous import log
 from autonomous.config import env_int
+from autonomous.observability import counter
 
 # Module-level Session for the media_ai embeddings POST. Keeps the TCP
 # connection to the local media service warm across calls in the RQ
@@ -40,6 +41,19 @@ _HTTP_SESSION = requests.Session()
 _HPC_UNREACHABLE_LAST_LOGGED: dict[str, float] = {}
 _HPC_UNREACHABLE_SUPPRESSED: dict[str, int] = {}
 
+# Process-wide counter for HPC-unreachable events (#51 slice 2).
+# Bumped on every emit attempt — including throttle-suppressed ones —
+# so dashboards see the true rate even when the printed-line stream is
+# silenced. The Redis hour-bucket counter
+# (``record_embedding_sync_event``) is unchanged; this is the in-process
+# observability layer that will eventually replace it once a Redis
+# backend lands for ``autonomous.observability.Counter``.
+_HPC_UNREACHABLE_COUNTER = counter(
+    "hpc_unreachable_total",
+    description="HPC transport-class failures (db_sync embedding path)",
+    label_names=("signature",),
+)
+
 
 def _throttle_window_seconds() -> int:
     """Read the throttle window from env each call so a config flip
@@ -55,7 +69,8 @@ def _throttle_window_seconds() -> int:
 
 
 def _emit_hpc_unreachable(signature: str, message: str) -> None:
-    """Print an ``[HPC-UNREACHABLE]`` line, optionally throttled.
+    """Print an ``[HPC-UNREACHABLE]`` line, optionally throttled, and
+    bump the in-process counter (#51 slice 2).
 
     With ``HPC_UNREACHABLE_THROTTLE_SECONDS=0`` (the default) the
     message prints verbatim — identical to the pre-#39 contract.
@@ -68,10 +83,30 @@ def _emit_hpc_unreachable(signature: str, message: str) -> None:
     shapes should use a distinct signature so they print on first
     occurrence rather than being swept into an unrelated bucket.
 
-    Best-effort — never raises. The ``[HPC-UNREACHABLE]`` prefix is
-    preserved verbatim regardless of throttling so downstream log
-    scrapers keep matching.
+    The Counter (``hpc_unreachable_total``) is bumped on every call —
+    INCLUDING throttle-suppressed ones — so dashboards see the true
+    rate even when the printed-line stream is silenced. This matches
+    the existing contract that ``record_embedding_sync_event`` is
+    never throttled.
+
+    The printed-line wire shape (raw stdout, no logger banner,
+    ``[HPC-UNREACHABLE]`` prefix at line-start) is load-bearing for
+    existing scrapers (storyteller ``/debug/lore/health``) and is
+    pinned by committed tests; this slice intentionally does NOT
+    re-route through ``observability.event()`` because the structured
+    line shape (``[MARKER] event=<name> key=value ...``) is
+    incompatible with that contract. A later slice can flip the wire
+    shape once scrapers are migrated; for now the Counter is the
+    structured observability layer.
     """
+    # Best-effort — a metrics-layer failure must not replace the
+    # in-flight HPC error. The swallow logs the exception so a latent
+    # ``Counter.inc`` bug isn't permanently invisible.
+    try:
+        _HPC_UNREACHABLE_COUNTER.inc(signature=signature)
+    except Exception as exc:  # noqa: BLE001
+        log(f"[db_sync] hpc_unreachable_total counter inc failed: {exc!r}")
+
     window = _throttle_window_seconds()
     if window <= 0:
         # Throttle disabled — print verbatim, preserves old behavior.
