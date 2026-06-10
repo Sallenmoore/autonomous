@@ -99,13 +99,13 @@ def _emit_hpc_unreachable(signature: str, message: str) -> None:
     shape once scrapers are migrated; for now the Counter is the
     structured observability layer.
     """
-    # Counter bump is unconditional — throttle controls printed-line
-    # noise, not the metric. Best-effort; a counter failure must not
-    # propagate from inside an error-reporting function.
+    # Best-effort — a metrics-layer failure must not replace the
+    # in-flight HPC error. The swallow logs the exception so a latent
+    # ``Counter.inc`` bug isn't permanently invisible.
     try:
         _HPC_UNREACHABLE_COUNTER.inc(signature=signature)
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001
+        log(f"[db_sync] hpc_unreachable_total counter inc failed: {exc!r}")
 
     window = _throttle_window_seconds()
     if window <= 0:

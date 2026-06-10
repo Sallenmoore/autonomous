@@ -93,20 +93,38 @@ class TestDereferenceEagerImport:
 
     def test_dereference_in_init_eager_import_tuple(self):
         """The fix is structural — assert the import statement actually
-        names ``dereference``. Catches a future regression where
-        someone removes the line without realizing it's load-bearing.
+        names ``dereference`` inside the eager-import tuple, not just
+        anywhere in the file. Matches the indented tuple-line form so
+        a stale comment mentioning ``dereference`` (after the import
+        line is deleted) doesn't false-pass.
         """
         import autonomous.db
         src = importlib.util.find_spec("autonomous.db").origin
         with open(src, encoding="utf-8") as f:
             content = f.read()
-        # The import block lists submodules; assert dereference is one
-        # of them. Tolerant of formatting changes — looks for the bare
-        # name inside the multi-import block.
-        assert "dereference" in content, (
-            "dereference not named in autonomous/db/__init__.py — "
-            "eager-import tuple regression on #63"
+        # The tuple-line form: 4 spaces of indent, the bare name, a
+        # comma. Looser than AST-parsing but tight enough that comments
+        # don't trip it.
+        assert "    dereference," in content, (
+            "dereference not named in autonomous/db/__init__.py "
+            "eager-import tuple — regression on #63"
         )
+
+    def test_lazy_path_import_class_dereference_resolves(self):
+        """The race condition lived on ``common.py:_import_class("DeReference")``,
+        which executes ``from autonomous.db import dereference`` at first
+        call. Exercise that exact lazy path — independent of whether
+        ``autonomous.db`` happens to have already eager-imported the
+        submodule — and assert the class comes back. A true race repro
+        would need ``multiprocessing.Process`` × N under fork; that's
+        flaky and not worth the cycles, but this at least exercises
+        the lazy resolver the bug lived on.
+        """
+        from autonomous.db.common import _import_class
+
+        cls = _import_class("DeReference")
+        assert cls is not None
+        assert cls.__name__ == "DeReference"
 
     def test_cold_worker_fresh_interpreter_imports_dereference(self):
         """Repro of the actual cold-worker scenario: spawn a brand-new
@@ -244,6 +262,38 @@ class TestHpcUnreachableCounter:
             ("local:http:500",): 1.0,
         }
 
+    def test_counter_inc_called_with_signature_kwarg(self, _hpc_state, monkeypatch):
+        """Production-shape sanity: ``_emit_hpc_unreachable`` must call
+        ``inc(signature=signature)`` — NOT ``inc(signature)`` positional
+        (which would land as ``value=signature`` and either silently
+        skew the count or raise on the finite-number check) and NOT a
+        wrong kwarg name like ``sig=`` (which the strict-label check in
+        ``metrics.py`` would raise on, then the bare-except would
+        swallow forever).
+
+        Record every call and assert kwargs == {"signature": ...} and
+        no positional value was passed.
+        """
+        monkeypatch.delenv("HPC_UNREACHABLE_THROTTLE_SECONDS", raising=False)
+        counter = _hpc_state
+        calls: list[tuple[tuple, dict]] = []
+
+        original_inc = counter.inc
+
+        def _spy(*args, **kwargs):
+            calls.append((args, dict(kwargs)))
+            return original_inc(*args, **kwargs)
+
+        monkeypatch.setattr(counter, "inc", _spy)
+        _emit_hpc_unreachable("sig-shape", "[HPC-UNREACHABLE] m")
+
+        assert len(calls) == 1
+        args, kwargs = calls[0]
+        assert args == (), (
+            f"Counter.inc must be called kwarg-only; got positional {args!r}"
+        )
+        assert kwargs == {"signature": "sig-shape"}
+
     def test_counter_failure_does_not_propagate(self, _hpc_state, monkeypatch, capsys):
         """The Counter inc is wrapped in ``try/except`` — a metrics-
         layer failure inside an error-reporting function must NOT
@@ -265,6 +315,42 @@ class TestHpcUnreachableCounter:
 
         out = capsys.readouterr().out
         assert "[HPC-UNREACHABLE] still-printed" in out
+
+    def test_counter_failure_preserves_throttle_state(
+        self, _hpc_state, monkeypatch, capsys
+    ):
+        """A counter-bump exception must not short-circuit the throttle
+        bookkeeping below it — otherwise ``_HPC_UNREACHABLE_LAST_LOGGED``
+        wouldn't get written, every subsequent call would re-print, and
+        the throttle would silently break across the whole process.
+
+        With throttle on (3600s) and counter.inc raising, two calls
+        must produce exactly ONE printed line (the second is correctly
+        suppressed) AND ``_HPC_UNREACHABLE_LAST_LOGGED["sig-throttle"]``
+        must be set after the first call.
+        """
+        monkeypatch.setenv("HPC_UNREACHABLE_THROTTLE_SECONDS", "3600")
+        counter = _hpc_state
+
+        def _boom(*args, **kwargs):
+            raise RuntimeError("metrics-layer down")
+
+        monkeypatch.setattr(counter, "inc", _boom)
+
+        _emit_hpc_unreachable("sig-throttle", "[HPC-UNREACHABLE] first")
+        assert "sig-throttle" in db_sync._HPC_UNREACHABLE_LAST_LOGGED, (
+            "throttle state was not updated after first emit — "
+            "counter-bump failure corrupted downstream bookkeeping"
+        )
+        _emit_hpc_unreachable("sig-throttle", "[HPC-UNREACHABLE] second")
+
+        prints = [
+            line for line in capsys.readouterr().out.splitlines()
+            if line.startswith("[HPC-UNREACHABLE]")
+        ]
+        assert len(prints) == 1, (
+            f"expected exactly 1 printed line under throttle, got {len(prints)}: {prints!r}"
+        )
 
     def test_counter_bumped_before_throttle_decision(
         self, _hpc_state, monkeypatch
