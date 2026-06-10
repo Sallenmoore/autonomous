@@ -6,6 +6,7 @@
 from autonomous.db import (
     connection,
     db_sync,
+    dereference,  # bound eagerly so common.py:_import_class("DeReference") finds it on cold workers (#63)
     document,
     errors,
     fields,
