@@ -76,8 +76,11 @@ def is_transport_failure(
 
 # Config / programmer-error exception types that should NOT be wrapped
 # in ``TransportError`` — retrying against an invalid URL or missing
-# schema burns attempts against an unfixable cause. Matches the
-# exclusion tuple in ``ai.models.openai_compat._post``.
+# schema burns attempts against an unfixable cause. Modeled after the
+# exclusion tuple in ``ai.models.openai_compat._post``; SSLError and
+# ProxyError are intentionally NOT here — both subclass ConnectionError
+# and represent transient transport hiccups (renegotiation, intermittent
+# proxy blips) that the retry loop should handle.
 _NON_TRANSPORT_REQUESTS_EXCEPTIONS: tuple[type[BaseException], ...] = (
     requests.exceptions.MissingSchema,
     requests.exceptions.InvalidURL,
@@ -86,8 +89,6 @@ _NON_TRANSPORT_REQUESTS_EXCEPTIONS: tuple[type[BaseException], ...] = (
     requests.exceptions.URLRequired,
     requests.exceptions.InvalidHeader,
     requests.exceptions.InvalidProxyURL,
-    requests.exceptions.SSLError,
-    requests.exceptions.ProxyError,
 )
 
 
@@ -103,15 +104,40 @@ def _noop_failure(method, url, exc, attempt):  # pragma: no cover - trivial
     return None
 
 
+def _safe_hook(hook: Callable[..., None], *args: Any) -> None:
+    """Invoke a user-supplied observability hook, swallowing + logging
+    any exception it raises.
+
+    The hooks are noop-by-default, so the caller never asked for
+    observability to be load-bearing. A bug in an adapter's hook should
+    not replace the in-flight ``TransportError`` / ``HTTPError`` with
+    a hook-side ``KeyError`` — that loses the original failure cause.
+    """
+    try:
+        hook(*args)
+    except Exception as hook_exc:  # noqa: BLE001 — last-line defense
+        # Defer the ``autonomous.log`` import to call time (same
+        # rationale as ``observability.events.event``).
+        from autonomous import log
+
+        log(
+            f"HttpClient hook {getattr(hook, '__name__', repr(hook))} raised "
+            f"{type(hook_exc).__name__}: {hook_exc}",
+        )
+
+
 class HttpClient:
     """Reusable HTTP client with timeout + retry + transport-failure
     classification + observability hooks.
 
-    Construct one per adapter; reuse across calls. Thread-safe for
-    request/response cycles (each call creates its own
-    ``requests.PreparedRequest``) but the underlying
-    ``requests.Session`` should not have its attributes mutated from
-    multiple threads after construction.
+    Construct one per adapter; reuse across calls. Safe for concurrent
+    request/response cycles (each call uses its own attempt-counter
+    closure and ``requests.PreparedRequest``) provided no thread
+    mutates the underlying ``requests.Session``'s attributes after
+    construction. Observability hooks should be reentrant for the same
+    reason; a hook exception is caught and logged so a buggy adapter
+    hook never replaces the original transport-class exception (see
+    ``_safe_hook``).
 
     Args:
         timeout: Default per-call timeout in seconds. Per-call
@@ -217,7 +243,13 @@ class HttpClient:
         def _attempt() -> requests.Response:
             attempt_counter[0] += 1
             attempt = attempt_counter[0]
-            self.on_request(method, url, dict(headers) if headers else None, body_for_hook)
+            _safe_hook(
+                self.on_request,
+                method,
+                url,
+                dict(headers) if headers else None,
+                body_for_hook,
+            )
             try:
                 response = self.session.request(
                     method,
@@ -235,18 +267,18 @@ class HttpClient:
                 # caller see the precise exception type. Notify the
                 # failure hook so observability still records it.
                 exc = _current_exc()
-                self.on_failure(method, url, exc, attempt)
+                _safe_hook(self.on_failure, method, url, exc, attempt)
                 raise
             except requests.RequestException as exc:
                 # Transport-class exception (connection, timeout,
                 # chunked-encoding). Map to the configured transport
                 # error type so the retry loop catches it.
-                self.on_failure(method, url, exc, attempt)
+                _safe_hook(self.on_failure, method, url, exc, attempt)
                 raise self.transport_error_cls(
                     f"{method} {url} failed ({type(exc).__name__}): {exc}"
                 ) from exc
 
-            self.on_response(method, url, response, attempt)
+            _safe_hook(self.on_response, method, url, response, attempt)
             if self.is_transport_failure(response.status_code):
                 err = self.transport_error_cls(
                     f"{method} {url} returned {response.status_code}: "
@@ -293,10 +325,14 @@ class HttpClient:
         currently have no wall-clock cap. ``poll`` enforces one.
 
         Returns the first ``result`` for which ``predicate(result)``
-        is True. Raises ``TimeoutError`` after ``max_attempts``. Each
-        attempt is run inside the same retry/observability wrapper as
-        ``request`` would be — transport-class exceptions during a
-        poll attempt count against ``max_attempts``.
+        is True. Raises ``TimeoutError`` after ``max_attempts``.
+
+        ``fetch`` is invoked raw — no retry-wrapper, no transport-error
+        classification, no observability hook firing. Callers that
+        want those semantics should call ``self.request(...)`` inside
+        ``fetch`` itself (e.g. ``fetch=lambda: self.get(file_url)``).
+        Exceptions from ``fetch`` propagate immediately and do NOT
+        count against ``max_attempts``.
         """
         if max_attempts < 1:
             raise ValueError("max_attempts must be >= 1")

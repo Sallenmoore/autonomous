@@ -567,8 +567,22 @@ class TestHelpers:
         try:
             assert REGISTRY.get("__test_default_registry_widget__") is c
         finally:
-            # don't pollute the global registry for other tests
-            REGISTRY._metrics.pop("__test_default_registry_widget__", None)
+            # don't pollute the global registry for other tests; use
+            # the public unregister API rather than reaching into
+            # _metrics
+            REGISTRY.unregister("__test_default_registry_widget__")
+
+    def test_registry_unregister_returns_metric_or_none(self):
+        """``Registry.unregister(name)`` is the surgical-cleanup
+        counterpart to ``clear()``; returns the popped metric or
+        ``None`` if no metric is registered under that name."""
+        reg = Registry()
+        c = Counter("x")
+        reg.register(c)
+        assert reg.unregister("x") is c
+        assert reg.get("x") is None
+        # idempotent — second call returns None, doesn't raise
+        assert reg.unregister("x") is None
 
 
 # ---------------------------------------------------------------------------
@@ -640,3 +654,201 @@ class TestEvent:
         payload = event("e", level="info", provider="openai", count=3)
         assert payload["provider"] == "openai"
         assert payload["count"] == 3
+
+
+# ---------------------------------------------------------------------------
+# Followup coverage from §6 review-pr (NaN/Inf rejection, hook-exception
+# protection, retry plumbing, event-log call, transport-class SSL/proxy)
+# ---------------------------------------------------------------------------
+
+
+class TestMetricsFiniteValueRejection:
+    """A NaN/Inf observation would silently poison the running sum;
+    a NaN observation on a Histogram would additionally break the
+    Prometheus invariant that the +Inf bucket equals ``count``."""
+
+    def test_counter_inc_rejects_nan(self):
+        c = Counter("widgets")
+        with pytest.raises(ValueError, match="finite"):
+            c.inc(float("nan"))
+
+    def test_counter_inc_rejects_positive_inf(self):
+        c = Counter("widgets")
+        with pytest.raises(ValueError, match="finite"):
+            c.inc(float("inf"))
+
+    def test_counter_inc_rejects_negative_inf(self):
+        c = Counter("widgets")
+        with pytest.raises(ValueError, match="finite"):
+            c.inc(float("-inf"))
+
+    def test_histogram_observe_rejects_nan(self):
+        h = Histogram("latency")
+        with pytest.raises(ValueError, match="finite"):
+            h.observe(float("nan"))
+
+    def test_histogram_observe_rejects_inf(self):
+        h = Histogram("latency")
+        with pytest.raises(ValueError, match="finite"):
+            h.observe(float("inf"))
+
+
+class TestHttpClientHookExceptionProtection:
+    """A buggy adapter hook must not replace the in-flight
+    transport-class exception with the hook's own exception. The
+    original failure cause is what callers debug against; losing it
+    is a silent failure even though *something* gets raised."""
+
+    def test_on_request_exception_does_not_clobber_success(self):
+        """A buggy on_request must not break a successful request."""
+        on_request = MagicMock(side_effect=RuntimeError("hook bug"))
+        session = _mock_session(_mock_response(200))
+        c = HttpClient(session=session, on_request=on_request)
+        resp = c.request("GET", "http://x")
+        assert resp.status_code == 200
+
+    def test_on_response_exception_does_not_clobber_success(self):
+        on_response = MagicMock(side_effect=RuntimeError("hook bug"))
+        session = _mock_session(_mock_response(200))
+        c = HttpClient(session=session, on_response=on_response)
+        resp = c.request("GET", "http://x")
+        assert resp.status_code == 200
+
+    def test_on_failure_exception_does_not_replace_transport_error(self):
+        """The original ConnectionError (wrapped in TransportError) must
+        still surface — the on_failure hook bug must not become the
+        exception the caller sees."""
+        on_failure = MagicMock(side_effect=RuntimeError("hook bug"))
+        session = MagicMock(spec=requests.Session)
+        session.request.side_effect = requests.ConnectionError("refused")
+        c = HttpClient(session=session, max_attempts=1, on_failure=on_failure)
+        with pytest.raises(TransportError, match="ConnectionError"):
+            c.request("GET", "http://x")
+
+    def test_on_failure_exception_does_not_replace_missingschema(self):
+        """The raw MissingSchema must still propagate even if
+        on_failure raises."""
+        on_failure = MagicMock(side_effect=RuntimeError("hook bug"))
+        session = MagicMock(spec=requests.Session)
+        session.request.side_effect = requests.exceptions.MissingSchema("no scheme")
+        c = HttpClient(session=session, on_failure=on_failure)
+        with pytest.raises(requests.exceptions.MissingSchema):
+            c.request("GET", "x.y/z")
+
+
+class TestSSLAndProxyAreTransportClass:
+    """SSLError and ProxyError both subclass ConnectionError and
+    represent transient transport hiccups (renegotiation, intermittent
+    proxy blips). They MUST be wrapped in TransportError so the retry
+    loop catches them — not propagated raw as config errors. Pinning
+    this so the slice-2 openai_compat migration doesn't silently
+    regress."""
+
+    def test_ssl_error_wraps_to_transport_error(self):
+        session = MagicMock(spec=requests.Session)
+        session.request.side_effect = requests.exceptions.SSLError("renegotiation")
+        c = HttpClient(session=session, max_attempts=1)
+        with pytest.raises(TransportError, match="SSLError"):
+            c.request("GET", "http://x")
+
+    def test_proxy_error_wraps_to_transport_error(self):
+        session = MagicMock(spec=requests.Session)
+        session.request.side_effect = requests.exceptions.ProxyError("blip")
+        c = HttpClient(session=session, max_attempts=1)
+        with pytest.raises(TransportError, match="ProxyError"):
+            c.request("GET", "http://x")
+
+    def test_ssl_error_counts_against_retry_budget(self):
+        """Transient SSL errors should retry (unlike MissingSchema
+        which propagates raw and burns no attempts)."""
+        session = MagicMock(spec=requests.Session)
+        session.request.side_effect = [
+            requests.exceptions.SSLError("blip 1"),
+            requests.exceptions.SSLError("blip 2"),
+        ]
+        c = HttpClient(session=session, max_attempts=2)
+        with pytest.raises(TransportError):
+            c.request("GET", "http://x")
+        assert session.request.call_count == 2
+
+
+class TestHttpClientRetryPlumbing:
+    """The retry_jitter and retry_backoff constructor args must
+    actually reach ``autonomous.ai.retry.retry``. Without these
+    plumbing tests, a regression that dropped the kwargs would
+    silently disable both features without failing any of the
+    response-shape tests above."""
+
+    def test_retry_backoff_and_jitter_reach_retry_helper(self, monkeypatch):
+        captured: dict = {}
+
+        def fake_retry(func, *, max_attempts, sleep_seconds, jitter, catch):
+            captured["max_attempts"] = max_attempts
+            captured["sleep_seconds"] = sleep_seconds
+            captured["jitter"] = jitter
+            captured["catch"] = catch
+            return func()
+
+        monkeypatch.setattr("autonomous.http.client.retry", fake_retry)
+        session = _mock_session(_mock_response(200))
+        c = HttpClient(
+            session=session, max_attempts=4, retry_backoff=2.5, retry_jitter=0.3
+        )
+        c.request("GET", "http://x")
+        assert captured["max_attempts"] == 4
+        assert captured["sleep_seconds"] == 2.5
+        assert captured["jitter"] == 0.3
+        # transport_error_cls is the catch class (TransportError by default)
+        assert TransportError in captured["catch"]
+
+    def test_custom_transport_error_cls_is_the_retry_catch_class(self, monkeypatch):
+        class MyErr(RuntimeError):
+            pass
+
+        captured: dict = {}
+
+        def fake_retry(func, *, max_attempts, sleep_seconds, jitter, catch):
+            captured["catch"] = catch
+            return func()
+
+        monkeypatch.setattr("autonomous.http.client.retry", fake_retry)
+        session = _mock_session(_mock_response(200))
+        c = HttpClient(session=session, transport_error_cls=MyErr)
+        c.request("GET", "http://x")
+        assert MyErr in captured["catch"]
+
+
+class TestEventCallsLog:
+    """``event()`` is the bridge to the legacy ``autonomous.log``
+    singleton — the grep-compatibility claim (existing
+    ``[HPC-UNREACHABLE]`` workflows keep matching) only holds if
+    ``log()`` is actually called with the formatted line. Pin both
+    the call AND the ``_print=`` forwarding so a regression that
+    skips ``log()`` (e.g. an attempt to "deprecate the log singleton")
+    fails loudly."""
+
+    def test_event_invokes_autonomous_log_with_formatted_line(self, monkeypatch):
+        calls = []
+
+        def fake_log(line, *, _print=False):
+            calls.append((line, _print))
+
+        monkeypatch.setattr("autonomous.log", fake_log)
+        event("hpc_unreachable", marker="HPC-UNREACHABLE", status=500)
+        assert len(calls) == 1
+        line, printed = calls[0]
+        assert "[HPC-UNREACHABLE]" in line
+        assert "event=hpc_unreachable" in line
+        assert "status=500" in line
+        assert printed is False  # default
+
+    def test_event_print_to_stdout_forwards_print_kwarg(self, monkeypatch):
+        calls = []
+
+        def fake_log(line, *, _print=False):
+            calls.append((line, _print))
+
+        monkeypatch.setattr("autonomous.log", fake_log)
+        event("login", print_to_stdout=True, user="alice")
+        assert len(calls) == 1
+        assert calls[0][1] is True

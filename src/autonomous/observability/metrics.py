@@ -23,6 +23,7 @@ Thread-safety:
 
 from __future__ import annotations
 
+import math
 import threading
 from typing import Iterable, Mapping
 
@@ -84,7 +85,12 @@ class Counter(_MetricBase):
 
     def inc(self, value: float = 1.0, **labels: str) -> None:
         """Increment by ``value`` (default ``1``) at the given label
-        combination. ``value`` must be non-negative."""
+        combination. ``value`` must be finite and non-negative —
+        ``NaN``/``Inf`` would silently poison the running sum so every
+        subsequent ``collect()`` returns the poisoned value with no
+        recovery short of ``reset()``."""
+        if not math.isfinite(value):
+            raise ValueError("Counter.inc value must be a finite number")
         if value < 0:
             raise ValueError("Counter.inc value must be non-negative")
         key = self._label_key(labels)
@@ -148,7 +154,17 @@ class Histogram(_MetricBase):
         }
 
     def observe(self, value: float, **labels: str) -> None:
-        """Record one observation under the given label combination."""
+        """Record one observation under the given label combination.
+
+        ``value`` must be finite — ``NaN``/``Inf`` would poison ``sum``
+        for the life of the series AND (for NaN) leave per-bucket
+        counts inconsistent with the total ``count`` (NaN ``<=`` any
+        bucket edge is False, so the observation increments ``count``
+        but lands in no bucket), breaking the Prometheus invariant
+        that the implicit ``+Inf`` bucket equals ``count``.
+        """
+        if not math.isfinite(value):
+            raise ValueError("Histogram.observe value must be a finite number")
         key = self._label_key(labels)
         with self._lock:
             series = self._series.setdefault(key, self._empty_series())
@@ -228,6 +244,16 @@ class Registry:
         """Drop every registered metric. Tests use this for isolation."""
         with self._lock:
             self._metrics.clear()
+
+    def unregister(self, name: str) -> _MetricBase | None:
+        """Pop a single metric by name. Returns the removed metric, or
+        ``None`` if no metric was registered under that name. Tests
+        that touch the global ``REGISTRY`` use this for surgical
+        cleanup so they don't need to drop unrelated metrics with
+        ``clear()`` or reach into ``_metrics`` directly.
+        """
+        with self._lock:
+            return self._metrics.pop(name, None)
 
 
 REGISTRY = Registry()
