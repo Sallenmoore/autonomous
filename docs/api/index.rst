@@ -81,3 +81,22 @@ Background tasks (``autonomous.taskrunner``)
    :toctree: generated
 
    autonomous.taskrunner.autotasks
+
+HTTP (``autonomous.http``)
+--------------------------
+
+.. autosummary::
+   :toctree: generated
+
+   autonomous.http
+   autonomous.http.client
+
+Observability (``autonomous.observability``)
+--------------------------------------------
+
+.. autosummary::
+   :toctree: generated
+
+   autonomous.observability
+   autonomous.observability.metrics
+   autonomous.observability.events
