@@ -5,6 +5,157 @@ recent first.
 
 ## Unreleased
 
+### New `autonomous.http` module — consolidated HTTP client (#50, slice 1)
+
+**What's new.**
+
+- `autonomous.http.HttpClient` — `requests.Session` wrapper with
+  configurable timeout, retry (delegates to `autonomous.ai.retry.retry`),
+  transport-failure classification (5xx range + opt-in extras like 401
+  for revoked-token flows), and pluggable observability hooks
+  (`on_request` / `on_response` / `on_failure`).
+- `autonomous.http.TransportError` — generic transport-class exception;
+  adapters can pass their own typed equivalent via
+  `transport_error_cls=`.
+- `autonomous.http.is_transport_failure(status, *, extra_codes=())` —
+  module-level predicate matching the per-instance check.
+- `HttpClient.poll(fetch, predicate=..., max_attempts=..., sleep_seconds=...)`
+  — bounded polling helper that replaces the bare `while + time.sleep`
+  pattern (e.g. `ai.models.gemini` file-state polling, README #6 —
+  enforces a wall-clock cap the existing loop lacks).
+
+**Migration.**
+
+No source change required for this slice — it's pure addition.
+Existing adapters (`ai.models.openai_compat`, `ai.models.local_model`,
+`ai.models.gemini`, `ai.models.flux`, `db.db_sync`, `auth.autoauth`)
+continue to use their per-module `requests.Session()` and ad-hoc
+retry/timeout logic. A follow-up slice retargets each adapter onto
+`HttpClient` one by one — each migration ships as its own PR with a
+MIGRATIONS entry covering the per-adapter behavior change (timeout
+defaults, retry budgets, observability hooks adopted).
+
+New adapters being added now SHOULD use `HttpClient` directly rather
+than mint another module-level `requests.Session()`:
+
+```python
+from autonomous.http import HttpClient
+
+class MyAdapter:
+    def __init__(self):
+        self._http = HttpClient(
+            timeout=30.0,
+            max_attempts=3,
+            retry_backoff=5,
+            transport_failure_codes={401, 429},
+        )
+
+    def fetch(self, url, payload):
+        resp = self._http.post(url, json=payload, headers=self._headers())
+        return resp.json()
+```
+
+### New `autonomous.observability` module — structured events + metrics (#51, slice 1)
+
+**What's new.**
+
+- `autonomous.observability.Counter` / `Histogram` — process-wide
+  metric primitives with Prometheus-style label semantics. In-memory
+  backed in this slice; a Redis backend (matching the hour-bucket
+  pattern in `db.db_sync.record_embedding_sync_event`) and a
+  `prometheus_client` backend ship in follow-up slices.
+- `autonomous.observability.counter(name, ...)` /
+  `histogram(name, ...)` — register-and-return helpers idempotent on
+  name (matching `prometheus_client`'s shape).
+- `autonomous.observability.REGISTRY` — default process registry; tests
+  construct fresh `Registry()` instances and pass them via
+  `registry=` for isolation.
+- `autonomous.observability.event(name, *, level, marker, **fields)` —
+  structured event emission that renders to a human-readable line
+  (preserving legacy sentinel prefixes via `marker=`) AND returns the
+  event dict for attachment to RQ job meta / API response bodies.
+
+**Migration.**
+
+No source change required for this slice — pure addition. The
+existing `[HPC-UNREACHABLE]`, `[STRUCTURED-OUTPUTS-UNAVAILABLE]`, and
+free-form `log()` emission sites continue to work unchanged. A
+follow-up slice migrates emission sites field-by-field; the
+`marker=` parameter ensures grep-based scrapers (e.g. storyteller's
+`/debug/lore/health`) keep matching during the transition.
+
+New emission sites being added now SHOULD use `event()` rather than
+free-form `log()` interpolation:
+
+```python
+from autonomous.observability import event, counter
+
+_HPC_UNREACHABLE = counter(
+    "hpc_unreachable_total",
+    description="HPC transport-class failures",
+    label_names=("provider", "status"),
+)
+
+# At the failure site:
+event(
+    "hpc_unreachable",
+    marker="HPC-UNREACHABLE",
+    level="warning",
+    provider="openai",
+    status=resp.status_code,
+    signature=signature,
+)
+_HPC_UNREACHABLE.inc(provider="openai", status=str(resp.status_code))
+```
+
+The two primitives compose: `HttpClient`'s `on_failure` hook is the
+natural place to call `event()` + `counter().inc()` once adapters
+migrate, replacing the per-call-site sentinel `print()` and
+`log(_print=True)` calls.
+
+### Centralized typed configuration — `autonomous.config` (#49, first slice)
+
+**What changed.**
+
+- New module `autonomous.config` provides a single typed catalog of every
+  environment variable the framework reads. Two layers:
+  - **Guarded parsers** — `env_str`, `env_int`, `env_float`, `env_bool`,
+    `env_list`. They read `os.environ` live on each call, coerce, and fall
+    back to the documented default (with a logged breadcrumb) instead of
+    raising. A malformed/empty numeric env value that previously raised
+    `ValueError` *at import time* (e.g. `int(os.environ.get("HPC_REQUEST_TIMEOUT", 120))`)
+    now falls back to the default.
+  - **`Settings`** — a typed snapshot of the catalog, plus the module
+    singleton `settings` (built once at import). `settings.reload()`
+    re-reads the environment; `settings.as_dict()` / `validate()` /
+    `Settings.describe()` support introspection and doc generation.
+- **Migrated this slice** (call sites now read from the catalog): the AI
+  model adapters `openai_compat`, `local_model`, and `flux`, plus
+  `db_sync._throttle_window_seconds`. The remaining subpackages (database
+  connection helpers, redis/taskrunner, auth providers, storage, Gemini
+  adapter, GitHub API wrappers, per-agent provider overrides) still read
+  `os.environ` directly and are catalogued for a follow-up per-subpackage
+  migration — both forms co-exist.
+- New stdlib-only implementation; **no new core dependency** (no pydantic).
+- New doc page `docs/guides/configuration.md` lists every variable, its
+  type, default, and migration status.
+
+**Migration.**
+
+No source change required for consumers. All existing env-var **names and
+defaults are unchanged** — `Settings` reads them by name and every default
+mirrors the prior call-site default, so behavior is preserved. The only
+behavioral difference is strictly more robust: a malformed numeric env value
+now falls back to the default (with a logged note) rather than crashing the
+import. New code can read typed values via:
+
+```python
+from autonomous.config import settings, env_int
+
+timeout = settings.hpc_request_timeout            # snapshot (int)
+window  = env_int("HPC_UNREACHABLE_THROTTLE_SECONDS", 0)   # live read
+```
+
 ### `GenerateJSONParseError.payload` exposes the parsed object on schema-validation failure (#54)
 
 **What changed.**
