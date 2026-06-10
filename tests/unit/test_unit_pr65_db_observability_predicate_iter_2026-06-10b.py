@@ -131,7 +131,22 @@ class TestDereferenceEagerImport:
         Python interpreter, import ``autonomous.db``, and look up the
         ``dereference`` attribute. Pre-fix this could ImportError on
         the lazy path; with the eager import, it's deterministic.
+
+        PYTHONPATH injection mirrors the pattern from
+        ``test_unit_config_settings_iter_2026-06-07.py`` —
+        setuptools 64+ direct-URL editable mode (GitHub Actions CI)
+        installs an import hook in the running process, but a fresh
+        subprocess starts without it, so ``autonomous`` is invisible
+        unless we explicitly point at ``src/``.
         """
+        import os
+        from pathlib import Path
+
+        src = Path(__file__).resolve().parent.parent.parent / "src"
+        env = dict(os.environ)
+        existing = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = f"{src}:{existing}" if existing else str(src)
+
         script = (
             "import autonomous.db as d; "
             "from autonomous.db import dereference; "
@@ -141,6 +156,7 @@ class TestDereferenceEagerImport:
         )
         result = subprocess.run(
             [sys.executable, "-c", script],
+            env=env,
             capture_output=True,
             text=True,
             timeout=30,
