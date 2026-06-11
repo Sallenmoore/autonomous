@@ -83,8 +83,13 @@ class TestGenerateImage:
             return _FakeResponse(content=b"\x89PNG-bytes")
 
         from autonomous.ai.models import flux as flux_mod
-        monkeypatch.setattr(flux_mod._SESSION, "post", fake_post)
-        monkeypatch.setattr(flux_mod._SESSION, "get", fake_get)
+        # Post-#50-slice-E: patch _HTTP.post and _HTTP.get directly. The
+        # test doesn't exercise the retry path, so bypassing HttpClient's
+        # internal wrapping is fine. The MagicMock fixture's
+        # raise_for_status is a no-op (slice C lesson — defense in depth
+        # for test mocks that don't trigger raise_for_status).
+        monkeypatch.setattr(flux_mod._HTTP, "post", fake_post)
+        monkeypatch.setattr(flux_mod._HTTP, "get", fake_get)
 
         result = flux_mod.FluxAIModel.generate_image(
             _flux(),
@@ -123,66 +128,83 @@ class TestGenerateImage:
             FluxAIModel.generate_image(_flux(), "prompt")
 
     def test_5xx_retries_then_eventually_succeeds(self, monkeypatch):
+        # Post-#50-slice-E patches ``_HTTP.session.request`` (the layer
+        # HttpClient.request actually invokes) so HttpClient's internal
+        # retry wrapper fires. Patching ``_HTTP.post`` directly would
+        # bypass the retry budget — the mock would raise once and the
+        # test would see calls["post"] == 1 instead of 3.
         monkeypatch.setenv("FAL_KEY", "fal-test-key")
         calls = {"post": 0}
 
-        def flaky_post(url, headers=None, json=None, timeout=None):
-            calls["post"] += 1
-            if calls["post"] < 3:
-                raise requests.ConnectionError("simulated 5xx")
-            return _FakeResponse(
-                json_data={"images": [{"url": "https://cdn/x.webp"}]}
-            )
-
-        def fake_get(url, timeout=None):
-            return _FakeResponse(content=b"OK")
+        def flaky_request(method, url, *args, **kwargs):
+            if method == "POST":
+                calls["post"] += 1
+                if calls["post"] < 3:
+                    raise requests.ConnectionError("simulated 5xx")
+                return _FakeResponse(
+                    json_data={"images": [{"url": "https://cdn/x.webp"}]}
+                )
+            if method == "GET":
+                return _FakeResponse(content=b"OK")
+            raise AssertionError(f"unexpected method: {method}")
 
         from autonomous.ai.models import flux as flux_mod
-        monkeypatch.setattr(flux_mod._SESSION, "post", flaky_post)
-        monkeypatch.setattr(flux_mod._SESSION, "get", fake_get)
-        # Speed up retries — sleep_seconds is env-overridable.
-        monkeypatch.setattr(flux_mod.FluxAIModel, "_retry_sleep", 0.0)
+        monkeypatch.setattr(flux_mod._HTTP.session, "request", flaky_request)
+        # Speed up retries — replaces the pre-migration
+        # ``monkeypatch.setattr(FluxAIModel, "_retry_sleep", 0.0)``.
+        # The retry config now lives on the HttpClient instance.
+        monkeypatch.setattr(flux_mod._HTTP, "retry_backoff", 0.0)
 
         result = flux_mod.FluxAIModel.generate_image(_flux(), "prompt")
         assert result == b"OK"
         assert calls["post"] == 3   # 2 failures + 1 success
 
     def test_5xx_after_max_attempts_raises(self, monkeypatch):
+        # Post-#50-slice-E behavior change: HttpClient wraps the caught
+        # requests.ConnectionError into the configured
+        # ``transport_error_cls=requests.RequestException`` on retry
+        # exhaustion. The original ConnectionError's message is
+        # preserved in the wrapper. Update the pytest.raises to match
+        # the wrapper class; pre-migration this raised ConnectionError
+        # directly via the retry() helper.
         monkeypatch.setenv("FAL_KEY", "fal-test-key")
         calls = {"post": 0}
 
-        def always_fail(url, headers=None, json=None, timeout=None):
-            calls["post"] += 1
+        def always_fail(method, url, *args, **kwargs):
+            if method == "POST":
+                calls["post"] += 1
             raise requests.ConnectionError("permanent")
 
         from autonomous.ai.models import flux as flux_mod
-        monkeypatch.setattr(flux_mod._SESSION, "post", always_fail)
-        monkeypatch.setattr(flux_mod.FluxAIModel, "_retry_sleep", 0.0)
+        monkeypatch.setattr(flux_mod._HTTP.session, "request", always_fail)
+        monkeypatch.setattr(flux_mod._HTTP, "retry_backoff", 0.0)
 
-        with pytest.raises(requests.ConnectionError, match="permanent"):
+        with pytest.raises(requests.RequestException, match="permanent"):
             flux_mod.FluxAIModel.generate_image(_flux(), "prompt")
-        assert calls["post"] == 3   # _max_attempts default
+        assert calls["post"] == 3   # HttpClient.max_attempts default
 
     def test_empty_images_array_raises_value_error(self, monkeypatch):
+        # No retry path exercised here — patch _HTTP.post directly.
         monkeypatch.setenv("FAL_KEY", "fal-test-key")
 
         def fake_post(url, headers=None, json=None, timeout=None):
             return _FakeResponse(json_data={"images": []})
 
         from autonomous.ai.models import flux as flux_mod
-        monkeypatch.setattr(flux_mod._SESSION, "post", fake_post)
+        monkeypatch.setattr(flux_mod._HTTP, "post", fake_post)
 
         with pytest.raises(ValueError, match="no images"):
             flux_mod.FluxAIModel.generate_image(_flux(), "prompt")
 
     def test_image_missing_url_raises_value_error(self, monkeypatch):
+        # No retry path exercised here — patch _HTTP.post directly.
         monkeypatch.setenv("FAL_KEY", "fal-test-key")
 
         def fake_post(url, headers=None, json=None, timeout=None):
             return _FakeResponse(json_data={"images": [{"width": 1024}]})
 
         from autonomous.ai.models import flux as flux_mod
-        monkeypatch.setattr(flux_mod._SESSION, "post", fake_post)
+        monkeypatch.setattr(flux_mod._HTTP, "post", fake_post)
 
         with pytest.raises(ValueError, match="image URL"):
             flux_mod.FluxAIModel.generate_image(_flux(), "prompt")

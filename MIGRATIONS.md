@@ -5,6 +5,84 @@ recent first.
 
 ## Unreleased
 
+### `flux._SESSION` + `retry()` → `_HTTP` HttpClient migration (#50 slice E)
+
+**What changed.**
+
+- `autonomous.ai.models.flux._SESSION` (`requests.Session`) and the inner
+  `_post()` + `autonomous.ai.retry.retry(...)` wrapper inside
+  `generate_image` are replaced by `_HTTP = HttpClient(...)` at module scope.
+  `HttpClient.max_attempts` + `HttpClient.retry_backoff` absorb the retry
+  policy; the call sites collapse to `_HTTP.post(...)` / `_HTTP.get(...)`.
+- The `_max_attempts` / `_retry_sleep` class attrs on `FluxAIModel` are
+  removed (their values live on `_HTTP` now, read from the same
+  `settings.flux_max_attempts` / `settings.flux_retry_sleep` settings).
+- The `from autonomous.ai.retry import retry` import is removed (no
+  callers left in this module).
+
+**Behavior change worth flagging: CDN GET now retries.**
+
+Pre-migration, the retry policy wrapped ONLY the `_SESSION.post` call to
+fal.ai. The subsequent `_SESSION.get(image_url, ...)` against fal.ai's CDN
+ran outside the retry loop — a transient CDN failure failed the whole
+`generate_image` call.
+
+Post-migration, `HttpClient`'s retry policy applies uniformly to both
+`_HTTP.post` and `_HTTP.get`. A transient CDN failure now retries up to
+`max_attempts` times (default 3) instead of failing immediately. This is
+strictly better than the pre-migration behavior — fal.ai's CDN failures
+are nearly always transient, and the previous single-attempt GET was a
+weak spot in the user-visible reliability story.
+
+**Behavior change worth flagging: retry-exhaustion exception class.**
+
+Pre-migration, when retries were exhausted the original
+`requests.ConnectionError` (or other `requests.RequestException`
+subclass) propagated to the caller.
+
+Post-migration, `HttpClient` wraps the caught exception into the
+configured `transport_error_cls=requests.RequestException` on retry
+exhaustion (via `raise transport_error_cls(...) from exc`). The original
+class is on `__cause__`; the wrapper has the original exception's
+message embedded (`f"POST URL failed (ConnectionError): permanent"`).
+
+Consumer impact: `except requests.RequestException` (the parent class)
+still catches both pre- and post-migration. `except requests.ConnectionError`
+specifically catches only pre-migration; post-migration the wrapper class
+is `RequestException`, so a `ConnectionError`-specific catch silently
+falls through.
+
+If a caller depends on the original class, they can unwrap one level:
+
+```python
+try:
+    flux.generate_image(...)
+except requests.RequestException as e:
+    original = e.__cause__ if e.__cause__ is not None else e
+    if isinstance(original, requests.ConnectionError):
+        ...
+```
+
+**Test fixture migration.**
+
+`tests/unit/test_unit_flux.py` updated in lockstep:
+- 7 patches across 5 test methods retargeted from `flux_mod._SESSION.post/get`
+  to either `flux_mod._HTTP.post/get` (non-retry tests, direct patch is fine)
+  or `flux_mod._HTTP.session.request` (retry tests — patching `_HTTP.post`
+  directly would bypass HttpClient's internal retry budget, leaving the
+  flaky-then-succeeds tests with `calls["post"] == 1` instead of 3).
+- `monkeypatch.setattr(FluxAIModel, "_retry_sleep", 0.0)` becomes
+  `monkeypatch.setattr(_HTTP, "retry_backoff", 0.0)` — same speed-up
+  intent, different attribute now that the retry config lives on the
+  HttpClient instance.
+- `pytest.raises(requests.ConnectionError, match="permanent")` becomes
+  `pytest.raises(requests.RequestException, match="permanent")` for the
+  retry-exhaustion test (reflecting the new wrapper class).
+
+External consumers who monkeypatch `autonomous.ai.models.flux._SESSION`
+directly must update to `_HTTP` (or `_HTTP.session.request` for retry
+exercises). No backward-compat alias — same rationale as slices C/D.
+
 ### `autonomous.db.dereference` eagerly bound at package import (#63)
 
 **What changed.**
