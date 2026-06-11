@@ -183,6 +183,7 @@ class HttpClient:
         retry_jitter: float = 0.0,
         transport_failure_codes: Iterable[int] = (),
         transport_error_cls: type[Exception] = TransportError,
+        extra_non_transport_exceptions: Iterable[type[BaseException]] = (),
         on_request: RequestHook | None = None,
         on_response: ResponseHook | None = None,
         on_failure: FailureHook | None = None,
@@ -196,6 +197,18 @@ class HttpClient:
         self.retry_jitter = retry_jitter
         self.transport_failure_codes = frozenset(transport_failure_codes)
         self.transport_error_cls = transport_error_cls
+        # Per-instance extension of ``_NON_TRANSPORT_REQUESTS_EXCEPTIONS``
+        # for adapters with deployment-specific config-class exceptions
+        # (e.g. ``openai_compat`` carves out ``SSLError`` and ``ProxyError``
+        # because in its HPC deployment they're corporate-cert-bundle /
+        # corporate-proxy misconfigs that retry-with-translation
+        # actively misdirects on-call). Most adapters leave this empty —
+        # the module-level tuple already covers the universally
+        # config-class ones (MissingSchema, InvalidURL, etc.).
+        self._non_transport_exceptions: tuple[type[BaseException], ...] = (
+            _NON_TRANSPORT_REQUESTS_EXCEPTIONS
+            + tuple(extra_non_transport_exceptions)
+        )
         self.on_request: RequestHook = on_request or _noop_request
         self.on_response: ResponseHook = on_response or _noop_response
         self.on_failure: FailureHook = on_failure or _noop_failure
@@ -262,10 +275,14 @@ class HttpClient:
                     timeout=effective_timeout,
                     **kwargs,
                 )
-            except _NON_TRANSPORT_REQUESTS_EXCEPTIONS:
+            except self._non_transport_exceptions:
                 # Config error — don't burn the retry budget; let the
                 # caller see the precise exception type. Notify the
                 # failure hook so observability still records it.
+                # Tuple is built per-instance: the module-level
+                # ``_NON_TRANSPORT_REQUESTS_EXCEPTIONS`` plus any
+                # ``extra_non_transport_exceptions=`` passed at
+                # construction time.
                 exc = _current_exc()
                 _safe_hook(self.on_failure, method, url, exc, attempt)
                 raise

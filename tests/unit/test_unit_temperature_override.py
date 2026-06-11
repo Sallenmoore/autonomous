@@ -339,7 +339,7 @@ class TestOpenAIClientJsonTemperature:
 
     def test_default_temperature_used_in_payload(self, client):
         with patch(
-            "autonomous.ai.models.openai_compat._SESSION.post",
+            "autonomous.ai.models.openai_compat._HTTP.post",
             return_value=self._mock_chat_response('{"k": "v"}'),
         ) as mock_post:
             client.generate_json("get json")
@@ -349,7 +349,7 @@ class TestOpenAIClientJsonTemperature:
 
     def test_custom_temperature_propagated(self, client):
         with patch(
-            "autonomous.ai.models.openai_compat._SESSION.post",
+            "autonomous.ai.models.openai_compat._HTTP.post",
             return_value=self._mock_chat_response('{"k": "v"}'),
         ) as mock_post:
             client.generate_json("deterministic field", temperature=0.0)

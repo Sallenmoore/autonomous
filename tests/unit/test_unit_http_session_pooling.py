@@ -28,9 +28,15 @@ def _stub_response(status=200, json_body=None, content=b""):
 
 
 def test_openai_compat_uses_session_not_bare_requests(monkeypatch):
+    # Post-#50-slice-F the openai_compat seam is HttpClient, not a bare
+    # Session. Same intent as the db_sync and local_model tests — verify
+    # the pooled-HTTP path is used rather than bare ``requests.post`` —
+    # but the patch target moves from ``_SESSION.post`` to ``_HTTP.post``
+    # (HttpClient.post routes through its internal ``self.session.request``,
+    # so patching ``_HTTP.session.post`` would no-op).
     session_post = MagicMock(return_value=_stub_response(json_body={"data": [{"embedding": [0.0]}]}))
     bare_post = MagicMock()
-    monkeypatch.setattr(openai_compat._SESSION, "post", session_post)
+    monkeypatch.setattr(openai_compat._HTTP, "post", session_post)
     monkeypatch.setattr(requests, "post", bare_post)
 
     client = openai_compat.OpenAIClient.__new__(openai_compat.OpenAIClient)
@@ -38,8 +44,6 @@ def test_openai_compat_uses_session_not_bare_requests(monkeypatch):
     object.__setattr__(client, "_api_key", "k")
     object.__setattr__(client, "_embedding_model", "m")
     object.__setattr__(client, "_timeout", 1)
-    object.__setattr__(client, "_retry_attempts", 1)
-    object.__setattr__(client, "_retry_backoff", 0)
     client.get_embedding("text")
 
     assert session_post.call_count == 1

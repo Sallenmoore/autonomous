@@ -439,19 +439,36 @@ class TestPostFiveHundredRetries:
 
     def _client(self, monkeypatch):
         """Bare OpenAIClient that bypasses __init__'s env-var reads and
-        sets the bare minimum for _post to run."""
+        sets the bare minimum for _post to run.
+
+        Post-#50-slice-F: retry config moved to module-level _HTTP.
+        Set ``max_attempts=1`` and ``retry_backoff=0`` on the HttpClient
+        instance (per-test monkeypatch) so retry-exhaustion tests don't
+        burn real sleeps. The per-client ``_retry_attempts`` /
+        ``_retry_backoff`` attrs are now informational only.
+        """
+        import autonomous.ai.models.openai_compat as openai_compat
         client = OpenAIClient.__new__(OpenAIClient)
         client._base_url = "http://hpc.test"
         client._timeout = 5
-        client._retry_attempts = 1  # one attempt, no actual retry sleep
-        client._retry_backoff = 0
         client._headers = lambda content_type=None: {}
+        monkeypatch.setattr(openai_compat._HTTP, "max_attempts", 1)
+        monkeypatch.setattr(openai_compat._HTTP, "retry_backoff", 0)
         return client
 
     def test_500_raises_hpcunreachable_not_httperror(self, monkeypatch):
         """Direct contract: a 500 status from the HTTP session must
         produce HPCUnreachableError, NOT requests.HTTPError. This is the
-        translation step that lets retry() catch and re-attempt."""
+        translation step that lets HttpClient's retry catch and
+        re-attempt.
+
+        Post-#50-slice-F: patch ``_HTTP.session.request`` so
+        HttpClient's transport-class wrap actually runs (patching
+        ``_HTTP`` whole-object would replace HttpClient with a
+        MagicMock and bypass the wrapping logic the test is verifying).
+        """
+        import autonomous.ai.models.openai_compat as openai_compat
+
         client = self._client(monkeypatch)
 
         mock_response = MagicMock()
@@ -462,20 +479,19 @@ class TestPostFiveHundredRetries:
         # regressions where the check is bypassed.
         mock_response.raise_for_status.side_effect = AssertionError(
             "raise_for_status must not be called for 500 — "
-            "_is_transport_failure should engage first and raise "
-            "HPCUnreachableError before the HTTPError path."
+            "HttpClient.is_transport_failure should engage first and "
+            "raise HPCUnreachableError before the HTTPError path."
         )
-        mock_session = MagicMock()
-        mock_session.post.return_value = mock_response
         monkeypatch.setattr(
-            "autonomous.ai.models.openai_compat._SESSION", mock_session
+            openai_compat._HTTP.session, "request",
+            lambda method, url, **kwargs: mock_response,
         )
 
         with pytest.raises(HPCUnreachableError) as excinfo:
             client._post("/chat/completions", json_body={"x": 1})
 
         # The error message should surface the 500 status for diagnostic
-        # legibility (the existing format string includes status code).
+        # legibility (HttpClient's wrap format includes status code).
         assert "500" in str(excinfo.value)
 
     def test_502_503_504_still_route_through_retry(self, monkeypatch):
@@ -483,15 +499,17 @@ class TestPostFiveHundredRetries:
         same translation. The diff replaced the fixed-set check with a
         range — these used to be in the set and must remain
         transport-failures under the new logic."""
+        import autonomous.ai.models.openai_compat as openai_compat
+
         for status in (502, 503, 504):
             client = self._client(monkeypatch)
             mock_response = MagicMock()
             mock_response.status_code = status
             mock_response.text = ""
-            mock_session = MagicMock()
-            mock_session.post.return_value = mock_response
+            mock_response.raise_for_status.return_value = None
             monkeypatch.setattr(
-                "autonomous.ai.models.openai_compat._SESSION", mock_session
+                openai_compat._HTTP.session, "request",
+                lambda method, url, **kwargs: mock_response,
             )
             with pytest.raises(HPCUnreachableError):
                 client._post("/chat/completions", json_body={})
@@ -501,6 +519,7 @@ class TestPostFiveHundredRetries:
         propagate as the regular HTTPError from raise_for_status. The
         retry layer would just spin on the bad input otherwise."""
         import requests
+        import autonomous.ai.models.openai_compat as openai_compat
 
         client = self._client(monkeypatch)
         mock_response = MagicMock()
@@ -509,10 +528,9 @@ class TestPostFiveHundredRetries:
         mock_response.raise_for_status.side_effect = requests.HTTPError(
             "400 Client Error"
         )
-        mock_session = MagicMock()
-        mock_session.post.return_value = mock_response
         monkeypatch.setattr(
-            "autonomous.ai.models.openai_compat._SESSION", mock_session
+            openai_compat._HTTP.session, "request",
+            lambda method, url, **kwargs: mock_response,
         )
 
         with pytest.raises(requests.HTTPError):

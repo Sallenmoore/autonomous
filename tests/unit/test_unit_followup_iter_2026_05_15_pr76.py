@@ -261,31 +261,37 @@ class TestOpenAIPostCatchesPoolExceptions:
             mock_tasks.return_value.get_current_task.return_value = None
             yield mock_tasks
 
-    def _make_client(self):
-        # OpenAIClient.__new__ inherits class-level _retry_attempts=3
-        # and _retry_backoff=10 from openai_compat. Without overriding,
-        # each test would burn ~20s of real time.sleep on the inner
-        # retry loop (2 sleeps × ~10s each). Set attempts=1 and
-        # backoff=0 so the test fails fast on the first translated
-        # raise — the retry behavior is not what we're pinning.
+    def _make_client(self, monkeypatch):
+        # Post-#50-slice-F: retry config moved from per-client class
+        # attrs (_retry_attempts / _retry_backoff) to module-level _HTTP.
+        # OpenAIClient inherits class-level _retry_attempts=3 + _retry_backoff
+        # =10 from settings.hpc_* — but those attrs are now informational
+        # only. The retry budget lives on ``_HTTP.max_attempts`` /
+        # ``_HTTP.retry_backoff``. monkeypatch both so the test fails fast
+        # on the first translated raise.
         from autonomous.ai.models import openai_compat
         client = openai_compat.OpenAIClient.__new__(
             openai_compat.OpenAIClient
         )
         client._base_url = "http://stub"
         client._timeout = 1.0
-        client._retry_attempts = 1
-        client._retry_backoff = 0
+        monkeypatch.setattr(openai_compat._HTTP, "max_attempts", 1)
+        monkeypatch.setattr(openai_compat._HTTP, "retry_backoff", 0)
         return client
 
-    def test_retry_error_translates_to_hpc_unreachable(self):
+    def test_retry_error_translates_to_hpc_unreachable(self, monkeypatch):
         # urllib3 pool exhaustion. Pre-#78 this propagated raw and
         # bypassed the [HPC-UNREACHABLE] scrape sentinel.
+        # Post-#50-slice-F: HttpClient's transport_error_cls=
+        # HPCUnreachableError handles the translation; we patch deeper
+        # at ``_HTTP.session.request`` so HttpClient's internal wrap
+        # actually fires. Patching ``_HTTP.post`` directly would bypass
+        # HttpClient and the side_effect would propagate raw.
         from autonomous.ai.models import openai_compat
-        client = self._make_client()
+        client = self._make_client(monkeypatch)
         with patch.object(
-            openai_compat._SESSION,
-            "post",
+            openai_compat._HTTP.session,
+            "request",
             side_effect=requests.exceptions.RetryError("pool exhausted"),
         ):
             with pytest.raises(openai_compat.HPCUnreachableError) as excinfo:
@@ -297,14 +303,14 @@ class TestOpenAIPostCatchesPoolExceptions:
             "operators can disambiguate transport failure classes"
         )
 
-    def test_chunked_encoding_error_translates_to_hpc_unreachable(self):
+    def test_chunked_encoding_error_translates_to_hpc_unreachable(self, monkeypatch):
         # Interrupted streamed body on a pooled connection. Pre-#78
         # this also escaped the translation.
         from autonomous.ai.models import openai_compat
-        client = self._make_client()
+        client = self._make_client(monkeypatch)
         with patch.object(
-            openai_compat._SESSION,
-            "post",
+            openai_compat._HTTP.session,
+            "request",
             side_effect=requests.exceptions.ChunkedEncodingError(
                 "stream interrupted"
             ),
@@ -313,16 +319,16 @@ class TestOpenAIPostCatchesPoolExceptions:
                 client._post("test/path", {"k": "v"})
         assert "ChunkedEncodingError" in str(excinfo.value)
 
-    def test_legacy_connection_error_still_translates(self):
+    def test_legacy_connection_error_still_translates(self, monkeypatch):
         # Belt-and-suspenders: the pre-#78 cases (ConnectionError,
         # Timeout) still translate. A regression that swapped to
         # a too-narrow catch (e.g. only urllib3 ones) would now
         # fail.
         from autonomous.ai.models import openai_compat
-        client = self._make_client()
+        client = self._make_client(monkeypatch)
         with patch.object(
-            openai_compat._SESSION,
-            "post",
+            openai_compat._HTTP.session,
+            "request",
             side_effect=requests.ConnectionError("refused"),
         ):
             with pytest.raises(openai_compat.HPCUnreachableError):

@@ -13,9 +13,12 @@ from autonomous.db import db_sync
 
 
 def test_openai_compat_module_has_session():
-    assert hasattr(openai_compat, "_SESSION")
-    # Session, not just a Mock — duck-type check.
-    assert hasattr(openai_compat._SESSION, "post")
+    # Post-#50-slice-F openai_compat's seam is HttpClient, not bare
+    # Session. The pool-singleton contract is on _HTTP itself;
+    # HttpClient holds its own internal requests.Session, accessible
+    # at _HTTP.session.
+    assert hasattr(openai_compat, "_HTTP")
+    assert hasattr(openai_compat._HTTP, "post")
 
 
 def test_local_model_module_has_session():
@@ -34,7 +37,7 @@ def test_session_is_singleton_within_module(benchmark):
     """
     def _read_all():
         return (
-            id(openai_compat._SESSION),
+            id(openai_compat._HTTP),
             id(local_model._SESSION),
             id(db_sync._HTTP_SESSION),
         )

@@ -25,6 +25,17 @@ def _silence_autotasks():
         yield mock_tasks
 
 
+@pytest.fixture(autouse=True)
+def _fast_retry(monkeypatch):
+    # Post-#50-slice-F: retry config lives on module-level _HTTP, not
+    # per-client. Set retry_backoff=0 globally for this test file so
+    # retry-exhaustion tests don't burn real sleeps. The default
+    # max_attempts is read from settings.hpc_retry_attempts (3) which
+    # is what the existing assertions expect.
+    from autonomous.ai.models import openai_compat
+    monkeypatch.setattr(openai_compat._HTTP, "retry_backoff", 0)
+
+
 @pytest.fixture
 def client():
     """Build an OpenAIClient bypassing AutoModel/MongoEngine setup.
@@ -69,7 +80,7 @@ def _mock_chat_response(content):
 class TestGenerateText:
     def test_posts_to_chat_completions(self, client):
         with patch(
-            "autonomous.ai.models.openai_compat._SESSION.post",
+            "autonomous.ai.models.openai_compat._HTTP.post",
             return_value=_mock_chat_response("hello world"),
         ) as mock_post:
             result = client.generate_text("hi")
@@ -88,7 +99,7 @@ class TestGenerateText:
 
     def test_appends_context_and_uri(self, client):
         with patch(
-            "autonomous.ai.models.openai_compat._SESSION.post",
+            "autonomous.ai.models.openai_compat._HTTP.post",
             return_value=_mock_chat_response("ok"),
         ) as mock_post:
             client.generate_text(
@@ -103,7 +114,7 @@ class TestGenerateText:
 class TestGenerateJson:
     def test_sends_response_format_json_object(self, client):
         with patch(
-            "autonomous.ai.models.openai_compat._SESSION.post",
+            "autonomous.ai.models.openai_compat._HTTP.post",
             return_value=_mock_chat_response('{"name": "Aria"}'),
         ) as mock_post:
             result = client.generate_json("describe a character")
@@ -117,7 +128,7 @@ class TestGenerateJson:
         # should rescue the JSON.
         wrapped = '```json\n{"name": "Aria"}\n```'
         with patch(
-            "autonomous.ai.models.openai_compat._SESSION.post",
+            "autonomous.ai.models.openai_compat._HTTP.post",
             return_value=_mock_chat_response(wrapped),
         ):
             result = client.generate_json("describe a character")
@@ -127,7 +138,7 @@ class TestGenerateJson:
         from autonomous.ai.exceptions import GenerateJSONParseError
 
         with patch(
-            "autonomous.ai.models.openai_compat._SESSION.post",
+            "autonomous.ai.models.openai_compat._HTTP.post",
             return_value=_mock_chat_response("I cannot help with that."),
         ):
             with pytest.raises(GenerateJSONParseError) as ctx:
@@ -143,7 +154,7 @@ class TestEmbeddings:
         response.raise_for_status.return_value = None
 
         with patch(
-            "autonomous.ai.models.openai_compat._SESSION.post",
+            "autonomous.ai.models.openai_compat._HTTP.post",
             return_value=response,
         ) as mock_post:
             vec = client.get_embedding("a bit of text")
@@ -166,7 +177,7 @@ class TestTranscription:
         response.raise_for_status.return_value = None
 
         with patch(
-            "autonomous.ai.models.openai_compat._SESSION.post",
+            "autonomous.ai.models.openai_compat._HTTP.post",
             return_value=response,
         ) as mock_post:
             result = client.generate_transcription(b"fake audio bytes")
@@ -186,7 +197,7 @@ class TestTranscription:
         response.raise_for_status.return_value = None
 
         with patch(
-            "autonomous.ai.models.openai_compat._SESSION.post",
+            "autonomous.ai.models.openai_compat._HTTP.post",
             return_value=response,
         ):
             result = client.generate_transcription(b"audio")
@@ -195,13 +206,20 @@ class TestTranscription:
 
 class TestUnreachableErrors:
     """Transport-layer failures must surface as HPCUnreachableError so callers
-    can convert them into a clear toast rather than a generic 500."""
+    can convert them into a clear toast rather than a generic 500.
+
+    Post-#50-slice-F: HttpClient's
+    ``transport_error_cls=HPCUnreachableError`` handles the translation.
+    Tests patch ``_HTTP.session.request`` so HttpClient's internal
+    transport-class wrap actually fires (patching ``_HTTP.post``
+    directly would bypass it).
+    """
 
     def test_connection_error_becomes_hpc_unreachable(self, client):
         from autonomous.ai.models.openai_compat import HPCUnreachableError
 
         with patch(
-            "autonomous.ai.models.openai_compat._SESSION.post",
+            "autonomous.ai.models.openai_compat._HTTP.session.request",
             side_effect=requests.ConnectionError("VPN down"),
         ):
             with pytest.raises(HPCUnreachableError):
@@ -211,7 +229,7 @@ class TestUnreachableErrors:
         from autonomous.ai.models.openai_compat import HPCUnreachableError
 
         with patch(
-            "autonomous.ai.models.openai_compat._SESSION.post",
+            "autonomous.ai.models.openai_compat._HTTP.session.request",
             side_effect=requests.Timeout("slow"),
         ):
             with pytest.raises(HPCUnreachableError):
@@ -224,9 +242,11 @@ class TestUnreachableErrors:
         bad = MagicMock()
         bad.status_code = code
         bad.text = "denied"
+        bad.raise_for_status.return_value = None
 
         with patch(
-            "autonomous.ai.models.openai_compat._SESSION.post", return_value=bad
+            "autonomous.ai.models.openai_compat._HTTP.session.request",
+            return_value=bad,
         ):
             with pytest.raises(HPCUnreachableError):
                 client.generate_text("hi")
@@ -235,12 +255,13 @@ class TestUnreachableErrors:
         from autonomous.ai.models.openai_compat import HPCUnreachableError
 
         with patch(
-            "autonomous.ai.models.openai_compat._SESSION.post",
+            "autonomous.ai.models.openai_compat._HTTP.session.request",
             side_effect=requests.ConnectionError("nope"),
-        ) as mock_post:
+        ) as mock_request:
             with pytest.raises(HPCUnreachableError):
                 client.generate_text("hi")
-        assert mock_post.call_count == 3  # _retry_attempts
+        # Default max_attempts from settings.hpc_retry_attempts is 3.
+        assert mock_request.call_count == 3
 
 
 class TestNotImplemented:

@@ -5,6 +5,68 @@ recent first.
 
 ## Unreleased
 
+### `openai_compat._SESSION` + `_post()` exception ladder → `HttpClient` (#50 slice F — closes #50)
+
+**What changed.**
+
+- `autonomous.ai.models.openai_compat._SESSION` (`requests.Session`) plus
+  the inner `_attempt()` closure + manual exception ladder + manual
+  `_is_transport_failure` check + manual `raise_for_status` + outer
+  `autonomous.ai.retry.retry(...)` wrapper inside `_post()` are
+  replaced by `_HTTP = HttpClient(...)` at module scope. HttpClient
+  absorbs the entire pattern: config-error carve-out, transport-class
+  classification, transport_error wrapping, retry budget.
+- The `_post()` method body collapses from ~70 lines to ~12: URL
+  construction, then `_HTTP.post(url, headers=..., json=..., timeout=...)`.
+- `OpenAIClient._retry_attempts` / `_retry_backoff` class attrs are
+  removed (their values now live on `_HTTP.max_attempts` /
+  `_HTTP.retry_backoff`, read from the same `settings.hpc_*` keys).
+- `from autonomous.ai.retry import retry` is removed (no callers left
+  in this module).
+
+**HttpClient extension: `extra_non_transport_exceptions=` constructor kwarg.**
+
+`openai_compat`'s pre-migration config-error ladder listed two more
+`requests.exceptions.*` types than HttpClient's default
+`_NON_TRANSPORT_REQUESTS_EXCEPTIONS` tuple: `SSLError` and `ProxyError`.
+For the HPC deployment those are corporate-cert-bundle /
+corporate-proxy misconfigs (retry can't fix), but for adapters over
+the public internet (fal.ai, etc.) they can be transient — so the
+classification is per-deployment.
+
+Slice F extends `HttpClient.__init__` with an
+`extra_non_transport_exceptions: Iterable[type[BaseException]] = ()`
+parameter that, at instance construction time, is concatenated onto
+the module-level tuple. The per-instance tuple lives on
+`self._non_transport_exceptions` and is what the `except` clause in
+`HttpClient.request` checks. Adapters that need per-deployment
+extension pass the relevant types; the public-internet adapters leave
+it empty (default behavior unchanged).
+
+**HPCUnreachableError message format change.**
+
+HttpClient instantiates `transport_error_cls` (set to `HPCUnreachableError`)
+with its own format strings:
+
+- status-code raise: `f"POST {url} returned {status}: {text[:200]}"`
+- exception raise: `f"POST {url} failed ({type(exc).__name__}): {exc}"`
+
+Pre-migration formats were:
+
+- status: `f"HPC returned {status} for {path}: {text[:200]}"`
+- exception: `f"HPC unreachable ({type(exc).__name__}): {exc}"`
+
+The exception **class is unchanged** (`HPCUnreachableError`). Only the
+embedded message string format differs. Log scrapers grepping for the
+literal "HPC unreachable" or "HPC returned" prefixes need to widen the
+regex; `except HPCUnreachableError` consumers are unaffected.
+
+**Test fixture migration — 32 patches across 9 unit files + 2 perf + 1 perf-iter tuple.**
+
+External consumers who monkeypatch `autonomous.ai.models.openai_compat._SESSION` directly must update to `_HTTP` (or `_HTTP.session.request` for retry exercises). No backward-compat alias — same rationale as slices C/D/E.
+
+**This closes #50.** All six adapter migrations (gemini A, autoauth B, local_model C, db_sync D, flux E, openai_compat F) ship; the per-adapter `_SESSION`/`_post`/`retry` patterns are now centralized in `autonomous.http.HttpClient`.
+
 ### `autonomous.db.dereference` eagerly bound at package import (#63)
 
 **What changed.**
