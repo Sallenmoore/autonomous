@@ -270,12 +270,23 @@ class LocalAIModel(AutoModel):
             self.flush_memory(self._text_model)
 
         try:
+            # ``catch`` lists ONLY concrete transient classes plus the
+            # parse-failure exceptions ``_attempt`` translates. Using the
+            # broad ``requests.RequestException`` would re-catch
+            # ``requests.HTTPError`` (subclass) and burn the budget on a
+            # permanent 4xx — the same fail-fast violation #91 fixed at
+            # the HttpClient layer, recurring here at the outer-retry
+            # altitude (closes #97 / #106). A documented trade: a bare
+            # ``ChunkedEncodingError`` (a ``RequestException`` that is
+            # NOT a ``ConnectionError`` / ``Timeout``) is no longer
+            # retried — same trade flux's #85 narrowing made.
             return retry(
                 _attempt,
                 max_attempts=3,
                 sleep_seconds=self._retry_sleep,
                 catch=(
-                    requests.RequestException,
+                    requests.ConnectionError,
+                    requests.Timeout,
                     json.JSONDecodeError,
                     ValueError,
                     KeyError,
