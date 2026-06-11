@@ -240,6 +240,24 @@ class HttpClient:
     ) -> None:
         if max_attempts < 1:
             raise ValueError("max_attempts must be >= 1")
+        # Fail-fast on an over-broad ``transport_error_cls`` (#98). #91's
+        # ``_NonTransportHTTPError`` marker relies on NOT being a subclass
+        # of any plausible ``transport_error_cls`` so the retry catch
+        # tuple never matches it. A lazy ``transport_error_cls=Exception``
+        # (or ``BaseException``) breaks that invariant: ``(Exception,)``
+        # DOES catch the marker, so a permanent 4xx would burn the full
+        # ``max_attempts`` budget — silently re-introducing the exact
+        # retry-on-4xx bug #91 fixed. Reject at construction rather than
+        # let it regress at runtime.
+        if issubclass(_NonTransportHTTPError, transport_error_cls):
+            raise ValueError(
+                f"transport_error_cls={transport_error_cls.__name__} is too "
+                f"broad: it would catch HttpClient's internal "
+                f"_NonTransportHTTPError marker (see #91), re-introducing the "
+                f"retry-on-4xx bug. Use a narrower class such as "
+                f"requests.RequestException, requests.ConnectionError, or a "
+                f"RuntimeError subclass."
+            )
         self.timeout = timeout
         self.max_attempts = max_attempts
         self.retry_backoff = retry_backoff
@@ -363,6 +381,16 @@ class HttpClient:
                     f"{method} {url} returned {response.status_code}: "
                     f"{response.text[:200]}"
                 )
+                # Fire on_failure for parity with the RequestException and
+                # HTTPError branches (#96). Pre-#96 this transport-status
+                # branch (5xx + configured extras) raised without notifying
+                # the hook, so an adapter wiring ``on_failure=`` to an
+                # alerting counter saw 4xx events (via #91's HTTPError
+                # branch) but NOT 5xx — exactly inverted from what a
+                # transport-degradation alert wants. Closes the
+                # "pre-existing asymmetry ... tracked as a follow-up"
+                # caveat in MIGRATIONS' #91 entry.
+                _safe_hook(self.on_failure, method, url, err, attempt)
                 raise err
             # Non-transport HTTP errors (4xx that aren't in
             # ``transport_failure_codes``) must never be retried — they
@@ -405,7 +433,7 @@ class HttpClient:
         # from default tracebacks) is closed.
         captured_http_error: requests.HTTPError | None = None
         try:
-            return retry(
+            result = retry(
                 _attempt,
                 max_attempts=effective_max_attempts,
                 sleep_seconds=self.retry_backoff,
@@ -414,6 +442,22 @@ class HttpClient:
             )
         except _NonTransportHTTPError as wrapper:
             captured_http_error = wrapper.original
+        else:
+            # Defensive escape guard (#103). The marker is RAISED inside
+            # ``_attempt``, never returned, so ``result`` is always a
+            # ``requests.Response`` and this isinstance check is
+            # unreachable today. It pins the "marker never escapes
+            # ``request()``" invariant in the type, not just in code
+            # organization: a future refactor that moved the ``retry()``
+            # call into a helper without preserving the unwrap above — or
+            # that routed the marker as a value — would otherwise hand
+            # callers an ``Exception``-typed marker where their
+            # ``except requests.HTTPError`` expects an HTTPError, silently
+            # breaking the #91 contract. Surface it at the boundary by
+            # unwrapping to the original instead of letting it leak.
+            if isinstance(result, _NonTransportHTTPError):  # pragma: no cover
+                raise result.original from None
+            return result
         # Outside the except clause — no active exception. ``from None``
         # additionally suppresses the marker's brief lifetime from any
         # display layer. Callers see exactly the requests.HTTPError
