@@ -20,6 +20,7 @@ import requests
 from autonomous import log
 from autonomous.ai._json_utils import clean_json_response
 from autonomous.ai.exceptions import (
+    MALFORMED_2XX_EXCEPTIONS,
     GenerateJSONEmptyResponseError,
     GenerateJSONParseError,
     MalformedResponseError,
@@ -234,6 +235,64 @@ def _looks_like_unsupported_strict_mode(status: int, body_text: str) -> bool:
     return any(m in body_lower for m in _STRICT_MODE_ERROR_MARKERS)
 
 
+# Endpoint paths appear at both the ``_post(...)`` call site and the
+# ``endpoint=`` label on the MalformedResponseError raised for that path.
+# Naming them once (issue #92) keeps the two in lockstep.
+_CHAT_ENDPOINT = "/chat/completions"
+_TRANSCRIPTION_ENDPOINT = "/audio/transcriptions"
+_EMBEDDINGS_ENDPOINT = "/embeddings"
+
+
+def _extract_or_malformed(response, endpoint, extractor):
+    """Parse ``response.json()``, run ``extractor`` over it, and translate
+    the malformed-2xx failure family into ``MalformedResponseError``.
+
+    Centralizes the three near-identical try/except blocks in ``_chat``,
+    ``get_embedding``, and ``generate_transcription`` (issue #92). The
+    ``extractor`` callable keeps the per-endpoint walk
+    (``body["choices"][0]...`` vs ``body["data"][0]...`` vs the
+    transcription shape) at the call site, but the catch tuple
+    (``MALFORMED_2XX_EXCEPTIONS``, issue #102), the
+    ``MalformedResponseError`` construction, and the defensive
+    ``response.text`` read (``from_response``, issue #90) live in one
+    place — so the walk stays inside the protected block (an empty
+    ``{"choices": []}`` still translates instead of leaking ``IndexError``)
+    while the boilerplate is DRY.
+    """
+    try:
+        return extractor(response.json())
+    except MALFORMED_2XX_EXCEPTIONS as exc:
+        raise MalformedResponseError.from_response(
+            response,
+            f"HPC {endpoint} endpoint returned a malformed 2xx body: {exc}",
+            endpoint=endpoint,
+        ) from exc
+
+
+def _normalize_transcription_body(body):
+    """Coerce an /audio/transcriptions 2xx body to the LocalAIModel-
+    compatible ``{"text": str, "segments": list}`` shape (issue #88).
+
+    ``dict.get(key, default)`` only fires ``default`` when the key is
+    ABSENT — a server returning legal JSON ``{"text": null,
+    "segments": null}`` (e.g. no content transcribed) would otherwise
+    leak ``{"text": None, "segments": None}`` past the malformed-2xx
+    catch (the body parses fine and ``.get`` doesn't raise), and a caller
+    doing ``result["text"].strip()`` hits
+    ``AttributeError: 'NoneType' object has no attribute 'strip'``.
+    Normalizing null-or-wrong-type to the documented ``str`` / ``list``
+    default keeps the contract honest. ``body.get`` against a non-dict
+    body raises ``AttributeError`` — caught by ``_extract_or_malformed``
+    and translated to ``MalformedResponseError``, same as before.
+    """
+    text = body.get("text")
+    segments = body.get("segments")
+    return {
+        "text": text if isinstance(text, str) else "",
+        "segments": segments if isinstance(segments, list) else [],
+    }
+
+
 class OpenAIClient(AutoModel):
     messages = ListAttr(StringAttr(default=[]))
     name = StringAttr(default="agent")
@@ -323,35 +382,25 @@ class OpenAIClient(AutoModel):
             payload["response_format"] = response_format
         if current_job := AutoTasks().get_current_task():
             current_job.meta(payload=payload)
-        response = self._post("/chat/completions", json_body=payload)
+        response = self._post(_CHAT_ENDPOINT, json_body=payload)
         # Malformed-200 translation (#76). HttpClient classifies >=500
         # and 401 as transport-class (raised as HPCUnreachableError,
         # already retried); other 4xx (400, 403, 404, ...) surface as
         # ``requests.HTTPError`` via ``raise_for_status`` and bubble
-        # PAST this try — ``generate_json`` explicitly catches HTTPError
-        # downstream. So this catch only needs to cover the malformed-
+        # PAST this call — ``generate_json`` explicitly catches HTTPError
+        # downstream. So the helper only needs to cover the malformed-
         # 2xx-body case: empty choices / missing keys (KeyError /
         # IndexError / TypeError) or a non-JSON 2xx body (ValueError,
-        # which json.JSONDecodeError subclasses).
-        try:
-            body = response.json()
-            return body["choices"][0]["message"]["content"]
-        except (AttributeError, KeyError, IndexError, TypeError, ValueError) as exc:
-            # AttributeError is forward-looking only — the subscript
-            # access on ``body`` raises TypeError (not AttributeError)
-            # when ``body`` is None, so AttributeError is dead under
-            # the current code shape. It's in the tuple to align with
-            # the documented ``MalformedResponseError`` contract so a
-            # future refactor that switches to ``body.get(...)`` (the
-            # shape ``generate_transcription`` actually uses) doesn't
-            # leak raw AttributeError through the typed-exception
-            # surface.
-            raise MalformedResponseError(
-                f"HPC chat endpoint returned a malformed 200 body: {exc}",
-                endpoint="/chat/completions",
-                status=response.status_code,
-                body_excerpt=response.text,
-            ) from exc
+        # which json.JSONDecodeError subclasses). The shared
+        # ``_extract_or_malformed`` helper owns the catch tuple (#102),
+        # the typed-exception construction, and the defensive
+        # ``response.text`` read (#90); the walk below stays inside its
+        # protected block.
+        return _extract_or_malformed(
+            response,
+            _CHAT_ENDPOINT,
+            lambda body: body["choices"][0]["message"]["content"],
+        )
 
     def generate_text(
         self,
@@ -541,32 +590,17 @@ class OpenAIClient(AutoModel):
         if current_job := AutoTasks().get_current_task():
             current_job.meta(data=data)
 
-        response = self._post("/audio/transcriptions", files=files, data=data)
+        response = self._post(_TRANSCRIPTION_ENDPOINT, files=files, data=data)
         # Malformed-2xx translation (#82) — same family as the #76
-        # _chat / get_embedding fixes. ValueError covers
-        # ``response.json()`` raising json.JSONDecodeError on non-JSON
-        # bodies; AttributeError covers ``body.get(...)`` against a
-        # non-dict (list/None/scalar). KeyError/IndexError/TypeError
-        # round out the universal catch tuple documented on
-        # ``MalformedResponseError`` — even though the .get(...) shape
-        # here doesn't currently raise them, aligning the tuple keeps
-        # future refactors that switch to indexed access from leaking
-        # raw stdlib through the typed-exception contract.
-        try:
-            body = response.json()
-            # Ensure the LocalAIModel-compatible shape even if the
-            # server returns the simpler "text" form.
-            return {
-                "text": body.get("text", ""),
-                "segments": body.get("segments", []),
-            }
-        except (AttributeError, KeyError, IndexError, TypeError, ValueError) as exc:
-            raise MalformedResponseError(
-                f"HPC transcription endpoint returned a malformed 2xx body: {exc}",
-                endpoint="/audio/transcriptions",
-                status=response.status_code,
-                body_excerpt=response.text,
-            ) from exc
+        # _chat / get_embedding fixes, now via the shared
+        # ``_extract_or_malformed`` helper (#92). The extractor enforces
+        # the LocalAIModel-compatible ``{"text": str, "segments": list}``
+        # shape even when the server returns the simpler "text" form.
+        return _extract_or_malformed(
+            response,
+            _TRANSCRIPTION_ENDPOINT,
+            _normalize_transcription_body,
+        )
 
     # ---------------- embeddings ----------------
 
@@ -578,22 +612,12 @@ class OpenAIClient(AutoModel):
         a leaked stdlib KeyError/IndexError/TypeError).
         """
         payload = {"model": self._embedding_model, "input": text}
-        response = self._post("/embeddings", json_body=payload)
-        try:
-            body = response.json()
-            return body["data"][0]["embedding"]
-        except (AttributeError, KeyError, IndexError, TypeError, ValueError) as exc:
-            # AttributeError is forward-looking only — same rationale
-            # as ``_chat`` above. The subscript walk on a ``None`` body
-            # raises TypeError, not AttributeError; the tuple alignment
-            # protects a future refactor that switches to ``.get(...)``
-            # from leaking raw stdlib through the typed surface.
-            raise MalformedResponseError(
-                f"HPC embeddings endpoint returned a malformed 200 body: {exc}",
-                endpoint="/embeddings",
-                status=response.status_code,
-                body_excerpt=response.text,
-            ) from exc
+        response = self._post(_EMBEDDINGS_ENDPOINT, json_body=payload)
+        return _extract_or_malformed(
+            response,
+            _EMBEDDINGS_ENDPOINT,
+            lambda body: body["data"][0]["embedding"],
+        )
 
     # ---------------- not implemented (route via gemini) ----------------
 
