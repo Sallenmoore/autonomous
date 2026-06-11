@@ -263,20 +263,41 @@ class GeminiAIModel(AutoModel):
                     # orphan-cleanup is dead code if the poll itself
                     # can't even run.
                     uploaded_file = self.client.files.get(name=uploaded_file.name)
-            except (GeminiFileUploadTimeoutError, genai.errors.APIError):
-                # Orphan cleanup (#75): every file appended to
-                # ``uploaded_files`` is now stranded on Gemini's side —
-                # either still PROCESSING (the one we just gave up on)
-                # or already ACTIVE from a prior outer-loop iteration
-                # the caller will never see. Best-effort delete; suppress
-                # APIError so a single cleanup failure doesn't mask the
-                # original exception. The except clause covers both the
-                # timeout path AND any APIError raised by ``files.get``
-                # mid-poll — same orphan-leak failure mode.
+            except Exception:
+                # Orphan cleanup (#75, broadened in #84): every file
+                # appended to ``uploaded_files`` is now stranded on
+                # Gemini's side — either still PROCESSING (the one we
+                # just gave up on) or already ACTIVE from a prior
+                # outer-loop iteration the caller will never see. The
+                # outer except is broad (was ``(GeminiFileUploadTimeoutError,
+                # genai.errors.APIError)``) so cleanup runs on every
+                # poll-loop failure mode the SDK can throw — notably
+                # ``genai.errors.UnknownApiResponseError``, which
+                # subclasses ``ValueError`` rather than ``APIError`` and
+                # would have skipped cleanup under the narrower tuple.
+                # The ``raise`` re-raises the original, so widening the
+                # catch doesn't change which exception reaches the
+                # caller; it only widens which exceptions still trigger
+                # cleanup before propagating.
                 for orphan in uploaded_files:
+                    # ``google.genai.types.File.name`` is typed
+                    # ``Optional[str]`` — a partial upload that still
+                    # appended to ``uploaded_files`` may have
+                    # ``name=None``. ``files.delete(name=None)`` would
+                    # raise ``TypeError`` inside the cleanup loop and
+                    # — without the broad inner except below — would
+                    # mask the original poll exception. Skip it; the
+                    # only artifact is a Gemini-side file with no
+                    # handle we could delete anyway.
+                    if orphan.name is None:
+                        continue
                     try:
                         self.client.files.delete(name=orphan.name)
-                    except genai.errors.APIError:
+                    except Exception:
+                        # Already on the cleanup path — never let
+                        # anything (APIError, TypeError, network
+                        # blip) mask the original poll exception that
+                        # ``raise`` below re-throws.
                         pass
                 raise
 
