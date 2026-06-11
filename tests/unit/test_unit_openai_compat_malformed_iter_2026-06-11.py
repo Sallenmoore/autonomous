@@ -168,11 +168,19 @@ def test_chat_raises_malformed_response_error_on_non_json_body(client):
             client.generate_text("anything")
 
 
-def test_chat_error_message_includes_body_excerpt(client):
+def test_chat_error_carries_body_excerpt_as_attribute(client):
     """Operators triaging an upstream-misconfiguration outage need to
-    see WHAT came back without re-running the call. The error message
-    must include ``body_excerpt=`` with at least part of the actual
-    response text."""
+    see WHAT came back without re-running the call. Post-#83 the body
+    excerpt lives on the exception as ``.body_excerpt`` (structured
+    attribute, not message-string substring) — same operator-triage
+    intent as the pre-#83 ``body_excerpt=`` message marker, redirected
+    to the new structured carrier. Endpoint and status round out the
+    triage surface.
+
+    Source and test were updated in the same patch (#83 restructured
+    the constructor; the prior message-string assertion is no longer
+    sound). Same source-and-test inseparability pattern as the #50
+    HttpClient-migration slices."""
     from autonomous.ai.exceptions import MalformedResponseError
 
     body_text = "Internal server message: token bucket exhausted on tenant=foo"
@@ -183,21 +191,33 @@ def test_chat_error_message_includes_body_excerpt(client):
         with pytest.raises(MalformedResponseError) as excinfo:
             client.generate_text("anything")
 
-    msg = str(excinfo.value)
-    assert "body_excerpt" in msg, (
-        f"error message must include the body_excerpt= marker for grep-ability: {msg!r}"
+    exc = excinfo.value
+    assert exc.body_excerpt.startswith("Internal server message"), (
+        f"body_excerpt must surface actual response text for triage: "
+        f"{exc.body_excerpt!r}"
     )
-    # First few characters of the body must appear in the excerpt.
-    assert "Internal server message" in msg, (
-        f"error message must surface actual body content to enable operator triage: {msg!r}"
+    assert exc.endpoint == "/chat/completions", (
+        f"endpoint attribute must identify which path returned the "
+        f"malformed body: {exc.endpoint!r}"
+    )
+    assert exc.status == 200, (
+        f"status attribute must reflect the 2xx the endpoint actually "
+        f"returned (malformed-200 case): {exc.status!r}"
     )
 
 
-def test_chat_error_excerpt_is_truncated_to_200_chars(client):
-    """Operator-friendly truncation. The diff hard-codes
-    ``response.text[:200]`` — pin the bound so a future refactor that
-    inadvertently dumps the entire body (which can be megabytes) doesn't
-    pollute logs."""
+def test_chat_error_body_excerpt_is_truncated_to_200_chars(client):
+    """Operator-friendly truncation. Post-#83 the 200-char bound lives
+    in the ``MalformedResponseError`` constructor (``_EXCERPT_MAX``)
+    rather than at each per-site raise — pin the bound where it
+    actually lives so a future regression that changes the constant
+    (or accidentally bypasses the constructor) goes red.
+
+    Source and test were updated in the same patch — the pre-#83
+    bound lived in an f-string at the raise site (``response.text[:200]``),
+    and the test counted A's in the message. Post-#83 the bound lives
+    in the constructor and the excerpt is an attribute. Same
+    inseparability pattern as the #50 migration slices."""
     from autonomous.ai.exceptions import MalformedResponseError
 
     huge_body = "A" * 5000
@@ -208,11 +228,16 @@ def test_chat_error_excerpt_is_truncated_to_200_chars(client):
         with pytest.raises(MalformedResponseError) as excinfo:
             client.generate_text("anything")
 
-    msg = str(excinfo.value)
-    # Count A's in the message. Should be ≤ 200 (the body_excerpt slice
-    # cap), with allowance that there's no other place to leak A's from.
-    assert msg.count("A") <= 200, (
-        f"body excerpt must be truncated to 200 chars; got {msg.count('A')} A's"
+    exc = excinfo.value
+    assert len(exc.body_excerpt) <= 200, (
+        f"body_excerpt must be truncated to <=200 chars by the "
+        f"constructor; got {len(exc.body_excerpt)}"
+    )
+    # And specifically — for the all-A body — the excerpt must be
+    # exactly 200 A's (constructor truncated huge_body[:200]).
+    assert exc.body_excerpt == "A" * 200, (
+        f"body_excerpt must be the first 200 chars of response.text "
+        f"(constructor enforces _EXCERPT_MAX=200): {exc.body_excerpt!r}"
     )
 
 
@@ -399,7 +424,11 @@ def test_get_embedding_raises_malformed_response_error_on_non_json_body(client):
             client.get_embedding("anything")
 
 
-def test_get_embedding_error_message_includes_body_excerpt(client):
+def test_get_embedding_error_carries_body_excerpt_as_attribute(client):
+    """Post-#83 body_excerpt lives on the exception attribute, not in
+    the message string. Same operator-triage intent (see whatever came
+    back without re-running the call) just via the structured carrier.
+    Source-and-test inseparable under the #50 migration pattern."""
     from autonomous.ai.exceptions import MalformedResponseError
 
     with patch(
@@ -408,9 +437,10 @@ def test_get_embedding_error_message_includes_body_excerpt(client):
     ):
         with pytest.raises(MalformedResponseError) as excinfo:
             client.get_embedding("anything")
-    msg = str(excinfo.value)
-    assert "body_excerpt" in msg
-    assert "embeddings backend OOM" in msg
+    exc = excinfo.value
+    assert exc.body_excerpt == "embeddings backend OOM"
+    assert exc.endpoint == "/embeddings"
+    assert exc.status == 200
 
 
 # ---------------------------------------------------------------------------

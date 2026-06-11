@@ -69,14 +69,37 @@ def test_http_retry_backoff_from_settings():
     assert _HTTP.retry_backoff == settings.flux_retry_sleep
 
 
-def test_http_transport_error_cls_is_requests_request_exception():
-    """The ``except (requests.RequestException, ValueError, OSError)``
-    catch in ``generate_image`` must continue to catch transport failures
-    — without this override, the default ``TransportError`` (RuntimeError
-    subclass) would bypass it silently and crash the task."""
+def test_http_transport_error_cls_is_requests_connection_error():
+    """Post-#85 the override narrowed from ``requests.RequestException``
+    to ``requests.ConnectionError`` so HttpClient's retry loop no longer
+    catches ``raise_for_status``-raised ``HTTPError`` (HTTPError is-a
+    RequestException but not-a ConnectionError) — 4xx now fails fast at
+    the altitude layer instead of burning the retry budget.
+
+    The original constraint still holds via subclass relation: the
+    ``except (requests.RequestException, ValueError, OSError)`` catch in
+    ``generate_image`` continues to catch transport-class failures
+    because ``ConnectionError`` is-a ``RequestException``. Without this
+    override the default ``TransportError`` (RuntimeError subclass) would
+    bypass the downstream catch silently.
+
+    Source and test were updated in the same patch (#85). The literal
+    assertion has to change with the override; the test's intent
+    (downstream catch still triggers) is preserved by the
+    ConnectionError → RequestException subclass relation. Same
+    source-and-test inseparability pattern as the #50 HttpClient
+    migration slices."""
     from autonomous.ai.models.flux import _HTTP
 
-    assert _HTTP.transport_error_cls is requests.RequestException
+    assert _HTTP.transport_error_cls is requests.ConnectionError
+    # Sanity: the downstream catch tuple in generate_image still matches
+    # the new wrap class via the subclass relation — this is the actual
+    # operator-facing contract the original test was guarding.
+    assert issubclass(_HTTP.transport_error_cls, requests.RequestException), (
+        "ConnectionError must remain a RequestException subclass so the "
+        "downstream catch in generate_image still matches retry-exhaustion "
+        "failures."
+    )
 
 
 # ---------------------------------------------------------------------------
