@@ -22,6 +22,7 @@ from autonomous.ai._json_utils import clean_json_response
 from autonomous.ai.exceptions import (
     GenerateJSONEmptyResponseError,
     GenerateJSONParseError,
+    MalformedResponseError,
 )
 from autonomous.config import settings
 from autonomous.http import HttpClient, is_transport_failure as _http_is_transport_failure
@@ -323,8 +324,23 @@ class OpenAIClient(AutoModel):
         if current_job := AutoTasks().get_current_task():
             current_job.meta(payload=payload)
         response = self._post("/chat/completions", json_body=payload)
-        body = response.json()
-        return body["choices"][0]["message"]["content"]
+        # Malformed-200 translation (#76). HttpClient classifies >=500
+        # and 401 as transport-class (raised as HPCUnreachableError,
+        # already retried); other 4xx (400, 403, 404, ...) surface as
+        # ``requests.HTTPError`` via ``raise_for_status`` and bubble
+        # PAST this try — ``generate_json`` explicitly catches HTTPError
+        # downstream. So this catch only needs to cover the malformed-
+        # 2xx-body case: empty choices / missing keys (KeyError /
+        # IndexError / TypeError) or a non-JSON 2xx body (ValueError,
+        # which json.JSONDecodeError subclasses).
+        try:
+            body = response.json()
+            return body["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            raise MalformedResponseError(
+                f"HPC chat endpoint returned a malformed 200 body: {exc}; "
+                f"body_excerpt={response.text[:200]!r}"
+            ) from exc
 
     def generate_text(
         self,
@@ -443,11 +459,20 @@ class OpenAIClient(AutoModel):
                     response_format={"type": "json_object"},
                     temperature=temperature,
                 )
-            except (KeyError, IndexError, TypeError, requests.HTTPError) as inner_exc:
+            except (MalformedResponseError, requests.HTTPError) as inner_exc:
+                # MalformedResponseError = _chat's #76 translation of the
+                # stdlib KeyError/IndexError/TypeError ladder. Preserve
+                # generate_json's pre-#76 contract: a malformed body on
+                # any chat call (strict OR loose) surfaces as
+                # GenerateJSONEmptyResponseError to the generate_json
+                # caller. HTTPError on the loose retry stays in the
+                # "fallback retry hit a 4xx" diagnostic envelope.
                 raise GenerateJSONEmptyResponseError(
                     f"HPC chat endpoint returned an error after fallback retry: {inner_exc}"
                 ) from inner_exc
-        except (KeyError, IndexError, TypeError) as exc:
+        except MalformedResponseError as exc:
+            # Same pre-#76 contract preservation as the fallback catch
+            # above, for the strict-mode (non-fallback) path.
             raise GenerateJSONEmptyResponseError(
                 f"HPC chat endpoint returned a malformed body: {exc}"
             ) from exc
@@ -511,11 +536,22 @@ class OpenAIClient(AutoModel):
     # ---------------- embeddings ----------------
 
     def get_embedding(self, text):
-        """Returns a list of floats (length depends on the configured embedding model)."""
+        """Returns a list of floats (length depends on the configured embedding model).
+
+        Raises ``MalformedResponseError`` if the 2xx body lacks the
+        expected ``data[0].embedding`` shape (issue #76 — was previously
+        a leaked stdlib KeyError/IndexError/TypeError).
+        """
         payload = {"model": self._embedding_model, "input": text}
         response = self._post("/embeddings", json_body=payload)
-        body = response.json()
-        return body["data"][0]["embedding"]
+        try:
+            body = response.json()
+            return body["data"][0]["embedding"]
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            raise MalformedResponseError(
+                f"HPC embeddings endpoint returned a malformed 200 body: {exc}; "
+                f"body_excerpt={response.text[:200]!r}"
+            ) from exc
 
     # ---------------- not implemented (route via gemini) ----------------
 

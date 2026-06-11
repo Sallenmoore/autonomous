@@ -31,10 +31,18 @@ import pytest
 
 
 def _make_stub(upload_states):
-    """Build a Gemini stub whose `client.get_file` returns objects with the
+    """Build a Gemini stub whose `client.files.get` returns objects with the
     states in ``upload_states`` (one per call). ``client.files.upload`` returns
     an initial uploaded_file whose state is ``upload_states[0]``; subsequent
-    polls via ``get_file`` consume ``upload_states[1:]``.
+    polls via ``files.get`` consume ``upload_states[1:]``.
+
+    The stub's poll target was previously ``client.get_file`` — that path
+    is non-existent on google-genai >=2.0 (the real SDK only exposes
+    ``client.files.get(name=...)``); the test passed against the wrong
+    attribute because MagicMock will accept any attribute access. Source
+    + stub were aligned together with #75 so the orphan-cleanup actually
+    runs against the real SDK shape — inseparable change, same pattern
+    as the #50 HttpClient migration slices.
     """
 
     class _Stub:
@@ -61,14 +69,14 @@ def _make_stub(upload_states):
     stub.client.files.delete = MagicMock()
     stub.client.files.list = MagicMock(return_value=[])
 
-    # Each subsequent `get_file` call returns a handle with the next state.
+    # Each subsequent `files.get` call returns a handle with the next state.
     poll_handles = []
     for s in state_objs[1:]:
         h = MagicMock()
         h.name = "files/test-upload-handle"
         h.state = s
         poll_handles.append(h)
-    stub.client.get_file = MagicMock(side_effect=poll_handles or [upload_handle])
+    stub.client.files.get = MagicMock(side_effect=poll_handles or [upload_handle])
     return stub
 
 

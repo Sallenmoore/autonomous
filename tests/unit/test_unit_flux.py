@@ -78,7 +78,12 @@ class TestGenerateImage:
                 json_data={"images": [{"url": "https://cdn/x.webp"}]}
             )
 
-        def fake_get(url, timeout=None):
+        def fake_get(url, timeout=None, **kwargs):
+            # **kwargs accepts ``max_attempts=`` added by issue #77
+            # (flux passes max_attempts=1 on the CDN GET to short-circuit
+            # retry on signed-URL 4xx). Source change + stub signature
+            # widening are inseparable — same authorization pattern as
+            # the #50 HttpClient migration slices.
             captured["fetch_url"] = url
             return _FakeResponse(content=b"\x89PNG-bytes")
 

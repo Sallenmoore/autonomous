@@ -244,14 +244,41 @@ class GeminiAIModel(AutoModel):
             # bound stable if poll_interval ever changes. README #6.
             poll_timeout = float(os.environ.get("GEMINI_UPLOAD_POLL_TIMEOUT", "300"))
             deadline = time.monotonic() + poll_timeout
-            while uploaded_file.state.name == "PROCESSING":
-                if time.monotonic() >= deadline:
-                    raise GeminiFileUploadTimeoutError(
-                        f"Gemini file {uploaded_file.name!r} stuck in PROCESSING "
-                        f"after {poll_timeout:.1f}s — giving up"
-                    )
-                time.sleep(0.5)
-                uploaded_file = self.client.get_file(uploaded_file.name)
+            try:
+                while uploaded_file.state.name == "PROCESSING":
+                    if time.monotonic() >= deadline:
+                        raise GeminiFileUploadTimeoutError(
+                            f"Gemini file {uploaded_file.name!r} stuck in PROCESSING "
+                            f"after {poll_timeout:.1f}s — giving up"
+                        )
+                    time.sleep(0.5)
+                    # google-genai >=2.0 exposes the poll via
+                    # ``client.files.get(name=...)`` — ``client.get_file``
+                    # does not exist on the modern Client. The earlier
+                    # bare ``self.client.get_file(...)`` would have
+                    # AttributeError'd at runtime against the real SDK
+                    # (MagicMock silently accepts any attribute access,
+                    # which is why the broken call passed type-blind
+                    # mocks). Fixed alongside #75 because the new
+                    # orphan-cleanup is dead code if the poll itself
+                    # can't even run.
+                    uploaded_file = self.client.files.get(name=uploaded_file.name)
+            except (GeminiFileUploadTimeoutError, genai.errors.APIError):
+                # Orphan cleanup (#75): every file appended to
+                # ``uploaded_files`` is now stranded on Gemini's side —
+                # either still PROCESSING (the one we just gave up on)
+                # or already ACTIVE from a prior outer-loop iteration
+                # the caller will never see. Best-effort delete; suppress
+                # APIError so a single cleanup failure doesn't mask the
+                # original exception. The except clause covers both the
+                # timeout path AND any APIError raised by ``files.get``
+                # mid-poll — same orphan-leak failure mode.
+                for orphan in uploaded_files:
+                    try:
+                        self.client.files.delete(name=orphan.name)
+                    except genai.errors.APIError:
+                        pass
+                raise
 
         self.file_refs = [f.name for f in self.client.files.list()]
         self.save()
