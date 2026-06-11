@@ -5,6 +5,58 @@ recent first.
 
 ## Unreleased
 
+### `HttpClient` retry no longer catches `raise_for_status`-raised `HTTPError` (#91)
+
+**What changed.**
+
+- `HttpClient.request` previously set the retry catch tuple to
+  `(self.transport_error_cls,)`. When an adapter passed
+  `transport_error_cls=requests.RequestException` (the natural choice
+  for downstream-catch compatibility — every legacy adapter has
+  `except requests.RequestException` somewhere), the tuple also
+  matched `requests.HTTPError` because `HTTPError` is a
+  `RequestException` subclass. Result: a permanent 4xx (403, 404, etc.)
+  would burn the full `max_attempts` × `retry_backoff` budget before
+  propagating, defeating fail-fast semantics for non-transport
+  client errors.
+- Post-#91, `HttpClient._attempt` wraps `response.raise_for_status()`'s
+  `HTTPError` in a private `_NonTransportHTTPError(Exception)` marker
+  that is NOT a subclass of any plausible `transport_error_cls`, so
+  the retry catch tuple never matches it. `HttpClient.request`
+  catches the marker at the boundary and re-raises the original
+  `HTTPError` via `raise ... from None`, so callers see exactly the
+  type they saw pre-#91. Their `except requests.RequestException`
+  catches still match.
+
+**Effect on adapters.**
+
+- `db_sync` and `local_model` both pass
+  `transport_error_cls=requests.RequestException`. Pre-#91 they were
+  latent (`max_attempts=1` means no retry budget to burn), but the
+  moment they're tuned above 1 they'd have exposed the same retry-on-4xx
+  bug `flux` had pre-#85. Post-#91 they're safe at any `max_attempts`.
+- `flux`'s #85 narrowing to `transport_error_cls=requests.ConnectionError`
+  becomes structurally redundant (the HTTPError-fail-fast guarantee
+  now lives in `HttpClient`), but stays in place — `ConnectionError`
+  is still the semantically tighter wrap class for flux's network-only
+  failure surface.
+- `openai_compat` passes the default `TransportError(RuntimeError)`
+  which never caught HTTPError anyway; no behavior change for it.
+
+**Migration.**
+
+No consumer-side action required. The contract documented on
+`HttpClient.request` is unchanged:
+> Any non-transport HTTP error (4xx other than configured extras) is
+> surfaced via `response.raise_for_status()` so the caller gets a
+> `requests.HTTPError` with the original response attached.
+
+That contract is now actually upheld for adapters with broad
+`transport_error_cls` choices, not just narrow ones. The `__cause__`
+chain on the propagated `HTTPError` is `from None` (the marker class
+is suppressed from chained-exception display) — the original
+exception's own `.__cause__` / `.__context__` are preserved.
+
 ### `OpenAIClient` malformed-200 translation + new `MalformedResponseError` (#76)
 
 **What changed.**
