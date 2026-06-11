@@ -5,6 +5,94 @@ recent first.
 
 ## Unreleased
 
+### `OpenAIClient` malformed-200 translation + new `MalformedResponseError` (#76)
+
+**What changed.**
+
+- New typed exception `autonomous.ai.exceptions.MalformedResponseError`
+  (a `RuntimeError` subclass) — raised when a 2xx body shape is
+  unextractable (no `choices[0].message.content` in chat, no
+  `data[0].embedding` in embeddings, or a non-JSON 2xx body).
+- `OpenAIClient._chat` and `OpenAIClient.get_embedding` translate
+  `KeyError` / `IndexError` / `TypeError` / `ValueError` (the last covers
+  `json.JSONDecodeError`) at the extraction point and raise
+  `MalformedResponseError` instead. Pre-#76 these stdlib exceptions
+  leaked raw past the typed-exception contract — see issue #76's repro.
+- `OpenAIClient.generate_text` and `OpenAIClient.summarize_text` (both
+  thin wrappers over `_chat`) now propagate `MalformedResponseError`
+  to the caller on malformed 200. Same for `get_embedding`.
+- `OpenAIClient.generate_json`'s contract is **preserved**: it still
+  raises `GenerateJSONEmptyResponseError` on malformed body. The new
+  `MalformedResponseError` from `_chat` is caught and re-translated
+  internally so callers don't see the new exception type.
+
+**Migration.**
+
+Storyteller / other consumers catching `(KeyError, IndexError,
+TypeError)` around `client.generate_text(...)`, `summarize_text(...)`,
+or `get_embedding(...)` should add `MalformedResponseError` to their
+catch tuple — the stdlib exceptions no longer fire on the malformed-200
+path. `generate_json` consumers need no change.
+
+**Known gaps (filed for follow-up, not addressed in this slice).**
+
+- `generate_transcription` still does raw `response.json()` + `body.get(...)`
+  — same prod-outage shape leaks raw on the transcription path. Filed for
+  the next iteration.
+
+### `HttpClient.request` per-call `max_attempts=` override + flux CDN GET fail-fast (#77)
+
+**What changed.**
+
+- `autonomous.http.HttpClient.request` (and all of `get` / `post` /
+  `put` / `delete` via `**kwargs`) accepts a new
+  `max_attempts: int | None = None` keyword argument. When passed,
+  it overrides `self.max_attempts` for that single call. `None`
+  (the default) preserves the instance setting. Must be `>= 1`.
+- `FluxAIModel.generate_image`'s CDN GET now passes `max_attempts=1`,
+  short-circuiting retry on the fal.ai signed-URL fetch. The POST to
+  fal.ai still uses the full `settings.flux_max_attempts` budget.
+- Behavior change vs `#50 slice E`: that slice moved the CDN fetch
+  UNDER the retry loop (so transient CDN 5xx would retry 3×). #77
+  reverts that for the CDN leg only — signed URLs are short-lived,
+  so retrying against a near-expired URL races the clock; permanent
+  4xx (signed-URL expired, 403, 404) is always wasted budget.
+
+**Migration.**
+
+No consumer-side action required for default usage. Adapters that wrap
+`HttpClient` and forwarded kwargs to `request` are now subject to one
+reserved kwarg name (`max_attempts`) being consumed at the HttpClient
+layer rather than flowing through to `session.request`. No in-tree
+adapter currently does this.
+
+### `GeminiAIModel._add_files` orphan-cleanup on poll-loop failure (#75)
+
+**What changed.**
+
+- The bounded poll loop introduced by `#50 slice A` (PR #68) now wraps
+  in a `try/except` that best-effort deletes every file appended to
+  `uploaded_files` on `GeminiFileUploadTimeoutError` OR
+  `genai.errors.APIError` raised from the poll. Pre-#75 the timeout
+  raised straight out and the uploaded-but-stranded files remained on
+  Gemini's storage indefinitely.
+- The poll itself was switched from `self.client.get_file(name)` to
+  `self.client.files.get(name=name)` — `client.get_file` does not
+  exist on `google-genai >= 2.0`; the prior call would have raised
+  `AttributeError` at runtime against the real SDK on any file taking
+  >0.5s to leave PROCESSING. Tests passed pre-#75 only because they
+  stubbed `client.get_file` directly. Without this correction the
+  orphan-cleanup added by #75 would itself be dead code.
+
+**Migration.**
+
+No consumer-side action required. The function's exception contract
+(raises `GeminiFileUploadTimeoutError` on poll-cap exhaustion) is
+unchanged; only the side-effect on Gemini's stored-files quota
+improves. Consumers that previously relied on the existence of
+stranded PROCESSING files post-timeout (none known) would need to
+re-upload on the retry path.
+
 ### `db_sync._HTTP_SESSION` → `_HTTP` HttpClient migration (#50 slice D)
 
 **What changed.**
