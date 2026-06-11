@@ -153,23 +153,10 @@ def test_handle_response_passes_oauth2auth_through_new_seam():
 
 
 # ---------------------------------------------------------------------------
-# Construction must not network — _HTTP is created at import time, so
-# any HTTP-at-import regression goes red here too.
+# Construction must not network — covered by the existing
+# TestNoNetworkAtConstruction::test_construction_makes_no_http_call in
+# tests/unit/test_unit_oauth_new_providers_iter_2026-06-06.py (which PR
+# #69 updated to patch both the legacy requests.get/post seam AND the
+# new _HTTP.get/post seam). Not duplicated here — a reload-based
+# import-time test would corrupt module state for subsequent tests.
 # ---------------------------------------------------------------------------
-
-
-def test_module_import_does_not_perform_http():
-    """``_HTTP = HttpClient(...)`` runs at import time. A future refactor
-    that, say, calls ``_HTTP.get(metadata_url)`` at module load to
-    pre-fetch IdP metadata would silently re-introduce import-time
-    network — caught here via a strict re-import under sabotage."""
-    import importlib
-    import sys
-
-    # Drop and re-import autoauth under patched requests.get/post.
-    # If any HTTP fires during the re-import, the boom side_effect raises.
-    boom = MagicMock(side_effect=AssertionError("HTTP at import time"))
-    sys.modules.pop("autonomous.auth.autoauth", None)
-    with patch("requests.get", boom), patch("requests.post", boom):
-        importlib.import_module("autonomous.auth.autoauth")
-    boom.assert_not_called()
