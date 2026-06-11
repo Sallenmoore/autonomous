@@ -47,9 +47,16 @@ def test_openai_compat_uses_session_not_bare_requests(monkeypatch):
 
 
 def test_db_sync_get_vector_local_uses_session(monkeypatch):
+    # Post-#50-slice-D the db_sync seam is HttpClient, not a bare
+    # Session. Same intent as the local_model test below — verify the
+    # pooled-HTTP path is used rather than bare ``requests.post`` —
+    # but the patch target moves from ``_HTTP_SESSION.post`` to
+    # ``_HTTP.post`` (HttpClient.post routes through its internal
+    # ``self.session.request``, so patching ``_HTTP.session.post``
+    # would no-op).
     session_post = MagicMock(return_value=_stub_response(json_body={"embedding": [0.0]}))
     bare_post = MagicMock()
-    monkeypatch.setattr(db_sync._HTTP_SESSION, "post", session_post)
+    monkeypatch.setattr(db_sync._HTTP, "post", session_post)
     monkeypatch.setattr(requests, "post", bare_post)
 
     result = db_sync._get_vector_local("text")

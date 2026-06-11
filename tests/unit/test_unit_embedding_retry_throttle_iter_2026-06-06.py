@@ -548,7 +548,7 @@ class TestRecordEventNotThrottled:
         mock_response.json.return_value = {}
         mock_session = MagicMock()
         mock_session.post.return_value = mock_response
-        monkeypatch.setattr(db_sync, "_HTTP_SESSION", mock_session)
+        monkeypatch.setattr(db_sync, "_HTTP", mock_session)
 
         recorded = []
 
@@ -615,7 +615,7 @@ class TestCallSiteThrottleIntegration:
         mock_response.json.return_value = {}
         mock_session = MagicMock()
         mock_session.post.return_value = mock_response
-        monkeypatch.setattr(db_sync, "_HTTP_SESSION", mock_session)
+        monkeypatch.setattr(db_sync, "_HTTP", mock_session)
 
         from autonomous.db.db_sync import _get_vector_local
         for _ in range(3):
@@ -634,7 +634,7 @@ class TestCallSiteThrottleIntegration:
         mock_response.json.return_value = {}
         mock_session = MagicMock()
         mock_session.post.return_value = mock_response
-        monkeypatch.setattr(db_sync, "_HTTP_SESSION", mock_session)
+        monkeypatch.setattr(db_sync, "_HTTP", mock_session)
 
         from autonomous.db.db_sync import _get_vector_local
         for _ in range(3):
@@ -665,7 +665,7 @@ class TestCallSiteThrottleIntegration:
 
         mock_session = MagicMock()
         mock_session.post.side_effect = responses
-        monkeypatch.setattr(db_sync, "_HTTP_SESSION", mock_session)
+        monkeypatch.setattr(db_sync, "_HTTP", mock_session)
 
         from autonomous.db.db_sync import _get_vector_local
         for _ in codes:

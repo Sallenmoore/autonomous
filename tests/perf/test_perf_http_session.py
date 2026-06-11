@@ -24,19 +24,23 @@ def test_local_model_module_has_session():
 
 
 def test_db_sync_module_has_session():
-    assert hasattr(db_sync, "_HTTP_SESSION")
-    assert hasattr(db_sync._HTTP_SESSION, "post")
+    # Post-#50-slice-D db_sync's seam is HttpClient (not bare Session).
+    # The pool-singleton contract is on _HTTP itself; HttpClient holds
+    # its own internal requests.Session, accessible at _HTTP.session.
+    assert hasattr(db_sync, "_HTTP")
+    assert hasattr(db_sync._HTTP, "post")
 
 
 def test_session_is_singleton_within_module(benchmark):
-    """Repeated attribute access returns the same Session instance —
-    confirms there's no per-call re-instantiation undermining pooling.
+    """Repeated attribute access returns the same Session instance (or
+    HttpClient for migrated modules) — confirms there's no per-call
+    re-instantiation undermining pooling.
     """
     def _read_all():
         return (
             id(openai_compat._SESSION),
             id(local_model._SESSION),
-            id(db_sync._HTTP_SESSION),
+            id(db_sync._HTTP),
         )
 
     first = _read_all()

@@ -88,20 +88,26 @@ class TestHttpSessionIdentity:
         from autonomous.db import db_sync
         from autonomous.ai.models import local_model, openai_compat
 
+        # Type expectation per module — db_sync migrated to HttpClient
+        # in #50 slice D. local_model and openai_compat still hold a
+        # bare ``requests.Session`` directly (slices C and F pending).
+        from autonomous.http import HttpClient
+
         candidates = [
-            ("db_sync", db_sync, "_HTTP_SESSION"),
-            ("local_model", local_model, "_SESSION"),
-            ("openai_compat", openai_compat, "_SESSION"),
+            ("db_sync", db_sync, "_HTTP", HttpClient),
+            ("local_model", local_model, "_SESSION", requests.Session),
+            ("openai_compat", openai_compat, "_SESSION", requests.Session),
         ]
-        for label, mod, attr in candidates:
-            sess = getattr(mod, attr)
-            assert isinstance(sess, requests.Session), (
-                f"{label}.{attr} must be a requests.Session post-#76; "
-                f"got: {type(sess).__name__}"
+        for label, mod, attr, expected_type in candidates:
+            obj = getattr(mod, attr)
+            assert isinstance(obj, expected_type), (
+                f"{label}.{attr} must be a {expected_type.__name__} "
+                f"(post-#76 for Session, post-#50 slice D for db_sync "
+                f"HttpClient); got: {type(obj).__name__}"
             )
             # Repeated access returns same object — pool-reuse contract.
-            assert getattr(mod, attr) is sess, (
-                f"{label}.{attr} must return the SAME Session on "
+            assert getattr(mod, attr) is obj, (
+                f"{label}.{attr} must return the SAME instance on "
                 f"every access; a property/factory would defeat "
                 f"connection pooling"
             )
