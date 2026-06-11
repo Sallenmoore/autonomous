@@ -51,7 +51,7 @@ class TestJSONSchemaAbsorption:
         # Short-circuit the rest of generate_json by raising AFTER the
         # log block (we only care about the log behavior here).
         monkeypatch.setattr(
-            local_model._SESSION, "post",
+            local_model._HTTP, "post",
             lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("stop"))
         )
 
@@ -94,7 +94,7 @@ class TestJSONSchemaAbsorption:
             lambda msg, *a, **kw: captured_logs.append(str(msg)),
         )
         monkeypatch.setattr(
-            local_model._SESSION, "post",
+            local_model._HTTP, "post",
             lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("stop"))
         )
 
@@ -126,7 +126,7 @@ class TestJSONSchemaAbsorption:
             lambda msg, *a, **kw: captured_logs.append(str(msg)),
         )
         monkeypatch.setattr(
-            local_model._SESSION, "post",
+            local_model._HTTP, "post",
             lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("stop"))
         )
 
