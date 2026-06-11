@@ -64,15 +64,16 @@ import pytest
 
 
 class TestHttpSessionIdentity:
-    """Pin: each module's session attribute IS a ``requests.Session``
-    (post-PR-#76 shape, not bare ``requests``) AND is the same object
-    on repeated access (catches the unusual case where a future
-    refactor exposes it as a property/__getattr__ that returns a
-    fresh Session). The behavioral coverage that the session is
-    USED inside actual calls is provided by dev's
-    ``test_unit_http_session_pooling.py``; this file adds the
-    identity-level pin that the SAME Session is reused — which is
-    what delivers TCP+TLS handshake reuse.
+    """Pin: each module's HTTP attribute (post-#50-slices-C/D/F: an
+    ``autonomous.http.HttpClient``; pre-migration shape was a bare
+    ``requests.Session``) is the same object on repeated access
+    (catches the unusual case where a future refactor exposes it as a
+    property/__getattr__ that returns a fresh Session). The behavioral
+    coverage that the session is USED inside actual calls is provided
+    by dev's ``test_unit_http_session_pooling.py``; this file adds the
+    identity-level pin that the SAME instance is reused — which is
+    what delivers TCP+TLS handshake reuse via HttpClient's internal
+    ``session``.
 
     Cross-module distinctness is NOT pinned here — the PR doesn't
     claim each module must own its own Session, and a future
@@ -80,28 +81,35 @@ class TestHttpSessionIdentity:
     design choice."""
 
     def test_each_module_exposes_a_session_attr_with_stable_identity(self):
-        # Consolidated test: each module has the new session attr
-        # (proving the PR #76 shape landed) AND repeated access
-        # returns the SAME object (catching the property /
-        # __getattr__ shenanigan case — unusual but possible).
-        import requests
+        # Consolidated test: each module has the post-#50 pooled-HTTP
+        # attr AND repeated access returns the SAME object (catching
+        # the property / __getattr__ shenanigan case — unusual but
+        # possible).
+        #
+        # Type expectation per module — all three migrated to HttpClient
+        # by the close of #50 (slice C: local_model; slice D: db_sync;
+        # slice F: openai_compat). Bare ``requests.Session`` no longer
+        # appears in any of these modules; the pooled Session lives one
+        # layer down at ``_HTTP.session`` for each.
         from autonomous.db import db_sync
         from autonomous.ai.models import local_model, openai_compat
+        from autonomous.http import HttpClient
 
         candidates = [
-            ("db_sync", db_sync, "_HTTP_SESSION"),
-            ("local_model", local_model, "_SESSION"),
-            ("openai_compat", openai_compat, "_SESSION"),
+            ("db_sync", db_sync, "_HTTP", HttpClient),
+            ("local_model", local_model, "_HTTP", HttpClient),
+            ("openai_compat", openai_compat, "_HTTP", HttpClient),
         ]
-        for label, mod, attr in candidates:
-            sess = getattr(mod, attr)
-            assert isinstance(sess, requests.Session), (
-                f"{label}.{attr} must be a requests.Session post-#76; "
-                f"got: {type(sess).__name__}"
+        for label, mod, attr, expected_type in candidates:
+            obj = getattr(mod, attr)
+            assert isinstance(obj, expected_type), (
+                f"{label}.{attr} must be a {expected_type.__name__} "
+                f"(post-#50 slices C/D/F for HttpClient); "
+                f"got: {type(obj).__name__}"
             )
             # Repeated access returns same object — pool-reuse contract.
-            assert getattr(mod, attr) is sess, (
-                f"{label}.{attr} must return the SAME Session on "
+            assert getattr(mod, attr) is obj, (
+                f"{label}.{attr} must return the SAME instance on "
                 f"every access; a property/factory would defeat "
                 f"connection pooling"
             )

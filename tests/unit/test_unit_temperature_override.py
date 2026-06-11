@@ -205,7 +205,7 @@ class TestLocalAIModelJsonTemperature:
 
     def test_default_temperature_is_0_7(self, model):
         with patch(
-            "autonomous.ai.models.local_model._SESSION.post",
+            "autonomous.ai.models.local_model._HTTP.post",
             return_value=self._make_ok_response(),
         ) as mock_post:
             model.generate_json("give me json")
@@ -215,7 +215,7 @@ class TestLocalAIModelJsonTemperature:
 
     def test_custom_temperature_propagated_to_payload(self, model):
         with patch(
-            "autonomous.ai.models.local_model._SESSION.post",
+            "autonomous.ai.models.local_model._HTTP.post",
             return_value=self._make_ok_response(),
         ) as mock_post:
             model.generate_json("deterministic", temperature=0.0)
@@ -225,7 +225,7 @@ class TestLocalAIModelJsonTemperature:
 
     def test_high_temperature_propagated(self, model):
         with patch(
-            "autonomous.ai.models.local_model._SESSION.post",
+            "autonomous.ai.models.local_model._HTTP.post",
             return_value=self._make_ok_response('{"story": "once upon a time"}'),
         ) as mock_post:
             model.generate_json("creative json", temperature=0.9)
@@ -339,7 +339,7 @@ class TestOpenAIClientJsonTemperature:
 
     def test_default_temperature_used_in_payload(self, client):
         with patch(
-            "autonomous.ai.models.openai_compat._SESSION.post",
+            "autonomous.ai.models.openai_compat._HTTP.post",
             return_value=self._mock_chat_response('{"k": "v"}'),
         ) as mock_post:
             client.generate_json("get json")
@@ -349,7 +349,7 @@ class TestOpenAIClientJsonTemperature:
 
     def test_custom_temperature_propagated(self, client):
         with patch(
-            "autonomous.ai.models.openai_compat._SESSION.post",
+            "autonomous.ai.models.openai_compat._HTTP.post",
             return_value=self._mock_chat_response('{"k": "v"}'),
         ) as mock_post:
             client.generate_json("deterministic field", temperature=0.0)

@@ -11,13 +11,44 @@ import requests
 
 from autonomous import log
 from autonomous.config import env_int
+from autonomous.http import HttpClient
 from autonomous.observability import counter
 
-# Module-level Session for the media_ai embeddings POST. Keeps the TCP
-# connection to the local media service warm across calls in the RQ
-# worker's process lifetime. Process-lifetime; no teardown needed.
-# Tests can monkeypatch this attribute directly.
-_HTTP_SESSION = requests.Session()
+# Module-level HTTP client for the media_ai embeddings POST (#50 slice D).
+# Pre-migration this was ``_HTTP_SESSION = requests.Session()`` with
+# ``_HTTP_SESSION.post`` invoked at the embedding call site. HttpClient holds
+# its own internal requests.Session so connection pooling is preserved
+# across the RQ worker's process lifetime; the swap brings db_sync onto
+# the same HTTP shape as autoauth (#50 slice B) and local_model (#50
+# slice C).
+#
+# Defaults:
+# - ``timeout=None``: the call site below already passes ``timeout=30``;
+#   no client-level default needed (would only conflict).
+# - ``max_attempts=1``: preserves pre-migration no-retry behavior. The
+#   embedding sync is best-effort — the function's contract is "return
+#   None on any failure" — and the RQ taskrunner re-queues failed jobs
+#   at its layer.
+# - ``transport_error_cls=requests.RequestException``: keeps transport-
+#   class failures catchable by the existing ``except Exception`` block
+#   AND by future callers writing ``except requests.RequestException``.
+#   Per slice C's /code-review finding: HttpClient's default
+#   ``TransportError`` is a ``RuntimeError`` subclass; without this
+#   override, connection / 5xx failures would bypass the catch contract
+#   most call sites expect.
+#
+# Tests monkeypatch ``autonomous.db.db_sync._HTTP`` (or ``_HTTP.post``)
+# to a stub. The pre-migration ``_HTTP_SESSION`` patch target is NOT
+# preserved as an alias — same reasoning as slice C: HttpClient routes
+# through ``session.request("POST", ...)`` rather than
+# ``session.post(...)``, so a stale ``_HTTP_SESSION.post`` patch would
+# silently no-op. Honest break; the lockstep test updates are in the
+# same PR as this migration.
+_HTTP = HttpClient(
+    timeout=None,
+    max_attempts=1,
+    transport_error_cls=requests.RequestException,
+)
 
 # Per-process log throttle for ``[HPC-UNREACHABLE]`` prints (#39).
 # OPT-IN via ``HPC_UNREACHABLE_THROTTLE_SECONDS`` env var — default 0
@@ -322,25 +353,53 @@ def _get_vector_local(text):
     not this observability path.
     """
     try:
-        resp = _HTTP_SESSION.post(
+        resp = _HTTP.post(
             f"{_media_url()}/embeddings", json={"text": text}, timeout=30
         )
+        # In production HttpClient's raise_for_status fires on non-2xx
+        # before this point, so the ``status_code == 200`` check is
+        # effectively dead code there. It stays as defense-in-depth for
+        # test contexts that patch ``_HTTP.post`` directly with a mock
+        # response — those bypass HttpClient's internal wrapping entirely
+        # and rely on the in-flow check to emit the marker. Without it,
+        # ``_get_vector_local`` would silently call ``.json()["embedding"]``
+        # on a MagicMock and return the mock value instead of ``None``.
         if resp.status_code == 200:
             return resp.json()["embedding"]
-        # Non-200 was previously a silent None-return — no marker, no
-        # counter. Surface it under the same marker family as the
-        # except-clause case so the consumer dashboard captures both.
+        # Mock-driven non-200 path: same signature shape as pre-migration.
         record_embedding_sync_event("hpc_failure")
         _emit_hpc_unreachable(
             f"local:http:{resp.status_code}",
             f"[HPC-UNREACHABLE] local embedding failed: HTTP {resp.status_code}",
         )
+    except requests.HTTPError as e:
+        # Production non-transport 4xx (HttpClient.raise_for_status path).
+        # Preserve the per-status-code signature the pre-migration
+        # in-flow non-200 branch emitted — the consumer dashboard regex
+        # matches on ``local:http:{code}``.
+        record_embedding_sync_event("hpc_failure")
+        status = e.response.status_code if e.response is not None else "unknown"
+        _emit_hpc_unreachable(
+            f"local:http:{status}",
+            f"[HPC-UNREACHABLE] local embedding failed: HTTP {status}",
+        )
     except Exception as e:
+        # Transport-class (5xx + connection failures, wrapped by HttpClient
+        # into the configured transport_error_cls=requests.RequestException)
+        # OR anything else (KeyError on .json(), etc.). Unwrap one level
+        # of ``__cause__`` so the signature reports the original requests
+        # exception class (e.g. ``ConnectionError`` rather than the
+        # generic ``RequestException``) when HttpClient wrapped a lower-
+        # level adapter exception. 5xx-from-status raises don't carry a
+        # ``__cause__``, so the wrapper class surfaces directly there —
+        # documented behavior change vs the pre-migration in-flow signature
+        # (see MIGRATIONS.md entry for #50 slice D).
+        underlying = e.__cause__ if e.__cause__ is not None else e
         record_embedding_sync_event("hpc_failure")
         _emit_hpc_unreachable(
-            f"local:exc:{type(e).__name__}",
+            f"local:exc:{type(underlying).__name__}",
             f"[HPC-UNREACHABLE] local embedding failed: "
-            f"{type(e).__name__}: {e}",
+            f"{type(underlying).__name__}: {underlying}",
         )
     return None
 

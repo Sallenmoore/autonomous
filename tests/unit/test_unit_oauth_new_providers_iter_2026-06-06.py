@@ -123,9 +123,15 @@ class TestNoNetworkAtConstruction:
     @pytest.mark.parametrize("cls", [c for c, _, _, _ in PROVIDERS])
     def test_construction_makes_no_http_call(self, cls):
         boom = MagicMock(side_effect=AssertionError("network at construction!"))
+        # Defensive: patch both the legacy requests surface AND the
+        # post-#50-slice-B autoauth._HTTP surface. Construction should
+        # call neither — patching both ensures we catch a regression
+        # that introduces network at __init__ via either path.
         with patch("autonomous.auth.autoauth.requests.get", boom), patch(
             "requests.get", boom
-        ), patch("requests.post", boom):
+        ), patch("requests.post", boom), patch(
+            "autonomous.auth.autoauth._HTTP.get", boom
+        ), patch("autonomous.auth.autoauth._HTTP.post", boom):
             inst = cls()  # must not raise
         boom.assert_not_called()
         # And the baked endpoints are populated (no None issuer/token).
@@ -272,7 +278,7 @@ class TestHandleResponseInjection:
         with patch.object(
             auth.session, "fetch_token", return_value={"access_token": "tok"}
         ), patch(
-            "autonomous.auth.autoauth.requests.get",
+            "autonomous.auth.autoauth._HTTP.get",
             return_value=MagicMock(json=MagicMock(return_value=dict(fake_userinfo))),
         ):
             data, token = auth.handle_response(callback)
@@ -291,7 +297,7 @@ class TestHandleResponseInjection:
         with patch.object(
             auth.session, "fetch_token", return_value={"access_token": "tok"}
         ), patch(
-            "autonomous.auth.autoauth.requests.get",
+            "autonomous.auth.autoauth._HTTP.get",
             return_value=MagicMock(
                 json=MagicMock(return_value={"id": 80351110224678912})
             ),
@@ -309,7 +315,7 @@ class TestHandleResponseInjection:
         with patch.object(
             auth.session, "fetch_token", return_value={"access_token": "tok"}
         ), patch(
-            "autonomous.auth.autoauth.requests.get",
+            "autonomous.auth.autoauth._HTTP.get",
             return_value=MagicMock(
                 json=MagicMock(return_value={"email": "user@example.com"})
             ),

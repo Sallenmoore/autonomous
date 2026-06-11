@@ -95,7 +95,7 @@ class TestHandleResponseValidatesState:
         with patch.object(
             auth.session, "fetch_token", return_value={"access_token": "tok"}
         ) as mock_fetch, patch(
-            "autonomous.auth.autoauth.requests.get",
+            "autonomous.auth.autoauth._HTTP.get",
             return_value=MagicMock(json=MagicMock(return_value={"email": "a@b.c"})),
         ):
             userinfo, token = auth.handle_response(
@@ -117,7 +117,7 @@ class TestHandleResponseValidatesState:
         with patch.object(
             auth.session, "fetch_token", return_value={"access_token": "tok"}
         ) as mock_fetch, patch(
-            "autonomous.auth.autoauth.requests.get",
+            "autonomous.auth.autoauth._HTTP.get",
             return_value=MagicMock(json=MagicMock(return_value={})),
         ):
             auth.handle_response(
@@ -136,7 +136,7 @@ class TestHandleResponseValidatesState:
         with patch.object(
             auth.session, "fetch_token", return_value={"access_token": "tok"}
         ), patch(
-            "autonomous.auth.autoauth.requests.get",
+            "autonomous.auth.autoauth._HTTP.get",
             return_value=MagicMock(json=MagicMock(return_value={})),
         ):
             auth.handle_response(f"http://cb/?code=abc&state={issued_state}")
@@ -187,7 +187,7 @@ class TestEndToEndFlow:
             "fetch_token",
             return_value={"access_token": "abc", "token_type": "bearer"},
         ) as mock_fetch, patch(
-            "autonomous.auth.autoauth.requests.get",
+            "autonomous.auth.autoauth._HTTP.get",
             return_value=MagicMock(
                 json=MagicMock(return_value=fake_userinfo)
             ),
