@@ -73,7 +73,12 @@ class _NonTransportHTTPError(Exception):
     """
 
     def __init__(self, original: requests.HTTPError) -> None:
-        super().__init__(str(original))
+        # No-arg ``super().__init__()`` — the marker class is unwrapped
+        # at the ``HttpClient.request`` boundary before any caller can
+        # read its message, so ``str(original)`` here would be wasted
+        # work and a footgun (if ``str(original)`` itself raises, the
+        # wrap fails and the caller sees the wrong exception type).
+        super().__init__()
         self.original = original
 
 
@@ -371,9 +376,23 @@ class HttpClient:
                 response.raise_for_status()
             except requests.HTTPError as exc:
                 _safe_hook(self.on_failure, method, url, exc, attempt)
-                raise _NonTransportHTTPError(exc) from exc
+                # No ``from exc``: the marker is discarded at the unwrap
+                # site (only ``wrapper.original`` is read), so its
+                # ``__cause__`` chain is never observed.
+                raise _NonTransportHTTPError(exc)
             return response
 
+        # Capture the unwrapped HTTPError to a local. ``wrapper`` is
+        # deleted at the end of the except clause (Python 3 except-as
+        # semantics), but the captured local survives. Raising the
+        # original from OUTSIDE the except block (next statement) means
+        # there is no active exception when ``raise captured from None``
+        # runs — so Python does NOT set ``captured.__context__`` to the
+        # marker class. Pre-existing review concern (the marker was
+        # leaking through ``__context__`` to sentry-style programmatic
+        # introspection even though ``__suppress_context__`` hid it
+        # from default tracebacks) is closed.
+        captured_http_error: requests.HTTPError | None = None
         try:
             return retry(
                 _attempt,
@@ -383,15 +402,13 @@ class HttpClient:
                 catch=(self.transport_error_cls,),
             )
         except _NonTransportHTTPError as wrapper:
-            # Unwrap (#91): callers see the original ``requests.HTTPError``
-            # exactly as they did pre-#91. ``from None`` suppresses the
-            # marker class from the chained-exception display — the
-            # marker is a private implementation detail of the
-            # no-retry-on-HTTPError fix, not part of the public
-            # exception ladder. The original HTTPError's own
-            # ``.__cause__`` / ``.__context__`` are preserved on the
-            # re-raised instance.
-            raise wrapper.original from None
+            captured_http_error = wrapper.original
+        # Outside the except clause — no active exception. ``from None``
+        # additionally suppresses the marker's brief lifetime from any
+        # display layer. Callers see exactly the requests.HTTPError
+        # they saw pre-#91, with no marker class leakage on any
+        # introspection surface (traceback or programmatic).
+        raise captured_http_error from None
 
     def get(self, url: str, **kwargs: Any) -> requests.Response:
         return self.request("GET", url, **kwargs)

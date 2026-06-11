@@ -28,20 +28,42 @@ recent first.
   type they saw pre-#91. Their `except requests.RequestException`
   catches still match.
 
-**Effect on adapters.**
+**Effect on adapters at the HttpClient layer.**
 
 - `db_sync` and `local_model` both pass
   `transport_error_cls=requests.RequestException`. Pre-#91 they were
-  latent (`max_attempts=1` means no retry budget to burn), but the
-  moment they're tuned above 1 they'd have exposed the same retry-on-4xx
-  bug `flux` had pre-#85. Post-#91 they're safe at any `max_attempts`.
-- `flux`'s #85 narrowing to `transport_error_cls=requests.ConnectionError`
-  becomes structurally redundant (the HTTPError-fail-fast guarantee
-  now lives in `HttpClient`), but stays in place — `ConnectionError`
-  is still the semantically tighter wrap class for flux's network-only
+  latent at the HttpClient layer (`max_attempts=1` means no retry
+  budget to burn there), but the moment HttpClient's `max_attempts`
+  is tuned above 1 they'd have exposed the same retry-on-4xx bug
+  `flux` had pre-#85. Post-#91 they're safe at any HttpClient
+  `max_attempts`. **Note (scope):** `local_model.generate_json` wraps
+  its `_HTTP.post` call in an OUTER `autonomous.ai.retry.retry()`
+  with `catch=(RequestException, ...)` — that outer retry layer
+  still catches HTTPError (subclass of RequestException) and is
+  unaffected by #91. Tracked as a follow-up.
+- `flux` lands an in-flight companion narrowing in PR #95 (issue
+  #85) that sets `transport_error_cls=requests.ConnectionError`. If
+  PR #95 lands after this PR, the narrowing becomes structurally
+  redundant — but it stays in place because `ConnectionError` is
+  still the semantically tighter wrap class for flux's network-only
   failure surface.
-- `openai_compat` passes the default `TransportError(RuntimeError)`
-  which never caught HTTPError anyway; no behavior change for it.
+- `openai_compat` passes `HPCUnreachableError` (a `RuntimeError`
+  subclass that's never a parent of `HTTPError`), so its retry
+  tuple never matched HTTPError pre-#91. Zero behavior change.
+
+**On-failure observability.**
+
+The new `try/except requests.HTTPError` in `_attempt` calls
+`_safe_hook(self.on_failure, ...)` before wrapping — so the
+`on_failure` hook now fires for non-transport HTTPError attempts
+where pre-#91 it fired only for transport-class exceptions. This is
+consistent with the documented contract ("fires on every caught
+exception during an attempt") but the catch surface is genuinely
+broader. Adapters wiring `on_failure` to a counter/sentry tag should
+expect 4xx events in addition to the prior transport-class set.
+**Caveat:** the `is_transport_failure(status_code)` branch (5xx +
+extras) still does NOT call `on_failure` — a pre-existing asymmetry
+this PR widens but does not introduce. Tracked as a follow-up.
 
 **Migration.**
 
@@ -52,10 +74,13 @@ No consumer-side action required. The contract documented on
 > `requests.HTTPError` with the original response attached.
 
 That contract is now actually upheld for adapters with broad
-`transport_error_cls` choices, not just narrow ones. The `__cause__`
-chain on the propagated `HTTPError` is `from None` (the marker class
-is suppressed from chained-exception display) — the original
-exception's own `.__cause__` / `.__context__` are preserved.
+`transport_error_cls` choices, not just narrow ones. The propagated
+HTTPError has `__cause__=None` and `__suppress_context__=True` (set
+by `raise ... from None`). The implementation raises the unwrapped
+HTTPError OUTSIDE the `except _NonTransportHTTPError` block so
+Python does not set `__context__` to the marker class — the marker
+stays fully private even from programmatic chain-walkers (sentry,
+structlog).
 
 ### `OpenAIClient` malformed-200 translation + new `MalformedResponseError` (#76)
 
