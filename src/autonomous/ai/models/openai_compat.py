@@ -324,11 +324,15 @@ class OpenAIClient(AutoModel):
         if current_job := AutoTasks().get_current_task():
             current_job.meta(payload=payload)
         response = self._post("/chat/completions", json_body=payload)
-        # Malformed-200 translation (#76). HttpClient calls
-        # raise_for_status before returning, so non-2xx is already
-        # HPCUnreachableError. A 200 with no body / empty choices /
-        # missing keys used to leak stdlib KeyError/IndexError/TypeError;
-        # ValueError catches json.JSONDecodeError on a non-JSON 2xx body.
+        # Malformed-200 translation (#76). HttpClient classifies >=500
+        # and 401 as transport-class (raised as HPCUnreachableError,
+        # already retried); other 4xx (400, 403, 404, ...) surface as
+        # ``requests.HTTPError`` via ``raise_for_status`` and bubble
+        # PAST this try — ``generate_json`` explicitly catches HTTPError
+        # downstream. So this catch only needs to cover the malformed-
+        # 2xx-body case: empty choices / missing keys (KeyError /
+        # IndexError / TypeError) or a non-JSON 2xx body (ValueError,
+        # which json.JSONDecodeError subclasses).
         try:
             body = response.json()
             return body["choices"][0]["message"]["content"]

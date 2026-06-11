@@ -257,10 +257,11 @@ class GeminiAIModel(AutoModel):
                     # does not exist on the modern Client. The earlier
                     # bare ``self.client.get_file(...)`` would have
                     # AttributeError'd at runtime against the real SDK
-                    # (tests passed because they stubbed the broken
-                    # attribute directly). Fixed alongside #75 because
-                    # the new orphan-cleanup is dead code if the poll
-                    # itself can't even run.
+                    # (MagicMock silently accepts any attribute access,
+                    # which is why the broken call passed type-blind
+                    # mocks). Fixed alongside #75 because the new
+                    # orphan-cleanup is dead code if the poll itself
+                    # can't even run.
                     uploaded_file = self.client.files.get(name=uploaded_file.name)
             except (GeminiFileUploadTimeoutError, genai.errors.APIError):
                 # Orphan cleanup (#75): every file appended to

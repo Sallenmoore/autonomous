@@ -33,6 +33,7 @@ Independent perspective (no peek at dev's ``tests/_dev_local/``):
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
 
 # ---------------------------------------------------------------------------
@@ -276,6 +277,85 @@ def test_generate_json_strict_path_translates_malformed_to_empty_response(client
             f"operators can introspect the original cause; got "
             f"__cause__={exc.__cause__!r}"
         )
+
+
+def test_generate_json_loose_fallback_path_also_translates_malformed(client):
+    """The §6 /review-pr coverage gap (pr-test-analyzer Important #3).
+
+    ``generate_json`` has TWO ``except MalformedResponseError`` blocks:
+    one for the strict-mode call (line ~469), one for the loose-mode
+    retry after the strict probe failed (line ~462). The earlier test
+    only exercises the strict path. Pin the LOOSE-FALLBACK path too —
+    its re-translation produces a DIFFERENT diagnostic message
+    (``"...error after fallback retry: ..."``), and an operator
+    triaging logs distinguishes outage modes by that string. A refactor
+    that collapsed the two catch blocks would silently lose the
+    distinction with no test failure."""
+    from autonomous.ai.exceptions import (
+        GenerateJSONEmptyResponseError,
+        MalformedResponseError,
+    )
+    from autonomous.ai.models import openai_compat
+
+    # Reset the per-process strict-unsupported cache so the strict probe
+    # actually fires for this test's (model, endpoint) pair.
+    openai_compat._UNSUPPORTED_STRICT_MODE.discard(
+        (client._json_model, client._base_url)
+    )
+
+    # First call: strict-mode request. Build a 400 response whose body
+    # text contains a strict-mode marker ("response_format") so
+    # _looks_like_unsupported_strict_mode → True and the fallback fires.
+    # _resp() defaults status_code=200; override on the MagicMock directly.
+    strict_resp = MagicMock()
+    strict_resp.status_code = 400
+    strict_resp.text = "error: unsupported response_format parameter"
+
+    # Second call: loose-mode retry. Return a malformed-200 body so
+    # _chat raises MalformedResponseError, which the fallback except
+    # block catches and re-translates to GenerateJSONEmptyResponseError.
+    loose_resp = _resp(json_data={"choices": []}, text='{}')
+
+    call_count = {"n": 0}
+
+    def fake_post(*args, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            # Source's _chat: `body = response.json()` then `body[...]`.
+            # The strict path needs `response.json()` to succeed enough
+            # to reach `raise_for_status()` — but `_post` returns the
+            # response BEFORE the source's `_chat` runs `.json()`.
+            # Actually _post is what calls raise_for_status (via
+            # HttpClient.request). Since we're patching _HTTP.post
+            # directly, we have to raise HTTPError ourselves to simulate
+            # what raise_for_status would have done.
+            raise requests.HTTPError("400 Bad Request", response=strict_resp)
+        return loose_resp
+
+    with patch(
+        "autonomous.ai.models.openai_compat._HTTP.post",
+        side_effect=fake_post,
+    ):
+        with pytest.raises(GenerateJSONEmptyResponseError) as excinfo:
+            client.generate_json(
+                "describe a thing",
+                json_schema={"type": "object", "properties": {"x": {"type": "string"}}},
+            )
+
+    msg = str(excinfo.value)
+    assert "after fallback retry" in msg, (
+        f"the fallback-path translation must produce the 'after fallback "
+        f"retry' diagnostic envelope so operators can distinguish from "
+        f"the strict-path translation; got {msg!r}"
+    )
+    assert isinstance(excinfo.value.__cause__, MalformedResponseError), (
+        f"fallback path must chain MalformedResponseError → "
+        f"GenerateJSONEmptyResponseError via `from inner_exc`; got "
+        f"__cause__={excinfo.value.__cause__!r}"
+    )
+    # The strict-unsupported endpoint should now be cached so a future
+    # call goes straight to loose mode.
+    assert (client._json_model, client._base_url) in openai_compat._UNSUPPORTED_STRICT_MODE
 
 
 # ---------------------------------------------------------------------------

@@ -37,8 +37,11 @@ path. `generate_json` consumers need no change.
 **Known gaps (filed for follow-up, not addressed in this slice).**
 
 - `generate_transcription` still does raw `response.json()` + `body.get(...)`
-  — same prod-outage shape leaks raw on the transcription path. Filed for
-  the next iteration.
+  — the transcription path still leaks the same class of failure
+  (malformed 2xx body) as a raw stdlib exception (`ValueError` from
+  `json()`, `AttributeError` if `body` is not a dict). Different exception
+  type than the `_chat` / `get_embedding` ladder but the same operator-
+  facing problem. Filed for the next iteration.
 
 ### `HttpClient.request` per-call `max_attempts=` override + flux CDN GET fail-fast (#77)
 

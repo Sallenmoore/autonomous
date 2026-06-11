@@ -83,14 +83,15 @@ class MalformedResponseError(RuntimeError):
     response-shape failure, not a schema-validation failure).
 
     Raised by ``OpenAIClient._chat`` when ``response.json()`` raises
-    ``json.JSONDecodeError`` or the ``choices[0].message.content`` walk
-    raises ``KeyError`` / ``IndexError`` / ``TypeError``, and by
-    ``OpenAIClient.get_embedding`` when ``data[0].embedding`` extraction
-    fails the same way. Callers that previously caught a stdlib
-    ``KeyError`` / ``IndexError`` from these methods should catch this
-    instead — the prior behavior was a leaked stdlib exception that
-    masked the distinction between transport-class and malformed-body
-    failure modes (issue #76).
+    ``json.JSONDecodeError`` (a ``ValueError`` subclass) or the
+    ``choices[0].message.content`` walk raises ``KeyError`` /
+    ``IndexError`` / ``TypeError``, and by ``OpenAIClient.get_embedding``
+    when ``data[0].embedding`` extraction fails the same way. The catch
+    tuple at both sites is ``(KeyError, IndexError, TypeError, ValueError)``.
+    Callers that previously caught a stdlib ``KeyError`` / ``IndexError``
+    from these methods should catch this instead — the prior behavior was
+    a leaked stdlib exception that masked the distinction between
+    transport-class and malformed-body failure modes (issue #76).
     """
 
 
