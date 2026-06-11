@@ -47,12 +47,25 @@ from autonomous.model.automodel import AutoModel
 # - ``retry_backoff=settings.flux_retry_sleep``: same default the previous
 #   ``retry(...)`` call read from the same setting (``flux_retry_sleep``,
 #   default 1.0).
-# - ``transport_error_cls=requests.RequestException``: consistent with
-#   slices B/C/D. The pre-migration ``retry()`` caught
-#   ``requests.RequestException`` directly; this override keeps the
-#   wrapper class catchable by the same ``except`` clauses (e.g. the
-#   ``except (requests.RequestException, ValueError, OSError)`` block
-#   in ``generate_image`` below).
+# - ``transport_error_cls=requests.ConnectionError`` (#85): narrowed
+#   from ``requests.RequestException`` because the broader parent
+#   class made ``HttpClient._attempt``'s ``raise_for_status``-raised
+#   ``HTTPError`` match the retry catch tuple (``HTTPError`` is-a
+#   ``RequestException``), so 4xx responses that AREN'T in
+#   ``transport_failure_codes`` would still burn the retry budget via
+#   the catch-tuple branch. With ``ConnectionError`` as the catch
+#   class, ``HTTPError`` no longer matches — 4xx fails fast at the
+#   altitude layer (the per-call ``max_attempts=1`` override on the
+#   CDN GET that #77 added becomes redundant for the
+#   ``raise_for_status`` 4xx case, though it still short-circuits
+#   the ``transport_failure_codes`` 5xx case which the CDN can also
+#   produce). Downstream catch ``except (requests.RequestException,
+#   ValueError, OSError)`` in ``generate_image`` still matches because
+#   ``ConnectionError`` is-a ``RequestException``. Trade-off: the
+#   line-307 re-raise in HttpClient now wraps Timeout /
+#   ChunkedEncodingError as ConnectionError too, which is a slight
+#   semantic distortion — the original is preserved on ``__cause__``,
+#   so observability that walks the chain still sees the true type.
 #
 # **Behavior change vs the pre-migration retry shape:** the GET to
 # fetch the generated image from fal.ai's CDN ran OUTSIDE the retry
@@ -70,7 +83,7 @@ _HTTP = HttpClient(
     timeout=None,
     max_attempts=settings.flux_max_attempts,
     retry_backoff=settings.flux_retry_sleep,
-    transport_error_cls=requests.RequestException,
+    transport_error_cls=requests.ConnectionError,
 )
 
 

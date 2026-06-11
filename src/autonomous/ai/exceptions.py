@@ -85,14 +85,69 @@ class MalformedResponseError(RuntimeError):
     Raised by ``OpenAIClient._chat`` when ``response.json()`` raises
     ``json.JSONDecodeError`` (a ``ValueError`` subclass) or the
     ``choices[0].message.content`` walk raises ``KeyError`` /
-    ``IndexError`` / ``TypeError``, and by ``OpenAIClient.get_embedding``
-    when ``data[0].embedding`` extraction fails the same way. The catch
-    tuple at both sites is ``(KeyError, IndexError, TypeError, ValueError)``.
+    ``IndexError`` / ``TypeError``, by ``OpenAIClient.get_embedding`` when
+    ``data[0].embedding`` extraction fails the same way, and by
+    ``OpenAIClient.generate_transcription`` when ``response.json()`` /
+    ``body.get(...)`` extraction fails on a malformed 2xx body (issue
+    #82 — same family of failure). The catch tuple at every raise site
+    is ``(AttributeError, KeyError, IndexError, TypeError, ValueError)``.
     Callers that previously caught a stdlib ``KeyError`` / ``IndexError``
     from these methods should catch this instead — the prior behavior was
     a leaked stdlib exception that masked the distinction between
     transport-class and malformed-body failure modes (issue #76).
+
+    Diagnostic state is carried on the instance (issue #83) instead of
+    being baked into the message string:
+
+    - ``endpoint``: the path that returned the malformed body (e.g.
+      ``"/chat/completions"``). Empty string when not supplied.
+    - ``status``: the response status code (typically 200 for the
+      malformed-2xx case this exception models). ``None`` when unknown.
+    - ``body_excerpt``: the first ``_EXCERPT_MAX`` chars of
+      ``response.text``. Truncation lives in the constructor so a future
+      raise site can't forget the bound (same pattern as
+      ``GenerateJSONParseError.raw``). Empty string when not supplied.
+
+    Consumers triaging programmatically (storyteller's structured
+    observability layer) read these as fields:
+    ``except MalformedResponseError as exc:
+        log.warn(endpoint=exc.endpoint, status=exc.status, body=exc.body_excerpt)``
+    — no message-regex required.
+
+    The change is additive — every kwarg defaults so existing callers
+    that pass only ``msg`` keep working.
     """
+
+    _EXCERPT_MAX = 200
+
+    def __init__(
+        self,
+        msg: str,
+        *,
+        endpoint: str = "",
+        status: int | None = None,
+        body_excerpt: str | bytes | bytearray = "",
+    ) -> None:
+        super().__init__(msg)
+        self.endpoint = endpoint
+        self.status = status
+        # Defensive coercion per /review: a caller passing
+        # ``response.content`` (bytes) instead of ``response.text`` (str)
+        # would otherwise silently store bytes on a field documented as
+        # str, breaking downstream ``.startswith(...)`` / JSON-serialize
+        # uses. ``errors="replace"`` matches ``requests.Response.text``'s
+        # tolerance for malformed encodings — better a U+FFFD char in the
+        # excerpt than a UnicodeDecodeError raised IN the error-handling
+        # path. The non-str/non-bytes fallback (``str(...)``) protects
+        # against a programmer error where an int / list / dict slips
+        # through — better a stringified value than a TypeError raised
+        # INSIDE the malformed-body translation, which would replace
+        # the original stdlib exception with a constructor crash.
+        if isinstance(body_excerpt, (bytes, bytearray)):
+            body_excerpt = body_excerpt.decode("utf-8", errors="replace")
+        elif body_excerpt is not None and not isinstance(body_excerpt, str):
+            body_excerpt = str(body_excerpt)
+        self.body_excerpt = (body_excerpt or "")[: self._EXCERPT_MAX]
 
 
 class GeminiFileUploadTimeoutError(RuntimeError):
