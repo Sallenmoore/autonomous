@@ -44,6 +44,44 @@ class TransportError(RuntimeError):
     """
 
 
+class _NonTransportHTTPError(Exception):
+    """Internal marker (#91): wraps ``response.raise_for_status``-raised
+    ``requests.HTTPError`` so the retry catch tuple never matches it,
+    regardless of what ``transport_error_cls`` an adapter picked.
+
+    Pre-#91, ``HttpClient.request`` set the retry catch tuple to
+    ``(self.transport_error_cls,)``. When an adapter passed
+    ``transport_error_cls=requests.RequestException`` (the natural
+    choice for downstream-catch compatibility — every legacy adapter
+    did ``except requests.RequestException``), the retry tuple caught
+    ``requests.HTTPError`` too because ``HTTPError`` is a
+    ``RequestException`` subclass. The result: non-transport 4xx
+    responses burned the full retry budget before propagating, defeating
+    fail-fast semantics for permanent client errors.
+
+    The fix wraps the HTTPError inside ``_attempt`` so the class that
+    propagates out of ``_attempt`` (a) is NOT a ``transport_error_cls``
+    subclass (the catch tuple never matches), and (b) carries the
+    original on ``__cause__``. ``HttpClient.request`` catches this
+    wrapper at the boundary and re-raises the original ``HTTPError``
+    via ``raise ... from None``, so callers see exactly the type they
+    saw pre-#91 (``except requests.RequestException``-style catches
+    keep working). The marker class is private — consumers should
+    never see it.
+
+    See issue #91. Supersedes the flux-local workaround #85.
+    """
+
+    def __init__(self, original: requests.HTTPError) -> None:
+        # No-arg ``super().__init__()`` — the marker class is unwrapped
+        # at the ``HttpClient.request`` boundary before any caller can
+        # read its message, so ``str(original)`` here would be wasted
+        # work and a footgun (if ``str(original)`` itself raises, the
+        # wrap fails and the caller sees the wrong exception type).
+        super().__init__()
+        self.original = original
+
+
 # Status codes >= 500 are always transport-class. Callers add extras
 # (e.g. ``{401}`` for token-expired, ``{408, 429}`` for throttling) via
 # ``HttpClient(transport_failure_codes=...)``.
@@ -315,16 +353,62 @@ class HttpClient:
                     f"{response.text[:200]}"
                 )
                 raise err
-            response.raise_for_status()
+            # Non-transport HTTP errors (4xx that aren't in
+            # ``transport_failure_codes``) must never be retried — they
+            # represent permanent client errors (bad request, auth not
+            # configured for this resource, resource not found, signed
+            # URL expired, etc.). Pre-#91 the bare ``raise_for_status()``
+            # raised ``requests.HTTPError``, and the retry catch tuple
+            # ``(self.transport_error_cls,)`` matched it whenever the
+            # adapter picked ``transport_error_cls=requests.RequestException``
+            # (because HTTPError is-a RequestException) — silently
+            # burning the retry budget on permanent failures.
+            #
+            # Wrap the HTTPError in a private marker class that is NOT
+            # a subclass of any plausible ``transport_error_cls``, so
+            # the retry catch never matches it. ``request()`` unwraps
+            # at the boundary so the caller still sees the original
+            # ``requests.HTTPError`` — preserving the documented
+            # contract ("Any non-transport HTTP error ... is surfaced
+            # via response.raise_for_status() so the caller gets a
+            # requests.HTTPError with the original response attached").
+            try:
+                response.raise_for_status()
+            except requests.HTTPError as exc:
+                _safe_hook(self.on_failure, method, url, exc, attempt)
+                # No ``from exc``: the marker is discarded at the unwrap
+                # site (only ``wrapper.original`` is read), so its
+                # ``__cause__`` chain is never observed.
+                raise _NonTransportHTTPError(exc)
             return response
 
-        return retry(
-            _attempt,
-            max_attempts=effective_max_attempts,
-            sleep_seconds=self.retry_backoff,
-            jitter=self.retry_jitter,
-            catch=(self.transport_error_cls,),
-        )
+        # Capture the unwrapped HTTPError to a local. ``wrapper`` is
+        # deleted at the end of the except clause (Python 3 except-as
+        # semantics), but the captured local survives. Raising the
+        # original from OUTSIDE the except block (next statement) means
+        # there is no active exception when ``raise captured from None``
+        # runs — so Python does NOT set ``captured.__context__`` to the
+        # marker class. Pre-existing review concern (the marker was
+        # leaking through ``__context__`` to sentry-style programmatic
+        # introspection even though ``__suppress_context__`` hid it
+        # from default tracebacks) is closed.
+        captured_http_error: requests.HTTPError | None = None
+        try:
+            return retry(
+                _attempt,
+                max_attempts=effective_max_attempts,
+                sleep_seconds=self.retry_backoff,
+                jitter=self.retry_jitter,
+                catch=(self.transport_error_cls,),
+            )
+        except _NonTransportHTTPError as wrapper:
+            captured_http_error = wrapper.original
+        # Outside the except clause — no active exception. ``from None``
+        # additionally suppresses the marker's brief lifetime from any
+        # display layer. Callers see exactly the requests.HTTPError
+        # they saw pre-#91, with no marker class leakage on any
+        # introspection surface (traceback or programmatic).
+        raise captured_http_error from None
 
     def get(self, url: str, **kwargs: Any) -> requests.Response:
         return self.request("GET", url, **kwargs)
