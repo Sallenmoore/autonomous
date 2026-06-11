@@ -57,20 +57,22 @@ from autonomous.taskrunner.autotasks import AutoTasks
 # (tests/unit/test_unit_http_session_pooling.py) is updated in the
 # same PR as this migration.
 #
-# ``transport_error_cls=requests.RequestException``: HttpClient
-# normally wraps transport-class failures (``ConnectionError``,
-# ``Timeout``, etc. from ``session.request``) into ``TransportError``
-# (a ``RuntimeError`` subclass). Several call sites below wrap the
-# POST in ``except (requests.RequestException, ...)`` to log + soldier
-# on (``flush_memory``) or surface a typed error (``generate_json``).
-# A ``RuntimeError``-typed transport error would bypass those catches
-# silently. Pinning the wrapper to ``requests.RequestException`` keeps
-# the pre-migration catch contract intact while still routing through
-# HttpClient's classification logic.
+# ``transport_error_cls=requests.ConnectionError`` (mirrors flux #85).
+# Must stay inside the ``requests.RequestException`` family so the
+# ``except requests.RequestException`` catch in ``flush_memory`` keeps
+# matching; the default ``TransportError`` (``RuntimeError`` subclass)
+# would bypass it. Pinning the wrap to the *base* ``RequestException``
+# (the pre-#97 choice) silently broke the outer ``retry()`` in
+# ``generate_json`` once its catch tuple was narrowed in the same
+# cycle: a base ``RequestException(msg)`` instance is not a
+# ``ConnectionError`` / ``Timeout`` subclass instance, so real
+# transient transport failures dropped from 3 attempts to 1. Cost
+# of the narrower wrap: a real ``Timeout`` reaches callers as a
+# ``ConnectionError`` instance, type-erased. Same trade flux took.
 _HTTP = HttpClient(
     timeout=None,
     max_attempts=1,
-    transport_error_cls=requests.RequestException,
+    transport_error_cls=requests.ConnectionError,
 )
 
 # Module-level cache of (model, endpoint) combos we've already logged
@@ -270,12 +272,23 @@ class LocalAIModel(AutoModel):
             self.flush_memory(self._text_model)
 
         try:
+            # ``catch`` lists ONLY concrete transient classes plus the
+            # parse-failure exceptions ``_attempt`` translates. Using the
+            # broad ``requests.RequestException`` would re-catch
+            # ``requests.HTTPError`` (subclass) and burn the budget on a
+            # permanent 4xx — the same fail-fast violation #91 fixed at
+            # the HttpClient layer, recurring here at the outer-retry
+            # altitude (closes #97 / #106). A documented trade: a bare
+            # ``ChunkedEncodingError`` (a ``RequestException`` that is
+            # NOT a ``ConnectionError`` / ``Timeout``) is no longer
+            # retried — same trade flux's #85 narrowing made.
             return retry(
                 _attempt,
                 max_attempts=3,
                 sleep_seconds=self._retry_sleep,
                 catch=(
-                    requests.RequestException,
+                    requests.ConnectionError,
+                    requests.Timeout,
                     json.JSONDecodeError,
                     ValueError,
                     KeyError,

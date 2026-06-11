@@ -5,6 +5,260 @@ recent first.
 
 ## Unreleased
 
+### `LocalAIModel.generate_json` outer retry — narrow catch tuple + wrap class (#97 / #106)
+
+**What changed.**
+
+- `LocalAIModel.generate_json`'s outer `retry()` catch tuple narrowed
+  from `requests.RequestException` to
+  `(requests.ConnectionError, requests.Timeout)` (plus the existing
+  `json.JSONDecodeError` / `ValueError` / `KeyError` parse-failure
+  classes). Effect: a `raise_for_status`-raised `requests.HTTPError`
+  (a `RequestException` but not a `ConnectionError` / `Timeout`) no
+  longer matches the catch tuple, so permanent 4xx responses from
+  Ollama fail fast after 1 attempt instead of burning the 3-attempt
+  budget. Outer-altitude sibling of #91's HttpClient-internal fix.
+- `local_model._HTTP`'s `transport_error_cls` simultaneously narrowed
+  from `requests.RequestException` to `requests.ConnectionError`
+  (mirrors flux #85). Without this companion change the narrowing of
+  the outer catch tuple silently dropped real transient transport
+  failures (`ConnectionError` / `Timeout` from `session.request`)
+  from 3 attempts to 1, because HttpClient was wrapping them as base
+  `requests.RequestException(msg)` instances — and a base instance
+  is not a `ConnectionError` / `Timeout` subclass instance, so the
+  narrowed catch tuple silently stopped matching. With
+  `transport_error_cls=ConnectionError` the wrap IS a
+  `ConnectionError` instance, so the outer tuple still matches and
+  3-attempt retry on transient failures is preserved.
+
+**Migration.**
+
+- `LocalAIModel.generate_json` callers that previously caught
+  `requests.RequestException` to receive an HTTPError will need to
+  add an explicit `except requests.HTTPError` arm — HTTPError now
+  propagates unwrapped past the outer retry, alongside the existing
+  `GenerateJSONEmptyResponseError` / `GenerateJSONParseError`
+  translations. (The pre-#108 behavior was a bug: 3-attempt retry
+  on permanent 4xx burned wall time and tokens for no benefit.)
+- `flush_memory`'s `except requests.RequestException` catch still
+  matches because `ConnectionError` is-a `RequestException`. No
+  caller-side changes required for the wrap-class narrowing.
+- Trade-off documented in-line: a bare `requests.ChunkedEncodingError`
+  (a `RequestException` subclass that is neither a `ConnectionError`
+  nor a `Timeout`) is no longer retried by the outer wrapper.
+  Same trade flux #85 made.
+- Type-erasure trade: a real `requests.Timeout` from `session.request`
+  now reaches callers as a `requests.ConnectionError` instance (the
+  wrap class). The original `Timeout` is preserved on `__cause__`,
+  so observability that walks the chain still sees the true type.
+
+This closes the "Tracked as a follow-up" note in #91 below: with #91
+in HttpClient AND #97/#106 at the outer caller, both retry altitudes
+that previously matched HTTPError-via-RequestException now correctly
+fail-fast.
+
+### `MalformedResponseError` — structured `endpoint` / `status` / `body_excerpt` fields (#83)
+
+**What changed.**
+
+- `autonomous.ai.exceptions.MalformedResponseError` now exposes three
+  diagnostic attributes on the instance: `endpoint` (str, the path that
+  returned the malformed body), `status` (int | None, the response
+  status code), and `body_excerpt` (str, the first 200 chars of
+  `response.text`). The 200-char bound is enforced by the constructor
+  via `_EXCERPT_MAX = 200`, so a future raise site cannot accidentally
+  pick a different bound or forget the excerpt entirely. Same pattern
+  as `GenerateJSONParseError.raw` / `._RAW_MAX`.
+- All three raise sites (`OpenAIClient._chat`, `OpenAIClient.get_embedding`,
+  `OpenAIClient.generate_transcription` — see #82 below for the third)
+  populate the new fields. The body-excerpt is no longer baked into
+  the formatted message string.
+
+**Migration.**
+
+- Additive constructor change — every kwarg has a default, so any
+  caller still doing `raise MalformedResponseError("msg")` keeps
+  working. Consumers triaging programmatically can now read
+  `exc.endpoint`, `exc.status`, `exc.body_excerpt` instead of parsing
+  the message string.
+- Storyteller's structured-observability layer should prefer the new
+  fields (`log.warn(endpoint=exc.endpoint, status=exc.status,
+  body=exc.body_excerpt)`) — message-regex consumers should migrate
+  off message parsing since the body excerpt is no longer in the
+  message.
+- `body_excerpt=` accepts `str`, `bytes`, or `bytearray`. Bytes-like
+  inputs are decoded with `utf-8` / `errors="replace"` so malformed
+  encodings degrade to U+FFFD rather than raising
+  `UnicodeDecodeError` inside the error-handling path. Other
+  non-str types fall back to `str(...)` defensively — a misuse
+  doesn't crash the translation site.
+
+### `OpenAIClient.generate_transcription` malformed-2xx translation (#82)
+
+**What changed.**
+
+- `generate_transcription` now wraps `response.json()` + `body.get(...)`
+  in `try/except (AttributeError, ValueError)` and translates to
+  `MalformedResponseError` with the new structured fields (endpoint
+  `/audio/transcriptions`, the response status code, and the body
+  excerpt). Closes the "Known gaps" callout under the #76 entry.
+- `AttributeError` covers the non-dict body case (`body.get(...)`
+  against a list / None / scalar); `ValueError` covers
+  `response.json()` raising `json.JSONDecodeError` on non-JSON bodies.
+
+**Migration.**
+
+Storyteller's `AudioAgent` paths that catch
+`(KeyError, IndexError, TypeError)` around
+`client.generate_transcription(...)` should add
+`MalformedResponseError` (and broaden / drop the stdlib catch — the
+new translation makes the stdlib catch dead). Same shape as the #76
+migration for `generate_text` / `summarize_text` / `get_embedding`.
+
+### `FluxAIModel` retry altitude — narrow `transport_error_cls` to `ConnectionError` (#85)
+
+**What changed.**
+
+- `flux._HTTP` now constructs `HttpClient` with
+  `transport_error_cls=requests.ConnectionError` (was
+  `requests.RequestException`).
+- Effect on retry semantics: `HttpClient._attempt`'s
+  `raise_for_status`-raised `requests.HTTPError` no longer matches the
+  retry catch tuple (because `HTTPError` is-a `RequestException` but
+  not-a `ConnectionError`). So non-transport 4xx responses fail fast
+  at the altitude layer instead of burning the configured retry
+  budget. The `is_transport_failure` 5xx / 401 path still routes
+  through retry (it raises the configured `transport_error_cls` ==
+  `ConnectionError` directly).
+- The per-call `max_attempts=1` override on the CDN GET (#77) remains
+  in place — it still short-circuits retry against the
+  `is_transport_failure` 5xx case that the CDN can produce. The fix
+  in this entry just means the 4xx case (signed-URL expired / 403 /
+  404) gets fail-fast behavior at the altitude layer too, not just
+  via the per-call override.
+
+**Migration.**
+
+- Downstream catch in `FluxAIModel.generate_image` (`except
+  (requests.RequestException, ValueError, OSError)`) is unchanged —
+  `ConnectionError` is-a `RequestException`, so the catch still
+  matches retry-exhaustion failures.
+- Trade-off worth noting: HttpClient's transport re-raise (the
+  `except requests.RequestException` branch inside `_attempt`) now
+  wraps `requests.Timeout` / `requests.ChunkedEncodingError` as
+  `ConnectionError` for the flux client only. The original is
+  preserved on `__cause__`, so observability that walks the chain
+  still sees the true type. Other adapters with
+  `transport_error_cls=requests.RequestException` (or the default
+  `TransportError`) are unaffected.
+
+### `GeminiAIModel._add_files` orphan-cleanup edge-case widening (#84)
+
+**What changed.**
+
+- The outer except in the poll loop widened from
+  `(GeminiFileUploadTimeoutError, genai.errors.APIError)` to a bare
+  `except Exception`. Rationale: `genai.errors.UnknownApiResponseError`
+  subclasses `ValueError` (not `APIError`), so a malformed-payload
+  failure on `client.files.get(name=...)` previously bypassed the
+  outer except and SKIPPED orphan cleanup. The `raise` re-raises the
+  original — the catch is wider but the propagated exception type
+  is unchanged.
+- The inner cleanup loop now guards against `orphan.name is None`
+  (the `google.genai.types.File.name` type is `Optional[str]` —
+  partial uploads can yield `name=None`). Calling
+  `files.delete(name=None)` would have raised `TypeError` inside
+  the cleanup loop and masked the original poll exception.
+- The inner per-orphan delete catch broadened from
+  `except genai.errors.APIError` to `except Exception` — defensive
+  net so any failure during best-effort cleanup (APIError, TypeError,
+  transient network blip) doesn't mask the original poll exception
+  that the trailing `raise` re-throws.
+
+**Migration.**
+
+No consumer-side action required — the exception contract is
+unchanged (the original poll exception still propagates). Only the
+side-effect on Gemini's stored-files quota improves.
+
+### `HttpClient` retry no longer catches `raise_for_status`-raised `HTTPError` (#91)
+
+**What changed.**
+
+- `HttpClient.request` previously set the retry catch tuple to
+  `(self.transport_error_cls,)`. When an adapter passed
+  `transport_error_cls=requests.RequestException` (the natural choice
+  for downstream-catch compatibility — every legacy adapter has
+  `except requests.RequestException` somewhere), the tuple also
+  matched `requests.HTTPError` because `HTTPError` is a
+  `RequestException` subclass. Result: a permanent 4xx (403, 404, etc.)
+  would burn the full `max_attempts` × `retry_backoff` budget before
+  propagating, defeating fail-fast semantics for non-transport
+  client errors.
+- Post-#91, `HttpClient._attempt` wraps `response.raise_for_status()`'s
+  `HTTPError` in a private `_NonTransportHTTPError(Exception)` marker
+  that is NOT a subclass of any plausible `transport_error_cls`, so
+  the retry catch tuple never matches it. `HttpClient.request`
+  catches the marker at the boundary and re-raises the original
+  `HTTPError` via `raise ... from None`, so callers see exactly the
+  type they saw pre-#91. Their `except requests.RequestException`
+  catches still match.
+
+**Effect on adapters at the HttpClient layer.**
+
+- `db_sync` and `local_model` both pass
+  `transport_error_cls=requests.RequestException`. Pre-#91 they were
+  latent at the HttpClient layer (`max_attempts=1` means no retry
+  budget to burn there), but the moment HttpClient's `max_attempts`
+  is tuned above 1 they'd have exposed the same retry-on-4xx bug
+  `flux` had pre-#85. Post-#91 they're safe at any HttpClient
+  `max_attempts`. **Note (scope):** `local_model.generate_json` wraps
+  its `_HTTP.post` call in an OUTER `autonomous.ai.retry.retry()`
+  with `catch=(RequestException, ...)` — that outer retry layer
+  still catches HTTPError (subclass of RequestException) and is
+  unaffected by #91. Closed by the #97/#106 follow-up at the top of
+  Unreleased above.
+- `flux` narrowed `transport_error_cls` to
+  `requests.ConnectionError` in #85 (sibling entry above). With #91
+  in place the narrowing is structurally redundant for fail-fast on
+  4xx — but stays in place because `ConnectionError` is still the
+  semantically tighter wrap class for flux's network-only failure
+  surface.
+- `openai_compat` passes `HPCUnreachableError` (a `RuntimeError`
+  subclass that's never a parent of `HTTPError`), so its retry
+  tuple never matched HTTPError pre-#91. Zero behavior change.
+
+**On-failure observability.**
+
+The new `try/except requests.HTTPError` in `_attempt` calls
+`_safe_hook(self.on_failure, ...)` before wrapping — so the
+`on_failure` hook now fires for non-transport HTTPError attempts
+where pre-#91 it fired only for transport-class exceptions. This is
+consistent with the documented contract ("fires on every caught
+exception during an attempt") but the catch surface is genuinely
+broader. Adapters wiring `on_failure` to a counter/sentry tag should
+expect 4xx events in addition to the prior transport-class set.
+**Caveat:** the `is_transport_failure(status_code)` branch (5xx +
+extras) still does NOT call `on_failure` — a pre-existing asymmetry
+this PR widens but does not introduce. Tracked as a follow-up.
+
+**Migration.**
+
+No consumer-side action required. The contract documented on
+`HttpClient.request` is unchanged:
+> Any non-transport HTTP error (4xx other than configured extras) is
+> surfaced via `response.raise_for_status()` so the caller gets a
+> `requests.HTTPError` with the original response attached.
+
+That contract is now actually upheld for adapters with broad
+`transport_error_cls` choices, not just narrow ones. The propagated
+HTTPError has `__cause__=None` and `__suppress_context__=True` (set
+by `raise ... from None`). The implementation raises the unwrapped
+HTTPError OUTSIDE the `except _NonTransportHTTPError` block so
+Python does not set `__context__` to the marker class — the marker
+stays fully private even from programmatic chain-walkers (sentry,
+structlog).
+
 ### `OpenAIClient` malformed-200 translation + new `MalformedResponseError` (#76)
 
 **What changed.**
@@ -34,14 +288,9 @@ or `get_embedding(...)` should add `MalformedResponseError` to their
 catch tuple — the stdlib exceptions no longer fire on the malformed-200
 path. `generate_json` consumers need no change.
 
-**Known gaps (filed for follow-up, not addressed in this slice).**
-
-- `generate_transcription` still does raw `response.json()` + `body.get(...)`
-  — the transcription path still leaks the same class of failure
-  (malformed 2xx body) as a raw stdlib exception (`ValueError` from
-  `json()`, `AttributeError` if `body` is not a dict). Different exception
-  type than the `_chat` / `get_embedding` ladder but the same operator-
-  facing problem. Filed for the next iteration.
+**Known gaps.** The `generate_transcription` leak called out in the
+initial #76 ship is closed by #82 (see entry above). No remaining
+gaps in this slice.
 
 ### `HttpClient.request` per-call `max_attempts=` override + flux CDN GET fail-fast (#77)
 

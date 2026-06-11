@@ -336,10 +336,21 @@ class OpenAIClient(AutoModel):
         try:
             body = response.json()
             return body["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError, ValueError) as exc:
+        except (AttributeError, KeyError, IndexError, TypeError, ValueError) as exc:
+            # AttributeError is forward-looking only — the subscript
+            # access on ``body`` raises TypeError (not AttributeError)
+            # when ``body`` is None, so AttributeError is dead under
+            # the current code shape. It's in the tuple to align with
+            # the documented ``MalformedResponseError`` contract so a
+            # future refactor that switches to ``body.get(...)`` (the
+            # shape ``generate_transcription`` actually uses) doesn't
+            # leak raw AttributeError through the typed-exception
+            # surface.
             raise MalformedResponseError(
-                f"HPC chat endpoint returned a malformed 200 body: {exc}; "
-                f"body_excerpt={response.text[:200]!r}"
+                f"HPC chat endpoint returned a malformed 200 body: {exc}",
+                endpoint="/chat/completions",
+                status=response.status_code,
+                body_excerpt=response.text,
             ) from exc
 
     def generate_text(
@@ -511,6 +522,12 @@ class OpenAIClient(AutoModel):
         ``{"text": ..., "segments": [...]}`` shape LocalAIModel returns,
         so callers (audioagent.py screenplay post-processing) work
         unchanged regardless of provider.
+
+        Exception contract: 4xx responses propagate as
+        ``requests.HTTPError`` (raised by HttpClient's
+        ``raise_for_status``); only malformed 2xx bodies translate to
+        ``MalformedResponseError`` (issue #82). Consumers that want a
+        single typed-exception surface should catch both.
         """
         f_obj = io.BytesIO(audio_file) if isinstance(audio_file, bytes) else audio_file
         files = {"file": ("audio.opus", f_obj, "audio/ogg")}
@@ -525,13 +542,31 @@ class OpenAIClient(AutoModel):
             current_job.meta(data=data)
 
         response = self._post("/audio/transcriptions", files=files, data=data)
-        body = response.json()
-        # Ensure the LocalAIModel-compatible shape even if the server
-        # returns the simpler "text" form.
-        return {
-            "text": body.get("text", ""),
-            "segments": body.get("segments", []),
-        }
+        # Malformed-2xx translation (#82) — same family as the #76
+        # _chat / get_embedding fixes. ValueError covers
+        # ``response.json()`` raising json.JSONDecodeError on non-JSON
+        # bodies; AttributeError covers ``body.get(...)`` against a
+        # non-dict (list/None/scalar). KeyError/IndexError/TypeError
+        # round out the universal catch tuple documented on
+        # ``MalformedResponseError`` — even though the .get(...) shape
+        # here doesn't currently raise them, aligning the tuple keeps
+        # future refactors that switch to indexed access from leaking
+        # raw stdlib through the typed-exception contract.
+        try:
+            body = response.json()
+            # Ensure the LocalAIModel-compatible shape even if the
+            # server returns the simpler "text" form.
+            return {
+                "text": body.get("text", ""),
+                "segments": body.get("segments", []),
+            }
+        except (AttributeError, KeyError, IndexError, TypeError, ValueError) as exc:
+            raise MalformedResponseError(
+                f"HPC transcription endpoint returned a malformed 2xx body: {exc}",
+                endpoint="/audio/transcriptions",
+                status=response.status_code,
+                body_excerpt=response.text,
+            ) from exc
 
     # ---------------- embeddings ----------------
 
@@ -547,10 +582,17 @@ class OpenAIClient(AutoModel):
         try:
             body = response.json()
             return body["data"][0]["embedding"]
-        except (KeyError, IndexError, TypeError, ValueError) as exc:
+        except (AttributeError, KeyError, IndexError, TypeError, ValueError) as exc:
+            # AttributeError is forward-looking only — same rationale
+            # as ``_chat`` above. The subscript walk on a ``None`` body
+            # raises TypeError, not AttributeError; the tuple alignment
+            # protects a future refactor that switches to ``.get(...)``
+            # from leaking raw stdlib through the typed surface.
             raise MalformedResponseError(
-                f"HPC embeddings endpoint returned a malformed 200 body: {exc}; "
-                f"body_excerpt={response.text[:200]!r}"
+                f"HPC embeddings endpoint returned a malformed 200 body: {exc}",
+                endpoint="/embeddings",
+                status=response.status_code,
+                body_excerpt=response.text,
             ) from exc
 
     # ---------------- not implemented (route via gemini) ----------------
