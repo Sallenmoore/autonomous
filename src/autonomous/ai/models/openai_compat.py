@@ -24,6 +24,7 @@ from autonomous.ai.exceptions import (
     GenerateJSONParseError,
 )
 from autonomous.ai.retry import retry
+from autonomous.http import is_transport_failure as _http_is_transport_failure
 from autonomous.config import settings
 from autonomous.model.autoattr import ListAttr, StringAttr
 from autonomous.model.automodel import AutoModel
@@ -68,13 +69,16 @@ def _is_transport_failure(status) -> bool:
     type error as "not transport" preserves the old behavior of those
     tests (which relied on the fixed-set ``in`` check returning False
     against a MagicMock and falling through to ``raise_for_status``).
+
+    Implementation delegates to ``autonomous.http.is_transport_failure``
+    (#50 slice 2) — the predicate logic lives in one place so future
+    transport-class refinements (e.g. opt-in 408/429 for throttle-aware
+    callers) ship to every adapter via the central helper. The
+    ``_TRANSPORT_FAILURE_CODES`` frozenset is passed as the extras set
+    so the deployment-specific 401 == "VPN drop" equivalence stays
+    here, not in the shared module.
     """
-    if status in _TRANSPORT_FAILURE_CODES:
-        return True
-    try:
-        return status >= 500
-    except TypeError:
-        return False
+    return _http_is_transport_failure(status, extra_codes=_TRANSPORT_FAILURE_CODES)
 
 # Module-level negative cache: (model, base_url) tuples known to NOT
 # support strict-mode response_format. Populated on first conservative
