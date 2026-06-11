@@ -290,7 +290,7 @@ class TestHandleResponseInjectsPair:
 
         fake_userinfo = {"sub": "abc-123", "email": "a@b.c", "name": "Alice"}
         with patch(
-            "autonomous.auth.autoauth.requests.get",
+            "autonomous.auth.autoauth._HTTP.get",
             return_value=MagicMock(json=MagicMock(return_value=fake_userinfo)),
         ):
             userinfo, token = auth.handle_response(
@@ -312,7 +312,7 @@ class TestHandleResponseInjectsPair:
 
         fake_userinfo = {"sub": 99887766, "email": "a@b.c"}
         with patch(
-            "autonomous.auth.autoauth.requests.get",
+            "autonomous.auth.autoauth._HTTP.get",
             return_value=MagicMock(json=MagicMock(return_value=fake_userinfo)),
         ):
             userinfo, _ = auth.handle_response("http://cb/?code=x&state=s")
@@ -341,7 +341,7 @@ class TestHandleResponseBaseAutoAuthDoesNotInject:
 
         fake_userinfo = {"sub": "abc-123", "email": "a@b.c"}
         with patch(
-            "autonomous.auth.autoauth.requests.get",
+            "autonomous.auth.autoauth._HTTP.get",
             return_value=MagicMock(json=MagicMock(return_value=fake_userinfo)),
         ):
             userinfo, _ = auth.handle_response("http://cb/?code=x&state=s")
@@ -367,7 +367,7 @@ class TestHandleResponseNonDictRoundTrip:
         _patch_session_token_exchange(auth)
 
         with patch(
-            "autonomous.auth.autoauth.requests.get",
+            "autonomous.auth.autoauth._HTTP.get",
             return_value=MagicMock(json=MagicMock(return_value=malformed)),
         ):
             userinfo, _ = auth.handle_response("http://cb/?code=x&state=s")
@@ -389,7 +389,7 @@ class TestHandleResponseCallerWins:
         pre = {"sub": "from-extract", "oauth_sub": "caller-supplied",
                "email": "a@b.c"}
         with patch(
-            "autonomous.auth.autoauth.requests.get",
+            "autonomous.auth.autoauth._HTTP.get",
             return_value=MagicMock(json=MagicMock(return_value=pre)),
         ):
             userinfo, _ = auth.handle_response("http://cb/?code=x&state=s")
@@ -405,7 +405,7 @@ class TestHandleResponseCallerWins:
         pre = {"sub": "x", "oauth_provider": "caller-provider",
                "email": "a@b.c"}
         with patch(
-            "autonomous.auth.autoauth.requests.get",
+            "autonomous.auth.autoauth._HTTP.get",
             return_value=MagicMock(json=MagicMock(return_value=pre)),
         ):
             userinfo, _ = auth.handle_response("http://cb/?code=x&state=s")
@@ -428,7 +428,7 @@ class TestHandleResponseDoesNotMutateFixture:
         snapshot = dict(shared_fixture)
 
         with patch(
-            "autonomous.auth.autoauth.requests.get",
+            "autonomous.auth.autoauth._HTTP.get",
             return_value=MagicMock(
                 json=MagicMock(return_value=shared_fixture)
             ),
