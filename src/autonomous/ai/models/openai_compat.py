@@ -336,7 +336,14 @@ class OpenAIClient(AutoModel):
         try:
             body = response.json()
             return body["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError, ValueError) as exc:
+        except (AttributeError, KeyError, IndexError, TypeError, ValueError) as exc:
+            # AttributeError added per /review: covers the case where
+            # ``body`` is None (e.g. server returns top-level JSON
+            # ``null`` on a 200) — ``None["choices"]`` raises TypeError
+            # but ``body.get("choices")`` would raise AttributeError.
+            # Aligns the catch tuple with the documented contract on
+            # ``MalformedResponseError`` so all three raise sites use
+            # the same translation surface.
             raise MalformedResponseError(
                 f"HPC chat endpoint returned a malformed 200 body: {exc}",
                 endpoint="/chat/completions",
@@ -531,10 +538,12 @@ class OpenAIClient(AutoModel):
         # _chat / get_embedding fixes. ValueError covers
         # ``response.json()`` raising json.JSONDecodeError on non-JSON
         # bodies; AttributeError covers ``body.get(...)`` against a
-        # non-dict (list/None/scalar). Without this catch, the failure
-        # would leak as raw stdlib through the typed-exception contract
-        # consumers rely on (storyteller's GenerateJSON* / Malformed*
-        # ladder).
+        # non-dict (list/None/scalar). KeyError/IndexError/TypeError
+        # round out the universal catch tuple documented on
+        # ``MalformedResponseError`` — even though the .get(...) shape
+        # here doesn't currently raise them, aligning the tuple keeps
+        # future refactors that switch to indexed access from leaking
+        # raw stdlib through the typed-exception contract.
         try:
             body = response.json()
             # Ensure the LocalAIModel-compatible shape even if the
@@ -543,7 +552,7 @@ class OpenAIClient(AutoModel):
                 "text": body.get("text", ""),
                 "segments": body.get("segments", []),
             }
-        except (AttributeError, ValueError) as exc:
+        except (AttributeError, KeyError, IndexError, TypeError, ValueError) as exc:
             raise MalformedResponseError(
                 f"HPC transcription endpoint returned a malformed 2xx body: {exc}",
                 endpoint="/audio/transcriptions",
@@ -565,7 +574,12 @@ class OpenAIClient(AutoModel):
         try:
             body = response.json()
             return body["data"][0]["embedding"]
-        except (KeyError, IndexError, TypeError, ValueError) as exc:
+        except (AttributeError, KeyError, IndexError, TypeError, ValueError) as exc:
+            # AttributeError added per /review: aligns the catch tuple
+            # with the universal contract documented on
+            # ``MalformedResponseError``. Covers the body=None case
+            # the same way the ``_chat`` and ``generate_transcription``
+            # paths do.
             raise MalformedResponseError(
                 f"HPC embeddings endpoint returned a malformed 200 body: {exc}",
                 endpoint="/embeddings",
