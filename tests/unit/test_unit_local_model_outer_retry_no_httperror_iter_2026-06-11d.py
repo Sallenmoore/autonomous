@@ -357,3 +357,138 @@ class TestStillRetriedClasses:
             LocalAIModel.generate_json(local, "prompt")
 
         assert len(calls) == 3
+
+
+# ---------------------------------------------------------------------------
+# 6. Production wrap-path probes — patch _HTTP.session.request so
+#    HttpClient's transport_error_cls wrap actually fires.
+#
+# Patching _HTTP.post (sections 3-5 above) lets the test author raise
+# any class they want, bypassing HttpClient's wrap. That's the right
+# shape for pinning the outer retry's catch-tuple SEMANTICS, but it
+# doesn't model what really arrives at the outer retry in production:
+# HttpClient catches the inner ``requests.RequestException`` and
+# re-raises ``self.transport_error_cls(message)`` — an instance of the
+# WRAP CLASS, not of the original exception's class.
+#
+# These tests pin the WRAP CONTRACT: with transport_error_cls=
+# requests.ConnectionError (mirrors flux #85), the wrap is itself a
+# ConnectionError subclass instance, so the outer retry's narrowed
+# catch tuple (ConnectionError, Timeout, ...) still matches and real
+# transient transport failures retry 3x. Before the #97/#106 follow-up
+# the wrap was base ``RequestException(msg)`` — neither a
+# ConnectionError nor a Timeout subclass instance — and the outer
+# catch tuple silently stopped matching, dropping real transport
+# failures from 3 attempts to 1.
+# ---------------------------------------------------------------------------
+
+
+def _patch_session_request(monkeypatch, exc_to_raise):
+    """Patch the transport seam ONE level deeper than _HTTP.post so
+    HttpClient's transport_error_cls wrap actually fires. Returns a
+    call counter dict whose ``n`` key is incremented on every attempt
+    that reaches the wire."""
+    calls = {"n": 0}
+
+    def fake_request(method, url, **kwargs):
+        calls["n"] += 1
+        raise exc_to_raise
+
+    monkeypatch.setattr(local_model._HTTP.session, "request", fake_request)
+    return calls
+
+
+class TestProductionWrapPath:
+    def test_real_connection_error_retries_three_times_via_wrap(
+        self, monkeypatch
+    ):
+        """Real production path: session.request raises ConnectionError,
+        HttpClient wraps via transport_error_cls, outer retry catches
+        the wrap and retries. With transport_error_cls=
+        requests.ConnectionError (post-#97/#106), the wrap is itself a
+        ConnectionError instance, so the outer (ConnectionError,
+        Timeout, ...) catch tuple matches. Pre-#97/#106 the wrap was
+        base RequestException, which the narrowed tuple did NOT match
+        — this test would have failed before the follow-up."""
+        _patch_autotasks(monkeypatch)
+        _patch_flush_memory(monkeypatch)
+        local = _local()
+
+        calls = _patch_session_request(
+            monkeypatch,
+            requests.ConnectionError("network unreachable"),
+        )
+
+        with pytest.raises(requests.ConnectionError):
+            LocalAIModel.generate_json(local, "prompt")
+
+        assert calls["n"] == 3, (
+            f"real ConnectionError must retry 3x via the wrap; got "
+            f"{calls['n']} attempt(s) — likely a transport_error_cls "
+            f"regression that broke wrap-instance ↔ catch-tuple match"
+        )
+
+    def test_real_timeout_retries_three_times_via_wrap(self, monkeypatch):
+        """Real production path: session.request raises Timeout. With
+        transport_error_cls=requests.ConnectionError the wrap is a
+        ConnectionError instance — type is erased but retry budget is
+        preserved. Same trade flux #85 made. If a future refactor
+        widens transport_error_cls back to RequestException without
+        widening the outer catch, this test fails."""
+        _patch_autotasks(monkeypatch)
+        _patch_flush_memory(monkeypatch)
+        local = _local()
+
+        calls = _patch_session_request(
+            monkeypatch, requests.Timeout("ollama too slow")
+        )
+
+        with pytest.raises(requests.ConnectionError):
+            LocalAIModel.generate_json(local, "prompt")
+
+        assert calls["n"] == 3, (
+            f"real Timeout must retry 3x via the wrap; got "
+            f"{calls['n']} attempt(s)"
+        )
+
+    def test_real_http_error_still_fails_fast_via_unwrap(self, monkeypatch):
+        """Real production path: session.request returns a 4xx
+        response, HttpClient's ``_NonTransportHTTPError`` marker
+        unwraps + re-raises the original HTTPError outside its retry
+        catch. That HTTPError reaches the outer retry as a
+        RequestException (not a ConnectionError/Timeout subclass), so
+        the narrowed catch tuple drops it → 1 attempt. End-to-end
+        proof the #91/#99 marker-pattern + #108 narrowing + #97/#106
+        wrap-class fix compose correctly."""
+        _patch_autotasks(monkeypatch)
+        local = _local()
+
+        class _Response404:
+            status_code = 404
+            text = "not found"
+            headers = {}
+
+            def raise_for_status(self):
+                raise requests.HTTPError("404 Not Found", response=self)
+
+            def json(self):
+                return {}
+
+        calls = {"n": 0}
+
+        def fake_request(method, url, **kwargs):
+            calls["n"] += 1
+            return _Response404()
+
+        monkeypatch.setattr(
+            local_model._HTTP.session, "request", fake_request
+        )
+
+        with pytest.raises(requests.HTTPError):
+            LocalAIModel.generate_json(local, "prompt")
+
+        assert calls["n"] == 1, (
+            f"4xx HTTPError must NOT retry at any layer; got "
+            f"{calls['n']} attempt(s) — likely the #91/#99 marker "
+            f"regressed or the outer catch widened"
+        )

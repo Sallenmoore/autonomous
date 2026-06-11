@@ -73,16 +73,20 @@ def test_http_max_attempts_is_one_no_retry():
     assert _HTTP.max_attempts == 1
 
 
-def test_http_transport_error_cls_is_requests_request_exception():
-    """The call sites use ``except (requests.RequestException, ...)`` —
-    the migration must keep transport-class failures raising in that
-    family. A regression to the default ``TransportError`` would
-    silently bypass those handlers and turn a clean error log into a
-    500-on-task crash."""
+def test_http_transport_error_cls_is_requests_connection_error():
+    """Originally ``requests.RequestException`` (PR #70/#50-C); narrowed to
+    ``requests.ConnectionError`` in the #97/#106 follow-up after the outer
+    ``retry()`` catch tuple in ``generate_json`` was narrowed in the same
+    cycle. A base ``RequestException(msg)`` wrap silently stopped matching
+    ``(ConnectionError, Timeout)`` in the outer catch. ``ConnectionError``
+    IS a ``RequestException`` subclass, so ``flush_memory``'s
+    ``except requests.RequestException`` still matches. A regression to
+    the default ``TransportError`` (a ``RuntimeError`` subclass) would
+    bypass that catch silently."""
     import requests
     from autonomous.ai.models.local_model import _HTTP
 
-    assert _HTTP.transport_error_cls is requests.RequestException
+    assert _HTTP.transport_error_cls is requests.ConnectionError
 
 
 # ---------------------------------------------------------------------------

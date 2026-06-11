@@ -5,6 +5,58 @@ recent first.
 
 ## Unreleased
 
+### `LocalAIModel.generate_json` outer retry — narrow catch tuple + wrap class (#97 / #106)
+
+**What changed.**
+
+- `LocalAIModel.generate_json`'s outer `retry()` catch tuple narrowed
+  from `requests.RequestException` to
+  `(requests.ConnectionError, requests.Timeout)` (plus the existing
+  `json.JSONDecodeError` / `ValueError` / `KeyError` parse-failure
+  classes). Effect: a `raise_for_status`-raised `requests.HTTPError`
+  (a `RequestException` but not a `ConnectionError` / `Timeout`) no
+  longer matches the catch tuple, so permanent 4xx responses from
+  Ollama fail fast after 1 attempt instead of burning the 3-attempt
+  budget. Outer-altitude sibling of #91's HttpClient-internal fix.
+- `local_model._HTTP`'s `transport_error_cls` simultaneously narrowed
+  from `requests.RequestException` to `requests.ConnectionError`
+  (mirrors flux #85). Without this companion change the narrowing of
+  the outer catch tuple silently dropped real transient transport
+  failures (`ConnectionError` / `Timeout` from `session.request`)
+  from 3 attempts to 1, because HttpClient was wrapping them as base
+  `requests.RequestException(msg)` instances — and a base instance
+  is not a `ConnectionError` / `Timeout` subclass instance, so the
+  narrowed catch tuple silently stopped matching. With
+  `transport_error_cls=ConnectionError` the wrap IS a
+  `ConnectionError` instance, so the outer tuple still matches and
+  3-attempt retry on transient failures is preserved.
+
+**Migration.**
+
+- `LocalAIModel.generate_json` callers that previously caught
+  `requests.RequestException` to receive an HTTPError will need to
+  add an explicit `except requests.HTTPError` arm — HTTPError now
+  propagates unwrapped past the outer retry, alongside the existing
+  `GenerateJSONEmptyResponseError` / `GenerateJSONParseError`
+  translations. (The pre-#108 behavior was a bug: 3-attempt retry
+  on permanent 4xx burned wall time and tokens for no benefit.)
+- `flush_memory`'s `except requests.RequestException` catch still
+  matches because `ConnectionError` is-a `RequestException`. No
+  caller-side changes required for the wrap-class narrowing.
+- Trade-off documented in-line: a bare `requests.ChunkedEncodingError`
+  (a `RequestException` subclass that is neither a `ConnectionError`
+  nor a `Timeout`) is no longer retried by the outer wrapper.
+  Same trade flux #85 made.
+- Type-erasure trade: a real `requests.Timeout` from `session.request`
+  now reaches callers as a `requests.ConnectionError` instance (the
+  wrap class). The original `Timeout` is preserved on `__cause__`,
+  so observability that walks the chain still sees the true type.
+
+This closes the "Tracked as a follow-up" note in #91 below: with #91
+in HttpClient AND #97/#106 at the outer caller, both retry altitudes
+that previously matched HTTPError-via-RequestException now correctly
+fail-fast.
+
 ### `MalformedResponseError` — structured `endpoint` / `status` / `body_excerpt` fields (#83)
 
 **What changed.**
@@ -164,7 +216,8 @@ side-effect on Gemini's stored-files quota improves.
   its `_HTTP.post` call in an OUTER `autonomous.ai.retry.retry()`
   with `catch=(RequestException, ...)` — that outer retry layer
   still catches HTTPError (subclass of RequestException) and is
-  unaffected by #91. Tracked as a follow-up.
+  unaffected by #91. Closed by the #97/#106 follow-up at the top of
+  Unreleased above.
 - `flux` narrowed `transport_error_cls` to
   `requests.ConnectionError` in #85 (sibling entry above). With #91
   in place the narrowing is structurally redundant for fail-fast on
