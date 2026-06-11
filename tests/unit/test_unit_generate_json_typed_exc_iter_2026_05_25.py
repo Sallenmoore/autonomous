@@ -231,7 +231,7 @@ class TestOpenAICompatRawBound:
 
         huge = "x" * 10_000  # 10KB of non-JSON
         with patch(
-            "autonomous.ai.models.openai_compat._SESSION.post",
+            "autonomous.ai.models.openai_compat._HTTP.post",
             return_value=_mock_chat_response(huge),
         ):
             with pytest.raises(GenerateJSONParseError) as ctx:
@@ -251,7 +251,7 @@ class TestOpenAICompatRawBound:
         from autonomous.ai.exceptions import GenerateJSONEmptyResponseError
 
         with patch(
-            "autonomous.ai.models.openai_compat._SESSION.post",
+            "autonomous.ai.models.openai_compat._HTTP.post",
             return_value=_mock_chat_response("   \n   "),
         ):
             with pytest.raises(GenerateJSONEmptyResponseError):

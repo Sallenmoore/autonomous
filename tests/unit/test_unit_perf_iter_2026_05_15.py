@@ -97,21 +97,21 @@ class TestHttpSessionIdentity:
         from autonomous.ai.models import local_model, openai_compat
         from autonomous.http import HttpClient
 
-        # Type expectation per module — db_sync migrated to HttpClient
-        # in #50 slice D. local_model and openai_compat still hold a
-        # bare ``requests.Session`` directly (slices C and F pending).
-        from autonomous.http import HttpClient
+        # Type expectation per module — all three migrated to HttpClient
+        # by the close of #50 (slice C: local_model; slice D: db_sync;
+        # slice F: openai_compat). Bare ``requests.Session`` no longer
+        # appears in any of these modules.
 
         candidates = [
             ("db_sync", db_sync, "_HTTP", HttpClient),
             ("local_model", local_model, "_HTTP", HttpClient),
-            ("openai_compat", openai_compat, "_SESSION", requests.Session),
+            ("openai_compat", openai_compat, "_HTTP", HttpClient),
         ]
         for label, mod, attr, expected_type in candidates:
             obj = getattr(mod, attr)
             assert isinstance(obj, expected_type), (
                 f"{label}.{attr} must be a {expected_type.__name__} "
-                f"(post-#76 for Session, post-#50 slices C/D for HttpClient); "
+                f"(post-#50 slices C/D/F for HttpClient); "
                 f"got: {type(obj).__name__}"
             )
             # Repeated access returns same object — pool-reuse contract.

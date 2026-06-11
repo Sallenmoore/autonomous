@@ -23,17 +23,11 @@ from autonomous.ai.exceptions import (
     GenerateJSONEmptyResponseError,
     GenerateJSONParseError,
 )
-from autonomous.ai.retry import retry
-from autonomous.http import is_transport_failure as _http_is_transport_failure
 from autonomous.config import settings
+from autonomous.http import HttpClient, is_transport_failure as _http_is_transport_failure
 from autonomous.model.autoattr import ListAttr, StringAttr
 from autonomous.model.automodel import AutoModel
 from autonomous.taskrunner.autotasks import AutoTasks
-
-# Module-level Session pools connections; concurrent calls are safe but
-# Session-state mutation (headers/cookies/auth) from a sibling thread
-# is not — every call site here uses per-request `headers=` kwargs.
-_SESSION = requests.Session()
 
 
 class HPCUnreachableError(RuntimeError):
@@ -77,8 +71,83 @@ def _is_transport_failure(status) -> bool:
     ``_TRANSPORT_FAILURE_CODES`` frozenset is passed as the extras set
     so the deployment-specific 401 == "VPN drop" equivalence stays
     here, not in the shared module.
+
+    NOTE: as of #50 slice F this function is no longer called from
+    ``_post`` — HttpClient runs the same predicate internally via the
+    ``transport_failure_codes`` constructor kwarg. The function is
+    retained for any external caller that imports it directly.
     """
     return _http_is_transport_failure(status, extra_codes=_TRANSPORT_FAILURE_CODES)
+
+
+# Module-level HTTP client for the HPC POST path (#50 slice F).
+#
+# Pre-migration ``_post`` was a hand-rolled assembly of:
+# - inner ``_attempt()`` closure calling ``_SESSION.post``
+# - exception ladder for config-class errors (MissingSchema, InvalidURL,
+#   SSLError, ProxyError, etc.) — re-raised raw to skip retry
+# - ``except requests.RequestException`` → wrap into HPCUnreachableError
+# - explicit ``_is_transport_failure(response.status_code)`` check →
+#   wrap into HPCUnreachableError
+# - explicit ``response.raise_for_status()``
+# - outer ``retry(_attempt, max_attempts, sleep_seconds, catch=(HPCUnreachableError,))``
+#
+# HttpClient absorbs the entire pattern:
+# - ``_NON_TRANSPORT_REQUESTS_EXCEPTIONS`` covers most of the config-error
+#   ladder (MissingSchema, InvalidURL, InvalidSchema, InvalidJSONError,
+#   URLRequired, InvalidHeader, InvalidProxyURL) — re-raised raw.
+# - ``transport_failure_codes=_TRANSPORT_FAILURE_CODES`` honours the 401
+#   special-case; the 5xx range is automatic.
+# - ``transport_error_cls=HPCUnreachableError`` makes HttpClient wrap
+#   caught ``requests.RequestException`` and transport-class status
+#   codes into HPCUnreachableError directly. The outer retry catches
+#   ``transport_error_cls`` so HPCUnreachableError flows through the
+#   retry budget as it did pre-migration.
+# - ``max_attempts`` / ``retry_backoff`` from the same settings keys.
+#
+# **One behavior change from this migration, documented in MIGRATIONS.md:**
+#
+# HPCUnreachableError message format. HttpClient instantiates
+# ``transport_error_cls`` with its own format strings:
+#    - status-code raise: ``f"POST {url} returned {status}: {text[:200]}"``
+#    - exception raise:   ``f"POST {url} failed ({type(exc).__name__}): {exc}"``
+# Pre-migration the formats were:
+#    - status:    ``f"HPC returned {status} for {path}: {text[:200]}"``
+#    - exception: ``f"HPC unreachable ({type(exc).__name__}): {exc}"``
+# The exception class is unchanged (HPCUnreachableError); only the
+# embedded message string format differs. Log scrapers grepping the
+# string need to widen the regex; ``except HPCUnreachableError``
+# consumers are unaffected.
+#
+# Note: ``SSLError`` and ``ProxyError`` carve-out. Pre-migration the
+# inner ``_attempt()`` ladder listed both as config-class (corporate
+# cert-bundle / corporate-proxy misconfigs — retry can't fix and
+# HPCUnreachable translation actively misdirects on-call). HttpClient's
+# default ``_NON_TRANSPORT_REQUESTS_EXCEPTIONS`` doesn't include them
+# because for adapters over the public internet (fal.ai etc.) SSL/Proxy
+# failures can legitimately be transient. We carry the carve-out
+# forward by passing ``extra_non_transport_exceptions=`` to HttpClient
+# so the per-deployment classification is preserved.
+#
+# **Why ContentDecodingError is deliberately NOT in the carve-out** (PR
+# #99 decision, preserved here): malformed-gzip bodies can be transient
+# server bugs, so the retry path is the safer default. Adding it to the
+# carve-out would short-circuit retry for cases where retrying actually
+# helps recover the call. A well-intentioned "let's just add all the
+# requests.exceptions.* names" PR would silently regress this — the
+# in-source breadcrumb is the second line of defense beyond
+# ``test_unit_followup_iter_2026_05_17_pr107_followups.py``'s pin.
+_HTTP = HttpClient(
+    timeout=None,
+    max_attempts=settings.hpc_retry_attempts,
+    retry_backoff=settings.hpc_retry_backoff,
+    transport_failure_codes=_TRANSPORT_FAILURE_CODES,
+    transport_error_cls=HPCUnreachableError,
+    extra_non_transport_exceptions=(
+        requests.exceptions.SSLError,
+        requests.exceptions.ProxyError,
+    ),
+)
 
 # Module-level negative cache: (model, base_url) tuples known to NOT
 # support strict-mode response_format. Populated on first conservative
@@ -182,8 +251,15 @@ class OpenAIClient(AutoModel):
     _embedding_model = settings.hpc_embedding_model
     _stt_model = settings.hpc_stt_model
     _timeout = settings.hpc_request_timeout
-    _retry_attempts = settings.hpc_retry_attempts
-    _retry_backoff = settings.hpc_retry_backoff
+    # ``_retry_attempts`` and ``_retry_backoff`` (settings.hpc_retry_attempts /
+    # settings.hpc_retry_backoff) used to live here as class attrs the
+    # inner ``_post`` retry wrapper read. Post-#50-slice-F the retry
+    # config lives on ``_HTTP`` at module scope (read from the same
+    # settings keys at module load). Tests that previously did
+    # ``monkeypatch.setattr(OpenAIClient, "_retry_attempts", 1)`` to
+    # speed up retry tests should instead do
+    # ``monkeypatch.setattr(_HTTP, "max_attempts", 1)`` (and
+    # ``_HTTP.retry_backoff`` for the sleep interval).
 
     def _headers(self, content_type="application/json"):
         h = {"Authorization": f"Bearer {self._api_key}"}
@@ -197,6 +273,15 @@ class OpenAIClient(AutoModel):
         problems (connection refused, timeout, 401/5xx) so the caller can
         translate to a user-visible error. Other exceptions (non-JSON
         response body, invalid content from caller) propagate as-is.
+
+        Post-#50-slice-F: the per-call exception ladder + retry assembly
+        is delegated to ``_HTTP`` (an ``autonomous.http.HttpClient``).
+        Config-error subclasses (MissingSchema, InvalidURL, etc.) are
+        re-raised raw by HttpClient's ``_NON_TRANSPORT_REQUESTS_EXCEPTIONS``
+        path; transport-class failures (5xx + 401 + raised RequestException
+        subclasses including SSLError/ProxyError post-migration) wrap into
+        HPCUnreachableError and flow through the configured retry budget.
+        See the module-level ``_HTTP`` block for the full rationale.
         """
         if not self._base_url:
             raise HPCUnreachableError(
@@ -205,66 +290,20 @@ class OpenAIClient(AutoModel):
 
         url = f"{self._base_url}{path}"
 
-        def _attempt():
-            try:
-                if files is not None:
-                    # multipart — let requests set Content-Type with boundary
-                    response = _SESSION.post(
-                        url,
-                        headers=self._headers(content_type=None),
-                        files=files,
-                        data=data or {},
-                        timeout=self._timeout,
-                    )
-                else:
-                    response = _SESSION.post(
-                        url,
-                        headers=self._headers(),
-                        json=json_body,
-                        timeout=self._timeout,
-                    )
-            except (
-                requests.exceptions.MissingSchema,
-                requests.exceptions.InvalidURL,
-                requests.exceptions.InvalidSchema,
-                requests.exceptions.InvalidJSONError,
-                requests.exceptions.URLRequired,
-                requests.exceptions.InvalidHeader,
-                requests.exceptions.InvalidProxyURL,
-                requests.exceptions.SSLError,
-                requests.exceptions.ProxyError,
-            ):
-                # Config / programmer errors — propagate raw rather
-                # than burn retry against unfixable causes. Must come
-                # before the broader catch below.
-                #
-                # ContentDecodingError is deliberately NOT in this tuple:
-                # malformed-gzip bodies can be transient server bugs, so
-                # retry is the safer default. A test in the followup
-                # suite pins the exclusion.
-                raise
-            except requests.RequestException as exc:
-                # Catch the documented base so transient transport
-                # errors (RetryError, ChunkedEncodingError, future
-                # subclasses) flow through the HPCUnreachableError
-                # translation and the [HPC-UNREACHABLE] scrape sentinel.
-                raise HPCUnreachableError(
-                    f"HPC unreachable ({type(exc).__name__}): {exc}"
-                ) from exc
-
-            if _is_transport_failure(response.status_code):
-                raise HPCUnreachableError(
-                    f"HPC returned {response.status_code} for {path}: "
-                    f"{response.text[:200]}"
-                )
-            response.raise_for_status()
-            return response
-
-        return retry(
-            _attempt,
-            max_attempts=self._retry_attempts,
-            sleep_seconds=self._retry_backoff,
-            catch=(HPCUnreachableError,),
+        if files is not None:
+            # multipart — let requests set Content-Type with boundary
+            return _HTTP.post(
+                url,
+                headers=self._headers(content_type=None),
+                files=files,
+                data=data or {},
+                timeout=self._timeout,
+            )
+        return _HTTP.post(
+            url,
+            headers=self._headers(),
+            json=json_body,
+            timeout=self._timeout,
         )
 
     # ---------------- chat completions ----------------

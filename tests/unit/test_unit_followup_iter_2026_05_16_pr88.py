@@ -55,31 +55,39 @@ class TestOpenAICarveOutSurfaceExtended:
             mock_tasks.return_value.get_current_task.return_value = None
             yield mock_tasks
 
-    def _make_client(self):
+    def _make_client(self, monkeypatch):
+        # Post-#50-slice-F: retry config on module-level _HTTP.
+        # Single attempt + zero backoff keeps any retry-spin regression
+        # from costing real wall time. Carve-out correctness is proved
+        # by `sleep` call count, not duration.
         from autonomous.ai.models import openai_compat
         client = openai_compat.OpenAIClient.__new__(
             openai_compat.OpenAIClient
         )
         client._base_url = "http://stub"
         client._timeout = 1.0
-        # Single attempt + zero backoff keeps any retry-spin regression
-        # from costing real wall time. Carve-out correctness is proved
-        # by `sleep` call count, not duration.
-        client._retry_attempts = 1
-        client._retry_backoff = 0
+        monkeypatch.setattr(openai_compat._HTTP, "max_attempts", 1)
+        monkeypatch.setattr(openai_compat._HTTP, "retry_backoff", 0)
         return client
 
     def test_carve_out_source_contains_all_nine_types(self):
-        # Source-text pin: the except tuple must enumerate at least
-        # the 9 types currently ratified. A regression that drops one
-        # silently (e.g. a merge resolving to a pre-#99 tuple) would
-        # slip through the parametrize-list check if someone also
-        # edited that list back. This pin is the second line of
-        # defense — names checked against the source file.
-        src = pathlib.Path(
+        # Source-text pin: the carve-out must enumerate at least the 9
+        # types currently ratified. Post-#50-slice-F the 7 universal
+        # config-class names live in HttpClient's
+        # ``_NON_TRANSPORT_REQUESTS_EXCEPTIONS`` tuple
+        # (``src/autonomous/http/client.py``) and the 2
+        # deployment-specific names (SSLError, ProxyError) live in
+        # openai_compat's ``extra_non_transport_exceptions=`` argument
+        # (``src/autonomous/ai/models/openai_compat.py``).
+        http_src = pathlib.Path(
+            "src/autonomous/http/client.py"
+        ).read_text()
+        openai_src = pathlib.Path(
             "src/autonomous/ai/models/openai_compat.py"
         ).read_text()
-        required = (
+
+        # The 7 universal types live in HttpClient's tuple.
+        universal = (
             "MissingSchema",
             "InvalidURL",
             "InvalidSchema",
@@ -87,14 +95,23 @@ class TestOpenAICarveOutSurfaceExtended:
             "URLRequired",
             "InvalidHeader",
             "InvalidProxyURL",
-            "SSLError",
-            "ProxyError",
         )
-        missing = [n for n in required if n not in src]
-        assert not missing, (
-            f"openai_compat.py is missing carve-out types: {missing}. "
-            f"Carve-out must enumerate all 9 config-error types per "
-            f"#84 + #89 + #99."
+        missing_universal = [n for n in universal if n not in http_src]
+        assert not missing_universal, (
+            f"src/autonomous/http/client.py is missing universal "
+            f"config-error types from _NON_TRANSPORT_REQUESTS_EXCEPTIONS: "
+            f"{missing_universal}"
+        )
+
+        # The 2 deployment-specific types live in openai_compat's
+        # extra_non_transport_exceptions=.
+        deployment = ("SSLError", "ProxyError")
+        missing_deployment = [n for n in deployment if n not in openai_src]
+        assert not missing_deployment, (
+            f"src/autonomous/ai/models/openai_compat.py is missing "
+            f"deployment-specific carve-out types: {missing_deployment}. "
+            f"Must appear in the extra_non_transport_exceptions= kwarg "
+            f"passed to HttpClient."
         )
 
     def test_carve_out_does_NOT_contain_contentdecodingerror(self):
@@ -104,30 +121,44 @@ class TestOpenAICarveOutSurfaceExtended:
         # retry path for cases where retry actually helps. Keep this
         # pin so a well-intentioned "let's just add all the errors"
         # PR doesn't quietly broaden the carve-out.
-        src = pathlib.Path(
+        #
+        # Post-#50-slice-F: the carve-out lives in two places now —
+        # HttpClient's tuple and openai_compat's extras. Check both.
+        http_src = pathlib.Path(
+            "src/autonomous/http/client.py"
+        ).read_text()
+        openai_src = pathlib.Path(
             "src/autonomous/ai/models/openai_compat.py"
         ).read_text()
-        # Locate the carve-out tuple specifically by the canary type
-        # (`MissingSchema` is the always-first entry per #84). Anchor
-        # by content, NOT by "first except block" — a future edit
-        # that adds an earlier `except` for an unrelated reason would
-        # silently change which tuple this pin tests.
+
+        # Find the _NON_TRANSPORT_REQUESTS_EXCEPTIONS tuple in HttpClient.
         import re
-        candidates = [
-            m.group(1) for m in re.finditer(r"except\s*\(([^)]+)\):", src)
-        ]
-        carve_out = next(
-            (body for body in candidates if "MissingSchema" in body),
-            None,
+        tuple_match = re.search(
+            r"_NON_TRANSPORT_REQUESTS_EXCEPTIONS[^(]*\(([^)]+)\)",
+            http_src,
         )
-        assert carve_out is not None, (
-            "could not locate the config-error carve-out tuple "
-            "(no `except (...)` block containing MissingSchema)"
+        assert tuple_match, (
+            "could not locate HttpClient's "
+            "_NON_TRANSPORT_REQUESTS_EXCEPTIONS tuple"
         )
-        assert "ContentDecodingError" not in carve_out, (
-            "ContentDecodingError must NOT be in the carve-out tuple "
-            "per the #99 decision — it can be transient, so retry is "
-            "the safer default. (Mentions in comments are fine.)"
+        assert "ContentDecodingError" not in tuple_match.group(1), (
+            "ContentDecodingError must NOT be in HttpClient's universal "
+            "_NON_TRANSPORT_REQUESTS_EXCEPTIONS — it can be transient."
+        )
+
+        # Find the extra_non_transport_exceptions= kwarg in openai_compat.
+        extra_match = re.search(
+            r"extra_non_transport_exceptions\s*=\s*\(([^)]+)\)",
+            openai_src,
+        )
+        assert extra_match, (
+            "could not locate openai_compat's "
+            "extra_non_transport_exceptions= kwarg"
+        )
+        assert "ContentDecodingError" not in extra_match.group(1), (
+            "ContentDecodingError must NOT be in openai_compat's "
+            "extra_non_transport_exceptions= kwarg — it can be transient. "
+            "(Mentions in comments are fine.)"
         )
 
     def test_invalid_header_propagates_raw_without_retry(self, monkeypatch):
@@ -137,15 +168,19 @@ class TestOpenAICarveOutSurfaceExtended:
         # "name was removed" and "name is listed but except clause
         # was re-ordered to land in the broader catch".
         from autonomous.ai.models import openai_compat
-        client = self._make_client()
+        client = self._make_client(monkeypatch)
         sleep_calls = []
         monkeypatch.setattr(
             "autonomous.ai.retry.time.sleep",
             lambda s: sleep_calls.append(s),
         )
+        # Patch _HTTP.session.request so HttpClient's exception ladder
+        # actually runs. Patching _HTTP.post directly would bypass the
+        # ladder and the side_effect would propagate raw whether or
+        # not it's in the carve-out (false-positive pass).
         with patch.object(
-            openai_compat._SESSION,
-            "post",
+            openai_compat._HTTP.session,
+            "request",
             side_effect=requests.exceptions.InvalidHeader("bad header"),
         ):
             with pytest.raises(requests.exceptions.InvalidHeader):
@@ -163,15 +198,15 @@ class TestOpenAICarveOutSurfaceExtended:
         # ConnectionError must still flow into the broader catch and
         # be translated to HPCUnreachableError.
         from autonomous.ai.models import openai_compat
-        client = self._make_client()
+        client = self._make_client(monkeypatch)
         sleep_calls = []
         monkeypatch.setattr(
             "autonomous.ai.retry.time.sleep",
             lambda s: sleep_calls.append(s),
         )
         with patch.object(
-            openai_compat._SESSION,
-            "post",
+            openai_compat._HTTP.session,
+            "request",
             side_effect=requests.exceptions.ConnectionError("net down"),
         ):
             with pytest.raises(openai_compat.HPCUnreachableError) as exc:

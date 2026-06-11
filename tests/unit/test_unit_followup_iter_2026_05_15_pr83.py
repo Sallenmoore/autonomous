@@ -57,19 +57,20 @@ class TestOpenAIPostPropagatesConfigErrors:
             mock_tasks.return_value.get_current_task.return_value = None
             yield mock_tasks
 
-    def _make_client(self):
-        # Set retry counters high enough that a missed carve-out
-        # WOULD cause multiple sleep calls (the symptom #84
-        # described). _retry_backoff=0 keeps the test fast either
-        # way; the proof is `time.sleep.call_count == 0`.
+    def _make_client(self, monkeypatch):
+        # Post-#50-slice-F: retry config moved to module-level _HTTP.
+        # Set HttpClient's max_attempts high enough that a missed
+        # carve-out WOULD cause multiple sleep calls (the symptom #84
+        # described). retry_backoff=0 keeps the test fast either way;
+        # the proof is `time.sleep.call_count == 0`.
         from autonomous.ai.models import openai_compat
         client = openai_compat.OpenAIClient.__new__(
             openai_compat.OpenAIClient
         )
         client._base_url = "http://stub"
         client._timeout = 1.0
-        client._retry_attempts = 5  # high enough to detect retry
-        client._retry_backoff = 0
+        monkeypatch.setattr(openai_compat._HTTP, "max_attempts", 5)
+        monkeypatch.setattr(openai_compat._HTTP, "retry_backoff", 0)
         return client
 
     @pytest.mark.parametrize(
@@ -92,6 +93,13 @@ class TestOpenAIPostPropagatesConfigErrors:
             # not help and HPCUnreachable translation actively
             # misdirects on-call. ContentDecodingError is deliberately
             # NOT added — it can legitimately be transient.
+            #
+            # Post-#50-slice-F: SSLError + ProxyError are NOT in
+            # HttpClient's default _NON_TRANSPORT_REQUESTS_EXCEPTIONS
+            # (which is universal across adapters). openai_compat
+            # passes them as ``extra_non_transport_exceptions=`` to
+            # carry the deployment-specific carve-out forward —
+            # see the module-level _HTTP block.
             requests.exceptions.SSLError,
             requests.exceptions.ProxyError,
         ],
@@ -102,14 +110,19 @@ class TestOpenAIPostPropagatesConfigErrors:
         # bubbles up (`pytest.raises(exc_class)` catches subclasses
         # too, but the type assertion below pins exact class).
         from autonomous.ai.models import openai_compat
-        client = self._make_client()
+        client = self._make_client(monkeypatch)
         sleep_calls = []
         monkeypatch.setattr(
             "autonomous.ai.retry.time.sleep",
             lambda s: sleep_calls.append(s),
         )
+        # Patch _HTTP.session.request so the raise reaches HttpClient's
+        # exception ladder. Patching _HTTP.post directly would bypass
+        # the ladder entirely (the side_effect would propagate raw
+        # whether or not it's in the carve-out — false-positive pass).
         with patch.object(
-            openai_compat._SESSION, "post", side_effect=exc_class("boom"),
+            openai_compat._HTTP.session, "request",
+            side_effect=exc_class("boom"),
         ):
             with pytest.raises(exc_class) as excinfo:
                 client._post("test/path", {"k": "v"})
@@ -146,15 +159,15 @@ class TestOpenAIPostBroaderCatchStillHandlesPoolErrors:
             mock_tasks.return_value.get_current_task.return_value = None
             yield mock_tasks
 
-    def _make_client(self):
+    def _make_client(self, monkeypatch):
         from autonomous.ai.models import openai_compat
         client = openai_compat.OpenAIClient.__new__(
             openai_compat.OpenAIClient
         )
         client._base_url = "http://stub"
         client._timeout = 1.0
-        client._retry_attempts = 1
-        client._retry_backoff = 0
+        monkeypatch.setattr(openai_compat._HTTP, "max_attempts", 1)
+        monkeypatch.setattr(openai_compat._HTTP, "retry_backoff", 0)
         return client
 
     @pytest.mark.parametrize(
@@ -166,28 +179,31 @@ class TestOpenAIPostBroaderCatchStillHandlesPoolErrors:
             requests.Timeout,
         ],
     )
-    def test_transport_failure_still_translates(self, exc_class):
+    def test_transport_failure_still_translates(self, exc_class, monkeypatch):
         # PR #78 contract preserved — these all become
         # HPCUnreachableError.
         from autonomous.ai.models import openai_compat
-        client = self._make_client()
+        client = self._make_client(monkeypatch)
         with patch.object(
-            openai_compat._SESSION, "post", side_effect=exc_class("boom"),
+            openai_compat._HTTP.session, "request",
+            side_effect=exc_class("boom"),
         ):
             with pytest.raises(openai_compat.HPCUnreachableError):
                 client._post("test/path", {"k": "v"})
 
     def test_carve_out_covers_multipart_post_path_too(self, monkeypatch):
-        # `_post` has TWO `_SESSION.post` call sites — json (the
-        # else branch) and multipart (the `if files is not None`
-        # branch). Both live inside ONE try block today, so the
-        # carve-out + broader catch apply equally to both. Pin this
-        # by exercising the multipart path — a future restructure
-        # that splits the try blocks (giving each post its own
-        # except) and forgets to copy the carve-out to one of them
+        # `_post` has TWO call paths post-#50-slice-F — json (the
+        # else branch, ``_HTTP.post(url, headers, json=...)``) and
+        # multipart (the ``if files is not None`` branch,
+        # ``_HTTP.post(url, headers, files=, data=, ...)``). Both
+        # route through the same HttpClient instance and its
+        # exception ladder, so the carve-out applies to both. Pin
+        # this by exercising the multipart path — a future
+        # restructure that creates a SEPARATE HttpClient instance for
+        # multipart (or skips it for ``extra_non_transport_exceptions``)
         # would silently regress.
         from autonomous.ai.models import openai_compat
-        client = self._make_client()
+        client = self._make_client(monkeypatch)
         sleep_calls = []
         monkeypatch.setattr(
             "autonomous.ai.retry.time.sleep",
@@ -196,8 +212,8 @@ class TestOpenAIPostBroaderCatchStillHandlesPoolErrors:
         # Drive the multipart path by passing files=. MissingSchema
         # propagation should hold on this path the same as on json.
         with patch.object(
-            openai_compat._SESSION,
-            "post",
+            openai_compat._HTTP.session,
+            "request",
             side_effect=requests.exceptions.MissingSchema("bad url"),
         ):
             with pytest.raises(
