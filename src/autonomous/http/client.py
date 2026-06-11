@@ -377,9 +377,23 @@ class HttpClient:
 
             _safe_hook(self.on_response, method, url, response, attempt)
             if self.is_transport_failure(response.status_code):
+                # Defensive ``.text`` read — a 5xx body whose declared
+                # charset can't decode would otherwise re-raise
+                # ``UnicodeDecodeError`` inside the constructor arg,
+                # masking ``transport_error_cls`` and bypassing the
+                # ``on_failure`` hook below. Same defect class as #90
+                # fixed in ``MalformedResponseError.from_response``;
+                # #96 made this branch's error construction observable
+                # for the first time, surfacing the latent hole.
+                try:
+                    excerpt = response.text[:200]
+                except UnicodeDecodeError:
+                    excerpt = response.content[:200].decode(
+                        "utf-8", errors="replace"
+                    )
                 err = self.transport_error_cls(
                     f"{method} {url} returned {response.status_code}: "
-                    f"{response.text[:200]}"
+                    f"{excerpt}"
                 )
                 # Fire on_failure for parity with the RequestException and
                 # HTTPError branches (#96). Pre-#96 this transport-status
