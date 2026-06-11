@@ -230,6 +230,7 @@ class HttpClient:
         data: Any = None,
         files: Any = None,
         timeout: float | None = None,
+        max_attempts: int | None = None,
         **kwargs: Any,
     ) -> requests.Response:
         """Run a request with retry + transport-failure classification.
@@ -244,8 +245,20 @@ class HttpClient:
         is surfaced via ``response.raise_for_status()`` so the caller
         gets a ``requests.HTTPError`` with the original response
         attached — matches existing adapter contracts.
+
+        ``max_attempts`` overrides ``self.max_attempts`` for this call
+        only. Pass ``max_attempts=1`` to disable retry for a single
+        leg of a multi-step request (e.g. an adapter that retries a
+        primary POST but should NOT retry the follow-up CDN GET because
+        a signed-URL 4xx is permanent — issue #77, ``flux.generate_image``).
+        ``None`` falls back to the instance default. Must be ``>= 1``.
         """
         effective_timeout = timeout if timeout is not None else self.timeout
+        effective_max_attempts = (
+            max_attempts if max_attempts is not None else self.max_attempts
+        )
+        if effective_max_attempts < 1:
+            raise ValueError("max_attempts must be >= 1")
         # Pick the request "body" for the on_request hook — whichever
         # of json/data/files was passed. Plain ``params`` (querystring)
         # is intentionally not a body.
@@ -307,7 +320,7 @@ class HttpClient:
 
         return retry(
             _attempt,
-            max_attempts=self.max_attempts,
+            max_attempts=effective_max_attempts,
             sleep_seconds=self.retry_backoff,
             jitter=self.retry_jitter,
             catch=(self.transport_error_cls,),
