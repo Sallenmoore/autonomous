@@ -4,6 +4,7 @@ import os
 import re
 import time
 import wave
+from concurrent.futures import ThreadPoolExecutor
 
 from google import genai
 from google.genai import types
@@ -279,31 +280,54 @@ class GeminiAIModel(AutoModel):
                 # catch doesn't change which exception reaches the
                 # caller; it only widens which exceptions still trigger
                 # cleanup before propagating.
-                for orphan in uploaded_files:
+                def _delete_orphan(orphan):
                     # ``google.genai.types.File.name`` is typed
                     # ``Optional[str]`` — a partial upload may yield a
                     # handle with ``name=None`` (or, in degenerate SDK
                     # cases, missing the attr entirely). Skip up front
-                    # so the cleanup loop doesn't waste API calls and
-                    # operator logs don't fill with
-                    # ``files.delete(name=None)`` TypeErrors. The broad
-                    # inner except below is the backstop for OTHER
-                    # partial-state surprises (APIError, network
-                    # blip, signature drift); the skip is the primary
-                    # guard for the documented Optional[str] shape.
-                    # ``getattr`` (not ``orphan.name``) defends against
-                    # an SDK that drops the attr entirely.
+                    # so cleanup doesn't waste an API call and operator
+                    # logs don't fill with ``files.delete(name=None)``
+                    # TypeErrors. ``getattr`` (not ``orphan.name``)
+                    # defends against an SDK that drops the attr entirely.
                     name = getattr(orphan, "name", None)
                     if name is None:
-                        continue
+                        return
                     try:
                         self.client.files.delete(name=name)
-                    except Exception:
-                        # Already on the cleanup path — never let
-                        # anything (APIError, TypeError, network
-                        # blip) mask the original poll exception that
-                        # ``raise`` below re-throws.
-                        pass
+                    except Exception as cleanup_exc:
+                        # Already on the cleanup path — never let anything
+                        # (APIError, TypeError, network blip) mask the
+                        # original poll exception that ``raise`` below
+                        # re-throws. But LOG it (#93): the prior silent
+                        # ``pass`` made every cleanup failure invisible, so
+                        # a future SDK schema change rejecting some
+                        # ``orphan.name`` format would leak Gemini file
+                        # quota for weeks with no operator signal until
+                        # quota exhaustion blocked new uploads. _print=False
+                        # keeps it in the log file only — the original poll
+                        # exception is what the user sees.
+                        log(
+                            f"==== Gemini orphan-cleanup delete failed for "
+                            f"{name!r}: {type(cleanup_exc).__name__}: "
+                            f"{cleanup_exc} ====",
+                            _print=False,
+                        )
+
+                # Parallel deletes (#94): N serial blocking ``files.delete``
+                # calls — each able to approach the per-call timeout under
+                # the same degraded Gemini conditions that triggered this
+                # failure path — can sum past the outer RQ job deadline,
+                # replacing the typed ``GeminiFileUploadTimeoutError`` the
+                # ``raise`` below re-throws with an
+                # ``rq.exceptions.JobTimeoutError``. A bounded thread pool
+                # caps wall-clock to roughly the slowest single delete;
+                # each ``files.delete`` is an independent HTTP call, so
+                # concurrency is safe. ``list(...)`` forces every delete to
+                # finish (and log) before ``raise`` propagates;
+                # ``_delete_orphan`` swallows its own errors so ``map``
+                # never raises.
+                with ThreadPoolExecutor(max_workers=4) as executor:
+                    list(executor.map(_delete_orphan, uploaded_files))
                 raise
 
         self.file_refs = [f.name for f in self.client.files.list()]
