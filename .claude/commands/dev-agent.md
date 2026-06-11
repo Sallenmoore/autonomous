@@ -1,5 +1,5 @@
 ---
-description: Run one iteration of the autonomous-dev agent — back-merge from test, batch-fix all eligible open issues into one PR to test, watch own CI to green. Manual invocation only.
+description: Run one iteration of the autonomous-dev agent — back-merge from test and/or main (prod), batch-fix all eligible open issues into one PR to test, watch own CI to green. Manual invocation only.
 ---
 
 You are the **autonomous-dev agent** — the implementation node in the topology defined in `/opt/projects/autonomous/dev/CLAUDE.md` ("Three-Agent Pipeline" → "autonomous-dev loop"). This brief covers **exactly one iteration** and exits.
@@ -37,31 +37,49 @@ Halt and post a one-sentence summary if any fires:
 
 ## 1. Back-merge FIRST (always, no shortcuts)
 
-The literal first action — even on second/third `/dev-agent` in one conversation, even when the user named a chore. Cutting a new batch branch off stale `dev` (when the test agent's committed coverage is pending back-merge) means the batch can't make lockstep updates to those tests cleanly. The back-merge has to land first.
+The literal first action — even on second/third `/dev-agent` in one conversation, even when the user named a chore. Cutting a new batch branch off stale `dev` (when the test agent's committed coverage *or* a main-side version-bump / hotfix is pending back-merge) means the batch can't make lockstep updates to that content cleanly. The back-merge has to land first.
+
+Check for open back-merge PRs into `dev` from **both** `main` and `test`. If both exist, merge `main → dev` **first** (most upstream — carries `release.sh` version bumps and any hotfix), then `test → dev`. Upstream-first matches the propagation chain and avoids re-resolving overlapping deltas on the second merge.
 
 ```bash
-gh pr list --repo Sallenmoore/autonomous --state open --base dev --head test \
-  --json number,headRefName,title
+PR_MAIN=$(gh pr list --repo Sallenmoore/autonomous --state open --base dev --head main \
+  --json number --jq '.[0].number // empty')
+PR_TEST=$(gh pr list --repo Sallenmoore/autonomous --state open --base dev --head test \
+  --json number --jq '.[0].number // empty')
 ```
 
-- **PR exists** (non-empty result — capture `.[0].number` into `$PR`): merge it via `gh` (NEVER local-only `git merge origin/test`, that causes divergence the next cycle's `--ff-only` rejects):
-  ```bash
+For each PR found, in this order — `$PR_MAIN` first, then `$PR_TEST` — merge it via `gh` (NEVER local-only `git merge origin/<head>`, that causes divergence the next cycle's `--ff-only` rejects). The loop skips empty captures, so unset variables (e.g. only one of the two PRs is open) are handled cleanly:
+
+```bash
+for PR in "$PR_MAIN" "$PR_TEST"; do
+  [[ -z "$PR" ]] && continue
   gh pr merge "$PR" --repo Sallenmoore/autonomous --merge
-  ```
-  Then `git checkout dev && git pull --ff-only origin dev`. Conflict → halt.
-- **Successful merge only:** `rm -f tests/_dev_local/test_*.py` to drop last cycle's ephemerals (preserve `_probe_*.py` — those are intentional manual probes). Gitignored files survive `git checkout`, so stale ephemerals from one cycle silently pin in-flight code from another.
-- **No PR:** `git pull --ff-only origin dev` and continue.
+  git checkout dev && git pull --ff-only origin dev
+done
+```
 
-## 2. Review the back-merge diff
+Conflict on either → halt.
 
-If step 1 found and merged a back-merge: fetch the diff as text and read what came in — test-agent bug-fix commits and committed tests can change the surface you're about to build on.
+- **After any successful merge:** `rm -f tests/_dev_local/test_*.py` to drop last cycle's ephemerals (preserve `_probe_*.py` — those are intentional manual probes). Gitignored files survive `git checkout`, so stale ephemerals from one cycle silently pin in-flight code from another. Fire this once after the last merge in this step, not after each.
+- **Neither PR exists:** `git pull --ff-only origin dev` and continue.
+
+**Note on back-merge sources.** `main → dev` is the **standard** back-flow as of 2026-06-10 — opened (or comment-updated) by autonomous-prod in its §8 step whenever `dev` is behind `main` at the end of `/prod-agent` (drift-based, so it also catches prior-cycle debt on no-op cycles). It carries the bundled `test → main` content plus any `release.sh` version bump in one PR. `test → dev` is a deprecated fallback that may still appear if the test agent's older form is in flight; merge it second, after `main → dev`, when both are open. A standing `main → dev` PR is expected and routine; no extra scrutiny needed beyond the normal step 2 diff review.
+
+## 2. Review the back-merge diff(s)
+
+If step 1 found and merged any back-merge PR(s): fetch the diff(s) and read what came in. The content varies by source:
+
+- **`test → dev`:** test-agent bug-fix commits and committed test files — what your last batch's PR provoked once the test agent independently re-tested it.
+- **`main → dev`:** typically a `release.sh` version bump that should have propagated via `test`, or a hotfix/manual commit. If it's not a clean version-bump, treat with extra skepticism — it bypassed the normal `main → test → dev` chain.
+
+For each merged PR `$PR`:
 
 ```bash
 gh pr diff "$PR" --repo Sallenmoore/autonomous
 # or, post-local-merge: git diff origin/dev@{1}..HEAD
 ```
 
-If the back-merge introduces broken state, halt and surface; do **not** layer new work on top of unreviewed test-side commits. Skip this step if step 1 found no back-merge.
+If any back-merge introduces broken state, halt and surface; do **not** layer new work on top of unreviewed back-merge content. Skip this step if step 1 found nothing.
 
 ## 3. Triage all open issues (batch mode)
 
