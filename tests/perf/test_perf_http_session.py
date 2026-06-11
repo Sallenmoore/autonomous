@@ -22,8 +22,11 @@ def test_openai_compat_module_has_session():
 
 
 def test_local_model_module_has_session():
-    assert hasattr(local_model, "_SESSION")
-    assert hasattr(local_model._SESSION, "post")
+    # Post-#50-slice-C local_model's seam is HttpClient, not bare Session.
+    # The pool-singleton contract is on _HTTP itself; HttpClient holds
+    # its own internal requests.Session, accessible at _HTTP.session.
+    assert hasattr(local_model, "_HTTP")
+    assert hasattr(local_model._HTTP, "post")
 
 
 def test_db_sync_module_has_session():
@@ -42,7 +45,7 @@ def test_session_is_singleton_within_module(benchmark):
     def _read_all():
         return (
             id(openai_compat._HTTP),
-            id(local_model._SESSION),
+            id(local_model._HTTP),
             id(db_sync._HTTP),
         )
 

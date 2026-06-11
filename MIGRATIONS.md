@@ -221,7 +221,7 @@ regex; `except HPCUnreachableError` consumers are unaffected.
 
 External consumers who monkeypatch `autonomous.ai.models.openai_compat._SESSION` directly must update to `_HTTP` (or `_HTTP.session.request` for retry exercises). No backward-compat alias — same rationale as slices C/D/E.
 
-**This closes #50.** All six adapter migrations (gemini A, autoauth B, local_model C, db_sync D, flux E, openai_compat F) ship; the per-adapter `_SESSION`/`_post`/`retry` patterns are now centralized in `autonomous.http.HttpClient`.
+**This closes #50.** All six slices ship: slice A (#68) bounds the gemini `files.upload` PROCESSING poll loop (not an HttpClient migration — separate fix for the same parent issue's unbounded-poll branch); slices B–F (#69–#73) migrate per-adapter HTTP (autoauth, local_model, db_sync, flux, openai_compat) so the per-adapter `_SESSION`/`_post`/`retry` patterns are now centralized in `autonomous.http.HttpClient`.
 
 ### `autonomous.db.dereference` eagerly bound at package import (#63)
 
