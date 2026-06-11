@@ -452,21 +452,30 @@ class TestContentDecodingErrorTranslated:
     def test_content_decoding_error_translates_to_hpc_unreachable(
         self, monkeypatch
     ):
+        # Post-#50-slice-F: patch _HTTP.session.request so HttpClient's
+        # exception ladder runs. ContentDecodingError is deliberately
+        # NOT in HttpClient's _NON_TRANSPORT_REQUESTS_EXCEPTIONS or
+        # openai_compat's extra_non_transport_exceptions= — so it
+        # falls into ``except requests.RequestException`` and wraps
+        # to HPCUnreachableError. (Patching _HTTP.post directly would
+        # bypass the wrap; the side_effect would propagate raw.)
+        import autonomous.ai.models.openai_compat as openai_compat
         from autonomous.ai.models.openai_compat import (
             HPCUnreachableError,
             OpenAIClient,
         )
 
         client = self._make_client()
+        monkeypatch.setattr(openai_compat._HTTP, "max_attempts", 1)
+        monkeypatch.setattr(openai_compat._HTTP, "retry_backoff", 0)
 
-        def _raise_content_decoding(*a, **kw):
+        def _raise_content_decoding(method, url, *a, **kw):
             raise requests.exceptions.ContentDecodingError(
                 "simulated malformed gzip"
             )
 
         monkeypatch.setattr(
-            "autonomous.ai.models.openai_compat._SESSION.post",
-            _raise_content_decoding,
+            openai_compat._HTTP.session, "request", _raise_content_decoding,
         )
 
         # Must NOT propagate raw — must become HPCUnreachableError.
@@ -474,8 +483,8 @@ class TestContentDecodingErrorTranslated:
             client._post("/test", json_body={})
 
         # The wrapped exception's message preserves the original
-        # exception class name (per source: `f"HPC unreachable
-        # ({type(exc).__name__}): {exc}"`).
+        # exception class name (HttpClient's wrap format is
+        # f"{method} {url} failed ({type(exc).__name__}): {exc}").
         assert "ContentDecodingError" in str(exc.value), (
             "wrap must preserve the original exception class name "
             "for Sentry triage. "
@@ -519,11 +528,22 @@ class TestSSLErrorBypassesRetryLoop:
         return client
 
     def test_ssl_error_single_attempt_no_sleep(self, monkeypatch):
-        post_calls = []
+        # Post-#50-slice-F: SSLError moved from the inline ladder in
+        # openai_compat's old _attempt to
+        # ``extra_non_transport_exceptions=(SSLError, ProxyError)``
+        # passed to HttpClient. The behavioral pin is the same: SSLError
+        # is re-raised raw on the first attempt with NO retry, NO sleep.
+        # Patch _HTTP.session.request so HttpClient's exception ladder
+        # (including the extra_non_transport_exceptions tuple) actually
+        # runs. Set _HTTP.max_attempts high so a regression that lost
+        # the carve-out would be obvious from the call count.
+        import autonomous.ai.models.openai_compat as openai_compat
+
+        request_calls = []
         sleep_calls = []
 
-        def _raise_ssl(*a, **kw):
-            post_calls.append((a, kw))
+        def _raise_ssl(method, url, *a, **kw):
+            request_calls.append((method, url))
             raise requests.exceptions.SSLError(
                 "[SSL: CERTIFICATE_VERIFY_FAILED] cert chain bogus"
             )
@@ -531,9 +551,12 @@ class TestSSLErrorBypassesRetryLoop:
         def _record_sleep(seconds):
             sleep_calls.append(seconds)
 
+        # If SSLError went through HPC translation, retry would call
+        # session.request this many times. The pin asserts exactly 1.
+        monkeypatch.setattr(openai_compat._HTTP, "max_attempts", 5)
+        monkeypatch.setattr(openai_compat._HTTP, "retry_backoff", 10)
         monkeypatch.setattr(
-            "autonomous.ai.models.openai_compat._SESSION.post",
-            _raise_ssl,
+            openai_compat._HTTP.session, "request", _raise_ssl,
         )
         # The retry helper imports time at module level; patch both
         # the local and the helper module to be safe.
@@ -547,16 +570,16 @@ class TestSSLErrorBypassesRetryLoop:
         with pytest.raises(requests.exceptions.SSLError):
             client._post("/test", json_body={})
 
-        assert len(post_calls) == 1, (
+        assert len(request_calls) == 1, (
             f"carve-out must short-circuit retry — SSLError must "
-            f"trigger exactly 1 _SESSION.post call, not "
-            f"{client._retry_attempts}. Got {len(post_calls)} calls."
+            f"trigger exactly 1 session.request call, not "
+            f"max_attempts=5. Got {len(request_calls)} calls."
         )
         assert sleep_calls == [], (
             f"carve-out must propagate BEFORE retry's sleep — "
             f"a regression to HPC translation would sleep "
-            f"_retry_backoff={client._retry_backoff}s between "
-            f"attempts. Got sleeps: {sleep_calls}"
+            f"retry_backoff=10s between attempts. "
+            f"Got sleeps: {sleep_calls}"
         )
 
 

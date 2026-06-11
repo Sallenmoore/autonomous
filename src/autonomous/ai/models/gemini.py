@@ -12,6 +12,7 @@ from pydub import AudioSegment
 
 from autonomous import log
 from autonomous.ai.exceptions import (
+    GeminiFileUploadTimeoutError,
     GenerateJSONEmptyResponseError,
     GenerateJSONParseError,
 )
@@ -236,7 +237,19 @@ class GeminiAIModel(AutoModel):
             )
             uploaded_files.append(uploaded_file)
 
+            # Bounded poll for the upload to leave PROCESSING. Pre-#50 this
+            # loop was unbounded — a file genuinely stuck would spin the
+            # worker forever. Wall-clock cap (time.monotonic, immune to
+            # NTP / wall-clock skew) over a max-attempt count keeps the
+            # bound stable if poll_interval ever changes. README #6.
+            poll_timeout = float(os.environ.get("GEMINI_UPLOAD_POLL_TIMEOUT", "300"))
+            deadline = time.monotonic() + poll_timeout
             while uploaded_file.state.name == "PROCESSING":
+                if time.monotonic() >= deadline:
+                    raise GeminiFileUploadTimeoutError(
+                        f"Gemini file {uploaded_file.name!r} stuck in PROCESSING "
+                        f"after {poll_timeout:.1f}s — giving up"
+                    )
                 time.sleep(0.5)
                 uploaded_file = self.client.get_file(uploaded_file.name)
 

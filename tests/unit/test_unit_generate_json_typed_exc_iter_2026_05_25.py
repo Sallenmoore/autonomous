@@ -231,7 +231,7 @@ class TestOpenAICompatRawBound:
 
         huge = "x" * 10_000  # 10KB of non-JSON
         with patch(
-            "autonomous.ai.models.openai_compat._SESSION.post",
+            "autonomous.ai.models.openai_compat._HTTP.post",
             return_value=_mock_chat_response(huge),
         ):
             with pytest.raises(GenerateJSONParseError) as ctx:
@@ -251,7 +251,7 @@ class TestOpenAICompatRawBound:
         from autonomous.ai.exceptions import GenerateJSONEmptyResponseError
 
         with patch(
-            "autonomous.ai.models.openai_compat._SESSION.post",
+            "autonomous.ai.models.openai_compat._HTTP.post",
             return_value=_mock_chat_response("   \n   "),
         ):
             with pytest.raises(GenerateJSONEmptyResponseError):
@@ -301,7 +301,7 @@ class TestLocalModelExceptionDispatch:
         }
         resp.raise_for_status = MagicMock()
         with patch(
-            "autonomous.ai.models.local_model._SESSION.post",
+            "autonomous.ai.models.local_model._HTTP.post",
             return_value=resp,
         ), patch.object(model, "flush_memory"):
             # Pin the type with ``not isinstance(..., EmptyResponseError)``
@@ -325,7 +325,7 @@ class TestLocalModelExceptionDispatch:
         resp.json.return_value = {"message": {"content": "   "}}
         resp.raise_for_status = MagicMock()
         with patch(
-            "autonomous.ai.models.local_model._SESSION.post",
+            "autonomous.ai.models.local_model._HTTP.post",
             return_value=resp,
         ), patch.object(model, "flush_memory"):
             with pytest.raises(GenerateJSONEmptyResponseError):
@@ -349,7 +349,7 @@ class TestLocalModelExceptionDispatch:
         resp.json.return_value = {"message": {"content": "{\"x\": 1}"}}
         resp.raise_for_status = MagicMock()
         with patch(
-            "autonomous.ai.models.local_model._SESSION.post",
+            "autonomous.ai.models.local_model._HTTP.post",
             return_value=resp,
         ), patch.object(model, "flush_memory"), patch.object(
             model,
@@ -374,7 +374,7 @@ class TestLocalModelExceptionDispatch:
         # Use a connection error to simulate transport failure across
         # all 3 retry attempts.
         with patch(
-            "autonomous.ai.models.local_model._SESSION.post",
+            "autonomous.ai.models.local_model._HTTP.post",
             side_effect=requests.ConnectionError("network down"),
         ), patch.object(model, "flush_memory"):
             with pytest.raises(requests.RequestException):

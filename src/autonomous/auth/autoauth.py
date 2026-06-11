@@ -10,10 +10,28 @@ from authlib.integrations.base_client.errors import MismatchingStateError
 from authlib.integrations.requests_client import OAuth2Auth, OAuth2Session
 
 from autonomous.auth.user import User
+from autonomous.http import HttpClient
 from autonomous.web import get_session, redirect
 
 #: Decorator returned by :meth:`AutoAuth.auth_required`.
 ViewFunc = Callable[..., Any]
+
+#: Shared HTTP client for the OAuth userinfo fetch (#50 slice B, README #5).
+#: Pre-migration this was a bare ``requests.get`` with no timeout — a VPN
+#: drop mid-callback hung the worker indefinitely. ``HttpClient``'s default
+#: 30 s timeout caps that. Module-level so the underlying ``Session`` is
+#: reused across calls (connection pooling, persistent TLS) and so tests
+#: can patch ``autonomous.auth.autoauth._HTTP.get`` as a single seam.
+#:
+#: No retry (``max_attempts=1``): the OAuth callback is an interactive
+#: round-trip where the user is waiting on a browser redirect, so failing
+#: fast beats retrying through a flapping network. No transport-failure
+#: codes either — auth isn't HPC.
+_HTTP = HttpClient(timeout=30.0)
+# ``import requests`` is retained above for backward compatibility with
+# external code (and committed tests) that reference
+# ``autonomous.auth.autoauth.requests`` as a patch target. The single
+# in-module call site has been migrated to ``_HTTP.get``.
 
 
 class AutoAuth:
@@ -133,7 +151,7 @@ class AutoAuth:
             except (KeyError, TypeError):
                 pass
 
-        userinfo = requests.get(self.req_uri, auth=OAuth2Auth(token))
+        userinfo = _HTTP.get(self.req_uri, auth=OAuth2Auth(token))
         raw = userinfo.json()
         # Inject the OIDC-stable identity pair (#40) only when we can
         # produce BOTH halves. The pair has no lookup value alone, so

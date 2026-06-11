@@ -12,8 +12,11 @@ img2img via fal.ai's redux/kontext endpoints is a necessary follow-up
 Auth: ``FAL_KEY`` env var. Module imports cleanly without it; the
 first dispatch raises a RuntimeError with a pointer to the env var.
 
-HTTP: plain ``requests`` (already required), routed through
-``autonomous.ai.retry.retry`` for bounded retries with backoff.
+HTTP: ``autonomous.http.HttpClient`` (#50 slice E). Pre-migration this
+was a bare ``_SESSION = requests.Session()`` plus an inner ``_post()``
+that ``autonomous.ai.retry.retry`` wrapped for bounded retries. The
+migration moves the retry policy onto the HttpClient instance and
+deletes the inner-function dance — same observable behavior, less code.
 """
 
 import json
@@ -21,13 +24,54 @@ import json
 import requests
 
 from autonomous import log
-from autonomous.ai.retry import retry
 from autonomous.config import env_str, settings
+from autonomous.http import HttpClient
 from autonomous.model.autoattr import StringAttr
 from autonomous.model.automodel import AutoModel
 
 
-_SESSION = requests.Session()
+# Module-level HTTP client for fal.ai (#50 slice E).
+#
+# Pre-migration the retry policy was an outer ``retry(_post, max_attempts,
+# sleep_seconds, catch=(requests.RequestException,))`` wrapping an inner
+# ``_post()`` closure that called ``_SESSION.post``. HttpClient absorbs
+# that pattern — its constructor takes ``max_attempts`` + ``retry_backoff``
+# directly, and the wrapping happens inside ``HttpClient.request``. The
+# call sites below collapse to ``_HTTP.post(...)`` / ``_HTTP.get(...)``.
+#
+# Defaults:
+# - ``timeout=None``: each call site already passes ``timeout=self._media_timeout``.
+# - ``max_attempts=settings.flux_max_attempts``: same default the previous
+#   ``retry(...)`` call read from the same setting (``flux_max_attempts``,
+#   default 3).
+# - ``retry_backoff=settings.flux_retry_sleep``: same default the previous
+#   ``retry(...)`` call read from the same setting (``flux_retry_sleep``,
+#   default 1.0).
+# - ``transport_error_cls=requests.RequestException``: consistent with
+#   slices B/C/D. The pre-migration ``retry()`` caught
+#   ``requests.RequestException`` directly; this override keeps the
+#   wrapper class catchable by the same ``except`` clauses (e.g. the
+#   ``except (requests.RequestException, ValueError, OSError)`` block
+#   in ``generate_image`` below).
+#
+# **Behavior change vs the pre-migration retry shape:** the GET to
+# fetch the generated image from fal.ai's CDN ran OUTSIDE the retry
+# loop (only the POST was retried). Post-migration, HttpClient applies
+# the same retry policy to both ``_HTTP.post`` and ``_HTTP.get``, so a
+# transient CDN failure now retries 3× instead of failing immediately.
+# Documented in MIGRATIONS.md.
+#
+# Tests monkeypatch ``flux._HTTP`` directly (for non-retry paths) or
+# ``flux._HTTP.session.request`` (for retry paths, so HttpClient's
+# internal retry wrapper actually fires). The pre-migration
+# ``_SESSION`` attribute is not preserved as an alias — same rationale
+# as slices C/D: ``session.post`` is bypassed by ``session.request``.
+_HTTP = HttpClient(
+    timeout=None,
+    max_attempts=settings.flux_max_attempts,
+    retry_backoff=settings.flux_retry_sleep,
+    transport_error_cls=requests.RequestException,
+)
 
 
 class FluxAIModel(AutoModel):
@@ -56,8 +100,14 @@ class FluxAIModel(AutoModel):
     _image_model = settings.flux_image_model
     _image_url_base = settings.flux_url_base
     _media_timeout = settings.flux_timeout_s
-    _max_attempts = settings.flux_max_attempts
-    _retry_sleep = settings.flux_retry_sleep
+    # ``_max_attempts`` and ``_retry_sleep`` (settings.flux_max_attempts /
+    # settings.flux_retry_sleep) used to live here as class attrs the
+    # inner ``_post()`` retry wrapper read. Post-#50-slice-E the retry
+    # config lives on ``_HTTP`` at module scope (read from the same
+    # settings keys at module load). Tests that previously did
+    # ``monkeypatch.setattr(FluxAIModel, "_retry_sleep", 0.0)`` to speed
+    # up retry tests should instead do ``monkeypatch.setattr(_HTTP,
+    # "retry_backoff", 0.0)``.
 
     def _get_image_config(self, aspect_ratio_input):
         """Map autonomous's aspect-ratio vocabulary to fal.ai's
@@ -147,19 +197,16 @@ class FluxAIModel(AutoModel):
             "Content-Type": "application/json",
         }
 
-        def _post():
-            resp = _SESSION.post(
-                url, headers=headers, json=body, timeout=self._media_timeout
-            )
-            resp.raise_for_status()
-            return resp
-
         try:
-            resp = retry(
-                _post,
-                max_attempts=self._max_attempts,
-                sleep_seconds=self._retry_sleep,
-                catch=(requests.RequestException,),
+            # HttpClient runs the configured retry policy
+            # (max_attempts + retry_backoff from settings) and calls
+            # raise_for_status before returning, so a non-2xx exhausts
+            # the retry budget and raises requests.RequestException
+            # (the configured transport_error_cls) on exit. The pre-
+            # migration inner ``_post()`` + ``retry(...)`` wrapper did
+            # exactly this; HttpClient just absorbs the pattern.
+            resp = _HTTP.post(
+                url, headers=headers, json=body, timeout=self._media_timeout
             )
             payload = resp.json()
             images = payload.get("images") or []
@@ -173,8 +220,11 @@ class FluxAIModel(AutoModel):
                 raise ValueError(
                     f"fal.ai response missing image URL: {images[0]!r}"
                 )
-            img_resp = _SESSION.get(image_url, timeout=self._media_timeout)
-            img_resp.raise_for_status()
+            # Pre-migration the CDN fetch was outside the retry loop —
+            # a transient CDN failure failed the whole call. HttpClient
+            # applies the same retry policy here too; see the
+            # MIGRATIONS.md entry for #50 slice E.
+            img_resp = _HTTP.get(image_url, timeout=self._media_timeout)
             return img_resp.content
         except (requests.RequestException, ValueError, OSError) as e:
             log(f"==== Error: FLUX image generation failed ==== {e}", _print=True)

@@ -14,26 +14,64 @@ from autonomous.ai.exceptions import (
 )
 from autonomous.ai.retry import retry
 from autonomous.config import env_str, settings
+from autonomous.http import HttpClient
 from autonomous.model.autoattr import ListAttr, StringAttr
 from autonomous.model.automodel import AutoModel
 from autonomous.taskrunner.autotasks import AutoTasks
 
-# Module-level Session for connection pooling. Ollama and the media_ai
-# service are typically on the same intranet; reusing TCP connections
-# saves the per-call socket setup overhead.
+# Module-level HTTP client for Ollama + media_ai calls (#50 slice C, README #16).
+# Pre-migration this was a bare ``_SESSION = requests.Session()`` with each
+# call site invoking ``_SESSION.post`` directly. The Session-pooling
+# behaviour is preserved (HttpClient holds its own requests.Session
+# internally), and the migration sets the architectural foundation for
+# README #16 (adding retry on local_model HTTP calls).
 #
 # Concurrency note: ``requests.Session.post`` is safe to call from
 # multiple threads concurrently. What is NOT safe is mutating
-# Session-level state (``_SESSION.headers``, ``_SESSION.cookies``,
-# ``_SESSION.auth``) from one thread while another is mid-request.
-# This module's call sites pass all per-call state via kwargs (no
-# Session-level mutation), so the concurrent-POST workload is fine.
-# PR #76 review comment r3250218127 flagged the prior overstatement;
-# clarified per #78 follow-up.
+# Session-level state (``_HTTP.session.headers``, ``.cookies``, ``.auth``)
+# from one thread while another is mid-request. This module's call sites
+# pass all per-call state via kwargs (no Session-level mutation), so the
+# concurrent-POST workload is fine. PR #76 review comment r3250218127
+# flagged the prior overstatement; clarified per #78 follow-up.
 #
-# Tests can monkeypatch `autonomous.ai.models.local_model._SESSION`
-# to a stub.
-_SESSION = requests.Session()
+# Defaults:
+# - ``timeout=None``: every call site already passes a per-call ``timeout=``
+#   kwarg (the ``self._text_timeout`` / ``_summary_timeout`` /
+#   ``_media_timeout`` / hardcoded-30 family). ``None`` lets the per-call
+#   override govern without imposing an additional cap.
+# - ``max_attempts=1``: preserves pre-migration no-retry behaviour. README
+#   #16 (adding retry) is deferred to a follow-up slice because retry
+#   policy varies per call site (text generation shouldn't retry — the
+#   model has already burned through tokens; media uploads might) and
+#   ``HttpClient.max_attempts`` is client-level, not per-call. The right
+#   shape is either two clients (retry-enabled for idempotent uploads,
+#   no-retry for generation) or per-call ``request()`` overrides.
+#
+# Tests can monkeypatch ``autonomous.ai.models.local_model._HTTP``
+# (or ``_HTTP.post`` / ``_HTTP.get``) to a stub. The pre-migration
+# ``_SESSION`` patch target is intentionally NOT preserved as an
+# alias: HttpClient routes through ``session.request("POST", ...)``
+# rather than ``session.post(...)``, so a stale ``_SESSION.post``
+# monkeypatch would silently fail to intercept the migrated call.
+# An honest break beats a misleading alias — the lone known consumer
+# (tests/unit/test_unit_http_session_pooling.py) is updated in the
+# same PR as this migration.
+#
+# ``transport_error_cls=requests.RequestException``: HttpClient
+# normally wraps transport-class failures (``ConnectionError``,
+# ``Timeout``, etc. from ``session.request``) into ``TransportError``
+# (a ``RuntimeError`` subclass). Several call sites below wrap the
+# POST in ``except (requests.RequestException, ...)`` to log + soldier
+# on (``flush_memory``) or surface a typed error (``generate_json``).
+# A ``RuntimeError``-typed transport error would bypass those catches
+# silently. Pinning the wrapper to ``requests.RequestException`` keeps
+# the pre-migration catch contract intact while still routing through
+# HttpClient's classification logic.
+_HTTP = HttpClient(
+    timeout=None,
+    max_attempts=1,
+    transport_error_cls=requests.RequestException,
+)
 
 # Module-level cache of (model, endpoint) combos we've already logged
 # the "no structured outputs support" marker for. Avoids log spam on
@@ -90,7 +128,7 @@ class LocalAIModel(AutoModel):
             ],
             "stream": False,
         }
-        res_eval = _SESSION.post(f"{self._ollama_url}/api/chat", json=eval_prompt, timeout=self._text_timeout)
+        res_eval = _HTTP.post(f"{self._ollama_url}/api/chat", json=eval_prompt, timeout=self._text_timeout)
 
         return res_eval.json().get("message", {}).get("content", "")
 
@@ -99,7 +137,7 @@ class LocalAIModel(AutoModel):
         log(f"Flushing {model_name} from memory to free resources...", _print=True)
         try:
             # Sending keep_alive=0 triggers an immediate VRAM/RAM eviction
-            _SESSION.post(
+            _HTTP.post(
                 f"{self._ollama_url}/api/generate",
                 json={"model": model_name, "keep_alive": 0},
                 timeout=30,
@@ -199,7 +237,7 @@ class LocalAIModel(AutoModel):
             last_raw["response"] = None
             if current_job := AutoTasks().get_current_task():
                 current_job.meta(payload=payload)
-            response = _SESSION.post(
+            response = _HTTP.post(
                 f"{self._ollama_url}/api/chat",
                 json=payload,
                 timeout=self._json_timeout,
@@ -314,7 +352,7 @@ class LocalAIModel(AutoModel):
         try:
             if current_job := AutoTasks().get_current_task():
                 current_job.meta(payload=payload)
-            response = _SESSION.post(f"{self._ollama_url}/api/chat", json=payload, timeout=self._text_timeout)
+            response = _HTTP.post(f"{self._ollama_url}/api/chat", json=payload, timeout=self._text_timeout)
             response.raise_for_status()
             if evaluation:
                 eval_res = self._evaluate_response(
@@ -322,7 +360,7 @@ class LocalAIModel(AutoModel):
                 )
                 log(f"Evaluation:\n {eval_res}")
                 payload["messages"][1]["content"] = eval_res
-                response = _SESSION.post(f"{self._ollama_url}/api/chat", json=payload, timeout=self._text_timeout)
+                response = _HTTP.post(f"{self._ollama_url}/api/chat", json=payload, timeout=self._text_timeout)
                 response.raise_for_status()
             result = response.json().get("message", {}).get("content", "")
         except (requests.RequestException, json.JSONDecodeError, ValueError) as e:
@@ -356,7 +394,7 @@ class LocalAIModel(AutoModel):
                 log(f"Payload sent: {payload}...", _print=True)
                 if current_job := AutoTasks().get_current_task():
                     current_job.meta(payload=payload)
-                res = _SESSION.post(f"{self._ollama_url}/api/chat", json=payload, timeout=self._summary_timeout)
+                res = _HTTP.post(f"{self._ollama_url}/api/chat", json=payload, timeout=self._summary_timeout)
                 full_summary += res.json().get("message", {}).get("content", "") + "\n"
                 log(f"Chunk summarized: {full_summary}.", _print=True)
             except (requests.RequestException, json.JSONDecodeError, ValueError) as e:
@@ -375,7 +413,7 @@ class LocalAIModel(AutoModel):
         try:
             if current_job := AutoTasks().get_current_task():
                 current_job.meta(data=data)
-            response = _SESSION.post(
+            response = _HTTP.post(
                 f"{self._audio_url}/transcribe",
                 files=files,
                 data=data,
@@ -397,7 +435,7 @@ class LocalAIModel(AutoModel):
             }
             if current_job := AutoTasks().get_current_task():
                 current_job.meta(payload=payload)
-            response = _SESSION.post(f"{self._audio_url}/tts", json=payload, timeout=self._media_timeout)
+            response = _HTTP.post(f"{self._audio_url}/tts", json=payload, timeout=self._media_timeout)
             response.raise_for_status()
             wav_bytes = response.content
             audio = AudioSegment.from_file(io.BytesIO(wav_bytes), format="wav")
@@ -515,7 +553,7 @@ class LocalAIModel(AutoModel):
             if current_job := AutoTasks().get_current_task():
                 current_job.meta(generation_data=json.dumps(data, indent=2))
 
-            response = _SESSION.post(url, data=data, files={"file": file_obj}, timeout=self._media_timeout)
+            response = _HTTP.post(url, data=data, files={"file": file_obj}, timeout=self._media_timeout)
 
             response.raise_for_status()
             image_content = response.content
@@ -558,7 +596,7 @@ class LocalAIModel(AutoModel):
                     upscale_target_size=(target_w, target_h),
                     upscale_original_size=(base_w, base_h),
                 )
-            upscale_response = _SESSION.post(
+            upscale_response = _HTTP.post(
                 f"{self._image_url}/upscale", data=upscale_data, files=upscale_files,
                 timeout=self._media_timeout,
             )

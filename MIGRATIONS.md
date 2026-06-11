@@ -5,6 +5,224 @@ recent first.
 
 ## Unreleased
 
+### `db_sync._HTTP_SESSION` → `_HTTP` HttpClient migration (#50 slice D)
+
+**What changed.**
+
+- `autonomous.db.db_sync._HTTP_SESSION` (a `requests.Session`) is replaced by
+  `_HTTP` (an `autonomous.http.HttpClient`). The lone call site —
+  `_get_vector_local`, the legacy media_ai embeddings POST — now goes
+  through `_HTTP.post(...)`. Connection pooling is preserved (HttpClient
+  holds its own internal `requests.Session`); the call signature is unchanged.
+
+**Why.**
+
+- Continues the per-adapter migration from `#50`'s "Suggested fix shape" — each
+  call site moves through `HttpClient` so a future transport-class refinement
+  ships to every adopter via the central predicate rather than being maintained
+  per-adapter.
+- Aligns `db_sync` with `autonomous.auth.autoauth` (slice B, #69) and
+  `autonomous.ai.models.local_model` (slice C, #70).
+
+**Behavior change on the `[HPC-UNREACHABLE]` marker for 5xx production responses.**
+
+- Pre-migration: a 5xx response from media_ai flowed through the in-flow
+  non-200 branch and emitted `local:http:5xx` (e.g. `local:http:503`).
+- Post-migration: a 5xx response in **production** goes through
+  `HttpClient.is_transport_failure` (which returns True for ≥500) and gets
+  wrapped into the configured `transport_error_cls=requests.RequestException`.
+  The except block emits `local:exc:RequestException` instead of
+  `local:http:503`.
+- 4xx is preserved as `local:http:{code}` — the new `except requests.HTTPError`
+  branch extracts `e.response.status_code`. The pre-migration in-flow check
+  is retained as defense-in-depth (HttpClient bypassed in tests that patch
+  `_HTTP.post` directly with a mock response — the in-flow path still
+  emits `local:http:{code}` in that case).
+- Connection failures: HttpClient wraps `requests.ConnectionError` (and the
+  other `requests.RequestException` subclasses) as the configured wrapper,
+  with `__cause__` set. The except branch unwraps `__cause__` one level so
+  the signature reports the original class — `local:exc:ConnectionError`
+  matches pre-migration.
+
+**Net signature mapping (production):**
+
+| Failure mode | Pre-migration | Post-migration |
+|---|---|---|
+| 4xx response | `local:http:{code}` (via in-flow check) | `local:http:{code}` (via `HTTPError` branch) — preserved |
+| 5xx response | `local:http:{code}` | `local:exc:RequestException` — **changed** |
+| Connection error / timeout | `local:exc:ConnectionError` (or similar) | `local:exc:ConnectionError` (via `__cause__` unwrap) — preserved |
+| Other (KeyError on `.json()`, etc.) | `local:exc:{class}` | `local:exc:{class}` — preserved |
+
+**Migration for log scrapers.**
+
+Consumer dashboards that match `\[HPC-UNREACHABLE\] local embedding failed: HTTP 5[0-9]{2}` for 5xx tier counting will see those events shift to the `local:exc:RequestException` signature. The marker family (`[HPC-UNREACHABLE]`) and the per-call counter (`hpc_unreachable_total`) are unchanged. If the scraper relied on per-5xx-code distinction, it should:
+
+```python
+# Pre-#50-slice-D
+if re.match(r"local:http:5\d{2}", signature): ...
+
+# Post-#50-slice-D — same intent, new shape
+if signature == "local:exc:RequestException": ...
+# OR (forward-compatible) match either form:
+if re.match(r"local:(http:5\d{2}|exc:RequestException)", signature): ...
+```
+
+**Test fixture migration.**
+
+- `tests/unit/test_unit_db_sync_batch_iter_2026_05_13.py`,
+  `tests/unit/test_unit_db_sync_batch_iter_2026_05_14.py`,
+  `tests/unit/test_unit_embedding_retry_throttle_iter_2026-06-06.py`,
+  `tests/unit/test_unit_http_session_pooling.py`,
+  `tests/unit/test_unit_perf_iter_2026_05_15.py`,
+  `tests/perf/test_perf_http_session.py` — 17 patches across 6 files
+  re-targeted from `db_sync._HTTP_SESSION` (.post or whole-object swap) to
+  `db_sync._HTTP`. No aliasing — `_HTTP_SESSION` removed cleanly.
+- External consumers that monkeypatch `autonomous.db.db_sync._HTTP_SESSION`
+  directly must update to `_HTTP`. No backward-compat alias because
+  `HttpClient` routes through `session.request(...)` rather than
+  `session.post(...)`, so an aliased `_HTTP_SESSION.post` patch would be a
+  silent no-op.
+
+### `flux._SESSION` + `retry()` → `_HTTP` HttpClient migration (#50 slice E)
+
+**What changed.**
+
+- `autonomous.ai.models.flux._SESSION` (`requests.Session`) and the inner
+  `_post()` + `autonomous.ai.retry.retry(...)` wrapper inside
+  `generate_image` are replaced by `_HTTP = HttpClient(...)` at module scope.
+  `HttpClient.max_attempts` + `HttpClient.retry_backoff` absorb the retry
+  policy; the call sites collapse to `_HTTP.post(...)` / `_HTTP.get(...)`.
+- The `_max_attempts` / `_retry_sleep` class attrs on `FluxAIModel` are
+  removed (their values live on `_HTTP` now, read from the same
+  `settings.flux_max_attempts` / `settings.flux_retry_sleep` settings).
+- The `from autonomous.ai.retry import retry` import is removed (no
+  callers left in this module).
+
+**Behavior change worth flagging: CDN GET now retries.**
+
+Pre-migration, the retry policy wrapped ONLY the `_SESSION.post` call to
+fal.ai. The subsequent `_SESSION.get(image_url, ...)` against fal.ai's CDN
+ran outside the retry loop — a transient CDN failure failed the whole
+`generate_image` call.
+
+Post-migration, `HttpClient`'s retry policy applies uniformly to both
+`_HTTP.post` and `_HTTP.get`. A transient CDN failure now retries up to
+`max_attempts` times (default 3) instead of failing immediately. This is
+strictly better than the pre-migration behavior — fal.ai's CDN failures
+are nearly always transient, and the previous single-attempt GET was a
+weak spot in the user-visible reliability story.
+
+**Behavior change worth flagging: retry-exhaustion exception class.**
+
+Pre-migration, when retries were exhausted the original
+`requests.ConnectionError` (or other `requests.RequestException`
+subclass) propagated to the caller.
+
+Post-migration, `HttpClient` wraps the caught exception into the
+configured `transport_error_cls=requests.RequestException` on retry
+exhaustion (via `raise transport_error_cls(...) from exc`). The original
+class is on `__cause__`; the wrapper has the original exception's
+message embedded (`f"POST URL failed (ConnectionError): permanent"`).
+
+Consumer impact: `except requests.RequestException` (the parent class)
+still catches both pre- and post-migration. `except requests.ConnectionError`
+specifically catches only pre-migration; post-migration the wrapper class
+is `RequestException`, so a `ConnectionError`-specific catch silently
+falls through.
+
+If a caller depends on the original class, they can unwrap one level:
+
+```python
+try:
+    flux.generate_image(...)
+except requests.RequestException as e:
+    original = e.__cause__ if e.__cause__ is not None else e
+    if isinstance(original, requests.ConnectionError):
+        ...
+```
+
+**Test fixture migration.**
+
+`tests/unit/test_unit_flux.py` updated in lockstep:
+- 7 patches across 5 test methods retargeted from `flux_mod._SESSION.post/get`
+  to either `flux_mod._HTTP.post/get` (non-retry tests, direct patch is fine)
+  or `flux_mod._HTTP.session.request` (retry tests — patching `_HTTP.post`
+  directly would bypass HttpClient's internal retry budget, leaving the
+  flaky-then-succeeds tests with `calls["post"] == 1` instead of 3).
+- `monkeypatch.setattr(FluxAIModel, "_retry_sleep", 0.0)` becomes
+  `monkeypatch.setattr(_HTTP, "retry_backoff", 0.0)` — same speed-up
+  intent, different attribute now that the retry config lives on the
+  HttpClient instance.
+- `pytest.raises(requests.ConnectionError, match="permanent")` becomes
+  `pytest.raises(requests.RequestException, match="permanent")` for the
+  retry-exhaustion test (reflecting the new wrapper class).
+
+External consumers who monkeypatch `autonomous.ai.models.flux._SESSION`
+directly must update to `_HTTP` (or `_HTTP.session.request` for retry
+exercises). No backward-compat alias — same rationale as slices C/D.
+
+### `openai_compat._SESSION` + `_post()` exception ladder → `HttpClient` (#50 slice F — closes #50)
+
+**What changed.**
+
+- `autonomous.ai.models.openai_compat._SESSION` (`requests.Session`) plus
+  the inner `_attempt()` closure + manual exception ladder + manual
+  `_is_transport_failure` check + manual `raise_for_status` + outer
+  `autonomous.ai.retry.retry(...)` wrapper inside `_post()` are
+  replaced by `_HTTP = HttpClient(...)` at module scope. HttpClient
+  absorbs the entire pattern: config-error carve-out, transport-class
+  classification, transport_error wrapping, retry budget.
+- The `_post()` method body collapses from ~70 lines to ~12: URL
+  construction, then `_HTTP.post(url, headers=..., json=..., timeout=...)`.
+- `OpenAIClient._retry_attempts` / `_retry_backoff` class attrs are
+  removed (their values now live on `_HTTP.max_attempts` /
+  `_HTTP.retry_backoff`, read from the same `settings.hpc_*` keys).
+- `from autonomous.ai.retry import retry` is removed (no callers left
+  in this module).
+
+**HttpClient extension: `extra_non_transport_exceptions=` constructor kwarg.**
+
+`openai_compat`'s pre-migration config-error ladder listed two more
+`requests.exceptions.*` types than HttpClient's default
+`_NON_TRANSPORT_REQUESTS_EXCEPTIONS` tuple: `SSLError` and `ProxyError`.
+For the HPC deployment those are corporate-cert-bundle /
+corporate-proxy misconfigs (retry can't fix), but for adapters over
+the public internet (fal.ai, etc.) they can be transient — so the
+classification is per-deployment.
+
+Slice F extends `HttpClient.__init__` with an
+`extra_non_transport_exceptions: Iterable[type[BaseException]] = ()`
+parameter that, at instance construction time, is concatenated onto
+the module-level tuple. The per-instance tuple lives on
+`self._non_transport_exceptions` and is what the `except` clause in
+`HttpClient.request` checks. Adapters that need per-deployment
+extension pass the relevant types; the public-internet adapters leave
+it empty (default behavior unchanged).
+
+**HPCUnreachableError message format change.**
+
+HttpClient instantiates `transport_error_cls` (set to `HPCUnreachableError`)
+with its own format strings:
+
+- status-code raise: `f"POST {url} returned {status}: {text[:200]}"`
+- exception raise: `f"POST {url} failed ({type(exc).__name__}): {exc}"`
+
+Pre-migration formats were:
+
+- status: `f"HPC returned {status} for {path}: {text[:200]}"`
+- exception: `f"HPC unreachable ({type(exc).__name__}): {exc}"`
+
+The exception **class is unchanged** (`HPCUnreachableError`). Only the
+embedded message string format differs. Log scrapers grepping for the
+literal "HPC unreachable" or "HPC returned" prefixes need to widen the
+regex; `except HPCUnreachableError` consumers are unaffected.
+
+**Test fixture migration — 32 patches across 9 unit files + 2 perf + 1 perf-iter tuple.**
+
+External consumers who monkeypatch `autonomous.ai.models.openai_compat._SESSION` directly must update to `_HTTP` (or `_HTTP.session.request` for retry exercises). No backward-compat alias — same rationale as slices C/D/E.
+
+**This closes #50.** All six slices ship: slice A (#68) bounds the gemini `files.upload` PROCESSING poll loop (not an HttpClient migration — separate fix for the same parent issue's unbounded-poll branch); slices B–F (#69–#73) migrate per-adapter HTTP (autoauth, local_model, db_sync, flux, openai_compat) so the per-adapter `_SESSION`/`_post`/`retry` patterns are now centralized in `autonomous.http.HttpClient`.
+
 ### `autonomous.db.dereference` eagerly bound at package import (#63)
 
 **What changed.**
