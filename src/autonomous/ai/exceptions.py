@@ -126,21 +126,27 @@ class MalformedResponseError(RuntimeError):
         *,
         endpoint: str = "",
         status: int | None = None,
-        body_excerpt: str | bytes = "",
+        body_excerpt: str | bytes | bytearray = "",
     ) -> None:
         super().__init__(msg)
         self.endpoint = endpoint
         self.status = status
-        # Defensive bytes-to-str coercion per /review: a caller passing
+        # Defensive coercion per /review: a caller passing
         # ``response.content`` (bytes) instead of ``response.text`` (str)
         # would otherwise silently store bytes on a field documented as
         # str, breaking downstream ``.startswith(...)`` / JSON-serialize
         # uses. ``errors="replace"`` matches ``requests.Response.text``'s
         # tolerance for malformed encodings — better a U+FFFD char in the
         # excerpt than a UnicodeDecodeError raised IN the error-handling
-        # path.
+        # path. The non-str/non-bytes fallback (``str(...)``) protects
+        # against a programmer error where an int / list / dict slips
+        # through — better a stringified value than a TypeError raised
+        # INSIDE the malformed-body translation, which would replace
+        # the original stdlib exception with a constructor crash.
         if isinstance(body_excerpt, (bytes, bytearray)):
             body_excerpt = body_excerpt.decode("utf-8", errors="replace")
+        elif body_excerpt is not None and not isinstance(body_excerpt, str):
+            body_excerpt = str(body_excerpt)
         self.body_excerpt = (body_excerpt or "")[: self._EXCERPT_MAX]
 
 

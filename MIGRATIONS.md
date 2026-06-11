@@ -34,6 +34,12 @@ recent first.
   body=exc.body_excerpt)`) — message-regex consumers should migrate
   off message parsing since the body excerpt is no longer in the
   message.
+- `body_excerpt=` accepts `str`, `bytes`, or `bytearray`. Bytes-like
+  inputs are decoded with `utf-8` / `errors="replace"` so malformed
+  encodings degrade to U+FFFD rather than raising
+  `UnicodeDecodeError` inside the error-handling path. Other
+  non-str types fall back to `str(...)` defensively — a misuse
+  doesn't crash the translation site.
 
 ### `OpenAIClient.generate_transcription` malformed-2xx translation (#82)
 
@@ -85,8 +91,9 @@ migration for `generate_text` / `summarize_text` / `get_embedding`.
   (requests.RequestException, ValueError, OSError)`) is unchanged —
   `ConnectionError` is-a `RequestException`, so the catch still
   matches retry-exhaustion failures.
-- Trade-off worth noting: HttpClient's line-307 transport re-raise
-  now wraps `requests.Timeout` / `requests.ChunkedEncodingError` as
+- Trade-off worth noting: HttpClient's transport re-raise (the
+  `except requests.RequestException` branch inside `_attempt`) now
+  wraps `requests.Timeout` / `requests.ChunkedEncodingError` as
   `ConnectionError` for the flux client only. The original is
   preserved on `__cause__`, so observability that walks the chain
   still sees the true type. Other adapters with
@@ -158,12 +165,12 @@ side-effect on Gemini's stored-files quota improves.
   with `catch=(RequestException, ...)` — that outer retry layer
   still catches HTTPError (subclass of RequestException) and is
   unaffected by #91. Tracked as a follow-up.
-- `flux` lands an in-flight companion narrowing in PR #95 (issue
-  #85) that sets `transport_error_cls=requests.ConnectionError`. If
-  PR #95 lands after this PR, the narrowing becomes structurally
-  redundant — but it stays in place because `ConnectionError` is
-  still the semantically tighter wrap class for flux's network-only
-  failure surface.
+- `flux` narrowed `transport_error_cls` to
+  `requests.ConnectionError` in #85 (sibling entry above). With #91
+  in place the narrowing is structurally redundant for fail-fast on
+  4xx — but stays in place because `ConnectionError` is still the
+  semantically tighter wrap class for flux's network-only failure
+  surface.
 - `openai_compat` passes `HPCUnreachableError` (a `RuntimeError`
   subclass that's never a parent of `HTTPError`), so its retry
   tuple never matched HTTPError pre-#91. Zero behavior change.

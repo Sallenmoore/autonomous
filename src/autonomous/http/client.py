@@ -62,7 +62,10 @@ class _NonTransportHTTPError(Exception):
     The fix wraps the HTTPError inside ``_attempt`` so the class that
     propagates out of ``_attempt`` (a) is NOT a ``transport_error_cls``
     subclass (the catch tuple never matches), and (b) carries the
-    original on ``__cause__``. ``HttpClient.request`` catches this
+    original on ``self.original`` (NOT ``__cause__`` — the construction
+    site uses bare ``raise _NonTransportHTTPError(exc)`` without
+    ``from exc`` because the marker is unwrapped at the boundary before
+    any chain-walker observes it). ``HttpClient.request`` catches the
     wrapper at the boundary and re-raises the original ``HTTPError``
     via ``raise ... from None``, so callers see exactly the type they
     saw pre-#91 (``except requests.RequestException``-style catches
@@ -73,11 +76,19 @@ class _NonTransportHTTPError(Exception):
     """
 
     def __init__(self, original: requests.HTTPError) -> None:
-        # No-arg ``super().__init__()`` — the marker class is unwrapped
-        # at the ``HttpClient.request`` boundary before any caller can
-        # read its message, so ``str(original)`` here would be wasted
-        # work and a footgun (if ``str(original)`` itself raises, the
-        # wrap fails and the caller sees the wrong exception type).
+        # No-arg ``super().__init__()`` — the marker never surfaces to
+        # a caller's traceback, so a string message would be unused
+        # work. Defensive guard: reject ``None`` up front. The single
+        # in-tree construction site (``_attempt`` below) can't actually
+        # pass None (Python's ``except as exc`` guarantees non-None),
+        # but a future call site that misuses the marker would
+        # otherwise produce ``TypeError: exceptions must derive from
+        # BaseException`` at the unwrap site with no breadcrumb back
+        # here.
+        if original is None:
+            raise TypeError(
+                "_NonTransportHTTPError requires a non-None requests.HTTPError"
+            )
         super().__init__()
         self.original = original
 

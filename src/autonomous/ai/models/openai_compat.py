@@ -337,13 +337,15 @@ class OpenAIClient(AutoModel):
             body = response.json()
             return body["choices"][0]["message"]["content"]
         except (AttributeError, KeyError, IndexError, TypeError, ValueError) as exc:
-            # AttributeError added per /review: covers the case where
-            # ``body`` is None (e.g. server returns top-level JSON
-            # ``null`` on a 200) — ``None["choices"]`` raises TypeError
-            # but ``body.get("choices")`` would raise AttributeError.
-            # Aligns the catch tuple with the documented contract on
-            # ``MalformedResponseError`` so all three raise sites use
-            # the same translation surface.
+            # AttributeError is forward-looking only — the subscript
+            # access on ``body`` raises TypeError (not AttributeError)
+            # when ``body`` is None, so AttributeError is dead under
+            # the current code shape. It's in the tuple to align with
+            # the documented ``MalformedResponseError`` contract so a
+            # future refactor that switches to ``body.get(...)`` (the
+            # shape ``generate_transcription`` actually uses) doesn't
+            # leak raw AttributeError through the typed-exception
+            # surface.
             raise MalformedResponseError(
                 f"HPC chat endpoint returned a malformed 200 body: {exc}",
                 endpoint="/chat/completions",
@@ -520,6 +522,12 @@ class OpenAIClient(AutoModel):
         ``{"text": ..., "segments": [...]}`` shape LocalAIModel returns,
         so callers (audioagent.py screenplay post-processing) work
         unchanged regardless of provider.
+
+        Exception contract: 4xx responses propagate as
+        ``requests.HTTPError`` (raised by HttpClient's
+        ``raise_for_status``); only malformed 2xx bodies translate to
+        ``MalformedResponseError`` (issue #82). Consumers that want a
+        single typed-exception surface should catch both.
         """
         f_obj = io.BytesIO(audio_file) if isinstance(audio_file, bytes) else audio_file
         files = {"file": ("audio.opus", f_obj, "audio/ogg")}
@@ -575,11 +583,11 @@ class OpenAIClient(AutoModel):
             body = response.json()
             return body["data"][0]["embedding"]
         except (AttributeError, KeyError, IndexError, TypeError, ValueError) as exc:
-            # AttributeError added per /review: aligns the catch tuple
-            # with the universal contract documented on
-            # ``MalformedResponseError``. Covers the body=None case
-            # the same way the ``_chat`` and ``generate_transcription``
-            # paths do.
+            # AttributeError is forward-looking only — same rationale
+            # as ``_chat`` above. The subscript walk on a ``None`` body
+            # raises TypeError, not AttributeError; the tuple alignment
+            # protects a future refactor that switches to ``.get(...)``
+            # from leaking raw stdlib through the typed surface.
             raise MalformedResponseError(
                 f"HPC embeddings endpoint returned a malformed 200 body: {exc}",
                 endpoint="/embeddings",

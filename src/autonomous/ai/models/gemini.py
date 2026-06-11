@@ -281,18 +281,23 @@ class GeminiAIModel(AutoModel):
                 # cleanup before propagating.
                 for orphan in uploaded_files:
                     # ``google.genai.types.File.name`` is typed
-                    # ``Optional[str]`` — a partial upload that still
-                    # appended to ``uploaded_files`` may have
-                    # ``name=None``. ``files.delete(name=None)`` would
-                    # raise ``TypeError`` inside the cleanup loop and
-                    # — without the broad inner except below — would
-                    # mask the original poll exception. Skip it; the
-                    # only artifact is a Gemini-side file with no
-                    # handle we could delete anyway.
-                    if orphan.name is None:
+                    # ``Optional[str]`` — a partial upload may yield a
+                    # handle with ``name=None`` (or, in degenerate SDK
+                    # cases, missing the attr entirely). Skip up front
+                    # so the cleanup loop doesn't waste API calls and
+                    # operator logs don't fill with
+                    # ``files.delete(name=None)`` TypeErrors. The broad
+                    # inner except below is the backstop for OTHER
+                    # partial-state surprises (APIError, network
+                    # blip, signature drift); the skip is the primary
+                    # guard for the documented Optional[str] shape.
+                    # ``getattr`` (not ``orphan.name``) defends against
+                    # an SDK that drops the attr entirely.
+                    name = getattr(orphan, "name", None)
+                    if name is None:
                         continue
                     try:
-                        self.client.files.delete(name=orphan.name)
+                        self.client.files.delete(name=name)
                     except Exception:
                         # Already on the cleanup path — never let
                         # anything (APIError, TypeError, network

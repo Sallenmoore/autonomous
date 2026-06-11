@@ -248,19 +248,36 @@ def test_transcription_raises_malformed_on_non_json_body(client):
     )
 
 
-def test_transcription_raises_malformed_on_non_dict_body(client):
-    """When the 2xx body is a list (or None) rather than a dict,
-    ``body.get(...)`` raises ``AttributeError`` — must translate. This
-    is the case the #76 ship explicitly left as a "known gap" and #82
-    closes."""
+@pytest.mark.parametrize(
+    "label,non_dict_body",
+    [
+        ("list", ["unexpected", "list", "shape"]),
+        ("scalar string", "just a string"),
+        ("top-level null", None),
+    ],
+)
+def test_transcription_raises_malformed_on_non_dict_body(client, label, non_dict_body):
+    """When the 2xx body is a list / scalar str / None rather than a
+    dict, ``body.get(...)`` raises ``AttributeError`` — must translate
+    in every case. This is the surface the #76 ship explicitly left as
+    a "known gap" and #82 closes. Parametrized to defend against a
+    future refactor that narrows the AttributeError catch to only one
+    of these shapes — a regression pr-test-analyzer flagged.
+
+    Builds the response inline rather than via ``_resp(json_data=None)``
+    because the helper coerces ``None`` to ``{}`` (matches the typical
+    server-returned-empty-object case)."""
     from autonomous.ai.exceptions import MalformedResponseError
+
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.json.return_value = non_dict_body
+    resp.text = repr(non_dict_body)
+    resp.raise_for_status.return_value = None
 
     with patch(
         "autonomous.ai.models.openai_compat._HTTP.post",
-        return_value=_resp(
-            json_data=["unexpected", "list", "shape"],
-            text='["unexpected", "list", "shape"]',
-        ),
+        return_value=resp,
     ):
         with pytest.raises(MalformedResponseError) as excinfo:
             client.generate_transcription(b"audio")

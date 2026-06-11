@@ -16,9 +16,13 @@ Independent perspective (no peek at dev's ``tests/_dev_local/``):
     * empty ``choices[]`` array (IndexError),
     * ``choices[0]`` missing ``message`` or ``content`` (KeyError/TypeError),
     * non-JSON 2xx body (ValueError / JSONDecodeError).
-- The error message includes the body excerpt (first 200 chars of
-  ``response.text``) so operators reading the worker log can triage
-  without re-running the request.
+- Diagnostic state is carried on the exception INSTANCE (post-#83
+  restructure): ``exc.endpoint``, ``exc.status``, and
+  ``exc.body_excerpt`` (the first 200 chars of ``response.text``)
+  let operators triage without re-running the request. Pre-#83 the
+  excerpt was baked into ``str(exc)`` — the tests rewritten under
+  the #50 dev-test-edit authorization pattern assert against the
+  instance attribute instead.
 - ``get_embedding`` raises ``MalformedResponseError`` for the same
   four shape failures on its ``data[0].embedding`` walk.
 - ``generate_text`` and ``summarize_text`` (both thin ``_chat``
