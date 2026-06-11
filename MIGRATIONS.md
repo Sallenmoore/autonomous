@@ -5,6 +5,84 @@ recent first.
 
 ## Unreleased
 
+### `db_sync._HTTP_SESSION` → `_HTTP` HttpClient migration (#50 slice D)
+
+**What changed.**
+
+- `autonomous.db.db_sync._HTTP_SESSION` (a `requests.Session`) is replaced by
+  `_HTTP` (an `autonomous.http.HttpClient`). The lone call site —
+  `_get_vector_local`, the legacy media_ai embeddings POST — now goes
+  through `_HTTP.post(...)`. Connection pooling is preserved (HttpClient
+  holds its own internal `requests.Session`); the call signature is unchanged.
+
+**Why.**
+
+- Continues the per-adapter migration from `#50`'s "Suggested fix shape" — each
+  call site moves through `HttpClient` so a future transport-class refinement
+  ships to every adopter via the central predicate rather than being maintained
+  per-adapter.
+- Aligns `db_sync` with `autonomous.auth.autoauth` (slice B, #69) and
+  `autonomous.ai.models.local_model` (slice C, #70).
+
+**Behavior change on the `[HPC-UNREACHABLE]` marker for 5xx production responses.**
+
+- Pre-migration: a 5xx response from media_ai flowed through the in-flow
+  non-200 branch and emitted `local:http:5xx` (e.g. `local:http:503`).
+- Post-migration: a 5xx response in **production** goes through
+  `HttpClient.is_transport_failure` (which returns True for ≥500) and gets
+  wrapped into the configured `transport_error_cls=requests.RequestException`.
+  The except block emits `local:exc:RequestException` instead of
+  `local:http:503`.
+- 4xx is preserved as `local:http:{code}` — the new `except requests.HTTPError`
+  branch extracts `e.response.status_code`. The pre-migration in-flow check
+  is retained as defense-in-depth (HttpClient bypassed in tests that patch
+  `_HTTP.post` directly with a mock response — the in-flow path still
+  emits `local:http:{code}` in that case).
+- Connection failures: HttpClient wraps `requests.ConnectionError` (and the
+  other `requests.RequestException` subclasses) as the configured wrapper,
+  with `__cause__` set. The except branch unwraps `__cause__` one level so
+  the signature reports the original class — `local:exc:ConnectionError`
+  matches pre-migration.
+
+**Net signature mapping (production):**
+
+| Failure mode | Pre-migration | Post-migration |
+|---|---|---|
+| 4xx response | `local:http:{code}` (via in-flow check) | `local:http:{code}` (via `HTTPError` branch) — preserved |
+| 5xx response | `local:http:{code}` | `local:exc:RequestException` — **changed** |
+| Connection error / timeout | `local:exc:ConnectionError` (or similar) | `local:exc:ConnectionError` (via `__cause__` unwrap) — preserved |
+| Other (KeyError on `.json()`, etc.) | `local:exc:{class}` | `local:exc:{class}` — preserved |
+
+**Migration for log scrapers.**
+
+Consumer dashboards that match `\[HPC-UNREACHABLE\] local embedding failed: HTTP 5[0-9]{2}` for 5xx tier counting will see those events shift to the `local:exc:RequestException` signature. The marker family (`[HPC-UNREACHABLE]`) and the per-call counter (`hpc_unreachable_total`) are unchanged. If the scraper relied on per-5xx-code distinction, it should:
+
+```python
+# Pre-#50-slice-D
+if re.match(r"local:http:5\d{2}", signature): ...
+
+# Post-#50-slice-D — same intent, new shape
+if signature == "local:exc:RequestException": ...
+# OR (forward-compatible) match either form:
+if re.match(r"local:(http:5\d{2}|exc:RequestException)", signature): ...
+```
+
+**Test fixture migration.**
+
+- `tests/unit/test_unit_db_sync_batch_iter_2026_05_13.py`,
+  `tests/unit/test_unit_db_sync_batch_iter_2026_05_14.py`,
+  `tests/unit/test_unit_embedding_retry_throttle_iter_2026-06-06.py`,
+  `tests/unit/test_unit_http_session_pooling.py`,
+  `tests/unit/test_unit_perf_iter_2026_05_15.py`,
+  `tests/perf/test_perf_http_session.py` — 17 patches across 6 files
+  re-targeted from `db_sync._HTTP_SESSION` (.post or whole-object swap) to
+  `db_sync._HTTP`. No aliasing — `_HTTP_SESSION` removed cleanly.
+- External consumers that monkeypatch `autonomous.db.db_sync._HTTP_SESSION`
+  directly must update to `_HTTP`. No backward-compat alias because
+  `HttpClient` routes through `session.request(...)` rather than
+  `session.post(...)`, so an aliased `_HTTP_SESSION.post` patch would be a
+  silent no-op.
+
 ### `autonomous.db.dereference` eagerly bound at package import (#63)
 
 **What changed.**
