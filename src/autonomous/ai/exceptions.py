@@ -70,3 +70,25 @@ class GenerateJSONParseError(GenerateJSONError):
         super().__init__(msg)
         self.raw = (raw or "")[: self._RAW_MAX]
         self.payload = payload
+
+
+class GeminiFileUploadTimeoutError(RuntimeError):
+    """``GeminiAIModel._add_files`` polled past the upload-processing cap.
+
+    Gemini's ``files.upload`` returns immediately with the file in state
+    ``PROCESSING``; the caller polls ``get_file`` until the state flips
+    to ``ACTIVE`` (or a terminal-failure state). The pre-#50 loop was
+    unbounded, so a file genuinely stuck in PROCESSING (network drop
+    mid-upload, malformed content the server can't decode, transient
+    backend outage) would spin the worker forever with a half-second
+    sleep between checks.
+
+    Raised on cap exhaustion in lieu of returning a partial uploaded-files
+    list — upload failure has no useful "partial," the caller assumes the
+    list it gets back is fully processed. Consumers (e.g. storyteller)
+    can catch this specific class to distinguish upload-stuck from other
+    Gemini failure modes without parsing the message.
+
+    Cap is wall-clock (``time.monotonic``), default 300s, override via
+    ``GEMINI_UPLOAD_POLL_TIMEOUT`` env var. README #6.
+    """

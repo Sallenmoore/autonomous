@@ -247,6 +247,7 @@ _SPEC: tuple[Field, ...] = (
     Field("gemini_stt_model", "GEMINI_STT_MODEL", "str", "gemini-2.5-pro", "ai_gemini", "Gemini STT model", migrated=False),
     Field("gemini_image_model", "GEMINI_IMAGE_MODEL", "str", "gemini-3.1-flash-image-preview", "ai_gemini", "Gemini image model", migrated=False),
     Field("gemini_tts_model", "GEMINI_TTS_MODEL", "str", "gemini-2.5-flash-preview-tts", "ai_gemini", "Gemini TTS model", migrated=False),
+    Field("gemini_upload_poll_timeout", "GEMINI_UPLOAD_POLL_TIMEOUT", "float", 300.0, "ai_gemini", "Wall-clock cap (seconds) on the files.upload PROCESSING poll loop before raising GeminiFileUploadTimeoutError (#50, README #6)", migrated=False),
     Field("googleai_key", "GOOGLEAI_KEY", "str", "", "ai_gemini", "Google GenAI API key", secret=True, migrated=False),
 
     # --- AI: agent provider overrides + image routing (ai.*agent) -----------
