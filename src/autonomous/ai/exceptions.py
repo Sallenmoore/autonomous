@@ -72,6 +72,28 @@ class GenerateJSONParseError(GenerateJSONError):
         self.payload = payload
 
 
+class MalformedResponseError(RuntimeError):
+    """The endpoint returned a 2xx but the body shape was unextractable.
+
+    Distinct from transport-class failures (e.g. ``HPCUnreachableError``):
+    the request reached the endpoint and got back a 2xx; the body just
+    didn't carry the fields the adapter needs. Distinct from
+    ``GenerateJSONParseError``: the body may not even parse as JSON, or
+    parses but lacks the expected keys/indices entirely (which is a
+    response-shape failure, not a schema-validation failure).
+
+    Raised by ``OpenAIClient._chat`` when ``response.json()`` raises
+    ``json.JSONDecodeError`` or the ``choices[0].message.content`` walk
+    raises ``KeyError`` / ``IndexError`` / ``TypeError``, and by
+    ``OpenAIClient.get_embedding`` when ``data[0].embedding`` extraction
+    fails the same way. Callers that previously caught a stdlib
+    ``KeyError`` / ``IndexError`` from these methods should catch this
+    instead — the prior behavior was a leaked stdlib exception that
+    masked the distinction between transport-class and malformed-body
+    failure modes (issue #76).
+    """
+
+
 class GeminiFileUploadTimeoutError(RuntimeError):
     """``GeminiAIModel._add_files`` polled past the upload-processing cap.
 

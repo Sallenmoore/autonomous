@@ -220,11 +220,21 @@ class FluxAIModel(AutoModel):
                 raise ValueError(
                     f"fal.ai response missing image URL: {images[0]!r}"
                 )
-            # Pre-migration the CDN fetch was outside the retry loop —
-            # a transient CDN failure failed the whole call. HttpClient
-            # applies the same retry policy here too; see the
-            # MIGRATIONS.md entry for #50 slice E.
-            img_resp = _HTTP.get(image_url, timeout=self._media_timeout)
+            # CDN fetch uses ``max_attempts=1`` (issue #77): a fal.ai
+            # signed URL that 4xxes is permanently invalid (expired
+            # token, deleted image, 403 from key drift), so burning
+            # ``flux_max_attempts`` × ``flux_retry_sleep`` worth of
+            # retries on it is pure latency waste. The per-call
+            # override (HttpClient #77 extension) disables retry for
+            # this leg only — the POST above still gets the full
+            # ``settings.flux_max_attempts`` budget. Transient 5xx on
+            # the CDN now also short-circuits to a single attempt; the
+            # tradeoff favours fail-fast over recovery because the
+            # signed URL is short-lived anyway and a retry against a
+            # near-expired URL races the clock.
+            img_resp = _HTTP.get(
+                image_url, timeout=self._media_timeout, max_attempts=1
+            )
             return img_resp.content
         except (requests.RequestException, ValueError, OSError) as e:
             log(f"==== Error: FLUX image generation failed ==== {e}", _print=True)
