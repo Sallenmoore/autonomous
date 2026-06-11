@@ -338,8 +338,10 @@ class OpenAIClient(AutoModel):
             return body["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError, ValueError) as exc:
             raise MalformedResponseError(
-                f"HPC chat endpoint returned a malformed 200 body: {exc}; "
-                f"body_excerpt={response.text[:200]!r}"
+                f"HPC chat endpoint returned a malformed 200 body: {exc}",
+                endpoint="/chat/completions",
+                status=response.status_code,
+                body_excerpt=response.text,
             ) from exc
 
     def generate_text(
@@ -525,13 +527,29 @@ class OpenAIClient(AutoModel):
             current_job.meta(data=data)
 
         response = self._post("/audio/transcriptions", files=files, data=data)
-        body = response.json()
-        # Ensure the LocalAIModel-compatible shape even if the server
-        # returns the simpler "text" form.
-        return {
-            "text": body.get("text", ""),
-            "segments": body.get("segments", []),
-        }
+        # Malformed-2xx translation (#82) — same family as the #76
+        # _chat / get_embedding fixes. ValueError covers
+        # ``response.json()`` raising json.JSONDecodeError on non-JSON
+        # bodies; AttributeError covers ``body.get(...)`` against a
+        # non-dict (list/None/scalar). Without this catch, the failure
+        # would leak as raw stdlib through the typed-exception contract
+        # consumers rely on (storyteller's GenerateJSON* / Malformed*
+        # ladder).
+        try:
+            body = response.json()
+            # Ensure the LocalAIModel-compatible shape even if the
+            # server returns the simpler "text" form.
+            return {
+                "text": body.get("text", ""),
+                "segments": body.get("segments", []),
+            }
+        except (AttributeError, ValueError) as exc:
+            raise MalformedResponseError(
+                f"HPC transcription endpoint returned a malformed 2xx body: {exc}",
+                endpoint="/audio/transcriptions",
+                status=response.status_code,
+                body_excerpt=response.text,
+            ) from exc
 
     # ---------------- embeddings ----------------
 
@@ -549,8 +567,10 @@ class OpenAIClient(AutoModel):
             return body["data"][0]["embedding"]
         except (KeyError, IndexError, TypeError, ValueError) as exc:
             raise MalformedResponseError(
-                f"HPC embeddings endpoint returned a malformed 200 body: {exc}; "
-                f"body_excerpt={response.text[:200]!r}"
+                f"HPC embeddings endpoint returned a malformed 200 body: {exc}",
+                endpoint="/embeddings",
+                status=response.status_code,
+                body_excerpt=response.text,
             ) from exc
 
     # ---------------- not implemented (route via gemini) ----------------
