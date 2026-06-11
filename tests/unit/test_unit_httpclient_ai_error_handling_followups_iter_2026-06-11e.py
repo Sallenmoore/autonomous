@@ -34,6 +34,19 @@ re-testing what prior cycles' committed suites already pin:
   catch the #91 ``_NonTransportHTTPError`` marker.
 * **#93** ``GeminiAIModel`` orphan-cleanup delete failures are now LOGGED
   (was a silent ``except: pass``).
+* **#94** ``GeminiAIModel`` orphan-cleanup runs on a bounded
+  ``ThreadPoolExecutor(max_workers=4)`` — ALL N orphans are attempted
+  even when some deletes fail (``_delete_orphan`` swallows so
+  ``executor.map`` materialization doesn't short-circuit), and
+  ``list(...)`` forces every delete to finish before the original poll
+  exception re-raises.
+* Defensive ``.text`` read on the 5xx transport-failure branch: an
+  undecodable 5xx body would have re-raised ``UnicodeDecodeError``
+  inside the ``transport_error_cls(...)`` constructor arg, masking the
+  typed exception and bypassing ``on_failure``. Same defect class #90
+  fixed in ``MalformedResponseError.from_response``; #96 made the 5xx
+  branch's construction observable for the first time, surfacing it
+  for the test agent to close in this same bundle.
 
 Doc-only (#100, #101) and the unreachable ``# pragma: no cover`` marker
 escape guard (#103) are intentionally not unit-tested here.
@@ -133,6 +146,29 @@ def _undecodable_error() -> UnicodeDecodeError:
     # declared charset can't decode the bytes (0xFF is an invalid utf-8
     # start byte).
     return UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+
+
+class _UndecodableResponse:
+    """``requests.Response``-shaped object whose ``.text`` raises
+    ``UnicodeDecodeError`` (the declared-charset-can't-decode failure
+    mode) but whose ``.content`` is readable. Backs the 5xx-branch
+    defensive-read test. A dedicated class avoids stubbing PropertyMock
+    onto the shared ``MagicMock`` type, which would leak across other
+    tests in the file."""
+
+    def __init__(self, status_code: int = 503, content: bytes = b"latin-1 \xff"):
+        self.status_code = status_code
+        self.content = content
+
+    @property
+    def text(self) -> str:
+        raise _undecodable_error()
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise requests.HTTPError(
+                f"{self.status_code} error", response=self
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -423,6 +459,31 @@ class TestOnFailureFiresOnTransportStatus:
         c.request("GET", "http://x")
         on_failure.assert_not_called()
 
+    def test_undecodable_5xx_body_does_not_mask_transport_error_or_skip_hook(self):
+        """Defensive .text read on the 5xx branch: a body whose declared
+        charset can't decode used to re-raise ``UnicodeDecodeError`` inside
+        the ``transport_error_cls(...)`` constructor arg, before
+        ``on_failure`` could fire. Caller saw the raw ``UnicodeDecodeError``,
+        not the configured ``transport_error_cls``; the hook never observed
+        the 5xx. Same defect class #90 fixed in
+        ``MalformedResponseError.from_response`` — #96 made this branch's
+        error construction observable for the first time, surfacing the
+        latent hole."""
+        on_failure = MagicMock()
+        session = _mock_session(_UndecodableResponse(status_code=503))
+        c = HttpClient(session=session, max_attempts=1, on_failure=on_failure)
+        # Must raise the typed TransportError, NOT the raw UnicodeDecodeError.
+        with pytest.raises(TransportError) as ei:
+            c.request("GET", "http://x/y")
+        # Hook still fires with the typed exception.
+        on_failure.assert_called_once()
+        assert isinstance(on_failure.call_args.args[2], TransportError)
+        # Excerpt fell back to lenient content decode — status + replacement
+        # char both survive in the message.
+        msg = str(ei.value)
+        assert "503" in msg
+        assert "�" in msg  # U+FFFD REPLACEMENT CHARACTER
+
 
 # ---------------------------------------------------------------------------
 # #98 — HttpClient rejects an over-broad transport_error_cls
@@ -611,6 +672,135 @@ class TestGeminiOrphanCleanupLogged:
         assert "files/upload-0" in line
         # log file only — the user sees the original poll exception, not this
         assert printed is False
+
+
+# ---------------------------------------------------------------------------
+# #94 — bounded ThreadPoolExecutor orphan cleanup, all-orphans-attempted
+# ---------------------------------------------------------------------------
+
+
+class TestGeminiOrphanCleanupParallelization:
+    def test_all_orphans_attempted_when_some_deletes_fail(self, monkeypatch):
+        """#94: bounded ``ThreadPoolExecutor`` must process ALL N orphans
+        even when some deletes raise. ``_delete_orphan`` swallows its own
+        exceptions so ``executor.map`` materialization can't short-circuit
+        on the first failure (which would leak Gemini file quota for the
+        remaining orphans). ``list(...)`` forces every delete to finish
+        BEFORE the original poll exception re-raises.
+
+        Regression coverage:
+        * Pre-#94 N serial blocking deletes could sum past the RQ job
+          deadline, replacing ``GeminiFileUploadTimeoutError`` with
+          ``rq.exceptions.JobTimeoutError``. A refactor reverting to
+          ``for orphan in uploaded_files: _delete_orphan(orphan)``
+          would only fail at integration; this test catches it at unit.
+        * A refactor dropping ``list(...)`` (turning the executor.map
+          into a generator that's never consumed) would let some deletes
+          race the ``raise`` and never fire — this test's per-orphan
+          attempt count catches that too.
+
+        Setup uploads four files. The first three transition to ACTIVE
+        immediately (poll loop never enters); the fourth stays
+        PROCESSING and trips the deadline. The cleanup therefore runs
+        on all four ``uploaded_files``. Two of the four orphan deletes
+        fail (at non-adjacent positions, so a "stop on first failure"
+        regression can't pass by accident). The test asserts all four
+        delete attempts fired AND both failure log lines emitted.
+        """
+        from autonomous.ai.exceptions import GeminiFileUploadTimeoutError
+        from autonomous.ai.models import gemini
+
+        monkeypatch.setattr(
+            gemini.genai.errors, "APIError", _GeminiAPIError, raising=False
+        )
+        monkeypatch.setenv("GEMINI_UPLOAD_POLL_TIMEOUT", "1")
+
+        class _Stub:
+            MAX_FILES = 10
+
+            def save(self):
+                pass
+
+        def _handle(idx, state_name):
+            h = MagicMock()
+            h.name = f"files/upload-{idx}"
+            state = MagicMock()
+            state.name = state_name
+            h.state = state
+            return h
+
+        # First three uploads return ACTIVE handles (poll skipped);
+        # the fourth returns a PROCESSING handle (poll enters → times out).
+        upload_handles = [_handle(i, "ACTIVE") for i in range(3)] + [
+            _handle(3, "PROCESSING")
+        ]
+
+        stub = _Stub()
+        stub.client = MagicMock()
+        stub.client.files.upload = MagicMock(side_effect=upload_handles)
+        # files.get only fires for the fourth handle's poll iterations.
+        stub.client.files.get = MagicMock(
+            side_effect=[_handle(3, "PROCESSING")] * 5
+        )
+        stub.client.files.list = MagicMock(return_value=[])
+
+        delete_attempts: list[str | None] = []
+
+        def fake_delete(name=None):
+            delete_attempts.append(name)
+            # Failures at positions 1 and 3 (non-adjacent) defeat a
+            # "stop on first error" regression.
+            if name in ("files/upload-1", "files/upload-3"):
+                raise _GeminiAPIError(f"delete failed for {name}")
+            return None
+
+        stub.client.files.delete = MagicMock(side_effect=fake_delete)
+
+        logged: list[tuple[str, bool]] = []
+
+        def fake_log(line, *args, _print=True, **kwargs):
+            logged.append((line, _print))
+
+        monkeypatch.setattr(gemini, "log", fake_log)
+
+        # 4 deadline-set calls (one per file) + 1 deadline-check call on
+        # the fourth file's poll = 5 monotonic invocations.
+        times = iter([0.0, 0.0, 0.0, 0.0, 100.0])
+        with patch(
+            "autonomous.ai.models.gemini.time.monotonic",
+            side_effect=lambda: next(times),
+        ), patch("autonomous.ai.models.gemini.time.sleep"):
+            with pytest.raises(GeminiFileUploadTimeoutError):
+                gemini.GeminiAIModel._add_files(
+                    stub,
+                    [{"name": f"file_{i}.json", "file": b"{}"} for i in range(4)],
+                )
+
+        # Filter pre-upload deletes (filename-keyed, e.g. "file_0.json")
+        # from orphan deletes (handle-name-keyed, "files/upload-*").
+        orphan_attempts = sorted(
+            n for n in delete_attempts if n and n.startswith("files/upload-")
+        )
+        assert orphan_attempts == [
+            "files/upload-0",
+            "files/upload-1",
+            "files/upload-2",
+            "files/upload-3",
+        ], (
+            f"#94 invariant: ALL 4 orphan deletes must be attempted "
+            f"regardless of intermediate failures; got {orphan_attempts}"
+        )
+
+        # Both failures are logged (#93); the two successes have no
+        # cleanup-failure log line.
+        failure_lines = [line for (line, _) in logged if "orphan-cleanup delete failed" in line]
+        assert len(failure_lines) == 2, (
+            f"expected 2 cleanup-failure log lines (deletes 1 and 3); "
+            f"got {failure_lines!r}"
+        )
+        all_failure_text = "\n".join(failure_lines)
+        assert "files/upload-1" in all_failure_text
+        assert "files/upload-3" in all_failure_text
 
 
 # ---------------------------------------------------------------------------

@@ -18,13 +18,16 @@ def _isolate_unsupported_strict_mode_cache():
 
     ``_UNSUPPORTED_STRICT_MODE`` is a process-global ``set`` memoizing the
     ``(model, endpoint)`` pairs that probed as strict-mode-unsupported, so
-    the adapter doesn't re-probe them every call. At least four unit test
-    files (``test_unit_openai_compat_structured_outputs.py``,
+    the adapter doesn't re-probe them every call. Multiple unit test files
+    mutate it (``.add`` / ``.discard`` / ``.clear``) without restoring
+    state at teardown — known sites include
+    ``test_unit_openai_compat_structured_outputs.py``,
     ``test_unit_json_schema_structured_outputs_iter_2026-06-03.py``,
     ``test_unit_openai_compat_malformed_iter_2026-06-11.py``,
-    ``test_unit_gemini_image_size_strict_dialect_iter_2026-06-04.py``)
-    mutate it (``.add`` / ``.discard`` / ``.clear``) without restoring
-    state at teardown. In pytest's collection order a leaked cache entry
+    ``test_unit_gemini_image_size_strict_dialect_iter_2026-06-04.py``,
+    and the ``TestStrictModeCacheIsolation`` pair in
+    ``test_unit_httpclient_ai_error_handling_followups_iter_2026-06-11e.py``
+    that self-validates this fixture. In pytest's collection order a leaked cache entry
     would make a later test silently SKIP the strict probe it meant to
     exercise — order-dependent flakiness that surfaces the moment a new
     openai_compat test lands. PR #95/#99 acknowledged the fragility but
