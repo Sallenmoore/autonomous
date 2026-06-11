@@ -1,11 +1,18 @@
-"""Behavioral pin: each AI-stack module uses its module-level Session,
-not bare ``requests.post``.
+"""Behavioral pin: each AI-stack module uses its module-level pooled
+HTTP seam (a ``requests.Session`` directly, or an ``HttpClient`` that
+holds one), not bare ``requests.post``.
 
 Catches a regression that would silently un-do the connection-pooling
 optimization (someone reverts a single line back to `requests.post(...)`).
-Detection is via monkeypatching: replace ``_SESSION.post`` with a counter
-and ``requests.post`` with another counter, invoke a method, assert
-the Session was used and the bare module-level was not.
+Detection is via monkeypatching: replace the module-level seam's ``post``
+with a counter and ``requests.post`` with another counter, invoke a
+method, assert the seam was used and the bare module-level was not.
+
+Per-module seam (kept on this file so a future migration only edits the
+one test it touches):
+- ``openai_compat._SESSION`` — direct ``requests.Session``
+- ``db_sync._HTTP_SESSION`` — direct ``requests.Session``
+- ``local_model._HTTP`` — ``autonomous.http.HttpClient`` (migrated #50 slice C)
 """
 
 from unittest.mock import MagicMock
@@ -59,14 +66,21 @@ def test_db_sync_get_vector_local_uses_session(monkeypatch):
 
 
 def test_local_model_flush_memory_uses_session(monkeypatch):
-    session_post = MagicMock(return_value=_stub_response())
+    # Post-#50-slice-C the local_model seam is HttpClient, not a bare
+    # Session. The intent of this test is unchanged — verify the
+    # pooled-HTTP path is used rather than bare ``requests.post`` —
+    # but the patch target moves from ``_SESSION.post`` to
+    # ``_HTTP.post`` (HttpClient.post routes through its internal
+    # ``self.session.request``, so patching ``_HTTP.session.post``
+    # would no-op).
+    http_post = MagicMock(return_value=_stub_response())
     bare_post = MagicMock()
-    monkeypatch.setattr(local_model._SESSION, "post", session_post)
+    monkeypatch.setattr(local_model._HTTP, "post", http_post)
     monkeypatch.setattr(requests, "post", bare_post)
 
     model = local_model.LocalAIModel.__new__(local_model.LocalAIModel)
     object.__setattr__(model, "_ollama_url", "http://stub")
     model.flush_memory("anything")
 
-    assert session_post.call_count == 1
+    assert http_post.call_count == 1
     assert bare_post.call_count == 0

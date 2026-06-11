@@ -52,7 +52,7 @@ def model():
 class TestLocalModelNarrowedCatches:
     def test_generate_text_swallows_requests_error(self, model):
         with patch(
-            "autonomous.ai.models.local_model._SESSION.post",
+            "autonomous.ai.models.local_model._HTTP.post",
             side_effect=requests.ConnectionError("nope"),
         ):
             result = model.generate_text("hi")
@@ -65,7 +65,7 @@ class TestLocalModelNarrowedCatches:
             pass
 
         with patch(
-            "autonomous.ai.models.local_model._SESSION.post",
+            "autonomous.ai.models.local_model._HTTP.post",
             side_effect=Boom("typo in caller"),
         ):
             with pytest.raises(AttributeError):
@@ -73,7 +73,7 @@ class TestLocalModelNarrowedCatches:
 
     def test_flush_memory_swallows_connection_error(self, model):
         with patch(
-            "autonomous.ai.models.local_model._SESSION.post",
+            "autonomous.ai.models.local_model._HTTP.post",
             side_effect=requests.ConnectionError("down"),
         ):
             # Must not raise.
@@ -81,7 +81,7 @@ class TestLocalModelNarrowedCatches:
 
     def test_flush_memory_propagates_unexpected(self, model):
         with patch(
-            "autonomous.ai.models.local_model._SESSION.post",
+            "autonomous.ai.models.local_model._HTTP.post",
             side_effect=RuntimeError("something else"),
         ):
             with pytest.raises(RuntimeError):
@@ -89,7 +89,7 @@ class TestLocalModelNarrowedCatches:
 
     def test_transcription_returns_empty_on_http_error(self, model):
         with patch(
-            "autonomous.ai.models.local_model._SESSION.post",
+            "autonomous.ai.models.local_model._HTTP.post",
             side_effect=requests.HTTPError("500"),
         ):
             result = model.generate_transcription(b"audio")
@@ -97,7 +97,7 @@ class TestLocalModelNarrowedCatches:
 
     def test_transcription_propagates_memory_error(self, model):
         with patch(
-            "autonomous.ai.models.local_model._SESSION.post",
+            "autonomous.ai.models.local_model._HTTP.post",
             side_effect=MemoryError("oom"),
         ):
             with pytest.raises(MemoryError):

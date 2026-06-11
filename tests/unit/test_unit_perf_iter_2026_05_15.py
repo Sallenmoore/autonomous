@@ -80,28 +80,38 @@ class TestHttpSessionIdentity:
     design choice."""
 
     def test_each_module_exposes_a_session_attr_with_stable_identity(self):
-        # Consolidated test: each module has the new session attr
+        # Consolidated test: each module has the new pooled-HTTP attr
         # (proving the PR #76 shape landed) AND repeated access
         # returns the SAME object (catching the property /
         # __getattr__ shenanigan case — unusual but possible).
+        #
+        # Type expectation per module:
+        # - db_sync, openai_compat: still bare ``requests.Session``
+        #   (pre-#50-migration shape).
+        # - local_model: migrated to ``HttpClient`` in #50 slice C — the
+        #   pooled session lives one layer down at ``_HTTP.session``,
+        #   but the identity-stability contract is on ``_HTTP`` itself
+        #   (the HttpClient instance must be a singleton).
         import requests
         from autonomous.db import db_sync
         from autonomous.ai.models import local_model, openai_compat
+        from autonomous.http import HttpClient
 
         candidates = [
-            ("db_sync", db_sync, "_HTTP_SESSION"),
-            ("local_model", local_model, "_SESSION"),
-            ("openai_compat", openai_compat, "_SESSION"),
+            ("db_sync", db_sync, "_HTTP_SESSION", requests.Session),
+            ("local_model", local_model, "_HTTP", HttpClient),
+            ("openai_compat", openai_compat, "_SESSION", requests.Session),
         ]
-        for label, mod, attr in candidates:
-            sess = getattr(mod, attr)
-            assert isinstance(sess, requests.Session), (
-                f"{label}.{attr} must be a requests.Session post-#76; "
-                f"got: {type(sess).__name__}"
+        for label, mod, attr, expected_type in candidates:
+            obj = getattr(mod, attr)
+            assert isinstance(obj, expected_type), (
+                f"{label}.{attr} must be a {expected_type.__name__} "
+                f"(post-#76 for Session, post-#50 slice C for HttpClient); "
+                f"got: {type(obj).__name__}"
             )
             # Repeated access returns same object — pool-reuse contract.
-            assert getattr(mod, attr) is sess, (
-                f"{label}.{attr} must return the SAME Session on "
+            assert getattr(mod, attr) is obj, (
+                f"{label}.{attr} must return the SAME instance on "
                 f"every access; a property/factory would defeat "
                 f"connection pooling"
             )
