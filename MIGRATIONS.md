@@ -5,6 +5,199 @@ recent first.
 
 ## Unreleased
 
+### Consumer test-patch recipe: `local_model._SESSION` → `_HTTP` (#111)
+
+**What this documents.**
+
+The `#50 slice C` migration replaced
+`autonomous.ai.models.local_model._SESSION` (a `requests.Session`) with
+`_HTTP` (an `autonomous.http.HttpClient`) but never received a dedicated
+MIGRATIONS entry — the change rode in alongside slices B / D / E / F and
+the consumer-side patch-retargeting recipe was implicit. Surfaced by #111
+when consumer suites that monkeypatched the old name reported
+order-dependent failures: the consumer fixture was installing
+`_SESSION` onto the module itself, then cross-test leakage of that
+hand-installed attribute manifested as "global gets clobbered." This
+entry adds the explicit recipe so the migration can be completed cleanly
+on the consumer side.
+
+**Current state of the patch target.**
+
+- `local_model._SESSION` does **not** exist on the module. There is no
+  back-compat alias for the same reason `db_sync._HTTP_SESSION` /
+  `flux._SESSION` were not aliased: `HttpClient` routes through
+  `session.request("POST", ...)`, so an aliased `_SESSION.post` patch
+  would be a silent no-op (the patched method never gets called).
+  "Honest break beats a misleading alias."
+- The current module global is `_HTTP`, an
+  `autonomous.http.HttpClient(timeout=None, max_attempts=1,
+  transport_error_cls=requests.ConnectionError)`. Every current call
+  site is a POST (`_HTTP.post(...)`); `HttpClient` also exposes `.get`
+  and `.request` for the shape 3 wire-level patch recipe below.
+
+**Migration recipe — consumer test patches.**
+
+Mirrors the flux slice E recipe (#50 entry below). Three shapes of patch
+target depending on what the test wants to assert:
+
+```python
+# Pre-migration (no longer works — _SESSION is not on the module):
+with patch("autonomous.ai.models.local_model._SESSION.post") as mock_post:
+    ...
+
+# Post-migration shape 1 — non-retry tests (max_attempts=1 means
+# _HTTP.post is the call site; patching it directly is fine):
+with patch("autonomous.ai.models.local_model._HTTP.post") as mock_post:
+    ...
+
+# Post-migration shape 2 — tests that care about the underlying
+# requests.Session call (e.g. the `_556_…` isinstance assertion):
+import autonomous.ai.models.local_model as lm
+assert isinstance(lm._HTTP.session, requests.Session)
+
+# Post-migration shape 3 — tests that need to intercept the wire-level
+# call (HttpClient.request → session.request), useful when asserting
+# headers/body composition or simulating a transient retry-eligible
+# transport failure:
+with patch.object(
+    autonomous.ai.models.local_model._HTTP.session,
+    "request",
+) as mock_request:
+    mock_request.return_value = MagicMock(
+        status_code=200, json=lambda: {...},
+    )
+    ...
+```
+
+**Why the "module-global clobbered" symptom was order-dependent.**
+
+If the consumer fixture installs `_SESSION` onto the module (e.g.
+`local_model._SESSION = requests.Session()` in a setUp), pytest's test
+ordering changes whether the attribute is present when the next test's
+`patch(...)` resolves the dotted path. Tests that ran after a fixture
+left a stale value would see that value; tests that ran before any
+installation would see `AttributeError`. The fix on the consumer side
+is to either (a) migrate patches to `_HTTP` per the recipe above (no
+fixture install needed — `_HTTP` is a real module attribute), or
+(b) keep the local fixture but make it autouse with explicit teardown.
+
+**No autonomous-side code change.** The migration was deliberate and the
+break is documented in `local_model.py:50-58`. This entry exists so the
+recipe is discoverable from MIGRATIONS.md.
+
+### `OpenAIClient` malformed-2xx raise sites consolidated + null-safe transcription (#88 / #90 / #92 / #102 / #104)
+
+**What changed.**
+
+- **`generate_transcription` no longer leaks `None`** (#88). The shape
+  enforcement used `body.get("text", "")` / `body.get("segments", [])`,
+  but `dict.get(key, default)` only fires `default` when the key is
+  ABSENT — a legal-JSON `{"text": null, "segments": null}` 2xx body
+  (server transcribed no content) returned `{"text": None,
+  "segments": None}`, and a caller doing `result["text"].strip()` hit
+  `AttributeError: 'NoneType'`. The body is now normalized to the
+  documented `str` / `list` contract: a non-`str` `text` collapses to
+  `""`, a non-`list` `segments` to `[]`.
+- **The three malformed-2xx try/except blocks are DRY** (#92). `_chat`,
+  `get_embedding`, and `generate_transcription` now route their
+  `response.json()` + walk through one private
+  `_extract_or_malformed(response, endpoint, extractor)` helper. The
+  per-endpoint walk stays at the call site (passed as the `extractor`
+  callable, so an empty `{"choices": []}` still translates instead of
+  leaking `IndexError`); the catch tuple, the `MalformedResponseError`
+  construction, and the defensive excerpt read centralize.
+- **The malformed-2xx catch tuple is a public constant** (#102):
+  `autonomous.ai.exceptions.MALFORMED_2XX_EXCEPTIONS`
+  `= (AttributeError, KeyError, IndexError, TypeError, ValueError)`.
+  Consumers extending the OpenAI-compatible adapter can import it
+  instead of re-spelling the 5-tuple (which had drifted to a 4-tuple at
+  two of three sites).
+- **`MalformedResponseError` excerpt reads are crash-safe** (#90).
+  All three raise sites evaluated `body_excerpt=response.text` inside
+  the `except` block; a body whose declared charset can't decode (e.g.
+  Content-Type utf-8 but latin-1 bytes) made that re-run the broken
+  decode and raise `UnicodeDecodeError` UNCAUGHT inside the constructor
+  arg — so the typed exception never raised and the caller saw a raw
+  stdlib `UnicodeDecodeError`. The new
+  `MalformedResponseError.from_response(response, msg, *, endpoint="")`
+  classmethod owns a defensive read (falls back to an `errors="replace"`
+  decode of `response.content`). The constructor's `body_excerpt`
+  coercion also now accepts `memoryview` (#104) alongside `bytes` /
+  `bytearray`.
+
+**Migration.** None required — all changes preserve the documented
+return types and exception classes. `generate_transcription` callers
+that defensively wrote `result["text"] or ""` can drop the guard. The
+new `MALFORMED_2XX_EXCEPTIONS` constant and `from_response` classmethod
+are additive.
+
+### `FluxAIModel` retries `408` / `429` throttling again (#89)
+
+**What changed.** #85 narrowed flux's `transport_error_cls` to
+`requests.ConnectionError` so `raise_for_status`-raised `HTTPError`
+fails fast — correct for permanent 4xx (expired signed URL, 403, 404),
+but it also stopped retrying transient **429 Too Many Requests** from
+fal.ai burst-throttling, which pre-#85 retried under the
+`flux_max_attempts` budget. The flux `_HTTP` client now passes
+`transport_failure_codes={408, 429}`, routing those two codes through
+the transport-failure branch (wrapped as `ConnectionError`, retried)
+while every other 4xx still fails fast.
+
+**Migration.** None. A burst-throttled image generation that previously
+failed on attempt 1 now recovers after backoff. The CDN GET leg
+(`max_attempts=1`) still short-circuits a 429 — a near-expired signed
+URL races the clock, so retrying it is latency waste.
+
+### `HttpClient`: `on_failure` 5xx parity + reject over-broad `transport_error_cls` + marker escape guard (#96 / #98 / #103)
+
+**What changed.**
+
+- **`on_failure` now fires on transport-status (5xx + extras) failures**
+  (#96). Previously the `is_transport_failure(status_code)` branch raised
+  `transport_error_cls` WITHOUT notifying `on_failure`, while the
+  exception and (#91) HTTPError branches did — so an adapter wiring
+  `on_failure=` to an alerting counter saw 4xx events but NOT 5xx,
+  inverted from what a transport-degradation alert wants. All three
+  failure paths now fire the hook. Closes the "pre-existing asymmetry …
+  tracked as a follow-up" caveat in the #91 entry below.
+- **Over-broad `transport_error_cls` is rejected at construction** (#98).
+  `HttpClient(transport_error_cls=Exception)` (or `BaseException`) would
+  make the retry catch tuple `(Exception,)` match #91's internal
+  `_NonTransportHTTPError` marker, silently re-introducing the
+  retry-on-4xx bug #91 fixed. The constructor now raises `ValueError`
+  if `transport_error_cls` is broad enough to catch the marker. Narrow
+  classes (`requests.RequestException`, `requests.ConnectionError`,
+  `RuntimeError` subclasses, `HPCUnreachableError`) are unaffected.
+- **Defensive marker escape guard** (#103): `request()` now asserts the
+  `retry()` result is not a `_NonTransportHTTPError` before returning
+  (unreachable today; pins the "marker never escapes `request()`"
+  invariant against future refactors that might route it as a value).
+
+**Migration.** Consumers wiring `on_failure` as a transport-error
+counter will now also see 5xx events (previously only 4xx via #91). See
+the #91 entry's updated on-failure subsection for partitioning guidance.
+No adapter in-tree passes a broad `transport_error_cls`, so #98 breaks
+nothing shipped; a downstream adapter that lazily passed `Exception`
+must narrow it.
+
+### `GeminiAIModel` orphan-cleanup: logged + parallelized (#93 / #94)
+
+**What changed.** The per-file orphan-cleanup delete loop in
+`_add_files` (run when the upload poll fails) previously (a) swallowed
+every delete failure with a bare `except Exception: pass` — zero signal,
+so a future SDK change rejecting some `orphan.name` format would leak
+Gemini file quota undetectably (#93) — and (b) ran N deletes serially,
+which under degraded Gemini conditions could sum past the outer RQ job
+deadline and replace the typed `GeminiFileUploadTimeoutError` with
+`rq.exceptions.JobTimeoutError` (#94). Cleanup-delete failures are now
+logged (`_print=False`, log file only — the original poll exception is
+still what the caller sees) and the deletes run on a bounded
+`ThreadPoolExecutor(max_workers=4)`.
+
+**Migration.** None. Operators will see new `Gemini orphan-cleanup
+delete failed …` lines in `logs/current_run_error_log.log` when a
+cleanup delete fails (previously silent).
+
 ### `LocalAIModel.generate_json` outer retry — narrow catch tuple + wrap class (#97 / #106)
 
 **What changed.**
@@ -206,18 +399,24 @@ side-effect on Gemini's stored-files quota improves.
 
 **Effect on adapters at the HttpClient layer.**
 
-- `db_sync` and `local_model` both pass
-  `transport_error_cls=requests.RequestException`. Pre-#91 they were
-  latent at the HttpClient layer (`max_attempts=1` means no retry
-  budget to burn there), but the moment HttpClient's `max_attempts`
-  is tuned above 1 they'd have exposed the same retry-on-4xx bug
-  `flux` had pre-#85. Post-#91 they're safe at any HttpClient
-  `max_attempts`. **Note (scope):** `local_model.generate_json` wraps
-  its `_HTTP.post` call in an OUTER `autonomous.ai.retry.retry()`
-  with `catch=(RequestException, ...)` — that outer retry layer
-  still catches HTTPError (subclass of RequestException) and is
-  unaffected by #91. Closed by the #97/#106 follow-up at the top of
-  Unreleased above.
+- `db_sync` passes `transport_error_cls=requests.RequestException`
+  (`local_model` was since narrowed to `requests.ConnectionError` by
+  #97/#106 — for a DIFFERENT reason: keeping its OUTER `retry()` catch
+  tuple matching, not the HttpClient-layer fail-fast this entry covers).
+  `db_sync` was latent at the HttpClient layer pre-#91 (`max_attempts=1`
+  means no retry budget to burn), and the moment HttpClient's
+  `max_attempts` is tuned above 1 it would have exposed the same
+  retry-on-4xx bug `flux` had pre-#85. **Post-#91 it's safe at any
+  HttpClient `max_attempts`** — the `_NonTransportHTTPError` marker
+  removes the HTTPError-overlap problem at the altitude layer, so the
+  #85-style per-adapter narrowing is structurally UNNECESSARY for
+  `db_sync`. **Decision (#101):** keep `db_sync` on
+  `requests.RequestException` rather than narrow it. Rationale: #91
+  protects correctness, `db_sync`'s downstream `except Exception` /
+  future `except requests.RequestException` keep matching the wrap
+  class unchanged, and at `max_attempts=1` the narrowing would be pure
+  cosmetics. This is an intentional keep-as-is, not silent inertia — a
+  future agent should NOT "defensively" narrow it.
 - `flux` narrowed `transport_error_cls` to
   `requests.ConnectionError` in #85 (sibling entry above). With #91
   in place the narrowing is structurally redundant for fail-fast on
@@ -238,9 +437,24 @@ consistent with the documented contract ("fires on every caught
 exception during an attempt") but the catch surface is genuinely
 broader. Adapters wiring `on_failure` to a counter/sentry tag should
 expect 4xx events in addition to the prior transport-class set.
-**Caveat:** the `is_transport_failure(status_code)` branch (5xx +
-extras) still does NOT call `on_failure` — a pre-existing asymmetry
-this PR widens but does not introduce. Tracked as a follow-up.
+
+**Counter semantics for consumers wiring `on_failure` (#100).** Pre-#91
+this hook fired only for transport-class failures (5xx, configured-extras
+codes, transport-class exceptions). Post-#91 it ALSO fires for
+non-transport HTTPError attempts (4xx other than configured extras).
+Consumers using `on_failure` as a transport-error counter should
+partition by exception type (`isinstance(exc, requests.HTTPError)`) to
+preserve pre-#91 semantics, or accept the wider definition of "failure"
+as the new contract.
+
+**Asymmetry resolved (#96).** The `is_transport_failure(status_code)`
+branch (5xx + configured extras) previously did NOT call `on_failure`,
+so a counter saw 4xx (via the HTTPError branch above) but missed 5xx —
+exactly inverted from what a transport-degradation alert wants. As of
+#96 that branch fires `on_failure` too, so all three failure paths
+(config-class exception, transport-class exception, transport-status
+response, non-transport HTTPError response) notify the hook uniformly.
+The pre-#91 "tracked as a follow-up" caveat is closed.
 
 **Migration.**
 

@@ -79,11 +79,24 @@ from autonomous.model.automodel import AutoModel
 # internal retry wrapper actually fires). The pre-migration
 # ``_SESSION`` attribute is not preserved as an alias — same rationale
 # as slices C/D: ``session.post`` is bypassed by ``session.request``.
+# ``transport_failure_codes={408, 429}`` (#89): #85's narrowing of
+# ``transport_error_cls`` to ``ConnectionError`` made every
+# ``raise_for_status``-raised HTTPError fail fast — correct for permanent
+# 4xx (expired signed URL, 403, 404) but it also caught transient
+# **429 Too Many Requests** from fal.ai burst-throttling, which pre-#85
+# retried under the ``flux_max_attempts`` budget. Routing 408/429 through
+# the ``is_transport_failure`` branch wraps them as the configured
+# ``transport_error_cls`` (ConnectionError) so the retry loop engages
+# again — same shape as openai_compat's 401→HPCUnreachableError extra.
+# Permanent 4xx still fail fast (they're not in the set). The CDN GET
+# leg passes ``max_attempts=1`` so a 429 there still short-circuits
+# (a near-expired signed URL races the clock — see ``generate_image``).
 _HTTP = HttpClient(
     timeout=None,
     max_attempts=settings.flux_max_attempts,
     retry_backoff=settings.flux_retry_sleep,
     transport_error_cls=requests.ConnectionError,
+    transport_failure_codes=frozenset({408, 429}),
 )
 
 
