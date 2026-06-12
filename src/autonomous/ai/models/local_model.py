@@ -423,6 +423,10 @@ class LocalAIModel(AutoModel):
 
         files = {"file": ("audio.opus", f_obj, "audio/ogg")}
         data = {"prompt": prompt, "beam_size": beam_size}
+        # orin-voice gates /transcribe behind a shared bearer token sourced from
+        # ORIN_VOICE_TOKEN. Empty value → server rejects with 401; no special-
+        # casing here so the misconfig surfaces loud rather than silent.
+        headers = {"Authorization": f"Bearer {env_str('ORIN_VOICE_TOKEN', '')}"}
         try:
             if current_job := AutoTasks().get_current_task():
                 current_job.meta(data=data)
@@ -430,6 +434,7 @@ class LocalAIModel(AutoModel):
                 f"{self._audio_url}/transcribe",
                 files=files,
                 data=data,
+                headers=headers,
                 timeout=self._media_timeout,
             )
             response.raise_for_status()
@@ -446,12 +451,32 @@ class LocalAIModel(AutoModel):
                 "voice_id": voice_id or "",
                 "voice_description": voice_description or "",
             }
+            # ``Accept`` prefers ogg/opus (orin-voice native — passthrough avoids
+            # a wav→opus re-encode); wav is the q=0.5 fallback so legacy servers
+            # behind ``MEDIA_AUDIO_API_BASE_URL`` still work. The branch below
+            # keys on the actual Content-Type, not the request preference.
+            headers = {
+                "Authorization": f"Bearer {env_str('ORIN_VOICE_TOKEN', '')}",
+                "Accept": "audio/ogg, audio/wav;q=0.5",
+            }
             if current_job := AutoTasks().get_current_task():
                 current_job.meta(payload=payload)
-            response = _HTTP.post(f"{self._audio_url}/tts", json=payload, timeout=self._media_timeout)
+            response = _HTTP.post(
+                f"{self._audio_url}/tts",
+                json=payload,
+                headers=headers,
+                timeout=self._media_timeout,
+            )
             response.raise_for_status()
-            wav_bytes = response.content
-            audio = AudioSegment.from_file(io.BytesIO(wav_bytes), format="wav")
+            content_type = response.headers.get("Content-Type", "").lower()
+            audio_bytes = response.content
+            if "ogg" in content_type or "opus" in content_type:
+                # Already opus-in-ogg, the storage format. Skip the
+                # decode/re-encode round-trip.
+                return audio_bytes
+            # Anything else (audio/wav, audio/x-wav, unset Content-Type) goes
+            # through the historical wav→opus transcode path.
+            audio = AudioSegment.from_file(io.BytesIO(audio_bytes), format="wav")
             audio_buffer = io.BytesIO()
             audio.export(audio_buffer, format="opus")
             return audio_buffer.getvalue()
