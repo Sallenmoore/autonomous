@@ -316,7 +316,68 @@ class TestAudioContentTypeBranching:
 
 
 # ---------------------------------------------------------------------------
-# D. Source-level revert canaries
+# D. Error-return contracts (caller-visible failure shape)
+# ---------------------------------------------------------------------------
+
+
+class TestErrorReturnContracts:
+    """Callers depend on the methods returning sentinel values rather than
+    raising. ``generate_transcription`` must return
+    ``{"segments": [], "text": ""}`` so callers iterating ``result["segments"]``
+    don't TypeError. ``generate_audio`` must return ``None`` so callers can
+    distinguish "speech failed" from "speech succeeded with empty bytes".
+    A future refactor narrowing the catch tuple, or letting an exception
+    escape the wav-decode path, would silently break TTS/STT callers."""
+
+    def test_transcription_returns_empty_shape_on_http_error(self, model, monkeypatch, patch_autotasks):
+        """401/403/5xx (anything that raises via ``raise_for_status``) must
+        come back as the empty-segments dict, not raise and not None."""
+        import requests as _requests
+
+        monkeypatch.setenv("ORIN_VOICE_TOKEN", "tk")
+        resp = _make_response()
+        resp.raise_for_status = MagicMock(side_effect=_requests.HTTPError("401 Unauthorized"))
+        _patch_post(monkeypatch, resp)
+
+        result = model.generate_transcription(b"audio bytes")
+
+        assert result == {"segments": [], "text": ""}
+
+    def test_audio_returns_none_on_http_error(self, model, monkeypatch, patch_autotasks):
+        """A 401 from a bad ORIN_VOICE_TOKEN (or any 5xx) must surface as
+        ``None`` — the loud-misconfig contract holds via the log line, but
+        callers see a typed sentinel."""
+        import requests as _requests
+
+        monkeypatch.setenv("ORIN_VOICE_TOKEN", "stale-token")
+        resp = _make_response()
+        resp.raise_for_status = MagicMock(side_effect=_requests.HTTPError("401 Unauthorized"))
+        _patch_post(monkeypatch, resp)
+
+        assert model.generate_audio("hello") is None
+
+    def test_audio_returns_none_on_pydub_decode_failure(self, model, monkeypatch, patch_autotasks):
+        """The wav-path's ``AudioSegment.from_file(..., "wav")`` raises
+        ``pydub.exceptions.CouldntDecodeError`` on non-wav bytes. That
+        class inherits from ``PydubException``, NOT ``OSError`` —
+        regression catch-tuple narrowing would let it escape. Pinned
+        here so the contract stays explicit."""
+        from pydub.exceptions import CouldntDecodeError
+
+        monkeypatch.setenv("ORIN_VOICE_TOKEN", "tk")
+        # Empty Content-Type → wav defensive path → pydub explodes on non-wav body.
+        _patch_post(monkeypatch, _make_response(b"\x00\x01\x02not-wav", content_type=None))
+
+        def fake_from_file(buf, format):
+            raise CouldntDecodeError("Decoding failed: not a wav stream")
+
+        monkeypatch.setattr(local_model.AudioSegment, "from_file", fake_from_file)
+
+        assert model.generate_audio("hello") is None
+
+
+# ---------------------------------------------------------------------------
+# E. Source-level revert canaries
 # ---------------------------------------------------------------------------
 
 

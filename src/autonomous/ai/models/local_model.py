@@ -5,6 +5,7 @@ import time
 
 import requests
 from pydub import AudioSegment
+from pydub.exceptions import PydubException
 
 from autonomous import log
 from autonomous.ai._json_utils import clean_json_response
@@ -451,10 +452,11 @@ class LocalAIModel(AutoModel):
                 "voice_id": voice_id or "",
                 "voice_description": voice_description or "",
             }
-            # ``Accept`` prefers ogg/opus (orin-voice native — passthrough avoids
-            # a wav→opus re-encode); wav is the q=0.5 fallback so legacy servers
-            # behind ``MEDIA_AUDIO_API_BASE_URL`` still work. The branch below
-            # keys on the actual Content-Type, not the request preference.
+            # Accept advertises ``audio/ogg`` (orin-voice returns opus-in-ogg —
+            # passthrough avoids a wav→opus re-encode); ``audio/wav;q=0.5`` is
+            # the legacy fallback so wav-only servers behind
+            # ``MEDIA_AUDIO_API_BASE_URL`` still work. The branch below keys on
+            # the actual response Content-Type, not the request preference.
             headers = {
                 "Authorization": f"Bearer {env_str('ORIN_VOICE_TOKEN', '')}",
                 "Accept": "audio/ogg, audio/wav;q=0.5",
@@ -480,7 +482,12 @@ class LocalAIModel(AutoModel):
             audio_buffer = io.BytesIO()
             audio.export(audio_buffer, format="opus")
             return audio_buffer.getvalue()
-        except (requests.RequestException, OSError, ValueError) as e:
+        except (requests.RequestException, OSError, ValueError, PydubException) as e:
+            # ``PydubException`` covers ``CouldntDecodeError`` (raised when the
+            # wav-path receives non-wav bytes — e.g. a misconfigured server
+            # returns opus under empty Content-Type, hitting the defensive wav
+            # default). It does NOT inherit from ``OSError`` so the original
+            # catch tuple let it escape.
             log(f"TTS Error: {e}", _print=True)
             return None
 
