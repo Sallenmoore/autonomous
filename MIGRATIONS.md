@@ -5,6 +5,86 @@ recent first.
 
 ## Unreleased
 
+### Consumer test-patch recipe: `local_model._SESSION` → `_HTTP` (#111)
+
+**What this documents.**
+
+The `#50 slice C` migration replaced
+`autonomous.ai.models.local_model._SESSION` (a `requests.Session`) with
+`_HTTP` (an `autonomous.http.HttpClient`) but never received a dedicated
+MIGRATIONS entry — the change rode in alongside slices B / D / E / F and
+the consumer-side patch-retargeting recipe was implicit. Surfaced by #111
+when consumer suites that monkeypatched the old name reported
+order-dependent failures: the consumer fixture was installing
+`_SESSION` onto the module itself, then cross-test leakage of that
+hand-installed attribute manifested as "global gets clobbered." This
+entry adds the explicit recipe so the migration can be completed cleanly
+on the consumer side.
+
+**Current state of the patch target.**
+
+- `local_model._SESSION` does **not** exist on the module. There is no
+  back-compat alias for the same reason `db_sync._HTTP_SESSION` /
+  `flux._SESSION` were not aliased: `HttpClient` routes through
+  `session.request("POST", ...)`, so an aliased `_SESSION.post` patch
+  would be a silent no-op (the patched method never gets called).
+  "Honest break beats a misleading alias."
+- The current module global is `_HTTP`, an
+  `autonomous.http.HttpClient(timeout=None, max_attempts=1,
+  transport_error_cls=requests.ConnectionError)`. Every current call
+  site is a POST (`_HTTP.post(...)`); `HttpClient` also exposes `.get`
+  and `.request` for the shape 3 wire-level patch recipe below.
+
+**Migration recipe — consumer test patches.**
+
+Mirrors the flux slice E recipe (#50 entry below). Three shapes of patch
+target depending on what the test wants to assert:
+
+```python
+# Pre-migration (no longer works — _SESSION is not on the module):
+with patch("autonomous.ai.models.local_model._SESSION.post") as mock_post:
+    ...
+
+# Post-migration shape 1 — non-retry tests (max_attempts=1 means
+# _HTTP.post is the call site; patching it directly is fine):
+with patch("autonomous.ai.models.local_model._HTTP.post") as mock_post:
+    ...
+
+# Post-migration shape 2 — tests that care about the underlying
+# requests.Session call (e.g. the `_556_…` isinstance assertion):
+import autonomous.ai.models.local_model as lm
+assert isinstance(lm._HTTP.session, requests.Session)
+
+# Post-migration shape 3 — tests that need to intercept the wire-level
+# call (HttpClient.request → session.request), useful when asserting
+# headers/body composition or simulating a transient retry-eligible
+# transport failure:
+with patch.object(
+    autonomous.ai.models.local_model._HTTP.session,
+    "request",
+) as mock_request:
+    mock_request.return_value = MagicMock(
+        status_code=200, json=lambda: {...},
+    )
+    ...
+```
+
+**Why the "module-global clobbered" symptom was order-dependent.**
+
+If the consumer fixture installs `_SESSION` onto the module (e.g.
+`local_model._SESSION = requests.Session()` in a setUp), pytest's test
+ordering changes whether the attribute is present when the next test's
+`patch(...)` resolves the dotted path. Tests that ran after a fixture
+left a stale value would see that value; tests that ran before any
+installation would see `AttributeError`. The fix on the consumer side
+is to either (a) migrate patches to `_HTTP` per the recipe above (no
+fixture install needed — `_HTTP` is a real module attribute), or
+(b) keep the local fixture but make it autouse with explicit teardown.
+
+**No autonomous-side code change.** The migration was deliberate and the
+break is documented in `local_model.py:50-58`. This entry exists so the
+recipe is discoverable from MIGRATIONS.md.
+
 ### `OpenAIClient` malformed-2xx raise sites consolidated + null-safe transcription (#88 / #90 / #92 / #102 / #104)
 
 **What changed.**
