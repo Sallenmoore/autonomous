@@ -31,8 +31,9 @@ on the consumer side.
   "Honest break beats a misleading alias."
 - The current module global is `_HTTP`, an
   `autonomous.http.HttpClient(timeout=None, max_attempts=1,
-  transport_error_cls=requests.ConnectionError)`. Call sites invoke
-  `_HTTP.post(...)` / `_HTTP.get(...)`.
+  transport_error_cls=requests.ConnectionError)`. Every current call
+  site is a POST (`_HTTP.post(...)`); `HttpClient` also exposes `.get`
+  and `.request` for the shape 3 wire-level patch recipe below.
 
 **Migration recipe — consumer test patches.**
 
