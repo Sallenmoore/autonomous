@@ -170,7 +170,11 @@ def test_event_payload_carries_required_fields():
     """Return value from `event()` is the structured payload consumers
     will eventually consume directly (e.g. `job.meta` attachment in
     RQ-backed callers). Pin the shape so a future refactor doesn't
-    quietly drop the `provider`/`model`/`endpoint` fields."""
+    quietly drop the `provider`/`model`/`endpoint` fields — or, for
+    the openai_compat-specific call site, the operator-grade triage
+    fields (`status`, `body_excerpt`, `detection`,
+    `cached_for_process`) that the scraper at storyteller's
+    `/debug/lore/health` is the most-likely future consumer of."""
     from autonomous.observability import event
 
     payload = event(
@@ -184,6 +188,7 @@ def test_event_payload_carries_required_fields():
         status=400,
         body_excerpt="error: ...",
         detection="first",
+        cached_for_process=True,
     )
     assert payload["event"] == "structured_outputs_unavailable"
     assert payload["level"] == "warning"
@@ -191,6 +196,15 @@ def test_event_payload_carries_required_fields():
     assert payload["provider"] == "openai_compat"
     assert payload["model"] == "gpt-x"
     assert payload["endpoint"] == "http://gw"
+    # openai_compat-specific operator-triage fields — the call site at
+    # ``openai_compat.generate_json`` passes these on the first-
+    # detection branch (`detection="first"`, `cached_for_process=True`)
+    # alongside the 4xx response body excerpt that makes the
+    # unsupported-ness diagnosable.
+    assert payload["status"] == 400
+    assert payload["body_excerpt"] == "error: ..."
+    assert payload["detection"] == "first"
+    assert payload["cached_for_process"] is True
 
 
 # ---------------------------------------------------------------------------

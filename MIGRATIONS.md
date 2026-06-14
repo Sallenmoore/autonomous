@@ -51,7 +51,7 @@ name="files_id_1_n_1")` workaround can now drop it.
 
 **Steps 3 + 4 of the #51 migration path.** The foundation (`observability` module with `event()` / `Counter` / `Histogram` / `Registry`) shipped earlier; this slice does the first per-subsystem migration and adds the first metric-backed wrapper.
 
-**Migration 1 — `[STRUCTURED-OUTPUTS-UNAVAILABLE]` log sites → `observability.event()`.** Both adapters (`autonomous.ai.models.local_model.generate_json` and `autonomous.ai.models.openai_compat._chat_with_strict_fallback`) now emit via:
+**Migration 1 — `[STRUCTURED-OUTPUTS-UNAVAILABLE]` log sites → `observability.event()`.** Both adapters (`autonomous.ai.models.local_model.generate_json` and `autonomous.ai.models.openai_compat.generate_json`) now emit via:
 
 ```python
 from autonomous.observability import event, counter
