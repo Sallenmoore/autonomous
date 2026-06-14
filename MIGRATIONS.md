@@ -5,6 +5,49 @@ recent first.
 
 ## Unreleased
 
+### Structured emission migration: `STRUCTURED-OUTPUTS-UNAVAILABLE` sites + embedding-sync Counter (#51)
+
+**Steps 3 + 4 of the #51 migration path.** The foundation (`observability` module with `event()` / `Counter` / `Histogram` / `Registry`) shipped earlier; this slice does the first per-subsystem migration and adds the first metric-backed wrapper.
+
+**Migration 1 — `[STRUCTURED-OUTPUTS-UNAVAILABLE]` log sites → `observability.event()`.** Both adapters (`autonomous.ai.models.local_model.generate_json` and `autonomous.ai.models.openai_compat._chat_with_strict_fallback`) now emit via:
+
+```python
+from autonomous.observability import event, counter
+
+event(
+    "structured_outputs_unavailable",
+    level="warning",
+    marker="STRUCTURED-OUTPUTS-UNAVAILABLE",
+    print_to_stdout=False,
+    provider="local",  # or "openai_compat"
+    model=...,
+    endpoint=...,
+    ...,
+)
+```
+
+The line passed to the log singleton still begins with `[STRUCTURED-OUTPUTS-UNAVAILABLE]` (it's the `marker` field) so grep-based scrapers (storyteller's health dashboard) continue to hit. Parser-based consumers can now key on `event=structured_outputs_unavailable` and the labeled fields. New Counter `structured_outputs_unavailable_total` (label: `provider`) is bumped on first detection per `(model, endpoint)` per process — same gate as the log emission.
+
+**Migration 2 — `record_embedding_sync_event` → bumps `embedding_sync_events_total` Counter.** The Redis hour-bucket write (`embedding_sync_health:<YYYYMMDDHH>`) is **preserved unchanged** for back-compat with existing consumer scrapers. The new Counter is bumped *before* the Redis write, so a Redis outage shows up as Counter-vs-bucket divergence rather than as a metric gap. Both observability layers carry the same event set (`success` / `hpc_failure` / `silent_skip`).
+
+**Consumer test patches.** Tests that monkeypatched `autonomous.ai.models.local_model.log` to capture the emission must now patch `autonomous.log` (the package-level attribute) instead. `event()` resolves the log singleton via `from autonomous import log` inside its body, so a module-local `log` rebind never sees the call. Recipe:
+
+```python
+# Pre-migration:
+monkeypatch.setattr(local_model, "log", capture)
+
+# Post-migration:
+monkeypatch.setattr("autonomous.log", capture)
+```
+
+**Files touched.**
+- `src/autonomous/db/db_sync.py` — adds `_EMBEDDING_SYNC_EVENTS_COUNTER`, bumps in `record_embedding_sync_event`.
+- `src/autonomous/ai/models/local_model.py` — declares the shared `structured_outputs_unavailable_total` Counter, replaces the `log()` emission with `event()`.
+- `src/autonomous/ai/models/openai_compat.py` — same Counter (idempotent registration), same `log()` → `event()` swap.
+- `tests/unit/test_unit_local_model_json_schema.py`, `tests/unit/test_unit_json_schema_structured_outputs_iter_2026-06-03.py` — patch seam moved from `local_model.log` to `autonomous.log`. Source-and-patch are inseparable for migrations of this shape (#50 slice B precedent — patches would be silent no-ops post-migration, masking real test failures).
+
+**Not in this slice.** `[HPC-UNREACHABLE]` emission (`db.db_sync._emit_hpc_unreachable`) intentionally stays on its current wire shape — the storyteller scraper at `/debug/lore/health` pins the raw stdout + `[HPC-UNREACHABLE]`-prefixed line shape via committed tests. A future slice can flip the wire after the consumer scraper migrates.
+
 ### Consumer test-patch recipe: `local_model._SESSION` → `_HTTP` (#111)
 
 **What this documents.**

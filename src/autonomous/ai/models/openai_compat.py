@@ -18,6 +18,7 @@ import json
 import requests
 
 from autonomous import log
+from autonomous.observability import counter, event
 from autonomous.ai._json_utils import clean_json_response
 from autonomous.ai.exceptions import (
     MALFORMED_2XX_EXCEPTIONS,
@@ -158,6 +159,19 @@ _HTTP = HttpClient(
 # servers gain strict-mode support via deploys, deploys typically
 # accompany worker restarts.
 _UNSUPPORTED_STRICT_MODE: set[tuple[str, str]] = set()
+
+# Shared counter with local_model.py (#51 step 3). Idempotent on name
+# via the observability registry — the first caller registers, the
+# second returns the same singleton. Bumped on first detection per
+# (model, endpoint) per process, matching the log emission's gate.
+_STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER = counter(
+    "structured_outputs_unavailable_total",
+    description=(
+        "JSON adapters falling back from strict-mode schema enforcement "
+        "(first detection per (model, endpoint) per process)"
+    ),
+    label_names=("provider",),
+)
 
 # Substrings that indicate a 4xx response was specifically about
 # strict-mode unsupported-ness (rather than a real client bug like
@@ -499,17 +513,35 @@ class OpenAIClient(AutoModel):
             # loose without re-probing. Do NOT move this .add() below
             # the retry branch; that would cause repeated probe failures.
             _UNSUPPORTED_STRICT_MODE.add(endpoint_key)
-            # _print=False: the entry lands in logs/current_run_error_log.log
-            # regardless. Avoiding stdout keeps the marker from interleaving
-            # with structured loggers in embedding environments (web request
-            # logs, JSON-emitting workers). Operators grep the log file.
-            log(
-                f"[STRUCTURED-OUTPUTS-UNAVAILABLE] First detection: "
-                f"model={self._json_model} endpoint={self._base_url} "
-                f"status={resp.status_code} body_excerpt={resp.text[:200]!r} "
-                f"(cached for this process)",
-                _print=False,
+            # Migrated to ``observability.event()`` (#51 step 3) —
+            # preserves the ``[STRUCTURED-OUTPUTS-UNAVAILABLE]`` prefix
+            # at line-start for grep-based scrapers; adds structured
+            # fields for parser-based consumers.
+            # print_to_stdout=False: the entry lands in
+            # logs/current_run_error_log.log regardless. Avoiding stdout
+            # keeps the marker from interleaving with structured loggers
+            # in embedding environments (web request logs, JSON-emitting
+            # workers). Operators grep the log file.
+            event(
+                "structured_outputs_unavailable",
+                level="warning",
+                marker="STRUCTURED-OUTPUTS-UNAVAILABLE",
+                print_to_stdout=False,
+                provider="openai_compat",
+                model=self._json_model,
+                endpoint=self._base_url,
+                status=resp.status_code,
+                body_excerpt=resp.text[:200],
+                detection="first",
+                cached_for_process=True,
             )
+            try:
+                _STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER.inc(provider="openai_compat")
+            except Exception as exc:  # noqa: BLE001
+                log(
+                    f"[openai_compat] structured_outputs_unavailable_total "
+                    f"counter inc failed: {exc!r}"
+                )
             # Retry once with loose mode.
             try:
                 raw = self._chat(
