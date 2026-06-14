@@ -1148,6 +1148,11 @@ class GridFSProxy:
     """Proxy object to handle writing and reading of files to and from GridFS"""
 
     _fs = None
+    # Per-(db_alias, collection_name) cache so we only ensure the GridFS chunks
+    # index once per process. pymongo's GridIn._ensure_indexes is gated on an
+    # empty collection — mongorestore / live-migrated buckets never get the
+    # `{files_id, n}` index and every chunk read becomes a fs.chunks scan.
+    _ensured_chunks_indexes: set = set()
 
     def __init__(
         self,
@@ -1227,7 +1232,26 @@ class GridFSProxy:
     def fs(self):
         if not self._fs:
             self._fs = gridfs.GridFS(get_db(self.db_alias), self.collection_name)
+            self._ensure_chunks_index()
         return self._fs
+
+    def _ensure_chunks_index(self):
+        key = (self.db_alias, self.collection_name)
+        if key in GridFSProxy._ensured_chunks_indexes:
+            return
+        try:
+            chunks = get_db(self.db_alias)[f"{self.collection_name}.chunks"]
+            chunks.create_index(
+                [("files_id", pymongo.ASCENDING), ("n", pymongo.ASCENDING)],
+                unique=True,
+                name="files_id_1_n_1",
+            )
+        except pymongo.errors.OperationFailure as e:
+            log(
+                f"GridFSProxy: failed to ensure fs.chunks index on "
+                f"{self.db_alias}.{self.collection_name}: {e}"
+            )
+        GridFSProxy._ensured_chunks_indexes.add(key)
 
     def get(self, grid_id=None):
         if grid_id:
