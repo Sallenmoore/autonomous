@@ -5,6 +5,48 @@ recent first.
 
 ## Unreleased
 
+### FileAttr GridFS uploads now ensure `{files_id, n}` chunks index on first use (#117)
+
+**Symptom this fixes.**
+
+Cold reads of binary blobs stored via `FileAttr` (i.e. any field backed
+by `GridFSProxy` — `FileField`, `ImageField`) were catastrophically slow
+on buckets where the standard GridFS `{files_id: 1, n: 1}` unique index
+was missing — measured at ~15.9s for a 3.3 MB blob in a real prod DB,
+~0.008s after the index was added manually. Each `readchunk` was doing a
+full `fs.chunks` collection scan; cost scales with total stored blobs
+(O(chunks × total_chunks) per file).
+
+**Root cause.**
+
+`pymongo.gridfs.GridIn._create_index` (pymongo 4.x) only creates the
+index when the chunks collection is empty (it gates on
+`find_one(... )` returning `None`). Any bucket where chunks already
+exist when the index is missing — `mongorestore` of a dump that never
+had the index, live migrations, manual ports — never gets the index.
+
+**Fix.**
+
+`GridFSProxy.fs` now calls `_ensure_chunks_index()` on first
+materialization per process, idempotently creating
+`{files_id: 1, n: 1}, unique=True, name="files_id_1_n_1"` (matching
+pymongo's auto-generated name so vanilla `_ensure_indexes` is a no-op).
+Cached at the class level by `(db_alias, collection_name)` so we incur
+at most one `create_index` call per bucket per process. `OperationFailure`
+is logged and swallowed so upload paths can't break on pre-existing
+conflicting index specs.
+
+**Consumer impact.**
+
+None for correct setups — `create_index` for a matching spec is a no-op.
+Consumers running the storyteller-style boot-time `db["fs.chunks"].
+create_index([("files_id", 1), ("n", 1)], unique=True,
+name="files_id_1_n_1")` workaround can now drop it.
+
+**Files touched.**
+- `src/autonomous/db/fields.py` — `GridFSProxy._ensured_chunks_indexes`
+  cache + `_ensure_chunks_index()` method, called from the `fs` property.
+
 ### Consumer test-patch recipe: `local_model._SESSION` → `_HTTP` (#111)
 
 **What this documents.**
