@@ -85,6 +85,20 @@ _HPC_UNREACHABLE_COUNTER = counter(
     label_names=("signature",),
 )
 
+# Process-wide counter for embedding-sync state transitions (#51 step 4).
+# Bumped on every valid event from ``record_embedding_sync_event`` —
+# independent of the Redis hour-bucket write, so a Redis blip is visible
+# as a counter-vs-bucket-count divergence rather than as a metric gap.
+# The Redis hour-bucket (``embedding_sync_health:<YYYYMMDDHH>``) is
+# preserved for back-compat with the storyteller /debug/lore/health
+# scraper; consumers migrate to this in-process Counter (and any future
+# Redis/Prometheus backend) over time.
+_EMBEDDING_SYNC_EVENTS_COUNTER = counter(
+    "embedding_sync_events_total",
+    description="Embedding sync state transitions (success/hpc_failure/silent_skip)",
+    label_names=("event",),
+)
+
 
 def _throttle_window_seconds() -> int:
     """Read the throttle window from env each call so a config flip
@@ -308,6 +322,21 @@ def record_embedding_sync_event(event: EmbeddingSyncEvent, redis_client=None) ->
             # best-effort contract.
             pass
         return
+    # Bump the in-process Counter for every valid event (#51 step 4).
+    # Bumped BEFORE the Redis write so a Redis blip is visible as a
+    # counter-vs-bucket divergence rather than as a metric gap. Best-
+    # effort, matching the function's no-raise / no-control-flow
+    # contract — a Counter failure must not surface to the caller.
+    try:
+        _EMBEDDING_SYNC_EVENTS_COUNTER.inc(event=event)
+    except Exception as exc:  # noqa: BLE001
+        try:
+            log(
+                f"[db_sync] embedding_sync_events_total counter inc "
+                f"failed for event={event!r}: {exc!r}"
+            )
+        except Exception:
+            pass
     try:
         r = redis_client if redis_client is not None else _get_redis()
         key = bucket_key_for()

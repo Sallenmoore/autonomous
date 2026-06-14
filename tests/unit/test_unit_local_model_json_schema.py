@@ -43,8 +43,13 @@ class TestJSONSchemaAbsorption:
         object.__setattr__(local, "_ollama_url", "http://test-host:11434")
 
         captured_logs = []
+        # Emission migrated to ``observability.event()`` (#51 step 3) —
+        # event() resolves ``log`` via ``from autonomous import log``
+        # inside the function body, so the patch seam moved from the
+        # local module's ``log`` import to the package-level
+        # ``autonomous.log`` attribute. Same pattern as #50 slice B.
         monkeypatch.setattr(
-            local_model, "log",
+            "autonomous.log",
             lambda msg, *a, **kw: captured_logs.append(str(msg)),
         )
 
@@ -89,8 +94,13 @@ class TestJSONSchemaAbsorption:
         object.__setattr__(local, "_ollama_url", "http://host-a:11434")
 
         captured_logs = []
+        # Emission migrated to ``observability.event()`` (#51 step 3) —
+        # event() resolves ``log`` via ``from autonomous import log``
+        # inside the function body, so the patch seam moved from the
+        # local module's ``log`` import to the package-level
+        # ``autonomous.log`` attribute. Same pattern as #50 slice B.
         monkeypatch.setattr(
-            local_model, "log",
+            "autonomous.log",
             lambda msg, *a, **kw: captured_logs.append(str(msg)),
         )
         monkeypatch.setattr(
@@ -121,8 +131,13 @@ class TestJSONSchemaAbsorption:
         object.__setattr__(local, "_ollama_url", "http://test-host:11434")
 
         captured_logs = []
+        # Emission migrated to ``observability.event()`` (#51 step 3) —
+        # event() resolves ``log`` via ``from autonomous import log``
+        # inside the function body, so the patch seam moved from the
+        # local module's ``log`` import to the package-level
+        # ``autonomous.log`` attribute. Same pattern as #50 slice B.
         monkeypatch.setattr(
-            local_model, "log",
+            "autonomous.log",
             lambda msg, *a, **kw: captured_logs.append(str(msg)),
         )
         monkeypatch.setattr(
