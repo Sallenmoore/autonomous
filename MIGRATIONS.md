@@ -223,6 +223,8 @@ Same precedent as #50 slice B (PR #69), #51 (PR #119), #47 slice 1 (PR #122). Pa
 
 The `strict=True` semantics matter: when an adapter is fixed, the xfail flips to XPASS which pytest reports as a FAIL — forcing the migrating PR to delete the now-stale `_KNOWN_DRIFT` entry. You can't half-migrate and silently mask the remaining drift.
 
+> **Resolution status (closing note for the bundle this ships in):** every entry in the table above was resolved in slices 2–4, all of which land in the same `test → main` bundle as this slice. `_KNOWN_DRIFT` is now empty.
+
 **Not in this slice.** Return-shape pins (e.g. `MockAIModel.generate_transcription` returning a string instead of `{"text", "segments"}`) are documented in the Protocol docstring but not enforced — signature inspection can't see return shape. **Slice 4** will add runtime instance tests that pin the return shapes.
 
 **Consumer impact.** None. No adapter behavior changed. The Protocol is for the conformance test and for static type checkers (mypy/pyright) that want to type-narrow AI client variables.

@@ -5,15 +5,19 @@ canonical method (``generate_json``, ``generate_transcription``,
 ``generate_image``, ``upscale_image``) with the canonical kwarg names
 the dispatch layer (``jsonagent.py``, ``imageagent.py``, etc.) sends.
 
-Known drift is enumerated as ``pytest.mark.xfail(strict=True, ...)``
-parametrize entries. Each xfail reason names the slice that will fix
-it. ``strict=True`` means an XPASS turns into an error — so the
-moment an adapter is fixed, the test FAILS, signaling "remove this
-xfail." That gates progress: you can't half-migrate an adapter and
-leave the conformance test silently masking the rest.
+Originally shipped with ``_KNOWN_DRIFT`` carrying one xfail entry
+per (adapter, method) pair that didn't yet conform — each entry
+tagged with the slice that would fix it. As slices 2, 3, and 4
+landed, their xfails flipped XPASS and forced their removal
+(``strict=True``). ``_KNOWN_DRIFT`` is now empty — every adapter
+signature in ``MODEL_REGISTRY`` conforms to ``AIModelProtocol``.
 
-This slice does NOT change any adapter behavior. Slices 2-5 will
-flip xfails to passes one at a time.
+The ``strict=True`` xfail pattern remains the mechanism for future
+adapter or method additions: a new (adapter, method) pair that fails
+conformance must EITHER be fixed in the same PR OR add an entry to
+``_KNOWN_DRIFT`` citing the follow-up that will fix it. A passing
+xfail blocks the PR — you can't half-migrate and silently mask the
+remaining drift.
 """
 
 from __future__ import annotations

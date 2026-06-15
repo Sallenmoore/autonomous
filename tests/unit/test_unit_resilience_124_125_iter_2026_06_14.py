@@ -441,6 +441,52 @@ class TestNonStrictModeSkipsFallback:
         # Cached endpoint → loose used from the first call; no second retry.
         assert client._chat.call_count == 1
 
+    def test_no_observability_event_emitted_when_use_strict_false(
+        self, fresh_strict_cache
+    ):
+        # Defensive regression-guard: the parse-failure-200 event +
+        # counter increment are gated on `if use_strict:` (the new
+        # branch starts at openai_compat.py line 594). A regression
+        # that dropped the guard would emit the structured-outputs
+        # event repeatedly on every parse failure from already-cached
+        # endpoints, polluting dashboards and inflating the counter.
+        from autonomous.ai.exceptions import GenerateJSONParseError
+
+        # Pre-populate cache so use_strict=False from the start.
+        fresh_strict_cache.add(("test-model", "https://test.example/v1"))
+        client = _make_openai_client()
+        client._chat = MagicMock(return_value="not json")
+
+        with patch("autonomous.ai.models.openai_compat.event") as mock_event:
+            with pytest.raises(GenerateJSONParseError):
+                client.generate_json("p", json_schema={"type": "object"})
+
+        # No parse_failure_200 events fired on the non-strict path.
+        parse_failure_calls = [
+            c for c in mock_event.call_args_list
+            if c.kwargs.get("detection") == "parse_failure_200"
+        ]
+        assert parse_failure_calls == []
+
+    def test_no_counter_inc_when_use_strict_false(self, fresh_strict_cache):
+        # Same regression-guard, applied to the counter side. Counter
+        # inc on non-strict paths would over-attribute every loose
+        # parse failure as a "strict-mode unavailable" event.
+        from autonomous.ai.exceptions import GenerateJSONParseError
+        from autonomous.ai.models import openai_compat as oc
+
+        fresh_strict_cache.add(("test-model", "https://test.example/v1"))
+        client = _make_openai_client()
+        client._chat = MagicMock(return_value="not json")
+
+        with patch.object(
+            oc._STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER, "inc"
+        ) as mock_inc:
+            with pytest.raises(GenerateJSONParseError):
+                client.generate_json("p", json_schema={"type": "object"})
+
+        mock_inc.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # #125 — in-process embedding backend
@@ -587,6 +633,39 @@ class TestGetVectorInProcessSuccess:
         fake_embedder.encode.assert_called_once_with("the quick brown fox")
 
 
+class _RaiseOnAttrModule:
+    """A `sys.modules` stand-in whose attribute access raises an
+    ImportError with a specific `.name` — simulating either the
+    "sentence_transformers absent entirely" case or the
+    "sentence_transformers installed but its torch dep is missing"
+    case via the exact same mechanism the real Python import system
+    uses.
+
+    Why this shape (and not `patch.object(_get_in_process_embedder)`):
+    the production code path is
+    ``from sentence_transformers import SentenceTransformer`` inside
+    `_get_in_process_embedder`. Patching the wrapper function bypasses
+    that line entirely — the previous test version asserted that the
+    OUTER except handles a synthetic exception, but a regression that
+    moved the import out of the function or wrapped it in its own
+    try/except would still pass. This stub registers as
+    ``sys.modules["sentence_transformers"]`` so the real
+    ``from … import …`` machinery runs and surfaces the named
+    ImportError to the production fallback.
+    """
+
+    def __init__(self, missing_name: str):
+        self._missing_name = missing_name
+        # `__file__` makes the stub look enough like a real module
+        # for Python's import system to accept it as cached.
+        self.__file__ = f"<stub for {missing_name}>"
+
+    def __getattr__(self, attr_name: str):
+        err = ImportError(f"No module named {self._missing_name!r}")
+        err.name = self._missing_name
+        raise err
+
+
 class TestGetVectorInProcessImportError:
     """ImportError handling: missing the `[embeddings]` extra (or its
     transitive `torch`) must degrade gracefully to `None` + the
@@ -596,58 +675,53 @@ class TestGetVectorInProcessImportError:
     `in_process:ImportError:torch` vs
     `in_process:ImportError:sentence_transformers` — so operators
     can tell forgot-the-extra apart from a partial install.
+
+    These tests exercise the **real** production import path: a
+    sys.modules stub raises the named ImportError when the
+    production code tries to import the symbol. Patching
+    `_get_in_process_embedder` directly was the previous shape but
+    bypassed the import line being tested — a regression that moved
+    the import outside the function would have passed silently.
     """
 
-    def _force_import_error(self, missing_module: str):
-        """Return a context that makes `import sentence_transformers`
-        raise ImportError naming `missing_module`."""
-        # Build an ImportError whose `.name` attribute matches the
-        # ModuleNotFoundError shape the production code reads.
-        err = ImportError(f"No module named {missing_module!r}")
-        err.name = missing_module
-        fake_module = MagicMock()
-        fake_module.SentenceTransformer = MagicMock(side_effect=err)
-        return patch.dict(sys.modules, {"sentence_transformers": fake_module})
+    def _install_failing_stub(self, missing_module: str):
+        """Register a sys.modules stub that makes the production
+        ``from sentence_transformers import SentenceTransformer`` line
+        raise ImportError with `.name == missing_module`."""
+        return patch.dict(
+            sys.modules,
+            {"sentence_transformers": _RaiseOnAttrModule(missing_module)},
+        )
 
     def test_missing_sentence_transformers_returns_none(
         self, reset_embedder_singleton
     ):
         from autonomous.db import db_sync
 
-        # No sentence_transformers in sys.modules — the import line
-        # inside `_get_in_process_embedder` raises ModuleNotFoundError.
-        # `monkeypatch` removes the module if present.
-        if "sentence_transformers" in sys.modules:
-            del sys.modules["sentence_transformers"]
-        # Block the import.
-        with patch.object(
-            db_sync, "_get_in_process_embedder",
-            side_effect=ImportError(
-                "No module named 'sentence_transformers'"
-            ),
-        ) as patched:
-            patched.side_effect.name = "sentence_transformers"
+        with self._install_failing_stub("sentence_transformers"):
             result = db_sync._get_vector_in_process("hello")
         assert result is None
 
-    def test_missing_torch_named_in_signature(
-        self, reset_embedder_singleton, capsys
-    ):
+    def test_missing_torch_returns_none(self, reset_embedder_singleton):
+        # The partial-install case: sentence_transformers cached fine,
+        # but its torch import chain blows up. Both modes route through
+        # the same outer except.
+        from autonomous.db import db_sync
+
+        with self._install_failing_stub("torch"):
+            result = db_sync._get_vector_in_process("hello")
+        assert result is None
+
+    def test_missing_torch_named_in_signature(self, reset_embedder_singleton):
         # Operator-visible signature should NAME torch when torch is
         # the missing transitive — distinct from missing
         # sentence_transformers itself.
         from autonomous.db import db_sync
 
-        err = ImportError("No module named 'torch'")
-        err.name = "torch"
-        with patch.object(
-            db_sync, "_get_in_process_embedder", side_effect=err
-        ), patch.object(
-            db_sync, "_emit_hpc_unreachable"
-        ) as mock_emit:
+        with self._install_failing_stub("torch"), \
+                patch.object(db_sync, "_emit_hpc_unreachable") as mock_emit:
             db_sync._get_vector_in_process("hello")
 
-        # Signature must include "in_process:ImportError:torch".
         signature = mock_emit.call_args.args[0]
         assert signature == "in_process:ImportError:torch"
 
@@ -656,13 +730,8 @@ class TestGetVectorInProcessImportError:
     ):
         from autonomous.db import db_sync
 
-        err = ImportError("No module named 'sentence_transformers'")
-        err.name = "sentence_transformers"
-        with patch.object(
-            db_sync, "_get_in_process_embedder", side_effect=err
-        ), patch.object(
-            db_sync, "_emit_hpc_unreachable"
-        ) as mock_emit:
+        with self._install_failing_stub("sentence_transformers"), \
+                patch.object(db_sync, "_emit_hpc_unreachable") as mock_emit:
             db_sync._get_vector_in_process("hello")
 
         signature = mock_emit.call_args.args[0]
@@ -674,13 +743,8 @@ class TestGetVectorInProcessImportError:
         # That's the discoverability hook for operators reading logs.
         from autonomous.db import db_sync
 
-        err = ImportError("No module named 'torch'")
-        err.name = "torch"
-        with patch.object(
-            db_sync, "_get_in_process_embedder", side_effect=err
-        ), patch.object(
-            db_sync, "_emit_hpc_unreachable"
-        ) as mock_emit:
+        with self._install_failing_stub("torch"), \
+                patch.object(db_sync, "_emit_hpc_unreachable") as mock_emit:
             db_sync._get_vector_in_process("hello")
 
         message = mock_emit.call_args.args[1]
@@ -693,16 +757,27 @@ class TestGetVectorInProcessImportError:
     ):
         from autonomous.db import db_sync
 
-        err = ImportError("No module named 'torch'")
-        err.name = "torch"
-        with patch.object(
-            db_sync, "_get_in_process_embedder", side_effect=err
-        ), patch.object(
-            db_sync, "record_embedding_sync_event"
-        ) as mock_record:
+        with self._install_failing_stub("torch"), \
+                patch.object(db_sync, "record_embedding_sync_event") as mock_record:
             db_sync._get_vector_in_process("hello")
 
         mock_record.assert_called_once_with("hpc_failure")
+
+    def test_import_failure_in_production_path_not_test_shim(
+        self, reset_embedder_singleton
+    ):
+        # Defense-in-depth against the "patch the wrapper itself"
+        # anti-pattern: verify the singleton stays None after an
+        # import failure (the production `from sentence_transformers
+        # import …` line aborts BEFORE the singleton assignment).
+        # A regression that moved the import outside the function or
+        # cached the failed embedder would change this behavior.
+        from autonomous.db import db_sync
+
+        with self._install_failing_stub("torch"):
+            db_sync._get_vector_in_process("hello")
+
+        assert db_sync._IN_PROCESS_EMBEDDER is None
 
 
 class TestGetVectorInProcessGenericException:

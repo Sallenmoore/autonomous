@@ -5,12 +5,14 @@ Pins the method signatures every adapter in
 ``NotSupportedByProvider`` exception that supersedes raw
 ``NotImplementedError`` (issue #47 step 2).
 
-This slice does NOT change any adapter behavior. It defines the target
-shape so the conformance test
-(``tests/unit/test_unit_ai_protocol_conformance.py``) can enumerate
-current drift as concrete xfail entries, each tagged with the slice
-that will fix it. Future slices land one adapter or one method at a
-time; each green xfail flip is a concrete progress signal.
+Originally shipped with the conformance test
+(``tests/unit/test_unit_ai_protocol_conformance.py``) carrying
+``_KNOWN_DRIFT`` xfails for every adapter that hadn't yet been
+migrated to match. Each later slice fixed adapters and removed the
+corresponding xfail; ``_KNOWN_DRIFT`` was emptied at slice 3 and the
+conformance test now passes outright with no xfails. The catalog
+remains in place as the forcing function for any FUTURE adapter or
+method addition.
 
 Design choices:
 
