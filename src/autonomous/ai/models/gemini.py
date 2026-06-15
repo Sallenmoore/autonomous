@@ -335,8 +335,37 @@ class GeminiAIModel(AutoModel):
         return uploaded_files
 
     def generate_json(
-        self, message, function, additional_instructions="", uri="", context=None, temperature=None
+        self,
+        message,
+        system_prompt=None,
+        json_schema=None,
+        schema_name="response",
+        uri="",
+        context=None,
+        temperature=None,
     ):
+        # Canonical AIModelProtocol signature (#47 slice 3). Translation
+        # to gemini's native ``function=`` dict happens inline here —
+        # callers (including JSONAgent) pass ``json_schema`` /
+        # ``schema_name`` / ``system_prompt`` exactly like every other
+        # provider, and gemini handles the gemini-specific tool-call
+        # mechanics internally. Pre-slice-3 this translation lived in
+        # ``jsonagent.py`` behind ``if provider == "gemini":`` — the
+        # forcing function for every new agent method or adapter quirk
+        # to ripple into the dispatch layer. That branch is now gone.
+        if json_schema is None:
+            raise ValueError(
+                "GeminiAIModel.generate_json requires json_schema=. "
+                "Gemini's structured-output path is tool-calling, which "
+                "needs a parameter schema. Pass via JSONAgent.generate("
+                "json_schema=...) or set the kwarg directly."
+            )
+        function = {
+            "name": schema_name,
+            "description": "Structured response shape.",
+            "parameters": json_schema,
+        }
+        additional_instructions = system_prompt or ""
         context = context or {}
         function_definition = self._add_function(function)
         contents = [message]

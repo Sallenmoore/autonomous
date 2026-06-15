@@ -110,15 +110,11 @@ def _check_conformance(
 # adapter is fixed, the test fails as "stale entry, remove this line."
 #
 # Slice 2 landed flux's unsupported declarations and openai_compat's
-# image methods → those entries removed. Slice 3 is next: gemini's
-# generate_json kwarg unification.
-_KNOWN_DRIFT: dict[tuple[str, str], str] = {
-    ("gemini", "generate_json"): (
-        "#47 slice 3 — gemini takes (message, function, "
-        "additional_instructions, ...); needs to expose canonical "
-        "kwargs and do function-dict translation inside the adapter"
-    ),
-}
+# image methods. Slice 3 unified gemini's generate_json (translation
+# moved INTO the adapter; jsonagent.py's per-provider branch dropped).
+# Empty == every adapter signature now conforms. Slice 4 is next:
+# return-shape pins via runtime instance tests.
+_KNOWN_DRIFT: dict[tuple[str, str], str] = {}
 
 
 def _params() -> list:

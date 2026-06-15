@@ -181,9 +181,14 @@ class _FakeJSONAgent:
 
 
 class TestJSONAgentGeminiDispatch:
-    """Gemini's existing ``function=`` parameter IS a JSON-schema
-    carrier — ``JSONAgent.generate`` must translate ``json_schema``
-    into the expected ``function`` dict shape."""
+    """#47 slice 3: gemini's dispatch from JSONAgent is uniform with
+    every other provider. The pre-slice-3 function-dict translation
+    moved INTO ``GeminiAIModel.generate_json``; JSONAgent no longer
+    special-cases the provider. These tests pin **dispatch uniformity**
+    (the slice-3 invariant) — the gemini-internal translation is
+    verified end-to-end in
+    ``test_unit_generate_json_typed_exc_iter_2026_05_25.py::TestGeminiExceptionDispatch``.
+    """
 
     def _make_agent(self, return_value):
         agent = _FakeJSONAgent(provider="gemini")
@@ -192,51 +197,48 @@ class TestJSONAgentGeminiDispatch:
         agent.get_client = lambda *a, **kw: client  # noqa: ARG005
         return agent, client
 
-    def test_no_json_schema_passes_function_none(self, monkeypatch):
-        monkeypatch.delenv("JSON_AI_AGENT", raising=False)
-        agent, client = self._make_agent({"ok": True})
-        agent.generate("prompt")
-        call_kwargs = client.generate_json.call_args.kwargs
-        assert call_kwargs["function"] is None
+    def test_gemini_receives_json_schema_kwarg(self, monkeypatch):
+        """Gemini gets the same canonical kwarg the other providers do.
 
-    def test_json_schema_synthesizes_function_dict(self, monkeypatch):
-        """Pin the translation shape: function should be a dict with
-        keys ``name`` (from schema_name), ``description``, and
-        ``parameters`` (the json_schema itself)."""
+        Pre-slice-3 JSONAgent translated json_schema → function dict
+        before dispatch. Now it forwards json_schema directly and
+        gemini does the translation internally.
+        """
         monkeypatch.delenv("JSON_AI_AGENT", raising=False)
         schema = {"type": "object", "properties": {"x": {"type": "integer"}}}
         agent, client = self._make_agent({"x": 1})
         agent.generate(
             "prompt", json_schema=schema, schema_name="my_payload"
         )
-        function = client.generate_json.call_args.kwargs["function"]
-        assert function == {
-            "name": "my_payload",
-            "description": "Structured response shape.",
-            "parameters": schema,
-        }
+        call_kwargs = client.generate_json.call_args.kwargs
+        assert call_kwargs["json_schema"] == schema
+        assert call_kwargs["schema_name"] == "my_payload"
+        # Pre-slice-3 translation artifacts must NOT appear at the
+        # dispatch boundary — gemini owns its own translation now.
+        assert "function" not in call_kwargs
+        assert "additional_instructions" not in call_kwargs
 
     def test_default_schema_name_is_response(self, monkeypatch):
-        monkeypatch.delenv("JSON_AI_AGENT", raising=False)
-        schema = {"type": "object"}
-        agent, client = self._make_agent({})
-        agent.generate("prompt", json_schema=schema)
-        function = client.generate_json.call_args.kwargs["function"]
-        assert function["name"] == "response"
-
-    def test_gemini_dispatch_does_not_pass_json_schema_kwarg(
-        self, monkeypatch
-    ):
-        """The Gemini branch uses ``function=`` translation; passing
-        json_schema= AS WELL would either be a double-spec or trip
-        gemini's signature. Pin that the kwarg is not forwarded."""
+        """schema_name defaults to "response" — same default for every
+        provider, applied uniformly by JSONAgent."""
         monkeypatch.delenv("JSON_AI_AGENT", raising=False)
         schema = {"type": "object"}
         agent, client = self._make_agent({})
         agent.generate("prompt", json_schema=schema)
         call_kwargs = client.generate_json.call_args.kwargs
-        assert "json_schema" not in call_kwargs
-        assert "schema_name" not in call_kwargs
+        assert call_kwargs["schema_name"] == "response"
+
+    def test_no_json_schema_still_dispatches_uniformly(self, monkeypatch):
+        """JSONAgent doesn't second-guess: it forwards json_schema=None
+        and gemini's contract (ValueError if missing) handles it. The
+        previous behavior synthesized function=None at the dispatch
+        layer — masking the contract violation as a soft no-op."""
+        monkeypatch.delenv("JSON_AI_AGENT", raising=False)
+        agent, client = self._make_agent({"ok": True})
+        agent.generate("prompt")
+        call_kwargs = client.generate_json.call_args.kwargs
+        assert call_kwargs["json_schema"] is None
+        assert call_kwargs["schema_name"] == "response"
 
 
 class TestJSONAgentNonGeminiDispatch:
