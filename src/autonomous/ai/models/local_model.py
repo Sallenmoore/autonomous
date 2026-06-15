@@ -18,6 +18,7 @@ from autonomous.config import env_str, settings
 from autonomous.http import HttpClient
 from autonomous.model.autoattr import ListAttr, StringAttr
 from autonomous.model.automodel import AutoModel
+from autonomous.observability import counter, event
 from autonomous.taskrunner.autotasks import AutoTasks
 
 # Module-level HTTP client for Ollama + media_ai calls (#50 slice C, README #16).
@@ -80,6 +81,21 @@ _HTTP = HttpClient(
 # the "no structured outputs support" marker for. Avoids log spam on
 # every JSON call. Cleared by process restart only.
 _STRUCTURED_OUTPUTS_LOGGED: set[tuple[str, str]] = set()
+
+# Process-wide counter for structured-outputs-unavailable fallbacks
+# (#51 step 3). Shared with openai_compat via the idempotent
+# ``counter()`` registry — both providers bump the same series, label
+# differentiates. The Counter is bumped on every (model, endpoint)
+# first-detection — same gating as the log emission — so the rate
+# reflects newly-discovered unsupported adapters, not per-call traffic.
+_STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER = counter(
+    "structured_outputs_unavailable_total",
+    description=(
+        "JSON adapters falling back from strict-mode schema enforcement "
+        "(first detection per (model, endpoint) per process)"
+    ),
+    label_names=("provider",),
+)
 
 
 class LocalAIModel(AutoModel):
@@ -167,17 +183,30 @@ class LocalAIModel(AutoModel):
             key = (self._text_model, self._ollama_url)
             if key not in _STRUCTURED_OUTPUTS_LOGGED:
                 _STRUCTURED_OUTPUTS_LOGGED.add(key)
-                # _print=False — symmetric with openai_compat. The log
-                # file is authoritative; stdout interleaves with other
-                # process output and worker-pool log streams.
-                log(
-                    f"[STRUCTURED-OUTPUTS-UNAVAILABLE] LocalAIModel does not "
-                    f"support strict-mode schema enforcement. "
-                    f"model={self._text_model} endpoint={self._ollama_url}. "
-                    f"Falling back to prompt-only shape guidance + "
-                    f"client-side validation.",
-                    _print=False,
+                # Migrated to ``observability.event()`` (#51 step 3) —
+                # preserves the ``[STRUCTURED-OUTPUTS-UNAVAILABLE]``
+                # prefix at line-start for grep-based scrapers; adds
+                # structured fields for parser-based consumers.
+                # ``print_to_stdout=False`` mirrors the pre-migration
+                # ``_print=False`` (symmetric with openai_compat — the
+                # log file is authoritative).
+                event(
+                    "structured_outputs_unavailable",
+                    level="warning",
+                    marker="STRUCTURED-OUTPUTS-UNAVAILABLE",
+                    print_to_stdout=False,
+                    provider="local",
+                    model=self._text_model,
+                    endpoint=self._ollama_url,
+                    fallback="prompt_only_with_client_validation",
                 )
+                try:
+                    _STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER.inc(provider="local")
+                except Exception as exc:  # noqa: BLE001
+                    log(
+                        f"[local_model] structured_outputs_unavailable_total "
+                        f"counter inc failed: {exc!r}"
+                    )
 
         context = context or {}
         system_prompt = system_prompt or self.instructions

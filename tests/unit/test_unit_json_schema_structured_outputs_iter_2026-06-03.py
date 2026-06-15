@@ -496,8 +496,13 @@ class TestLocalAIModelLogOnce:
 
         instance = self._make_instance("llama3", "http://ollama:11434")
         log_calls = []
+        # Emission migrated to ``observability.event()`` (#51 step 3) —
+        # event() resolves ``log`` via ``from autonomous import log``
+        # inside the function body, so the patch seam moved from the
+        # local module's ``log`` import to the package-level
+        # ``autonomous.log`` attribute. Same pattern as #50 slice B.
         monkeypatch.setattr(
-            local_model, "log",
+            "autonomous.log",
             lambda *a, _print=False: log_calls.append(a[0] if a else ""),
         )
         monkeypatch.setattr(
@@ -545,8 +550,13 @@ class TestLocalAIModelLogOnce:
         instance = self._make_instance("llama3", "http://ollama:11434")
 
         log_calls = []
+        # Emission migrated to ``observability.event()`` (#51 step 3) —
+        # event() resolves ``log`` via ``from autonomous import log``
+        # inside the function body, so the patch seam moved from the
+        # local module's ``log`` import to the package-level
+        # ``autonomous.log`` attribute. Same pattern as #50 slice B.
         monkeypatch.setattr(
-            local_model, "log",
+            "autonomous.log",
             lambda *a, _print=False: log_calls.append(a[0] if a else ""),
         )
         # Patch retry to raise — short-circuit past the network and
@@ -586,8 +596,13 @@ class TestLocalAIModelLogOnce:
         )
 
         log_calls = []
+        # Emission migrated to ``observability.event()`` (#51 step 3) —
+        # event() resolves ``log`` via ``from autonomous import log``
+        # inside the function body, so the patch seam moved from the
+        # local module's ``log`` import to the package-level
+        # ``autonomous.log`` attribute. Same pattern as #50 slice B.
         monkeypatch.setattr(
-            local_model, "log",
+            "autonomous.log",
             lambda *a, _print=False: log_calls.append(a[0] if a else ""),
         )
         monkeypatch.setattr(
@@ -621,8 +636,13 @@ class TestLocalAIModelLogOnce:
         )  # different model
 
         log_calls = []
+        # Emission migrated to ``observability.event()`` (#51 step 3) —
+        # event() resolves ``log`` via ``from autonomous import log``
+        # inside the function body, so the patch seam moved from the
+        # local module's ``log`` import to the package-level
+        # ``autonomous.log`` attribute. Same pattern as #50 slice B.
         monkeypatch.setattr(
-            local_model, "log",
+            "autonomous.log",
             lambda *a, _print=False: log_calls.append(a[0] if a else ""),
         )
         monkeypatch.setattr(
