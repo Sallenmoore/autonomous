@@ -5,6 +5,35 @@ recent first.
 
 ## Unreleased
 
+### AI adapter contract: `AIModelProtocol` + `NotSupportedByProvider` foundation (#47 slice 1)
+
+**Slice 1 of #47** — lays down the canonical adapter contract without changing any adapter behavior. Slices 2-5 will migrate each adapter to conform; this one makes the drift visible to CI.
+
+**New module `autonomous.ai.protocol`.** Exports:
+
+- `AIModelProtocol(typing.Protocol)` — canonical signatures for the four cross-adapter methods (`generate_json`, `generate_transcription`, `generate_image`, `upscale_image`). Pins the kwarg-naming conventions called out in the issue: `generate_image` takes `files=` (plural — img2img source list); `upscale_image` takes `image_content=` (singular — the one image being upscaled).
+- `NotSupportedByProvider(NotImplementedError)` — typed exception carrying `method` and `provider` attributes. Subclasses `NotImplementedError` so existing `except NotImplementedError` callers stay correct across the multi-slice migration; new callers should catch `NotSupportedByProvider` for the structured attribution. To be wired into the adapters in **slice 2**.
+
+**New test `tests/unit/test_unit_ai_protocol_conformance.py`.** Parametrized across every (adapter, method) pair from `BaseAgent.MODEL_REGISTRY`. Each pair either passes the conformance check or is marked `xfail(strict=True, reason="#47 slice N — ...")`. The current xfail list IS the TODO list for the rest of #47:
+
+| Adapter | Method | Fix in slice |
+|---|---|---|
+| `gemini` | `generate_json` | 3 — translate `function=` from `system_prompt=` at adapter boundary |
+| `flux` | `generate_json` | 2 — declare with `NotSupportedByProvider` |
+| `flux` | `generate_transcription` | 2 — declare with `NotSupportedByProvider` |
+| `openai_compat` | `generate_image` | 2 — explicit signature + `NotSupportedByProvider` |
+| `openai_compat` | `upscale_image` | 2 — explicit signature + `NotSupportedByProvider` |
+
+The `strict=True` semantics matter: when an adapter is fixed, the xfail flips to XPASS which pytest reports as a FAIL — forcing the migrating PR to delete the now-stale `_KNOWN_DRIFT` entry. You can't half-migrate and silently mask the remaining drift.
+
+**Not in this slice.** Return-shape pins (e.g. `MockAIModel.generate_transcription` returning a string instead of `{"text", "segments"}`) are documented in the Protocol docstring but not enforced — signature inspection can't see return shape. **Slice 4** will add runtime instance tests that pin the return shapes.
+
+**Consumer impact.** None. No adapter behavior changed. The Protocol is for the conformance test and for static type checkers (mypy/pyright) that want to type-narrow AI client variables.
+
+**Files touched.**
+- `src/autonomous/ai/protocol.py` — new module.
+- `tests/unit/test_unit_ai_protocol_conformance.py` — new test. This test IS the slice's primary deliverable (the issue's "step 5" calls for it); it must live in `tests/unit/` so future PRs get drift detection in CI. Source-and-test inseparable for this shape — same precedent as the #50 slice-B and #51 lockstep patches.
+
 ### FileAttr GridFS uploads now ensure `{files_id, n}` chunks index on first use (#117)
 
 **Symptom this fixes.**
