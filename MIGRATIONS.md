@@ -5,6 +5,34 @@ recent first.
 
 ## Unreleased
 
+### AI transcription return shape: `MockAIModel` + `GeminiAIModel` now return canonical dict (#47 slice 4)
+
+**Slice 4 of #47 — the closing piece.** The `AIModelProtocol` docstring pins `generate_transcription` as returning `dict` with `{"text", "segments"}` keys. The signature-level conformance test (slice 1) can't enforce return shape, so two adapters silently drifted:
+
+- **`MockAIModel.generate_transcription`** returned a bare string (`"This is a mock transcription of the audio file."`). Consumers using the mock provider in tests silently saw a wrong-shape return — any `result["text"]` access in the test exploded with `TypeError: string indices must be integers`. The "mock = realistic stand-in" contract was broken.
+- **`GeminiAIModel.generate_transcription`** returned `response.text` directly (a string), bypassing the canonical dict that `LocalAIModel` and `OpenAIClient.generate_transcription` produce. A real production bug: consumers routed through `audioagent.transcribe()` with `provider="gemini"` got a `str` instead of a `dict` and downstream `result["text"]` access broke.
+
+**Both fixed to return the canonical `{"text": str, "segments": list}` shape.** Gemini's `segments` is an empty list (its tool-calling response doesn't expose per-phrase segments the way Whisper does) — but it's a list, not missing/None, so consumers can always iterate without a None guard.
+
+**Consumer impact (medium for gemini, low for mock):**
+
+- **Mock**: any test or fixture relying on the bare-string return needs to read `result["text"]` instead. Grep found no in-tree consumers; storyteller may have offline-mode fixtures worth checking.
+- **Gemini**: `audioagent.transcribe()` already documented the return shape as `{"text", "segments"}` — anyone using gemini for transcription via this path was getting buggy output. Now they get the documented shape.
+- **`local_model`, `openai_compat`**: no change. Both already return the canonical shape; they were the reference contract gemini was supposed to match.
+- **`flux`**: still raises `NotSupportedByProvider` from slice 2. No change.
+
+**New runtime tests** in `tests/unit/test_unit_ai_protocol_conformance.py::TestSlice4ReturnShapes`:
+- `test_mock_generate_json_returns_dict` / `test_mock_generate_image_returns_bytes` / `test_mock_upscale_image_returns_bytes` — pin every mock method's return type.
+- `test_mock_generate_transcription_returns_canonical_dict` — verifies `{"text", "segments"}` keys + types after the fix.
+- `test_gemini_transcription_returns_canonical_dict` + `test_gemini_transcription_handles_none_text` — pin gemini's new return shape with a stubbed `client` (`GeminiAIModel.client` is a no-setter property; same hand-built stub pattern as `_make_gemini_stub` in `test_unit_generate_json_typed_exc_iter_*`).
+
+**Files touched.**
+- `src/autonomous/ai/models/mock_model.py` — `generate_transcription` returns dict.
+- `src/autonomous/ai/models/gemini.py` — `generate_transcription` wraps `response.text` in canonical dict.
+- `tests/unit/test_unit_ai_protocol_conformance.py` — new `TestSlice4ReturnShapes` class.
+
+**#47 closed.** Every adapter signature in `MODEL_REGISTRY` conforms to `AIModelProtocol` (slice 1's signature check, `_KNOWN_DRIFT` empty since slice 3). Every return shape the issue called out is pinned by runtime test (this slice). The dispatch layer is uniform (slice 3). Unsupported methods raise the typed `NotSupportedByProvider` (slice 2). The conformance test stays green as the forcing function for any future adapter or method addition.
+
 ### AI adapter unification: `gemini.generate_json` canonical signature; `jsonagent` per-provider branch removed (#47 slice 3)
 
 **Slice 3 of #47 — the architectural one.** Eliminates the `if provider == "gemini":` branch in `JSONAgent.generate` that was the forcing function for every cross-adapter quirk to ripple into the dispatch layer. Translation now lives where it belongs — inside the adapter that needs it.

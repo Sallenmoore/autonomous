@@ -506,7 +506,15 @@ class GeminiAIModel(AutoModel):
             model=self._stt_model,
             contents=[prompt, myfile],
         )
-        return response.text
+        # #47 slice 4 — AIModelProtocol pins the return shape as
+        # ``{"text": str, "segments": list}`` to match the verbose-json
+        # contract that audioagent.transcribe / dramatize and consumer
+        # screenplay post-processing expect. Gemini's tool-only
+        # response carries the text directly; it doesn't expose per-
+        # phrase segments the way Whisper does, so segments is an
+        # empty list (NOT missing/None — consumers can still
+        # ``for seg in result["segments"]`` without a TypeError).
+        return {"text": response.text or "", "segments": []}
 
     def list_voices(self, filters=None):
         if not filters:
