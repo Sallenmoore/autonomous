@@ -527,10 +527,17 @@ def _get_vector_in_process(text):
     ``[HPC-UNREACHABLE]`` sentinel contract as the other providers
     (#60, #65) so dashboards can grep a single marker family:
 
-      - ``[embeddings]`` extra not installed → ``ImportError`` →
-        ``in_process:ImportError`` signature. The library still boots
-        without the extra; only callers that flip
-        ``EMBEDDING_AI_AGENT=in_process`` ever exercise this path.
+      - ``[embeddings]`` extra not installed (sentence-transformers or
+        its torch dep missing) → ``ImportError`` →
+        ``in_process:ImportError:<module>`` signature where
+        ``<module>`` is the failing import (``sentence_transformers``,
+        ``torch``, etc.). The library still boots without the extra;
+        only callers that flip ``EMBEDDING_AI_AGENT=in_process`` ever
+        exercise this path. Distinguishing the missing-module case in
+        the signature lets operators tell a forgot-the-extra install
+        apart from a partial install (sentence-transformers present
+        but torch missing — a real shape, verified locally) without
+        opening the log body.
       - model load error or encode exception →
         ``in_process:exc:<ExcType>`` signature.
 
@@ -544,12 +551,21 @@ def _get_vector_in_process(text):
         vec = embedder.encode(text)
         return vec.tolist()
     except ImportError as e:
+        # Catches both "sentence-transformers not installed" AND
+        # "sentence-transformers installed but its torch dep is missing"
+        # (the latter is a ``ModuleNotFoundError: No module named 'torch'``
+        # raised mid-traceback from ``sentence_transformers/util/...``).
+        # ``ModuleNotFoundError`` is a subclass of ``ImportError`` so
+        # both route here. Including ``e.name`` in the signature lets
+        # operators tell the cases apart from the marker alone; the
+        # remediation (``pip install autonomous-app[embeddings]``) is
+        # the same either way because the extra pulls both transitives.
+        missing = getattr(e, "name", None) or "in_process embedding deps"
         record_embedding_sync_event("hpc_failure")
         _emit_hpc_unreachable(
-            "in_process:ImportError",
+            f"in_process:ImportError:{missing}",
             f"[HPC-UNREACHABLE] in_process embedding failed: "
-            f"sentence-transformers not installed "
-            f"(pip install autonomous-app[embeddings]): {e}",
+            f"missing {missing!r} (pip install autonomous-app[embeddings]): {e}",
         )
         return None
     except Exception as e:
