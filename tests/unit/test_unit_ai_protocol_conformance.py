@@ -188,6 +188,109 @@ class TestProtocolModule:
         assert exc.provider == "flux"
 
 
+class TestSlice4ReturnShapes:
+    """Runtime return-shape pins (slice 4 of #47).
+
+    Signature inspection (the parametrized test above) catches kwarg
+    drift but not return-shape drift. These tests instantiate the
+    mock adapter (offline-safe) and the gemini adapter (with a stubbed
+    client) and assert each method's return is the shape the Protocol
+    docstring promises:
+
+    - ``generate_json`` → ``dict``
+    - ``generate_transcription`` → ``dict`` with ``{"text", "segments"}``
+    - ``generate_image`` → ``bytes``
+    - ``upscale_image`` → ``bytes``
+
+    Mock is the offline-safe adapter — its return-shape pins are the
+    most consequential for downstream tests using the mock provider
+    as a stand-in. Gemini's transcription return shape was also wrong
+    pre-slice-4 (returned ``response.text`` as a string); pinned here
+    against a stubbed client.
+
+    Adapters that touch the network (local, openai_compat) are pinned
+    in their own existing test files
+    (``test_unit_local_model_orin_voice_iter_*.py``,
+    ``test_unit_openai_compat_transcription_*.py``); we don't
+    re-mock them here.
+    """
+
+    # ---- MockAIModel return shapes ----
+
+    def test_mock_generate_json_returns_dict(self):
+        mock = MockAIModel.__new__(MockAIModel)
+        result = mock.generate_json("any prompt")
+        assert isinstance(result, dict)
+
+    def test_mock_generate_transcription_returns_canonical_dict(self):
+        """Pre-slice-4 mock returned a bare string. Real adapters
+        (local/openai_compat) return ``{"text", "segments"}`` —
+        consumers using mock got silently wrong-shape returns and
+        any ``result["text"]`` access failed with TypeError."""
+        mock = MockAIModel.__new__(MockAIModel)
+        result = mock.generate_transcription(b"audio-bytes")
+        assert isinstance(result, dict)
+        assert "text" in result
+        assert "segments" in result
+        assert isinstance(result["text"], str)
+        assert isinstance(result["segments"], list)
+
+    def test_mock_generate_image_returns_bytes(self):
+        mock = MockAIModel.__new__(MockAIModel)
+        result = mock.generate_image("any prompt")
+        assert isinstance(result, bytes)
+
+    def test_mock_upscale_image_returns_bytes(self):
+        mock = MockAIModel.__new__(MockAIModel)
+        result = mock.upscale_image("any prompt")
+        assert isinstance(result, bytes)
+
+    # ---- GeminiAIModel.generate_transcription return shape ----
+    # ``GeminiAIModel.client`` is a property without a setter so we can't
+    # patch it on a real instance. Same pattern as
+    # ``_make_gemini_stub`` in ``test_unit_generate_json_typed_exc_iter_*``:
+    # hand-build a class that aliases the method.
+
+    def _make_gemini_transcription_stub(self, text_value):
+        from unittest.mock import MagicMock
+
+        response_mock = MagicMock()
+        response_mock.text = text_value
+
+        class _Stub:
+            _stt_model = "gemini-test"
+            generate_transcription = GeminiAIModel.generate_transcription
+
+        stub = _Stub()
+        stub.client = MagicMock()
+        stub.client.models.generate_content.return_value = response_mock
+        return stub
+
+    def test_gemini_transcription_returns_canonical_dict(self):
+        """Pre-slice-4 gemini returned ``response.text`` as a string —
+        a real consumer bug, not a mock-only quirk. Now wraps the
+        text in the canonical dict shape with an empty ``segments``
+        list (gemini doesn't expose per-phrase segments)."""
+        stub = self._make_gemini_transcription_stub("the transcribed phrase")
+        result = stub.generate_transcription(b"audio-bytes")
+
+        assert isinstance(result, dict)
+        assert result["text"] == "the transcribed phrase"
+        assert result["segments"] == []
+
+    def test_gemini_transcription_handles_none_text(self):
+        """Gemini's response.text can be None on tool-only or
+        safety-filtered responses. Slice-4 contract: text is always
+        a string (empty if upstream gave None) so consumers can
+        always call ``.split()`` / ``len()`` without a None guard.
+        """
+        stub = self._make_gemini_transcription_stub(None)
+        result = stub.generate_transcription(b"audio-bytes")
+
+        assert result["text"] == ""
+        assert result["segments"] == []
+
+
 class TestSlice2UnsupportedDeclarations:
     """Runtime confirmation that the methods slice 2 added actually
     raise ``NotSupportedByProvider`` — the conformance test above only
