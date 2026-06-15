@@ -5,6 +5,101 @@ recent first.
 
 ## Unreleased
 
+### `generate_json` now retries loose mode on a strict-mode parse-failure 200 (#124)
+
+**Symptom this fixes.**
+
+`OpenAIClient.generate_json` raised `GenerateJSONParseError` (and the
+consumer's generation hard-failed) when a strict-mode
+(`response_format: {"type":"json_schema", strict:true}`) request returned
+HTTP 200 carrying free-form / non-grammar-constrained content. Observed
+in prod against Open WebUI + Ollama (`gpt-oss:20b`) on large/complex
+object schemas: the body came back pretty-printed and malformed
+(`Expecting ',' delimiter: line 12 column 33 (char 806)`) or
+markdown-fenced or with trailing prose. The reliable loose
+(`response_format: {"type":"json_object"}`) fallback was wired only into
+the `except (MalformedResponseError, requests.HTTPError)` path, so a 200
+that failed `json.loads(raw)` AND `json.loads(clean_json_response(raw))`
+went straight to the parse-or-raise block with no second chance.
+
+**Fix.**
+
+The parse-or-raise block in `OpenAIClient.generate_json` now mirrors the
+HTTPError fallback: when **both** `json.loads(raw)` and
+`json.loads(clean_json_response(raw))` fail AND the request was sent in
+strict mode, it (a) adds `(model, endpoint)` to
+`_UNSUPPORTED_STRICT_MODE`, (b) emits the
+`[STRUCTURED-OUTPUTS-UNAVAILABLE]` observability event with
+`detection="parse_failure_200"` (distinct from the HTTPError path's
+`detection="first"`), (c) bumps the shared
+`structured_outputs_unavailable_total` counter, and (d) retries once in
+loose `{"type":"json_object"}` mode. If the loose retry parses, the
+caller gets a valid dict; if it doesn't, the original
+`GenerateJSONParseError` (with strict-mode `raw`) is raised — the
+strict-mode body is what the caller asked for, so the diagnostic
+preserves it.
+
+**Consumer impact.**
+
+None for callers that don't pass `json_schema=` or whose backend honors
+strict mode correctly — the new branch is gated on `use_strict=True`.
+Callers that previously caught `GenerateJSONParseError` to roll their
+own loose-mode retry can drop that workaround.
+
+**Files touched.**
+- `src/autonomous/ai/models/openai_compat.py` — `generate_json`
+  parse-or-raise block extended with the strict→loose retry.
+
+### In-process embedding backend (`EMBEDDING_AI_AGENT=in_process`, #125)
+
+**New capability.**
+
+`autonomous.db.db_sync._VECTOR_PROVIDERS` gains an `in_process` provider
+that runs `sentence-transformers` in the worker process — no network call,
+no dependency on an external embeddings endpoint. Eliminates the
+single-point-of-failure mode where the upstream backend (Open WebUI +
+Ollama at `MEDIA_API_BASE_URL`) refuses to serve embeddings and RAG
+indexing silently degrades.
+
+**Configuration.**
+
+```
+EMBEDDING_AI_AGENT=in_process
+LOCAL_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2  # default
+```
+
+The default model is 384-dim (matches StoryTeller's `search_index` pinned
+dim). Operators pick a different model id for a different dim.
+
+**Install.**
+
+The dep is heavy (`sentence-transformers` pulls `torch`, ~700MB on Linux),
+so it's gated behind its own extra rather than rolled into `[all]`:
+
+```
+pip install autonomous-app[embeddings]
+```
+
+**Naming note.**
+
+The env-var value is `in_process`, NOT `local`. The pre-existing
+`EMBEDDING_AI_AGENT=local` value already routes to the legacy media_ai
+HTTP path (`_get_vector_local`) — that's "local" in the docker-compose
+sense, not in-process. Both stay available; the new key is additive.
+
+**Consumer impact.**
+
+None unless the consumer sets `EMBEDDING_AI_AGENT=in_process`. The
+default (`local`) is unchanged.
+
+**Files touched.**
+- `src/autonomous/db/db_sync.py` — new `_get_vector_in_process`,
+  `_get_in_process_embedder` (lazy per-process singleton), and
+  `_default_in_process_model` helpers; `_VECTOR_PROVIDERS` gains the
+  `in_process` key.
+- `requirements-embeddings.txt` (new) + `pyproject.toml`
+  `[embeddings]` extra.
+
 ### AI transcription return shape: `MockAIModel` + `GeminiAIModel` now return canonical dict (#47 slice 4)
 
 **Slice 4 of #47 — the closing piece.** The `AIModelProtocol` docstring pins `generate_transcription` as returning `dict` with `{"text", "segments"}` keys. The signature-level conformance test (slice 1) can't enforce return shape, so two adapters silently drifted:

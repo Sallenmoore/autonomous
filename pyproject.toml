@@ -39,16 +39,18 @@ dependencies = {file = ["requirements.txt"]}
 #   pip install autonomous-app[ai]               # Gemini + audio adapters
 #   pip install autonomous-app[github]           # GitHub API integration
 #   pip install autonomous-app[server]           # gunicorn convenience
-#   pip install autonomous-app[all]              # everything
+#   pip install autonomous-app[embeddings]       # in-process embedding backend (sentence-transformers + torch; ~700MB)
+#   pip install autonomous-app[all]              # everything except [embeddings] (kept lean — torch is heavy)
 #   pip install autonomous-app[dev]              # tests / lint / build
 #   pip install autonomous-app[docs]             # sphinx + furo + myst
-dev    = {file = ["requirements_dev.txt"]}
-tasks  = {file = ["requirements-tasks.txt"]}
-images = {file = ["requirements-images.txt"]}
-ai     = {file = ["requirements-ai.txt"]}
-github = {file = ["requirements-github.txt"]}
-server = {file = ["requirements-server.txt"]}
-docs   = {file = ["requirements-docs.txt"]}
+dev        = {file = ["requirements_dev.txt"]}
+tasks      = {file = ["requirements-tasks.txt"]}
+images     = {file = ["requirements-images.txt"]}
+ai         = {file = ["requirements-ai.txt"]}
+github     = {file = ["requirements-github.txt"]}
+server     = {file = ["requirements-server.txt"]}
+embeddings = {file = ["requirements-embeddings.txt"]}
+docs       = {file = ["requirements-docs.txt"]}
 all    = {file = [
     "requirements-tasks.txt",
     "requirements-images.txt",
