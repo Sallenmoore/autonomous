@@ -5,6 +5,24 @@ recent first.
 
 ## Unreleased
 
+### AI adapters: `NotSupportedByProvider` migration (#47 slice 2)
+
+**Slice 2 of #47.** Replaces raw `NotImplementedError` raises at adapter boundaries with the typed `NotSupportedByProvider(method, provider)` exception from slice 1's `autonomous.ai.protocol`. Also adds canonical-signature declarations for adapter/method pairs that were previously missing entirely.
+
+**Adapters touched:**
+- `FluxAIModel` — gains `generate_json` and `generate_transcription` declarations matching the Protocol; both raise `NotSupportedByProvider` with a routing hint to `provider='local'` or `'openai'`.
+- `OpenAIClient.generate_image` / `OpenAIClient.upscale_image` — `*args/**kwargs → NotImplementedError` replaced with explicit signature matching the Protocol + `NotSupportedByProvider`. Routing hints to `IMAGE_AI_AGENT=gemini` preserved.
+- `OpenAIClient.generate_audio` — also migrated to `NotSupportedByProvider` (not part of slice 1's Protocol scope but on the same surface; preserved `*args/**kwargs` shape until/unless audio enters the Protocol).
+
+**Consumer impact (low).** `NotSupportedByProvider` subclasses `NotImplementedError`, so existing `except NotImplementedError` catches keep working. New callers should catch the typed exception specifically and introspect `.method` / `.provider` (e.g., to route the same call to a different provider rather than leak the exception).
+
+**Conformance test cleanup.** `tests/unit/test_unit_ai_protocol_conformance.py` `_KNOWN_DRIFT` dropped 4 entries (now down to 1: `gemini.generate_json` for slice 3). Runtime test class `TestSlice2UnsupportedDeclarations` verifies each newly-declared method raises `NotSupportedByProvider` end-to-end and that the subclass relationship to `NotImplementedError` holds.
+
+**Files touched.**
+- `src/autonomous/ai/models/flux.py` — import `NotSupportedByProvider`, add two new methods at end of `FluxAIModel`.
+- `src/autonomous/ai/models/openai_compat.py` — import `NotSupportedByProvider`, rewrite the three not-implemented methods.
+- `tests/unit/test_unit_ai_protocol_conformance.py` — drop 4 stale `_KNOWN_DRIFT` entries, add `TestSlice2UnsupportedDeclarations`.
+
 ### AI adapter contract: `AIModelProtocol` + `NotSupportedByProvider` foundation (#47 slice 1)
 
 **Slice 1 of #47** — lays down the canonical adapter contract without changing any adapter behavior. Slices 2-5 will migrate each adapter to conform; this one makes the drift visible to CI.

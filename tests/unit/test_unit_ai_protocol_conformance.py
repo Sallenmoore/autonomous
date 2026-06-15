@@ -108,29 +108,15 @@ def _check_conformance(
 # Known drift — each entry MUST cite the slice that will flip it green.
 # ``strict=True`` xfails turn into errors on XPASS, so the moment an
 # adapter is fixed, the test fails as "stale entry, remove this line."
+#
+# Slice 2 landed flux's unsupported declarations and openai_compat's
+# image methods → those entries removed. Slice 3 is next: gemini's
+# generate_json kwarg unification.
 _KNOWN_DRIFT: dict[tuple[str, str], str] = {
     ("gemini", "generate_json"): (
         "#47 slice 3 — gemini takes (message, function, "
         "additional_instructions, ...); needs to expose canonical "
         "kwargs and do function-dict translation inside the adapter"
-    ),
-    ("flux", "generate_json"): (
-        "#47 slice 2 — flux is image-only; needs to declare "
-        "generate_json that raises NotSupportedByProvider"
-    ),
-    ("flux", "generate_transcription"): (
-        "#47 slice 2 — flux is image-only; needs to declare "
-        "generate_transcription that raises NotSupportedByProvider"
-    ),
-    ("openai_compat", "generate_image"): (
-        "#47 slice 2 — openai_compat uses *args/**kwargs to raise "
-        "NotImplementedError; needs explicit signature + "
-        "NotSupportedByProvider"
-    ),
-    ("openai_compat", "upscale_image"): (
-        "#47 slice 2 — openai_compat uses *args/**kwargs to raise "
-        "NotImplementedError; needs explicit signature + "
-        "NotSupportedByProvider"
     ),
 }
 
@@ -204,3 +190,48 @@ class TestProtocolModule:
         # Attributes still populated even when custom message overrides.
         assert exc.method == "generate_audio"
         assert exc.provider == "flux"
+
+
+class TestSlice2UnsupportedDeclarations:
+    """Runtime confirmation that the methods slice 2 added actually
+    raise ``NotSupportedByProvider`` — the conformance test above only
+    checks signatures.
+
+    Subclass relationship to ``NotImplementedError`` is verified
+    indirectly: every assertion uses ``pytest.raises(NotImplementedError)``
+    rather than the typed exception class, mirroring how existing
+    callers catch it. If the subclass relationship breaks, these tests
+    fail.
+    """
+
+    def test_flux_generate_json_raises_typed(self):
+        flux = FluxAIModel.__new__(FluxAIModel)
+        with pytest.raises(NotImplementedError) as exc_info:
+            flux.generate_json("any prompt")
+        assert isinstance(exc_info.value, NotSupportedByProvider)
+        assert exc_info.value.method == "generate_json"
+        assert exc_info.value.provider == "flux"
+
+    def test_flux_generate_transcription_raises_typed(self):
+        flux = FluxAIModel.__new__(FluxAIModel)
+        with pytest.raises(NotImplementedError) as exc_info:
+            flux.generate_transcription(b"audio-bytes")
+        assert isinstance(exc_info.value, NotSupportedByProvider)
+        assert exc_info.value.method == "generate_transcription"
+        assert exc_info.value.provider == "flux"
+
+    def test_openai_generate_image_raises_typed(self):
+        client = OpenAIClient.__new__(OpenAIClient)
+        with pytest.raises(NotImplementedError) as exc_info:
+            client.generate_image("any prompt")
+        assert isinstance(exc_info.value, NotSupportedByProvider)
+        assert exc_info.value.method == "generate_image"
+        assert exc_info.value.provider == "openai_compat"
+
+    def test_openai_upscale_image_raises_typed(self):
+        client = OpenAIClient.__new__(OpenAIClient)
+        with pytest.raises(NotImplementedError) as exc_info:
+            client.upscale_image("any prompt")
+        assert isinstance(exc_info.value, NotSupportedByProvider)
+        assert exc_info.value.method == "upscale_image"
+        assert exc_info.value.provider == "openai_compat"
