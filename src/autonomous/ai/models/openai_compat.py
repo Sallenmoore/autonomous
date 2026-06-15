@@ -579,6 +579,64 @@ class OpenAIClient(AutoModel):
             try:
                 return json.loads(cleaned)
             except json.JSONDecodeError as exc:
+                # Symmetric with the HTTPError fallback above (issue #124):
+                # a strict-mode request that returned HTTP 200 but whose
+                # body fails BOTH ``json.loads(raw)`` and
+                # ``json.loads(clean_json_response(raw))`` means the
+                # server accepted the call but didn't honor the grammar
+                # constraint (Open WebUI + Ollama on large schemas was
+                # the in-prod trigger). The reliable recovery is loose
+                # ``json_object`` mode, which is already known to work
+                # on this backend. Cache before retry — even if the loose
+                # retry also fails, the strict-mode-unsupported signal
+                # is still valid for subsequent calls.
+                if use_strict:
+                    _UNSUPPORTED_STRICT_MODE.add(endpoint_key)
+                    event(
+                        "structured_outputs_unavailable",
+                        level="warning",
+                        marker="STRUCTURED-OUTPUTS-UNAVAILABLE",
+                        print_to_stdout=False,
+                        provider="openai_compat",
+                        model=self._json_model,
+                        endpoint=self._base_url,
+                        status=200,
+                        body_excerpt=raw[:200],
+                        detection="parse_failure_200",
+                        cached_for_process=True,
+                    )
+                    try:
+                        _STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER.inc(provider="openai_compat")
+                    except Exception as counter_exc:  # noqa: BLE001
+                        log(
+                            f"[openai_compat] structured_outputs_unavailable_total "
+                            f"counter inc failed: {counter_exc!r}"
+                        )
+                    try:
+                        loose_raw = self._chat(
+                            self._json_model,
+                            system,
+                            user,
+                            response_format={"type": "json_object"},
+                            temperature=temperature,
+                        )
+                    except (MalformedResponseError, requests.HTTPError) as inner_exc:
+                        raise GenerateJSONEmptyResponseError(
+                            f"HPC chat endpoint returned an error after parse-failure fallback: {inner_exc}"
+                        ) from inner_exc
+                    if loose_raw and loose_raw.strip():
+                        try:
+                            return json.loads(loose_raw)
+                        except json.JSONDecodeError:
+                            try:
+                                return json.loads(clean_json_response(loose_raw))
+                            except json.JSONDecodeError:
+                                # Loose retry also unparseable; fall through
+                                # to the original ``GenerateJSONParseError``
+                                # with the strict-mode raw body so the
+                                # diagnostic reflects what the caller asked
+                                # for.
+                                pass
                 log(
                     f"==== HPC JSON parse failure: {exc} ====\n"
                     f"--- RAW ---\n{raw[:500]}",
