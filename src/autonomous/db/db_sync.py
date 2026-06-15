@@ -472,9 +472,116 @@ def _get_vector_mock(text):
     return [1.0] + [0.0] * 383
 
 
+# Lazy per-process singleton for the sentence-transformers model
+# (issue #125). The encoder is heavy — ~80MB model + torch — and the
+# first ``SentenceTransformer(...)`` call takes seconds. Pinning it
+# at module-scope (rather than reinstantiating per call) is what makes
+# the in-process path competitive with the network path in latency.
+_IN_PROCESS_EMBEDDER = None
+
+
+def _default_in_process_model() -> str:
+    """Default sentence-transformers model id for the in-process backend.
+
+    ``sentence-transformers/all-MiniLM-L6-v2`` is 384-dim, ~80MB, and
+    matches the StoryTeller vector index's pinned dimension
+    (``search_index``, 384 FLOAT32 COSINE — see #125). Operators
+    override via ``LOCAL_EMBEDDING_MODEL`` when an index uses a
+    different dim or they want a stronger model (e.g.
+    ``all-mpnet-base-v2`` for 768-dim).
+    """
+    return os.getenv(
+        "LOCAL_EMBEDDING_MODEL",
+        "sentence-transformers/all-MiniLM-L6-v2",
+    )
+
+
+def _get_in_process_embedder():
+    """Return the per-process sentence-transformers model, loading it
+    on first call. Raises ``ImportError`` when the ``[embeddings]``
+    extra is not installed; the caller (``_get_vector_in_process``)
+    translates that into the standard ``[HPC-UNREACHABLE]`` degrade
+    path so the worker doesn't crash.
+    """
+    global _IN_PROCESS_EMBEDDER
+    if _IN_PROCESS_EMBEDDER is None:
+        # Lazy import: sentence_transformers + torch are large
+        # (~700MB on Linux) and not installed by default. Consumers
+        # opt in via ``pip install autonomous-app[embeddings]``.
+        from sentence_transformers import SentenceTransformer
+
+        _IN_PROCESS_EMBEDDER = SentenceTransformer(_default_in_process_model())
+    return _IN_PROCESS_EMBEDDER
+
+
+def _get_vector_in_process(text):
+    """In-process embedding backend (#125).
+
+    No network call — eliminates the external-endpoint single point of
+    failure that ``_get_vector_local`` (media_ai HTTP) and
+    ``_get_vector_openai`` (HPC) carry. The model is lazily loaded per
+    process and pinned for the worker's lifetime via
+    ``_IN_PROCESS_EMBEDDER``.
+
+    Failure modes follow the same ``hpc_failure`` /
+    ``[HPC-UNREACHABLE]`` sentinel contract as the other providers
+    (#60, #65) so dashboards can grep a single marker family:
+
+      - ``[embeddings]`` extra not installed (sentence-transformers or
+        its torch dep missing) → ``ImportError`` →
+        ``in_process:ImportError:<module>`` signature where
+        ``<module>`` is the failing import (``sentence_transformers``,
+        ``torch``, etc.). The library still boots without the extra;
+        only callers that flip ``EMBEDDING_AI_AGENT=in_process`` ever
+        exercise this path. Distinguishing the missing-module case in
+        the signature lets operators tell a forgot-the-extra install
+        apart from a partial install (sentence-transformers present
+        but torch missing — a real shape, verified locally) without
+        opening the log body.
+      - model load error or encode exception →
+        ``in_process:exc:<ExcType>`` signature.
+
+    Return value: ``list[float]`` on success (sentence-transformers
+    returns ``numpy.ndarray``; ``.tolist()`` is the documented stable
+    conversion to plain Python floats for the downstream
+    ``np.array(..., dtype=np.float32).tobytes()`` path).
+    """
+    try:
+        embedder = _get_in_process_embedder()
+        vec = embedder.encode(text)
+        return vec.tolist()
+    except ImportError as e:
+        # Catches both "sentence-transformers not installed" AND
+        # "sentence-transformers installed but its torch dep is missing"
+        # (the latter is a ``ModuleNotFoundError: No module named 'torch'``
+        # raised mid-traceback from ``sentence_transformers/util/...``).
+        # ``ModuleNotFoundError`` is a subclass of ``ImportError`` so
+        # both route here. Including ``e.name`` in the signature lets
+        # operators tell the cases apart from the marker alone; the
+        # remediation (``pip install autonomous-app[embeddings]``) is
+        # the same either way because the extra pulls both transitives.
+        missing = getattr(e, "name", None) or "in_process embedding deps"
+        record_embedding_sync_event("hpc_failure")
+        _emit_hpc_unreachable(
+            f"in_process:ImportError:{missing}",
+            f"[HPC-UNREACHABLE] in_process embedding failed: "
+            f"missing {missing!r} (pip install autonomous-app[embeddings]): {e}",
+        )
+        return None
+    except Exception as e:
+        record_embedding_sync_event("hpc_failure")
+        _emit_hpc_unreachable(
+            f"in_process:exc:{type(e).__name__}",
+            f"[HPC-UNREACHABLE] in_process embedding failed: "
+            f"{type(e).__name__}: {e}",
+        )
+        return None
+
+
 _VECTOR_PROVIDERS = {
     "local": _get_vector_local,
     "openai": _get_vector_openai,
+    "in_process": _get_vector_in_process,
     "mock": _get_vector_mock,
 }
 

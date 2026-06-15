@@ -45,36 +45,23 @@ class JSONAgent(BaseAgent):
         if temperature is not None:
             kwargs["temperature"] = temperature
 
-        # Per-provider dispatch. Gemini's existing function= parameter
-        # already IS a JSON-schema carrier (function.parameters), so we
-        # synthesize a function dict from json_schema. Other providers
-        # accept json_schema= directly.
-        if provider == "gemini":
-            function = None
-            if json_schema is not None:
-                function = {
-                    "name": schema_name,
-                    "description": "Structured response shape.",
-                    "parameters": json_schema,
-                }
-            result = client.generate_json(
-                message,
-                function=function,
-                additional_instructions=system_prompt,
-                uri=uri,
-                context=context,
-                **kwargs,
-            )
-        else:
-            result = client.generate_json(
-                message,
-                system_prompt=system_prompt,
-                uri=uri,
-                context=context,
-                json_schema=json_schema,
-                schema_name=schema_name,
-                **kwargs,
-            )
+        # Uniform dispatch across every provider in MODEL_REGISTRY (#47
+        # slice 3). Pre-slice-3 there was an ``if provider == "gemini":``
+        # branch here that translated ``json_schema`` + ``schema_name``
+        # into gemini's native ``function=`` dict, plus
+        # ``system_prompt`` → ``additional_instructions``. That
+        # translation now lives INSIDE ``GeminiAIModel.generate_json``;
+        # every adapter sees the same canonical AIModelProtocol kwargs
+        # and is responsible for any provider-specific shape internally.
+        result = client.generate_json(
+            message,
+            system_prompt=system_prompt,
+            uri=uri,
+            context=context,
+            json_schema=json_schema,
+            schema_name=schema_name,
+            **kwargs,
+        )
 
         if isinstance(result, str):
             try:

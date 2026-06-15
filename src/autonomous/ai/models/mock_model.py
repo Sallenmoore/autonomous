@@ -94,7 +94,14 @@ class MockAIModel(AutoModel):
 
     def generate_transcription(self, audio_file, prompt=""):
         log(f"⚡ [MOCK] Transcribing Audio...", _print=True)
-        return "This is a mock transcription of the audio file."
+        # #47 slice 4 — match the real-adapter shape so consumers using
+        # the mock provider see the same return type they'll see in
+        # production. Pre-slice-4 this returned a bare string, which
+        # silently masked any consumer-side dict-access bugs.
+        return {
+            "text": "This is a mock transcription of the audio file.",
+            "segments": [],
+        }
 
     def generate_audio(self, prompt, voice=None):
         log(f"⚡ [MOCK] Generating Audio...", _print=True)
