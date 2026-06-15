@@ -1,0 +1,7 @@
+# In-process embedding backend for autonomous.db.db_sync.
+# Selected via EMBEDDING_AI_AGENT=in_process — see CLAUDE.md
+# "autonomous.ai" and #125. Heavy (sentence-transformers pulls torch,
+# ~700MB on Linux), which is why this is its own opt-in extra rather
+# than a transitive of [ai] or [all]. Consumers that don't run a local
+# embedding worker should not install this.
+sentence-transformers
