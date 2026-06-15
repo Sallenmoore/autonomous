@@ -439,11 +439,21 @@ class TestGeminiExceptionDispatch:
        AttributeError/IndexError/KeyError/TypeError → ParseError.
     """
 
+    # #47 slice 3 — gemini's generate_json now takes the canonical
+    # AIModelProtocol kwargs (json_schema=, schema_name=) instead of
+    # its old gemini-specific function= dict. The translation moved
+    # INTO the adapter. These fixtures match: pass the SAME inputs the
+    # pre-slice-3 ``function = {"name": "generate_thing", ...}`` dict
+    # carried, but as json_schema + schema_name now.
     @pytest.fixture
-    def function(self):
-        return {"name": "generate_thing", "parameters": {}}
+    def json_schema(self):
+        return {}
 
-    def test_no_candidates_raises_empty_response_error(self, function):
+    @pytest.fixture
+    def schema_name(self):
+        return "generate_thing"
+
+    def test_no_candidates_raises_empty_response_error(self, json_schema, schema_name):
         from autonomous.ai.exceptions import GenerateJSONEmptyResponseError
 
         stub = _make_gemini_stub()
@@ -451,9 +461,13 @@ class TestGeminiExceptionDispatch:
             candidates=[]
         )
         with pytest.raises(GenerateJSONEmptyResponseError):
-            stub.generate_json("prompt", function=function)
+            stub.generate_json(
+                "prompt", json_schema=json_schema, schema_name=schema_name
+            )
 
-    def test_content_is_none_raises_empty_response_error(self, function):
+    def test_content_is_none_raises_empty_response_error(
+        self, json_schema, schema_name
+    ):
         """Gemini safety filters can drop the candidate's content to None
         while the candidate itself stays. Pre-fix this AttributeError'd
         on ``.content.parts`` and got misclassified as ParseError. The
@@ -470,14 +484,16 @@ class TestGeminiExceptionDispatch:
             candidates=[candidate]
         )
         with pytest.raises(GenerateJSONEmptyResponseError) as ctx:
-            stub.generate_json("prompt", function=function)
+            stub.generate_json(
+                "prompt", json_schema=json_schema, schema_name=schema_name
+            )
         assert not isinstance(ctx.value, GenerateJSONParseError), (
             "filter-blocked content (content=None) must route to "
             "EmptyResponseError, not ParseError — the MIGRATIONS table "
             "promises 'no candidates / no content parts' is empty mode."
         )
 
-    def test_empty_parts_raises_empty_response_error(self, function):
+    def test_empty_parts_raises_empty_response_error(self, json_schema, schema_name):
         from autonomous.ai.exceptions import GenerateJSONEmptyResponseError
 
         candidate = MagicMock()
@@ -487,9 +503,13 @@ class TestGeminiExceptionDispatch:
             candidates=[candidate]
         )
         with pytest.raises(GenerateJSONEmptyResponseError):
-            stub.generate_json("prompt", function=function)
+            stub.generate_json(
+                "prompt", json_schema=json_schema, schema_name=schema_name
+            )
 
-    def test_wrong_function_name_raises_parse_error_with_raw(self, function):
+    def test_wrong_function_name_raises_parse_error_with_raw(
+        self, json_schema, schema_name
+    ):
         """The model returned a function_call but for a DIFFERENT
         function. Caller should retry with prompt change, not transport
         retry — so this is ParseError, with the response text on .raw
@@ -505,10 +525,14 @@ class TestGeminiExceptionDispatch:
         resp.text = "model went off on a tangent here"
         stub.client.models.generate_content.return_value = resp
         with pytest.raises(GenerateJSONParseError) as ctx:
-            stub.generate_json("prompt", function=function)
+            stub.generate_json(
+                "prompt", json_schema=json_schema, schema_name=schema_name
+            )
         assert "model went off" in ctx.value.raw
 
-    def test_response_text_failure_logs_and_still_raises(self, function):
+    def test_response_text_failure_logs_and_still_raises(
+        self, json_schema, schema_name
+    ):
         """``response.text`` raising AttributeError on a tool-only
         response (a real Gemini SDK shape) should still surface as a
         ParseError — but with raw="" since we couldn't read the body.
@@ -535,9 +559,21 @@ class TestGeminiExceptionDispatch:
 
         stub.client.models.generate_content.return_value = _Resp()
         with pytest.raises(GenerateJSONParseError) as ctx:
-            stub.generate_json("prompt", function=function)
+            stub.generate_json(
+                "prompt", json_schema=json_schema, schema_name=schema_name
+            )
         # raw is "" because the inner except swallowed (with log).
         assert ctx.value.raw == ""
+
+    def test_missing_json_schema_raises_value_error(self, schema_name):
+        """#47 slice 3 contract: gemini requires json_schema because
+        its structured-output path IS tool-calling, which needs a
+        parameter schema. Missing schema = ValueError before any HTTP."""
+        stub = _make_gemini_stub()
+        with pytest.raises(ValueError, match="json_schema"):
+            stub.generate_json("prompt", schema_name=schema_name)
+        # No HTTP fired.
+        stub.client.models.generate_content.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

@@ -5,6 +5,62 @@ recent first.
 
 ## Unreleased
 
+### AI adapter unification: `gemini.generate_json` canonical signature; `jsonagent` per-provider branch removed (#47 slice 3)
+
+**Slice 3 of #47 — the architectural one.** Eliminates the `if provider == "gemini":` branch in `JSONAgent.generate` that was the forcing function for every cross-adapter quirk to ripple into the dispatch layer. Translation now lives where it belongs — inside the adapter that needs it.
+
+**`GeminiAIModel.generate_json` signature changed:**
+
+```python
+# Pre-slice-3:
+def generate_json(self, message, function, additional_instructions="", uri="", context=None, temperature=None):
+
+# Post-slice-3 (matches AIModelProtocol):
+def generate_json(
+    self,
+    message,
+    system_prompt=None,
+    json_schema=None,
+    schema_name="response",
+    uri="",
+    context=None,
+    temperature=None,
+):
+```
+
+Gemini now internally synthesizes its native `function = {"name": schema_name, "description": "Structured response shape.", "parameters": json_schema}` dict from the canonical kwargs and translates `system_prompt` → its native `additional_instructions`. `json_schema=None` raises `ValueError` (gemini's structured-output path IS tool-calling, which needs a parameter schema) — the previous "silently pass function=None" was a soft no-op that masked the contract violation.
+
+**`JSONAgent.generate` simplified:** the per-provider `if provider == "gemini":` branch is gone. All providers receive the same call:
+
+```python
+client.generate_json(
+    message,
+    system_prompt=system_prompt,
+    uri=uri,
+    context=context,
+    json_schema=json_schema,
+    schema_name=schema_name,
+    **kwargs,
+)
+```
+
+**Conformance test cleanup.** The last `_KNOWN_DRIFT` entry (`gemini.generate_json`) was removed; the `strict=True` xfail flipped to XPASS and forced this cleanup. **`_KNOWN_DRIFT` is now empty** — every adapter signature in `MODEL_REGISTRY` conforms to `AIModelProtocol`. Slice 4 (return-shape pins via runtime instance tests) is the next remaining piece.
+
+**Test lockstep (source-and-test inseparable).** Three test files updated to track the migration:
+- `tests/unit/test_unit_generate_json_typed_exc_iter_2026_05_25.py` — `TestGeminiExceptionDispatch` fixtures moved from `function=` to `json_schema=` + `schema_name=`. Added `test_missing_json_schema_raises_value_error` for gemini's new contract.
+- `tests/unit/test_unit_jsonagent_schema.py` — `_GeminiStubClient` deleted; `TestDispatchGeminiTranslation` rewritten as `TestDispatchGeminiUniform` testing the slice-3 invariant (dispatch parity across providers).
+- `tests/unit/test_unit_json_schema_structured_outputs_iter_2026-06-03.py` — `TestJSONAgentGeminiDispatch` rewritten for slice-3 invariant; pre-slice-3 tests asserting JSONAgent synthesizes the function dict no longer apply (the dispatch layer doesn't do translation).
+
+Same precedent as #50 slice B (PR #69), #51 (PR #119), #47 slice 1 (PR #122). Patches and source are inseparable: a `function=`-shaped patch becomes a TypeError after the migration — silent test-pass would be the worst outcome.
+
+**Consumer impact.** Low if going through `JSONAgent.generate` (the dispatch surface is unchanged). Direct callers of `GeminiAIModel.generate_json(message, function=...)` need to migrate to `(message, json_schema=..., schema_name=...)` — this matches the storyteller code path which already routes through `JSONAgent`. No CLAUDE.md / public API entries reference the old gemini signature.
+
+**Files touched.**
+- `src/autonomous/ai/models/gemini.py` — new signature + internal translation block.
+- `src/autonomous/ai/jsonagent.py` — per-provider branch removed; uniform dispatch.
+- `tests/unit/test_unit_ai_protocol_conformance.py` — `_KNOWN_DRIFT` emptied.
+- 3 test files updated lockstep (see above).
+
 ### AI adapters: `NotSupportedByProvider` migration (#47 slice 2)
 
 **Slice 2 of #47.** Replaces raw `NotImplementedError` raises at adapter boundaries with the typed `NotSupportedByProvider(method, provider)` exception from slice 1's `autonomous.ai.protocol`. Also adds canonical-signature declarations for adapter/method pairs that were previously missing entirely.
