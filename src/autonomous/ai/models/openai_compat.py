@@ -18,6 +18,7 @@ import json
 import requests
 
 from autonomous import log
+from autonomous.ai.protocol import NotSupportedByProvider
 from autonomous.observability import counter, event
 from autonomous.ai._json_utils import clean_json_response
 from autonomous.ai.exceptions import (
@@ -652,21 +653,55 @@ class OpenAIClient(AutoModel):
         )
 
     # ---------------- not implemented (route via gemini) ----------------
+    # Signatures match AIModelProtocol so dispatch layers (ImageAgent,
+    # routing helpers) can introspect via NotSupportedByProvider rather
+    # than catching the broader NotImplementedError surface. The typed
+    # exception subclasses NotImplementedError so existing
+    # ``except NotImplementedError`` catches keep working through the
+    # rest of #47.
 
-    def generate_image(self, *args, **kwargs):
-        raise NotImplementedError(
-            "OpenAIClient does not implement image generation. "
-            "Set IMAGE_AI_AGENT=gemini (or =local) to route around it."
+    def generate_image(
+        self,
+        prompt,
+        negative_prompt="",
+        files=None,
+        aspect_ratio="2KPortrait",
+        style=None,
+    ):
+        raise NotSupportedByProvider(
+            method="generate_image",
+            provider="openai_compat",
+            message=(
+                "OpenAIClient does not implement image generation. "
+                "Set IMAGE_AI_AGENT=gemini (or =local) to route around it."
+            ),
         )
 
-    def upscale_image(self, *args, **kwargs):
-        raise NotImplementedError(
-            "OpenAIClient does not implement image upscaling. "
-            "Set IMAGE_AI_AGENT=gemini (or =local) to route around it."
+    def upscale_image(
+        self,
+        prompt,
+        image_content=None,
+        aspect_ratio="2KPortrait",
+        style=None,
+    ):
+        raise NotSupportedByProvider(
+            method="upscale_image",
+            provider="openai_compat",
+            message=(
+                "OpenAIClient does not implement image upscaling. "
+                "Set IMAGE_AI_AGENT=gemini (or =local) to route around it."
+            ),
         )
 
     def generate_audio(self, *args, **kwargs):
-        raise NotImplementedError(
-            "OpenAIClient does not implement TTS. "
-            "Set TTS_AI_AGENT=gemini (or =local) to route around it."
+        # generate_audio is not in AIModelProtocol (slice 1 scope) so the
+        # *args/**kwargs shape is preserved for now. If/when audio enters
+        # the Protocol, this gets the same treatment as the image methods.
+        raise NotSupportedByProvider(
+            method="generate_audio",
+            provider="openai_compat",
+            message=(
+                "OpenAIClient does not implement TTS. "
+                "Set TTS_AI_AGENT=gemini (or =local) to route around it."
+            ),
         )

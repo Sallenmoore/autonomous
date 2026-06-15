@@ -24,6 +24,7 @@ import json
 import requests
 
 from autonomous import log
+from autonomous.ai.protocol import NotSupportedByProvider
 from autonomous.config import env_str, settings
 from autonomous.http import HttpClient
 from autonomous.model.autoattr import StringAttr
@@ -278,3 +279,38 @@ class FluxAIModel(AutoModel):
             _print=False,
         )
         return image_content
+
+    # --- AIModelProtocol conformance (#47 slice 2) -----------------
+    # FLUX is image-only. The Protocol still requires every adapter to
+    # declare every method so dispatch layers can introspect via
+    # NotSupportedByProvider instead of catching the broader
+    # AttributeError that "method missing" would otherwise raise.
+
+    def generate_json(
+        self,
+        message,
+        system_prompt=None,
+        json_schema=None,
+        schema_name="response",
+        uri="",
+        context=None,
+        temperature=None,
+    ):
+        raise NotSupportedByProvider(
+            method="generate_json",
+            provider="flux",
+            message=(
+                "FluxAIModel is image-only; use provider='local' or "
+                "'openai' for JSON generation."
+            ),
+        )
+
+    def generate_transcription(self, audio_file, prompt=""):
+        raise NotSupportedByProvider(
+            method="generate_transcription",
+            provider="flux",
+            message=(
+                "FluxAIModel is image-only; use provider='local' or "
+                "'openai' for audio transcription."
+            ),
+        )
