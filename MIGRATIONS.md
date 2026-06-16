@@ -5,6 +5,234 @@ recent first.
 
 ## Unreleased
 
+### `generate_json` now retries loose mode on a strict-mode parse-failure 200 (#124)
+
+**Symptom this fixes.**
+
+`OpenAIClient.generate_json` raised `GenerateJSONParseError` (and the
+consumer's generation hard-failed) when a strict-mode
+(`response_format: {"type":"json_schema", strict:true}`) request returned
+HTTP 200 carrying free-form / non-grammar-constrained content. Observed
+in prod against Open WebUI + Ollama (`gpt-oss:20b`) on large/complex
+object schemas: the body came back pretty-printed and malformed
+(`Expecting ',' delimiter: line 12 column 33 (char 806)`) or
+markdown-fenced or with trailing prose. The reliable loose
+(`response_format: {"type":"json_object"}`) fallback was wired only into
+the `except (MalformedResponseError, requests.HTTPError)` path, so a 200
+that failed `json.loads(raw)` AND `json.loads(clean_json_response(raw))`
+went straight to the parse-or-raise block with no second chance.
+
+**Fix.**
+
+The parse-or-raise block in `OpenAIClient.generate_json` now mirrors the
+HTTPError fallback: when **both** `json.loads(raw)` and
+`json.loads(clean_json_response(raw))` fail AND the request was sent in
+strict mode, it (a) adds `(model, endpoint)` to
+`_UNSUPPORTED_STRICT_MODE`, (b) emits the
+`[STRUCTURED-OUTPUTS-UNAVAILABLE]` observability event with
+`detection="parse_failure_200"` (distinct from the HTTPError path's
+`detection="first"`), (c) bumps the shared
+`structured_outputs_unavailable_total` counter, and (d) retries once in
+loose `{"type":"json_object"}` mode. If the loose retry parses, the
+caller gets a valid dict; if it doesn't, the original
+`GenerateJSONParseError` (with strict-mode `raw`) is raised — the
+strict-mode body is what the caller asked for, so the diagnostic
+preserves it.
+
+**Consumer impact.**
+
+None for callers that don't pass `json_schema=` or whose backend honors
+strict mode correctly — the new branch is gated on `use_strict=True`.
+Callers that previously caught `GenerateJSONParseError` to roll their
+own loose-mode retry can drop that workaround.
+
+**Files touched.**
+- `src/autonomous/ai/models/openai_compat.py` — `generate_json`
+  parse-or-raise block extended with the strict→loose retry.
+
+### In-process embedding backend (`EMBEDDING_AI_AGENT=in_process`, #125)
+
+**New capability.**
+
+`autonomous.db.db_sync._VECTOR_PROVIDERS` gains an `in_process` provider
+that runs `sentence-transformers` in the worker process — no network call,
+no dependency on an external embeddings endpoint. Eliminates the
+single-point-of-failure mode where the upstream backend (Open WebUI +
+Ollama at `MEDIA_API_BASE_URL`) refuses to serve embeddings and RAG
+indexing silently degrades.
+
+**Configuration.**
+
+```
+EMBEDDING_AI_AGENT=in_process
+LOCAL_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2  # default
+```
+
+The default model is 384-dim (matches StoryTeller's `search_index` pinned
+dim). Operators pick a different model id for a different dim.
+
+**Install.**
+
+The dep is heavy (`sentence-transformers` pulls `torch`, ~700MB on Linux),
+so it's gated behind its own extra rather than rolled into `[all]`:
+
+```
+pip install autonomous-app[embeddings]
+```
+
+**Naming note.**
+
+The env-var value is `in_process`, NOT `local`. The pre-existing
+`EMBEDDING_AI_AGENT=local` value already routes to the legacy media_ai
+HTTP path (`_get_vector_local`) — that's "local" in the docker-compose
+sense, not in-process. Both stay available; the new key is additive.
+
+**Consumer impact.**
+
+None unless the consumer sets `EMBEDDING_AI_AGENT=in_process`. The
+default (`local`) is unchanged.
+
+**Files touched.**
+- `src/autonomous/db/db_sync.py` — new `_get_vector_in_process`,
+  `_get_in_process_embedder` (lazy per-process singleton), and
+  `_default_in_process_model` helpers; `_VECTOR_PROVIDERS` gains the
+  `in_process` key.
+- `requirements-embeddings.txt` (new) + `pyproject.toml`
+  `[embeddings]` extra.
+
+### AI transcription return shape: `MockAIModel` + `GeminiAIModel` now return canonical dict (#47 slice 4)
+
+**Slice 4 of #47 — the closing piece.** The `AIModelProtocol` docstring pins `generate_transcription` as returning `dict` with `{"text", "segments"}` keys. The signature-level conformance test (slice 1) can't enforce return shape, so two adapters silently drifted:
+
+- **`MockAIModel.generate_transcription`** returned a bare string (`"This is a mock transcription of the audio file."`). Consumers using the mock provider in tests silently saw a wrong-shape return — any `result["text"]` access in the test exploded with `TypeError: string indices must be integers`. The "mock = realistic stand-in" contract was broken.
+- **`GeminiAIModel.generate_transcription`** returned `response.text` directly (a string), bypassing the canonical dict that `LocalAIModel` and `OpenAIClient.generate_transcription` produce. A real production bug: consumers routed through `audioagent.transcribe()` with `provider="gemini"` got a `str` instead of a `dict` and downstream `result["text"]` access broke.
+
+**Both fixed to return the canonical `{"text": str, "segments": list}` shape.** Gemini's `segments` is an empty list (its tool-calling response doesn't expose per-phrase segments the way Whisper does) — but it's a list, not missing/None, so consumers can always iterate without a None guard.
+
+**Consumer impact (medium for gemini, low for mock):**
+
+- **Mock**: any test or fixture relying on the bare-string return needs to read `result["text"]` instead. Grep found no in-tree consumers; storyteller may have offline-mode fixtures worth checking.
+- **Gemini**: `audioagent.transcribe()` already documented the return shape as `{"text", "segments"}` — anyone using gemini for transcription via this path was getting buggy output. Now they get the documented shape.
+- **`local_model`, `openai_compat`**: no change. Both already return the canonical shape; they were the reference contract gemini was supposed to match.
+- **`flux`**: still raises `NotSupportedByProvider` from slice 2. No change.
+
+**New runtime tests** in `tests/unit/test_unit_ai_protocol_conformance.py::TestSlice4ReturnShapes`:
+- `test_mock_generate_json_returns_dict` / `test_mock_generate_image_returns_bytes` / `test_mock_upscale_image_returns_bytes` — pin every mock method's return type.
+- `test_mock_generate_transcription_returns_canonical_dict` — verifies `{"text", "segments"}` keys + types after the fix.
+- `test_gemini_transcription_returns_canonical_dict` + `test_gemini_transcription_handles_none_text` — pin gemini's new return shape with a stubbed `client` (`GeminiAIModel.client` is a no-setter property; same hand-built stub pattern as `_make_gemini_stub` in `test_unit_generate_json_typed_exc_iter_*`).
+
+**Files touched.**
+- `src/autonomous/ai/models/mock_model.py` — `generate_transcription` returns dict.
+- `src/autonomous/ai/models/gemini.py` — `generate_transcription` wraps `response.text` in canonical dict.
+- `tests/unit/test_unit_ai_protocol_conformance.py` — new `TestSlice4ReturnShapes` class.
+
+**#47 closed.** Every adapter signature in `MODEL_REGISTRY` conforms to `AIModelProtocol` (slice 1's signature check, `_KNOWN_DRIFT` empty since slice 3). Every return shape the issue called out is pinned by runtime test (this slice). The dispatch layer is uniform (slice 3). Unsupported methods raise the typed `NotSupportedByProvider` (slice 2). The conformance test stays green as the forcing function for any future adapter or method addition.
+
+### AI adapter unification: `gemini.generate_json` canonical signature; `jsonagent` per-provider branch removed (#47 slice 3)
+
+**Slice 3 of #47 — the architectural one.** Eliminates the `if provider == "gemini":` branch in `JSONAgent.generate` that was the forcing function for every cross-adapter quirk to ripple into the dispatch layer. Translation now lives where it belongs — inside the adapter that needs it.
+
+**`GeminiAIModel.generate_json` signature changed:**
+
+```python
+# Pre-slice-3:
+def generate_json(self, message, function, additional_instructions="", uri="", context=None, temperature=None):
+
+# Post-slice-3 (matches AIModelProtocol):
+def generate_json(
+    self,
+    message,
+    system_prompt=None,
+    json_schema=None,
+    schema_name="response",
+    uri="",
+    context=None,
+    temperature=None,
+):
+```
+
+Gemini now internally synthesizes its native `function = {"name": schema_name, "description": "Structured response shape.", "parameters": json_schema}` dict from the canonical kwargs and translates `system_prompt` → its native `additional_instructions`. `json_schema=None` raises `ValueError` (gemini's structured-output path IS tool-calling, which needs a parameter schema) — the previous "silently pass function=None" was a soft no-op that masked the contract violation.
+
+**`JSONAgent.generate` simplified:** the per-provider `if provider == "gemini":` branch is gone. All providers receive the same call:
+
+```python
+client.generate_json(
+    message,
+    system_prompt=system_prompt,
+    uri=uri,
+    context=context,
+    json_schema=json_schema,
+    schema_name=schema_name,
+    **kwargs,
+)
+```
+
+**Conformance test cleanup.** The last `_KNOWN_DRIFT` entry (`gemini.generate_json`) was removed; the `strict=True` xfail flipped to XPASS and forced this cleanup. **`_KNOWN_DRIFT` is now empty** — every adapter signature in `MODEL_REGISTRY` conforms to `AIModelProtocol`. Slice 4 (return-shape pins via runtime instance tests) is the next remaining piece.
+
+**Test lockstep (source-and-test inseparable).** Three test files updated to track the migration:
+- `tests/unit/test_unit_generate_json_typed_exc_iter_2026_05_25.py` — `TestGeminiExceptionDispatch` fixtures moved from `function=` to `json_schema=` + `schema_name=`. Added `test_missing_json_schema_raises_value_error` for gemini's new contract.
+- `tests/unit/test_unit_jsonagent_schema.py` — `_GeminiStubClient` deleted; `TestDispatchGeminiTranslation` rewritten as `TestDispatchGeminiUniform` testing the slice-3 invariant (dispatch parity across providers).
+- `tests/unit/test_unit_json_schema_structured_outputs_iter_2026-06-03.py` — `TestJSONAgentGeminiDispatch` rewritten for slice-3 invariant; pre-slice-3 tests asserting JSONAgent synthesizes the function dict no longer apply (the dispatch layer doesn't do translation).
+
+Same precedent as #50 slice B (PR #69), #51 (PR #119), #47 slice 1 (PR #122). Patches and source are inseparable: a `function=`-shaped patch becomes a TypeError after the migration — silent test-pass would be the worst outcome.
+
+**Consumer impact.** Low if going through `JSONAgent.generate` (the dispatch surface is unchanged). Direct callers of `GeminiAIModel.generate_json(message, function=...)` need to migrate to `(message, json_schema=..., schema_name=...)` — this matches the storyteller code path which already routes through `JSONAgent`. No CLAUDE.md / public API entries reference the old gemini signature.
+
+**Files touched.**
+- `src/autonomous/ai/models/gemini.py` — new signature + internal translation block.
+- `src/autonomous/ai/jsonagent.py` — per-provider branch removed; uniform dispatch.
+- `tests/unit/test_unit_ai_protocol_conformance.py` — `_KNOWN_DRIFT` emptied.
+- 3 test files updated lockstep (see above).
+
+### AI adapters: `NotSupportedByProvider` migration (#47 slice 2)
+
+**Slice 2 of #47.** Replaces raw `NotImplementedError` raises at adapter boundaries with the typed `NotSupportedByProvider(method, provider)` exception from slice 1's `autonomous.ai.protocol`. Also adds canonical-signature declarations for adapter/method pairs that were previously missing entirely.
+
+**Adapters touched:**
+- `FluxAIModel` — gains `generate_json` and `generate_transcription` declarations matching the Protocol; both raise `NotSupportedByProvider` with a routing hint to `provider='local'` or `'openai'`.
+- `OpenAIClient.generate_image` / `OpenAIClient.upscale_image` — `*args/**kwargs → NotImplementedError` replaced with explicit signature matching the Protocol + `NotSupportedByProvider`. Routing hints to `IMAGE_AI_AGENT=gemini` preserved.
+- `OpenAIClient.generate_audio` — also migrated to `NotSupportedByProvider` (not part of slice 1's Protocol scope but on the same surface; preserved `*args/**kwargs` shape until/unless audio enters the Protocol).
+
+**Consumer impact (low).** `NotSupportedByProvider` subclasses `NotImplementedError`, so existing `except NotImplementedError` catches keep working. New callers should catch the typed exception specifically and introspect `.method` / `.provider` (e.g., to route the same call to a different provider rather than leak the exception).
+
+**Conformance test cleanup.** `tests/unit/test_unit_ai_protocol_conformance.py` `_KNOWN_DRIFT` dropped 4 entries (now down to 1: `gemini.generate_json` for slice 3). Runtime test class `TestSlice2UnsupportedDeclarations` verifies each newly-declared method raises `NotSupportedByProvider` end-to-end and that the subclass relationship to `NotImplementedError` holds.
+
+**Files touched.**
+- `src/autonomous/ai/models/flux.py` — import `NotSupportedByProvider`, add two new methods at end of `FluxAIModel`.
+- `src/autonomous/ai/models/openai_compat.py` — import `NotSupportedByProvider`, rewrite the three not-implemented methods.
+- `tests/unit/test_unit_ai_protocol_conformance.py` — drop 4 stale `_KNOWN_DRIFT` entries, add `TestSlice2UnsupportedDeclarations`.
+
+### AI adapter contract: `AIModelProtocol` + `NotSupportedByProvider` foundation (#47 slice 1)
+
+**Slice 1 of #47** — lays down the canonical adapter contract without changing any adapter behavior. Slices 2-5 will migrate each adapter to conform; this one makes the drift visible to CI.
+
+**New module `autonomous.ai.protocol`.** Exports:
+
+- `AIModelProtocol(typing.Protocol)` — canonical signatures for the four cross-adapter methods (`generate_json`, `generate_transcription`, `generate_image`, `upscale_image`). Pins the kwarg-naming conventions called out in the issue: `generate_image` takes `files=` (plural — img2img source list); `upscale_image` takes `image_content=` (singular — the one image being upscaled).
+- `NotSupportedByProvider(NotImplementedError)` — typed exception carrying `method` and `provider` attributes. Subclasses `NotImplementedError` so existing `except NotImplementedError` callers stay correct across the multi-slice migration; new callers should catch `NotSupportedByProvider` for the structured attribution. To be wired into the adapters in **slice 2**.
+
+**New test `tests/unit/test_unit_ai_protocol_conformance.py`.** Parametrized across every (adapter, method) pair from `BaseAgent.MODEL_REGISTRY`. Each pair either passes the conformance check or is marked `xfail(strict=True, reason="#47 slice N — ...")`. The current xfail list IS the TODO list for the rest of #47:
+
+| Adapter | Method | Fix in slice |
+|---|---|---|
+| `gemini` | `generate_json` | 3 — translate `function=` from `system_prompt=` at adapter boundary |
+| `flux` | `generate_json` | 2 — declare with `NotSupportedByProvider` |
+| `flux` | `generate_transcription` | 2 — declare with `NotSupportedByProvider` |
+| `openai_compat` | `generate_image` | 2 — explicit signature + `NotSupportedByProvider` |
+| `openai_compat` | `upscale_image` | 2 — explicit signature + `NotSupportedByProvider` |
+
+The `strict=True` semantics matter: when an adapter is fixed, the xfail flips to XPASS which pytest reports as a FAIL — forcing the migrating PR to delete the now-stale `_KNOWN_DRIFT` entry. You can't half-migrate and silently mask the remaining drift.
+
+> **Resolution status (closing note for the bundle this ships in):** every entry in the table above was resolved in slices 2–4, all of which land in the same `test → main` bundle as this slice. `_KNOWN_DRIFT` is now empty.
+
+**Not in this slice.** Return-shape pins (e.g. `MockAIModel.generate_transcription` returning a string instead of `{"text", "segments"}`) are documented in the Protocol docstring but not enforced — signature inspection can't see return shape. **Slice 4** will add runtime instance tests that pin the return shapes.
+
+**Consumer impact.** None. No adapter behavior changed. The Protocol is for the conformance test and for static type checkers (mypy/pyright) that want to type-narrow AI client variables.
+
+**Files touched.**
+- `src/autonomous/ai/protocol.py` — new module.
+- `tests/unit/test_unit_ai_protocol_conformance.py` — new test. This test IS the slice's primary deliverable (the issue's "step 5" calls for it); it must live in `tests/unit/` so future PRs get drift detection in CI. Source-and-test inseparable for this shape — same precedent as the #50 slice-B and #51 lockstep patches.
+
 ### FileAttr GridFS uploads now ensure `{files_id, n}` chunks index on first use (#117)
 
 **Symptom this fixes.**
