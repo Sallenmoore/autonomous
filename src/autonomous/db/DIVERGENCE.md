@@ -226,7 +226,7 @@ payload), so model definitions don't import each other.
 Combined with `load_model`, this is what lets `ReferenceAttr` on
 model A dereference to model B without A importing B.
 
-Three overrides on top of `GenericReferenceField`:
+Two overrides on top of `GenericReferenceField`:
 
 1. **`__get__` swallows `DoesNotExist`** → returns `None` instead
    of raising when the referent has been deleted. Upstream raises.

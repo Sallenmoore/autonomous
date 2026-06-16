@@ -126,6 +126,28 @@ class TestExtractWorldPkShapes:
         doc = {"_id": "x", "world": {"_cls": "World", "_ref": sentinel}}
         assert _extract_world_pk(doc) == sentinel
 
+    def test_unexpected_ref_shape_logs_warning(self, monkeypatch):
+        # The /review-pr silent-failure-hunter flagged this branch:
+        # a degraded write of a garbage tag value into the consumer-
+        # facing ``world_pk`` field would otherwise be invisible to
+        # storyteller's /debug/lore/health. The fix is a log call —
+        # not a raise — preserving the "observability path, no
+        # impact on indexing throughput" intent of the helper.
+        # Pin the log so a future refactor can't silently drop it.
+        log_calls = []
+        monkeypatch.setattr(
+            "autonomous.db.db_sync.log",
+            lambda msg, *args, **kwargs: log_calls.append(str(msg)),
+        )
+        doc = {"_id": "x", "world": {"_cls": "World", "_ref": "garbage"}}
+        result = _extract_world_pk(doc)
+        # Behavior unchanged: still returns the str(ref).
+        assert result == "garbage"
+        # New observability contract: a warning lands.
+        assert any("_extract_world_pk" in m and "WARNING" in m for m in log_calls), (
+            f"unexpected-shape branch MUST log; got log calls: {log_calls!r}"
+        )
+
 
 class TestExtractWorldPkContract:
     """Contracts the helper docstring asserts beyond shape coverage —

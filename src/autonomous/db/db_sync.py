@@ -639,8 +639,17 @@ def _extract_world_pk(doc) -> str:
         # Last-ditch fallback: an unexpected dict shape gets stringified
         # so we still emit *something* the operator can grep. Unknown
         # shapes are programmer error elsewhere, not this function's
-        # problem — see record_embedding_sync_event's same posture.
-        return str(ref) if ref is not None else ""
+        # problem to raise on — but we DO log it, because a silent
+        # degraded write into the consumer's tag-filter would otherwise
+        # be invisible in storyteller's /debug/lore/health.
+        if ref is not None:
+            log(
+                f"[WARNING] _extract_world_pk: unexpected `_ref` shape "
+                f"{type(ref).__name__}={ref!r}; emitting str(ref) as "
+                "world_pk — multi-world KNN may degrade"
+            )
+            return str(ref)
+        return ""
     # Plain DBRef (ReferenceField with dbref=True, the default).
     if hasattr(world, "id"):
         return str(world.id)
