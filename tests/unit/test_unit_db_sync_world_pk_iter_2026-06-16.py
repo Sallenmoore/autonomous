@@ -29,6 +29,7 @@ Independent perspective:
   key naming.
 """
 
+import sys
 from unittest.mock import MagicMock
 
 import pytest
@@ -37,6 +38,35 @@ from bson.objectid import ObjectId
 
 from autonomous.db import db_sync
 from autonomous.db.db_sync import _extract_world_pk
+
+
+# `process_single_object_sync` lazy-imports numpy inside the
+# ``if vector:`` success branch (db_sync.py:733 — intentional, so
+# consumers that don't index vectors can install without it). CI's
+# unit-test environment does NOT install numpy; locally we usually
+# have it. Rather than reduce coverage on CI via ``importorskip``,
+# inject a minimal stub so the end-to-end wire-shape tests run
+# everywhere. The stub returns a bytes-like sentinel so the test
+# can still assert that the ``vector`` field is present and the
+# pre-existing fields are intact.
+class _StubFloat32:
+    pass
+
+
+class _StubNpArray:
+    def __init__(self, values, dtype=None):
+        self.values = values
+
+    def tobytes(self):
+        return b"stub-vector-bytes"
+
+
+class _StubNumpy:
+    float32 = _StubFloat32
+
+    @staticmethod
+    def array(values, dtype=None):
+        return _StubNpArray(values, dtype=dtype)
 
 
 # ---------------------------------------------------------------------------
@@ -211,9 +241,13 @@ class TestExtractWorldPkContract:
 
 @pytest.fixture
 def stubbed_sync(monkeypatch):
-    """Wire up _get_redis, _get_mongo_db, time.sleep, get_vector, and
-    record_embedding_sync_event so we can drive
-    ``process_single_object_sync`` end-to-end without real services.
+    """Wire up _get_redis, _get_mongo_db, time.sleep, get_vector,
+    record_embedding_sync_event, AND a stub numpy module so we can
+    drive ``process_single_object_sync`` end-to-end without real
+    services AND without depending on numpy being installed (it
+    isn't in CI's unit-test env — the success branch's
+    ``import numpy as np`` is intentionally lazy, see
+    db_sync.py:729-733).
 
     Returns a (redis_mock, hset_capture, set_doc) tuple:
     - redis_mock is the MagicMock standing in for the Redis client
@@ -221,6 +255,11 @@ def stubbed_sync(monkeypatch):
       ``hset_capture[0]`` is the mapping kwargs the worker emitted
     - set_doc(doc) is a closure the test calls to inject the mongo doc
     """
+    # Inject the stub numpy BEFORE the worker's lazy import runs.
+    # ``monkeypatch.setitem`` rolls this back at teardown, so we
+    # don't pollute sys.modules across tests.
+    monkeypatch.setitem(sys.modules, "numpy", _StubNumpy())
+
     redis = MagicMock()
     redis.get.return_value = "tok"
 
