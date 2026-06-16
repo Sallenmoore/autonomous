@@ -5,6 +5,69 @@ recent first.
 
 ## Unreleased
 
+### `lore:<pk>` vector-index hash gains a `world_pk` discriminator (#132)
+
+**New capability.**
+
+`autonomous.db.db_sync.process_single_object_sync` now writes an
+additional `world_pk` field on the `lore:<pk>` Redis hash it emits.
+Value is the string pk of the indexed object's `world` reference,
+extracted directly from the raw BSON (no ORM dereference round-trip),
+or the empty string when the doc has no `world` reference. Lets
+multi-tenant consumers run **world-scoped KNN retrieval** by adding a
+matching `TagField("world_pk")` to their search_index schema and a
+`@world_pk:{...}` pre-filter into their KNN query.
+
+**Why.**
+
+Prior to this change the hash carried no tenant/world discriminator, so
+a consumer indexing lore from multiple worlds into one `search_index`
+got globally-scoped KNN — a query for world A could return world B's
+canon as its nearest neighbors. StoryTeller hit this as a false-
+positive conflict in continuity judges and a false-positive context in
+generation RAG (StoryTeller#303). No consumer-side filter was possible
+because the field simply wasn't on the hash.
+
+**Wire shape.**
+
+```
+HSET lore:<pk>
+  mongo_id     <str>
+  collection   <str>
+  content      <str>
+  vector       <bytes>      # np.float32, dim matches indexer
+  last_synced  <iso8601>
+  world_pk     <str>        # NEW — "" when no world reference
+```
+
+**Consumer impact.**
+
+Purely additive. Single-tenant consumers ignore the new field (existing
+`HGETALL` reads of the named fields keep working); multi-tenant
+consumers opt in by adding the `TagField` and the pre-filter — example
+(StoryTeller flavor):
+
+```python
+# Schema (one-time, on index build):
+TagField("world_pk")
+
+# Query (per-call):
+q = (
+    Query(f"@world_pk:{{{world.pk}}} =>"
+          f"[KNN {k} @vector $blob AS score]")
+    .return_fields("mongo_id", "score")
+    .dialect(2)
+)
+```
+
+`world_pk` is resolved per-shape — the worker uses the raw BSON form
+emitted by `ReferenceAttr` / `ReferenceField`, not the ORM, so a missing
+or partial `world` field degrades to `""` rather than raising.
+
+**Files touched.**
+- `src/autonomous/db/db_sync.py` — new `_extract_world_pk` helper +
+  one new field on the `hset` mapping in `process_single_object_sync`.
+
 ### `generate_json` now retries loose mode on a strict-mode parse-failure 200 (#124)
 
 **Symptom this fixes.**
