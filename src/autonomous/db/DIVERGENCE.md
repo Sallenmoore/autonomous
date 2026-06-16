@@ -131,13 +131,161 @@ callers.
 
 ## What we don't diverge on
 
-- Field types and their semantics. `StringField` / `IntField` /
-  `ReferenceField` / etc. behave as upstream documents.
+Scope note: this section describes the vendored `autonomous.db.*`
+surface only. Consumer-facing behavior is also shaped by the
+**Layer-2 customizations** below — read that section before claiming
+"identical to upstream" in a PR.
+
+- Field types and their **wire-level** semantics: `to_python`,
+  `to_mongo`, `prepare_query_value` for `StringField` / `IntField` /
+  `ReferenceField` / etc. behave as upstream documents. (User-facing
+  reference behavior is materially different because `ReferenceAttr`
+  in `autonomous.model.autoattr` wraps `GenericReferenceField` with
+  several overrides — see Layer-2 below.)
 - QuerySet semantics. `.objects.filter(...)`, `.order_by(...)`,
-  `.limit(...)` behave as upstream.
+  `.limit(...)` behave as upstream. (The
+  `AutoModel.search()` / `.where()` helpers add a `str → __icontains`
+  translation on top — see Layer-2.)
 - Signals. We use `blinker` the same way upstream does.
 - Bson / pymongo version compatibility is tied to whatever pymongo
   version is pinned in `requirements.txt`.
+
+## Layer-2 customizations (`autonomous.model`)
+
+The vendored fork above is one layer of divergence. A **second
+layer** lives in `src/autonomous/model/` — specifically
+`automodel.py` and `autoattr.py` — and is responsible for most of
+the behavior consumers experience as "the autonomous ORM," even
+though strictly speaking it sits *on top of* the fork rather than
+inside it.
+
+This section documents that layer so a future reader (or anyone
+weighing item #48 in [README.md](../../../README.md) — drop the
+fork, depend on stock mongoengine) can see the full divergence
+surface in one place.
+
+### `AutoModel.load_model(name)` — string → class resolution
+(`automodel.py:208`)
+
+Resolves a string name (case-insensitive) to an `AutoModel`
+subclass by walking `AutoModel.__subclasses__()` recursively.
+Hits are memoized in a module-level `_LOAD_MODEL_CACHE`; misses
+aren't cached because a subclass may be imported later in the
+process. Test teardown calls `_invalidate_load_model_cache()`.
+
+Upstream has nothing equivalent; the closest equivalent is the
+private `_class_registry` dict keyed by mongoengine's
+`_class_name` discriminator. `load_model` is project-API surface;
+the upstream registry is internal plumbing.
+
+Used by `get_model`, by `ReferenceAttr` dereferencing (via the
+`_cls` discriminator stored alongside the ref), and by direct
+consumer code that needs polymorphic class lookup.
+
+### `AutoModel.auto_pre_init` — side-load on `Model(pk=x)`
+(`automodel.py:116`)
+
+When a caller constructs `Model(pk=x)` with no other kwargs (or
+with sparse kwargs), this hook fetches the stored document and
+fills in any field the caller didn't explicitly provide. Caller
+kwargs always win. Already covered in §"`auto_pre_init`
+side-load" above, but bears repeating here as part of the
+"model finding" surface alongside `load_model` and `get_model`.
+
+### `AutoModel.model_name()` — name discriminator override
+(`automodel.py:181`)
+
+Returns `type(self).__name__` directly rather than mongoengine's
+`_class_name` discriminator (which would yield the
+parent-qualified form `RealModel.ChildModel` for subclasses of
+non-abstract documents). Affects `__hash__` /`__eq__` /
+ordering, all keyed off `(model_name, pk)`.
+
+### `AutoModel.search()` / `.where()` — `str → __icontains` ergonomics
+(`automodel.py:294, :330`)
+
+String values in `**kwargs` are translated to `__icontains`
+queries; non-string values become exact matches. Other
+mongoengine operators (`__gt`, `__in`, `__regex`...) pass through
+unchanged when written explicitly. Trades exact-match-by-default
+for substring-search-by-default — the common case in
+application code.
+
+`search` materializes a list; `where` returns the underlying
+QuerySet for chaining (`.order_by(...).limit(...).first()`,
+`len()`, etc).
+
+### `ReferenceAttr` — polymorphic references with deletion-safety
+(`autoattr.py:80`)
+
+The single most consequential Layer-2 customization. Inherits
+from upstream `GenericReferenceField`, **not** `ReferenceField`.
+Net effect: every reference field in the autonomous data model is
+polymorphic (target class encoded in the stored `{_cls, _ref}`
+payload), so model definitions don't import each other.
+Combined with `load_model`, this is what lets `ReferenceAttr` on
+model A dereference to model B without A importing B.
+
+Three overrides on top of `GenericReferenceField`:
+
+1. **`__get__` swallows `DoesNotExist`** → returns `None` instead
+   of raising when the referent has been deleted. Upstream raises.
+2. **`__set__` force-marks dirty.** `GenericReferenceField`'s
+   `__get__` lazily replaces the raw `{_cls, _ref}` dict in
+   `instance._data` with the dereferenced `Document` object by
+   writing directly to `_data`, bypassing the descriptor path.
+   The base-class `BaseField.__set__` equality check then
+   compares the `Document` to itself (or to a stale dict) and may
+   incorrectly decide nothing changed, leaving `_changed_fields`
+   empty and the next `.save()` payload missing the `$set`.
+   Calling `_mark_as_changed` here unconditionally fixes that.
+   **This is a genuine bug-fix relative to upstream
+   `GenericReferenceField` change detection** — worth keeping if
+   we ever de-fork.
+
+### `ListAttr` — self-healing list of references
+(`autoattr.py:113`)
+
+`__get__` overrides:
+
+- Returns `[]` (and rewrites `_data`) if the stored value is
+  somehow not a list. Defensive against schema migrations or
+  out-of-band writes.
+- When `self.field` is a `ReferenceAttr`, walks the list and
+  prunes entries that evaluate falsy (deleted referents → `None`
+  via `ReferenceAttr.__get__`) or raise `DoesNotExist`. Mutates
+  in place.
+
+`__set__` overrides:
+
+- String input becomes a list: `"a;b;c"` / `"a,b,c"` →
+  `["a", "b", "c"]`; single non-empty string → `[value]`;
+  empty string → `[]`. Trades stricter typing for ergonomic
+  CSV-style input common in form payloads.
+
+The self-heal trade is deliberate: deleted referents silently
+disappear from the list rather than surfacing a loud error.
+Upstream returns the raw list, broken DBRefs and all.
+
+### `DictAttr` — eager reference resolution
+(`autoattr.py:160`)
+
+`__get__` walks the dict values; anything with a `.fetch()`
+method (typically a `GenericReferenceField`-stored lazy proxy
+with a `pk`) gets dereferenced eagerly. Missing referents are
+logged and the placeholder is left in place rather than pruned
+(asymmetric with `ListAttr` — a dict's keys are usually
+meaningful, so we preserve the key even when the value can't be
+resolved).
+
+### `IntAttr` — string coercion
+(`autoattr.py:38`)
+
+Strips commas from numeric strings (`"1,234"` → `1234`) and
+extracts the first integer substring from non-numeric input
+(`"$42.50"` → `42`). Falls through to upstream `IntField`
+behavior for everything else. Same form-input ergonomics motive
+as `ListAttr.__set__`.
 
 ## How to make a change here
 
@@ -146,3 +294,9 @@ callers.
 2. If you're adding a feature, describe it in a new subsection above.
 3. Keep the "What we don't diverge on" list accurate — it's the
    shortest description of upstream compatibility we have.
+4. Layer-2 changes (`autonomous.model.automodel` /
+   `autonomous.model.autoattr`) get documented in the §Layer-2
+   section above. The fork's behavioral surface is the *union*
+   of both layers; recording divergence in only one place means a
+   future reader weighing item #48 (drop the fork) will
+   under-estimate the cost.
