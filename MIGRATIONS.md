@@ -5,6 +5,37 @@ recent first.
 
 ## Unreleased
 
+### `AutoUser.authenticate` no longer downgrades elevated roles on login (#136)
+
+**Symptom this fixes.**
+
+`AutoUser.authenticate()` previously set `user.role = "user"`
+**unconditionally** on every OAuth login. Any role granted out-of-band
+(e.g. an admin UI flipping `role` to `"admin"`, or a direct DB write)
+was silently reset to `"user"` the next time that user signed in,
+making a persistent `admin` (or any non-default) role impossible for
+OAuth users.
+
+**Fix.**
+
+`authenticate()` now only promotes the schema-default `"guest"` role to
+`"user"`. Any non-default role is left untouched. New users still land
+at `"user"` (they are constructed at the schema default `"guest"` and
+get bumped in the same step); existing `admin`/elevated users keep
+their role across login.
+
+**Consumer impact.**
+
+Purely fixative for consumers who rely on `is_admin` after granting
+`role="admin"` out-of-band. Consumers that worked around the bug with
+a subclass override that recaptured-and-restored the elevated role
+around `super().authenticate(...)` can drop the override — the upstream
+method now does the right thing.
+
+**Files touched.**
+- `src/autonomous/auth/user.py` — `AutoUser.authenticate` role-assignment
+  branch.
+
 ### `lore:<pk>` vector-index hash gains a `world_pk` discriminator (#132)
 
 **New capability.**
