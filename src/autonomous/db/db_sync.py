@@ -599,6 +599,55 @@ def get_vector(text):
     return fn(text)
 
 
+def _extract_world_pk(doc) -> str:
+    """Extract a string world pk from a raw mongo document (#132).
+
+    Returns ``""`` for docs that have no ``world`` reference (single-
+    tenant installs, world objects themselves, lore that legitimately
+    isn't world-scoped). Multi-tenant consumers add a matching
+    ``TagField("world_pk")`` to their search_index schema and pass a
+    ``@world_pk:{...}`` pre-filter into the KNN query.
+
+    The worker reads the raw BSON via ``pymongo.find_one``, NOT the ORM,
+    so ``doc["world"]`` is whatever the field stored on disk — not the
+    dereferenced model object. Handles the shapes autonomous's ODM
+    writes:
+
+      * ``GenericReferenceField`` (incl. ``ReferenceAttr``):
+        ``SON({"_cls": "ClassName", "_ref": DBRef(coll, ObjectId(...))})``
+      * ``ReferenceField``: a bare ``DBRef`` or, with ``dbref=False``, a
+        bare ``ObjectId``.
+      * Already-string pk (e.g. a non-MongoEngine consumer schema).
+      * ``None`` / missing.
+
+    Dereference is **not** performed here — the worker is meant to be
+    Mongo-light and pulling the world doc would double its database
+    round-trips. The pk string is all the consumer needs for the
+    ``@world_pk:{...}`` tag filter; humans never read this field.
+    """
+    world = doc.get("world")
+    if world is None:
+        return ""
+    if isinstance(world, dict):
+        # GenericReferenceField shape: {"_cls": ..., "_ref": DBRef}.
+        # ``.get`` rather than ``[]`` because partially-written docs in
+        # the wild may carry one key without the other; an empty string
+        # is safer than raising from an observability path.
+        ref = world.get("_ref")
+        if ref is not None and hasattr(ref, "id"):
+            return str(ref.id)
+        # Last-ditch fallback: an unexpected dict shape gets stringified
+        # so we still emit *something* the operator can grep. Unknown
+        # shapes are programmer error elsewhere, not this function's
+        # problem — see record_embedding_sync_event's same posture.
+        return str(ref) if ref is not None else ""
+    # Plain DBRef (ReferenceField with dbref=True, the default).
+    if hasattr(world, "id"):
+        return str(world.id)
+    # ObjectId, string pk, or anything else stringifiable.
+    return str(world)
+
+
 def process_single_object_sync(object_id, collection_name, token):
     """
     THE WORKER FUNCTION (Runs in Background).
@@ -682,6 +731,7 @@ def process_single_object_sync(object_id, collection_name, token):
         # don't use vector embeddings (most ORM usage) can install
         # without it.
         import numpy as np
+        world_pk = _extract_world_pk(doc)
         _get_redis().hset(
             f"lore:{object_id}",
             mapping={
@@ -690,6 +740,15 @@ def process_single_object_sync(object_id, collection_name, token):
                 "content": searchable_text,
                 "vector": np.array(vector, dtype=np.float32).tobytes(),
                 "last_synced": datetime.now(timezone.utc).isoformat(),
+                # World/tenant discriminator (#132). Empty string for
+                # single-world consumers and for docs without a ``world``
+                # reference; multi-world consumers (StoryTeller) add a
+                # ``TagField("world_pk")`` to their search_index schema
+                # and pass a ``@world_pk:{...}`` pre-filter into the KNN
+                # query to keep retrieval world-scoped. Additive: the
+                # field is always written, but single-world reads ignore
+                # it and the wire shape is unchanged for them.
+                "world_pk": world_pk,
             },
         )
         # Counter must follow the hset — only count writes that landed.
