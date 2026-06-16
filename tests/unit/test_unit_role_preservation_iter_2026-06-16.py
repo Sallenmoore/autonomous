@@ -340,3 +340,150 @@ class TestAdminSurvivesOidcMatchPath:
         assert stub.find_calls[0] == {
             "oauth_provider": "google", "oauth_sub": "G-12345"
         }
+
+
+# ===========================================================================
+# Part 7 — Legacy admin upgrading to OIDC: backfill + role preserved together.
+# ===========================================================================
+
+class TestLegacyAdminUpgradingToOidc:
+    """Realistic scenario combining PR #41 (OIDC stable identity) with
+    PR #137 (role preservation). A legacy admin record was created
+    before the (provider, sub) fields existed — it has ``role="admin"``
+    and ``oauth_provider``/``oauth_sub`` both unset. On the next login,
+    the userinfo dict carries the (provider, sub) pair. The lookup
+    path is:
+
+      1. ``find(oauth_provider="google", oauth_sub="G-new-99")`` — MISS
+         (no record yet has the pair bound).
+      2. ``find(email="legacy-admin@example.com")`` — HIT (legacy record).
+      3. Backfill block (user.py lines 133-137): the record has no
+         ``oauth_provider`` set, so it's safe to claim — write the
+         pair to the record.
+      4. Role-preservation guard (user.py lines 147-148): ``role`` is
+         ``"admin"``, not ``"guest"``, so skip the write.
+
+    Pin BOTH the backfill AND the role preservation happen together
+    in one ``authenticate()`` call. A future refactor that places the
+    role write inside the backfill conditional, or that swaps the
+    ordering, must keep both behaviors intact.
+    """
+
+    def test_admin_via_email_fallback_after_pair_miss(self):
+        existing = _UserStub()
+        existing.email = "legacy-admin@example.com"
+        existing.role = "admin"
+        existing.oauth_provider = None
+        existing.oauth_sub = None
+
+        def _returns(kw):
+            # Pair lookup misses (no record yet bound to this pair).
+            if "oauth_provider" in kw:
+                return None
+            # Email fallback hits the legacy admin record.
+            if kw == {"email": "legacy-admin@example.com"}:
+                return existing
+            return None
+
+        stub = _fresh_stub(_returns)
+        user = _authenticate(
+            stub,
+            {
+                "oauth_provider": "google",
+                "oauth_sub": "G-new-99",
+                "email": "legacy-admin@example.com",
+                "name": "Legacy Admin",
+            },
+        )
+        assert user is existing
+        # Backfill block fired — the legacy record now carries the
+        # (provider, sub) pair so the next login takes the stable
+        # OIDC path instead of email-fallback.
+        assert user.oauth_provider == "google"
+        assert user.oauth_sub == "G-new-99"
+        # AND role-preservation fired together: admin survives.
+        assert user.role == "admin", (
+            "the bug #136 fix and the OIDC backfill must coexist — "
+            "a legacy admin upgrading their record to the (provider, "
+            "sub) pair MUST NOT have their role wiped in the process"
+        )
+        # Verify lookup order is honest: pair tried first, then email.
+        assert stub.find_calls[0] == {
+            "oauth_provider": "google", "oauth_sub": "G-new-99"
+        }
+        assert stub.find_calls[1] == {"email": "legacy-admin@example.com"}
+
+
+# ===========================================================================
+# Part 8 — Legacy/corrupt role values: leave as-is (regression-pin).
+# ===========================================================================
+
+class TestLegacyOrCorruptRolePreserved:
+    """The narrowed guard (``if user.role == "guest"``) deliberately
+    only promotes the canonical schema default. ``role=""`` and
+    ``role=None`` — which can legitimately surface from records
+    pre-dating the field, hand-edited DB rows, or partial deserialization
+    of legacy data — are NOT silently overwritten anymore.
+
+    This is a deliberate trade-off:
+
+    - **Pre-fix behavior:** unconditional ``user.role = "user"`` would
+      silently "auto-correct" any non-default value to ``"user"`` on
+      every login. Masked data corruption and downgraded admins (the
+      #136 bug).
+    - **Post-fix behavior:** only the literal ``"guest"`` is promoted.
+      Anything else surfaces as-is so the operator can see the data
+      drift instead of having it papered over silently on every login.
+
+    Pin the new behavior so a future "let's normalize falsy roles
+    back to user" refactor — which would reintroduce the silent
+    auto-correct masking — has to be a conscious, test-failing
+    decision rather than an unnoticed regression.
+
+    If the project decides later that legacy values SHOULD normalize
+    to ``"user"``, the canonical place is an explicit migration script
+    or a logged decision branch — not a silent overwrite inside
+    ``authenticate()``.
+    """
+
+    def test_empty_string_role_preserved(self):
+        existing = _UserStub()
+        existing.email = "empty-role@example.com"
+        existing.role = ""
+
+        def _returns(kw):
+            return existing if kw == {"email": "empty-role@example.com"} else None
+
+        stub = _fresh_stub(_returns)
+        user = _authenticate(
+            stub,
+            {"email": "empty-role@example.com", "name": "Empty"},
+        )
+        assert user is existing
+        assert user.role == "", (
+            "empty-string role must NOT be silently overwritten — "
+            "the narrowed guard only promotes ``'guest'``; corrupt-"
+            "data normalization, if wanted, must be an explicit "
+            "decision, not a silent side-effect of login"
+        )
+
+    def test_none_role_preserved(self):
+        existing = _UserStub()
+        existing.email = "none-role@example.com"
+        existing.role = None
+
+        def _returns(kw):
+            return existing if kw == {"email": "none-role@example.com"} else None
+
+        stub = _fresh_stub(_returns)
+        user = _authenticate(
+            stub,
+            {"email": "none-role@example.com", "name": "None"},
+        )
+        assert user is existing
+        assert user.role is None, (
+            "None role must NOT be silently overwritten — same "
+            "reasoning as empty-string. The narrowed guard is a "
+            "literal ``role == 'guest'`` comparison, not a falsy "
+            "check."
+        )
