@@ -49,7 +49,7 @@ Issues feed autonomous-dev's iteration loop (see `## Three-Agent Pipeline`).
 
 ## Commands
 
-All dev workflows go through the [makefile](makefile), which `include .env` — expect a `.env` at repo root with DB/Redis/AI credentials.
+All dev workflows go through the [makefile](makefile), which does `-include .env` (leading dash — a **missing `.env` is non-fatal**; the prod tree has none and still builds/releases). `.env` carries DB/Redis/AI credentials for the live-stack targets. **PyPI release credentials are separate**: `make package` / `release.sh` read them from `~/.pypirc` (a `[pypi]` section) or `TWINE_USERNAME`/`TWINE_PASSWORD` — never from `.env`.
 
 The test layout was split into hermetic unit / live-stack integration / opt-in perf tiers (MIGRATIONS.md Item 21). `pytest` invoked bare picks up `[tool.pytest.ini_options].testpaths = ["tests/unit"]`, so the default run is hermetic — no Mongo / Redis / Ollama required, safe on any laptop.
 
@@ -217,7 +217,7 @@ After the test→main merge, the autonomous-prod agent runs `release.sh` automat
 
 ## Known broken workflows
 
-- **`scripts/release.sh` requires an active venv with pip on PATH.** On Fedora-like hosts, system `python3` doesn't bundle pip, and `make package` calls `python3 -m pip install --upgrade build twine ...`. The script's preflight doesn't catch this — failures land mid-`make package` after the version bump is already written, and the script's revert path catches it (so no permanent damage). Run inside an activated venv with pip available, e.g. `source .venv/bin/activate && ./scripts/release.sh`.
+- **`scripts/release.sh` requires an active venv with pip on PATH.** On Fedora-like hosts, system `python3` doesn't bundle pip, and `make package` calls `python3 -m pip install --upgrade build twine ...`. The script's preflight doesn't catch this — failures land mid-`make package` after the version bump is already written, and the script's revert path catches it (so no permanent damage). Run inside an activated venv with pip available, e.g. `source .venv/bin/activate && ./scripts/release.sh` (the in-tree `.venv` ships Python 3.13 + pip/build/twine). Credentials come from `~/.pypirc` (a `[pypi]` section), not `.env`; the preflight aborts before any state change if neither `~/.pypirc` nor `TWINE_USERNAME` is present.
 
 ## Conventions worth knowing
 
