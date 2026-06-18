@@ -10,7 +10,7 @@ from pydub.exceptions import PydubException
 from autonomous import log
 from autonomous.ai._extract import extract_or_malformed
 from autonomous.ai._json_messages import (
-    STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER,
+    STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER as _STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER,
     build_chat_json_messages,
 )
 from autonomous.ai._json_utils import clean_json_response
@@ -87,12 +87,6 @@ _HTTP = HttpClient(
 # the "no structured outputs support" marker for. Avoids log spam on
 # every JSON call. Cleared by process restart only.
 _STRUCTURED_OUTPUTS_LOGGED: set[tuple[str, str]] = set()
-
-# Counter is now owned by ``autonomous.ai._json_messages`` (#146). The
-# module-level alias is kept so existing patch targets continue to
-# resolve via this module — the registry is idempotent on name, so both
-# names refer to the same singleton.
-_STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER = STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER
 
 
 class LocalAIModel(AutoModel):
@@ -203,7 +197,6 @@ class LocalAIModel(AutoModel):
                         f"counter inc failed: {exc!r}"
                     )
 
-        context = context or {}
         # Message construction consolidated to ``_json_messages`` (#146) —
         # this adapter passes ``api_enforces_json=False`` because Ollama has
         # no ``response_format=json_object`` equivalent, so the prompt
@@ -214,7 +207,9 @@ class LocalAIModel(AutoModel):
         # `system_prompt` never triggers `self.instructions`'s descriptor
         # read. Tests pass system_prompt= against an instance whose `_data`
         # isn't initialized; resolving at the call site keeps them passing.
-        system_prompt, user_message = build_chat_json_messages(
+        # `system_msg` (not `system_prompt`) so the input parameter stays
+        # accessible to any future retry/fallback path below.
+        system_msg, user_message = build_chat_json_messages(
             message=message,
             system_base=system_prompt or self.instructions,
             context=context,
@@ -231,7 +226,7 @@ class LocalAIModel(AutoModel):
         payload = {
             "model": self._text_model,
             "messages": [
-                {"role": "system", "content": system_prompt},
+                {"role": "system", "content": system_msg},
                 {"role": "user", "content": user_message},
             ],
             "stream": False,

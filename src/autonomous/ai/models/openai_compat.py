@@ -20,7 +20,7 @@ import requests
 from autonomous import log
 from autonomous.ai.protocol import NotSupportedByProvider
 from autonomous.ai._json_messages import (
-    STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER,
+    STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER as _STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER,
     build_chat_json_messages,
 )
 from autonomous.ai._json_utils import clean_json_response
@@ -164,12 +164,6 @@ _HTTP = HttpClient(
 # servers gain strict-mode support via deploys, deploys typically
 # accompany worker restarts.
 _UNSUPPORTED_STRICT_MODE: set[tuple[str, str]] = set()
-
-# Counter is now owned by ``autonomous.ai._json_messages`` (#146). The
-# module-level alias is kept so existing patch targets continue to
-# resolve via this module — the registry is idempotent on name, so both
-# names refer to the same singleton.
-_STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER = STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER
 
 # Substrings that indicate a 4xx response was specifically about
 # strict-mode unsupported-ness (rather than a real client bug like
@@ -417,6 +411,37 @@ class OpenAIClient(AutoModel):
             user += f"\nUse the following URI for reference: {uri}"
         return self._chat(self._text_model, system, user, temperature=temperature)
 
+    def _emit_strict_unavailable(self, *, status, body_excerpt, detection):
+        """Private helper for the two ``structured_outputs_unavailable``
+        emission sites in ``generate_json``. Lives in this module (not
+        ``_json_messages``) so the existing test patch target
+        ``autonomous.ai.models.openai_compat.event`` continues to
+        intercept — ``event`` is resolved through this module's
+        namespace at call time. ``provider`` / ``model`` / ``endpoint``
+        are stable across both sites; ``status`` / ``body_excerpt`` /
+        ``detection`` are the only fields that vary.
+        """
+        event(
+            "structured_outputs_unavailable",
+            level="warning",
+            marker="STRUCTURED-OUTPUTS-UNAVAILABLE",
+            print_to_stdout=False,
+            provider="openai_compat",
+            model=self._json_model,
+            endpoint=self._base_url,
+            status=status,
+            body_excerpt=body_excerpt,
+            detection=detection,
+            cached_for_process=True,
+        )
+        try:
+            _STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER.inc(provider="openai_compat")
+        except Exception as exc:  # noqa: BLE001
+            log(
+                f"[openai_compat] structured_outputs_unavailable_total "
+                f"counter inc failed: {exc!r}"
+            )
+
     def generate_json(
         self,
         message,
@@ -495,32 +520,22 @@ class OpenAIClient(AutoModel):
             # loose without re-probing. Do NOT move this .add() below
             # the retry branch; that would cause repeated probe failures.
             _UNSUPPORTED_STRICT_MODE.add(endpoint_key)
-            # Inline event+counter to preserve the
-            # ``autonomous.ai.models.openai_compat.event`` patch target
-            # that test_unit_resilience_124_125_*.py relies on. The
-            # shape is identical to the local_model emission — DRYing
-            # this into a helper was tried under #146 and reverted
-            # because it broke the test seam.
-            event(
-                "structured_outputs_unavailable",
-                level="warning",
-                marker="STRUCTURED-OUTPUTS-UNAVAILABLE",
-                print_to_stdout=False,
-                provider="openai_compat",
-                model=self._json_model,
-                endpoint=self._base_url,
+            # Cross-adapter helper was tried under #146 and reverted —
+            # ``tests/unit/test_unit_resilience_124_125_*.py`` patches
+            # ``autonomous.ai.models.openai_compat.event``; routing the
+            # call through a helper in another module silently bypasses
+            # that patch. The intra-module helper used here calls
+            # ``event`` via openai_compat's module namespace, so the
+            # patch target still intercepts. Per-call kwargs (``status``,
+            # ``body_excerpt``, ``detection``) are openai_compat-specific
+            # and intentionally NOT mirrored by local_model — local
+            # carries ``fallback=`` instead because its prompt-only path
+            # has no HTTP fallback to describe.
+            self._emit_strict_unavailable(
                 status=resp.status_code,
                 body_excerpt=resp.text[:200],
                 detection="first",
-                cached_for_process=True,
             )
-            try:
-                _STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER.inc(provider="openai_compat")
-            except Exception as exc:  # noqa: BLE001
-                log(
-                    f"[openai_compat] structured_outputs_unavailable_total "
-                    f"counter inc failed: {exc!r}"
-                )
             # Retry once with loose mode.
             try:
                 raw = self._chat(
@@ -571,26 +586,11 @@ class OpenAIClient(AutoModel):
                 # is still valid for subsequent calls.
                 if use_strict:
                     _UNSUPPORTED_STRICT_MODE.add(endpoint_key)
-                    event(
-                        "structured_outputs_unavailable",
-                        level="warning",
-                        marker="STRUCTURED-OUTPUTS-UNAVAILABLE",
-                        print_to_stdout=False,
-                        provider="openai_compat",
-                        model=self._json_model,
-                        endpoint=self._base_url,
+                    self._emit_strict_unavailable(
                         status=200,
                         body_excerpt=raw[:200],
                         detection="parse_failure_200",
-                        cached_for_process=True,
                     )
-                    try:
-                        _STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER.inc(provider="openai_compat")
-                    except Exception as counter_exc:  # noqa: BLE001
-                        log(
-                            f"[openai_compat] structured_outputs_unavailable_total "
-                            f"counter inc failed: {counter_exc!r}"
-                        )
                     try:
                         loose_raw = self._chat(
                             self._json_model,

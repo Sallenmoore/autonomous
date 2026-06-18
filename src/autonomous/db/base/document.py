@@ -572,6 +572,9 @@ class BaseDocument:
         # single O(n) rebuild. The pre-#145 form called list.remove() per
         # descendant match, which is O(n) per removal and O(k·n) overall
         # when k descendants needed dropping (issue #145, perf #3/#8/#10).
+        # The structural fix (tuple-paths + set-keyed parent-prefix cache)
+        # is explicitly deferred — see DIVERGENCE.md "Change-tracking
+        # perf tuning (#145)" for the invariant-surface rationale.
         level_prefix = key + "."
         self._changed_fields = [
             f for f in changed if not f.startswith(level_prefix)
