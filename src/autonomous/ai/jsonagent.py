@@ -29,6 +29,7 @@ class JSONAgent(BaseAgent):
         temperature=None,
         json_schema=None,
         schema_name="response",
+        model=None,
     ):
         # Validate the caller-supplied schema's STRUCTURE before any HTTP
         # work — a malformed schema raises GenerateJSONParseError here
@@ -53,6 +54,8 @@ class JSONAgent(BaseAgent):
         # translation now lives INSIDE ``GeminiAIModel.generate_json``;
         # every adapter sees the same canonical AIModelProtocol kwargs
         # and is responsible for any provider-specific shape internally.
+        # `model` (#173) is uniform across adapters as well — None means
+        # "use the role's env-configured default".
         result = client.generate_json(
             message,
             system_prompt=system_prompt,
@@ -60,6 +63,7 @@ class JSONAgent(BaseAgent):
             context=context,
             json_schema=json_schema,
             schema_name=schema_name,
+            model=model,
             **kwargs,
         )
 

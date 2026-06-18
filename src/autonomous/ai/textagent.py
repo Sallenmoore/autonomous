@@ -17,10 +17,13 @@ class TextAgent(BaseAgent):
         default="A helpful AI assistant trained to assist with generating text according to the given requirements."
     )
 
-    def summarize_text(self, text, primer=""):
+    def summarize_text(self, text, primer="", model=None):
+        # `model` (#173) overrides the role-default summary model
+        # (provider-specific: `_summary_model` on openai_compat/gemini,
+        # `_text_model` on local). `None` keeps env behavior unchanged.
         result = self.get_client(
             os.environ.get("SUMMARY_AI_AGENT", self.provider)
-        ).summarize_text(text, primer=primer)
+        ).summarize_text(text, primer=primer, model=model)
         self.add_to_job_meta("Last SUMMARY", result)
         return result
 
@@ -32,13 +35,14 @@ class TextAgent(BaseAgent):
         context="",
         temperature=None,
         system_prompt=None,
+        model=None,
     ):
         # self.add_to_job_meta("prompt", message)
         # `temperature` stays conditional because adapters have heterogeneous
         # defaults (local/openai_compat=0.7; gemini/mock=None) and forwarding
-        # an explicit None would override their defaults. `system_prompt` is
-        # uniform across all four adapters (default None = "no override"), so
-        # it rides as a direct kwarg.
+        # an explicit None would override their defaults. `system_prompt`
+        # and `model` (#173) are uniform across all four adapters
+        # (default None = "no override"), so they ride as direct kwargs.
         kwargs = {}
         if temperature is not None:
             kwargs["temperature"] = temperature
@@ -50,6 +54,7 @@ class TextAgent(BaseAgent):
             uri=uri,
             context=context,
             system_prompt=system_prompt,
+            model=model,
             **kwargs,
         )
         self.add_to_job_meta("Last TEXT", result)

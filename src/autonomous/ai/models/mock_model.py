@@ -88,6 +88,7 @@ class MockAIModel(AutoModel):
         context=None,
         temperature=None,
         system_prompt=None,
+        model=None,
     ):
         log(f"⚡ [MOCK] Generating Text...", _print=True)
         return (
@@ -96,7 +97,7 @@ class MockAIModel(AutoModel):
             "The quick brown fox jumps over the lazy dog."
         )
 
-    def summarize_text(self, text, primer=""):
+    def summarize_text(self, text, primer="", model=None):
         log(f"⚡ [MOCK] Summarizing {len(text)} chars...", _print=True)
         return "This is a mock summary of the provided text. It is concise and offline."
 
