@@ -379,6 +379,7 @@ class LocalAIModel(AutoModel):
         context=None,
         temperature=0.7,
         evaluation=False,
+        system_prompt=None,
     ):
         context = context or {}
         if context:
@@ -392,11 +393,23 @@ class LocalAIModel(AutoModel):
         if uri:
             additional_instructions += f"\nUse the following URI for reference: {uri}"
 
+        # Deliberate asymmetry vs openai_compat/gemini per MIGRATIONS.md
+        # #140: generate_text never reads self.instructions. The system
+        # slot is system_prompt prepended to additional_instructions
+        # (see test_self_instructions_does_not_leak_into_system_slot
+        # for the persona-non-leakage pin). `filter(None, ...)` drops
+        # empty strings, collapsing all four corner cases to one
+        # expression. Note this differs from generate_json on this
+        # same class, which DOES use `system_prompt or self.instructions`.
+        system_content = "\n".join(
+            filter(None, [system_prompt, additional_instructions])
+        )
+
         # 3. Send to Ollama
         payload = {
             "model": self._text_model,
             "messages": [
-                {"role": "system", "content": additional_instructions},
+                {"role": "system", "content": system_content},
                 {"role": "user", "content": message},
             ],
             "stream": False,

@@ -164,18 +164,25 @@ highest to lowest overall impact. Each item is tagged with the axis
 it primarily addresses (**security** / **stability** / **functionality**
 / **efficiency** / **usability**) and a concrete file:line anchor.
 
+Closed items keep their original number so external cross-references
+(including CLAUDE.md's mentions of #5/#6/#16/#21) stay stable; the
+body is rewritten to **CLOSED — &lt;commit/PR ref&gt;**.
+
+A separate batch of refactor/test/perf items surfaced by the
+2026-06-18 multi-agent audit is tracked as GitHub issues **#141 –
+#154** rather than inlined here; see the issue tracker for that set.
+
 1. **[security]** `apis/version_control/GHCallbacks.py:38` —
    `certificate_check` returns `True` unconditionally, disabling TLS
    verification for every git operation. Enable verification or make
    the bypass an explicit, logged opt-in.
 
-2. **[stability]** AI backend signatures drift across
-   `ai/models/local_model.py`, `ai/models/gemini.py`, and
-   `ai/models/mock_model.py`. `generate_json` (`system_prompt` vs
-   `function`), `upscale_image` (`image_content` vs `file`), and
-   `generate_transcription` (structured dict vs raw text) disagree so
-   swapping the backend raises at runtime. Pin signatures on
-   `BaseAgent` and make adapters conform.
+2. **[stability]** ~~AI backend signatures drift across providers.~~
+   **CLOSED** by issue #47 / cycles 124/125 — every adapter now
+   conforms to `autonomous.ai.protocol.AIModelProtocol`,
+   `generate_json` takes the canonical `(message, system_prompt,
+   uri, context, json_schema, schema_name, ...)` signature, and
+   `_KNOWN_DRIFT` in the conformance test is empty.
 
 3. **[functionality]** `storage/imagestorage.py:224,239,250` —
    `remove()`, `rotate()`, and `flip()` unconditionally return
@@ -193,9 +200,13 @@ it primarily addresses (**security** / **stability** / **functionality**
    as 500s. Wrap in the existing `autonomous.ai.retry.retry` helper
    with a bounded timeout.
 
-6. **[stability]** `ai/models/gemini.py:162-164` — unbounded `while`
-   loop polling `file.state` with a 0.5s sleep and no cap. Add a
-   max-attempts / wall-clock limit and raise on timeout.
+6. **[stability]** ~~Unbounded `while` loop polling `file.state`.~~
+   **CLOSED** by issues #75 / #84 — `gemini.py:246-255` reads
+   `GEMINI_UPLOAD_POLL_TIMEOUT` (default 300s), uses a
+   `time.monotonic()` deadline immune to NTP / wall-clock skew, and
+   raises `GeminiFileUploadTimeoutError` on cap. Orphan cleanup of
+   accumulated uploads runs before the exception propagates
+   (parallel via `ThreadPoolExecutor`, #94).
 
 7. **[functionality]** `cli.py` — `createapp()` is a single
    placeholder. Wire real commands: `autonomous init`,
@@ -239,10 +250,13 @@ it primarily addresses (**security** / **stability** / **functionality**
     no dispatch primitives. Flesh out as a route-name → callable
     registry or delete the module.
 
-16. **[efficiency]** `ai/models/local_model.py:264-280` —
-    `generate_text`, `generate_audio`, and `summarize_text` are
-    single bare HTTP attempts. Route through the existing `retry()`
-    helper.
+16. **[efficiency]** `ai/models/local_model.py` — `generate_text`,
+    `generate_audio`, and `summarize_text` are still single bare
+    HTTP attempts. Route through the existing `retry()` helper.
+    **Partially addressed:** `generate_json` (`local_model.py:315`)
+    now wraps `_attempt` in `retry(max_attempts=3, ...)` after
+    issues #91 / #97 / #106; the remaining three call sites still
+    need the same treatment.
 
 17. **[functionality]** `db/signals.py:51-57` — pre/post init, save,
     delete only. No `pre_update` / `post_update` hook for partial
@@ -273,10 +287,15 @@ it primarily addresses (**security** / **stability** / **functionality**
     calls `client.files.list()` once per upload batch to resolve
     filenames. Use the upload response directly.
 
-23. **[functionality]** Test gaps — zero unit coverage for
-    `apis/*`, `AutoTasks`, `ImageStorage.rotate/flip`, or the
-    optional-dependency stubs in the doc generator. Add hermetic
-    tests that don't require Mongo/Redis.
+23. **[functionality]** Test gaps — remaining: `apis/*` (PyGithub
+    wrappers), `AutoTasks` (RQ surface), `ImageStorage.rotate/flip`
+    interaction with mtime-pinning (issue #150), the
+    optional-dependency stubs in the doc generator. The
+    2026-06-18 audit closed several previously-listed gaps:
+    `autoattr.py` Layer-2 customizations (#141), `gemini.py`
+    failure paths (#147), `db_sync` debounce branches (#148), and
+    `AutoModel.get()` re-raise contract (also #141). Add hermetic
+    tests that don't require Mongo/Redis for the remaining items.
 
 24. **[usability]** `autonomous/__init__.py` — only re-exports `log`
     + `init`. Add `AutoModel`, `AutoAuth`, `Response`, `AutoTasks`
@@ -286,9 +305,11 @@ it primarily addresses (**security** / **stability** / **functionality**
     `process_single_object_sync`. Replace with exponential backoff
     via the `retry()` helper.
 
-26. **[stability]** `ai/agents/imageagent.py:29` — debug
-    `print("provider", self.provider)` left in the code path.
-    Replace with `log(...)` or delete.
+26. **[stability]** ~~Debug `print("provider", self.provider)` in
+    imageagent.~~ **CLOSED** — the file moved to
+    `src/autonomous/ai/imageagent.py` (no `agents/` subdir) and the
+    debug print is gone. `grep -n 'print(' src/autonomous/ai/imageagent.py`
+    returns empty.
 
 27. **[stability]** `utils/markdown.py:70-73` — recursive parser has
     no depth limit; pathological input can stack-overflow. Add an
