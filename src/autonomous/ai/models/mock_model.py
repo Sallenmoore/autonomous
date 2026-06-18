@@ -80,7 +80,15 @@ class MockAIModel(AutoModel):
 
         return mock_response
 
-    def generate_text(self, message, additional_instructions="", uri="", context=None, temperature=None):
+    def generate_text(
+        self,
+        message,
+        additional_instructions="",
+        uri="",
+        context=None,
+        temperature=None,
+        system_prompt=None,
+    ):
         log(f"⚡ [MOCK] Generating Text...", _print=True)
         return (
             "Lorem ipsum dolor sit amet, consectetur adipiscing elit. "
