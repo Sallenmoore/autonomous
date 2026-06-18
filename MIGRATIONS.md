@@ -5,6 +5,20 @@ recent first.
 
 ## Unreleased
 
+### `TextAgent.generate` and all `generate_text` adapters gain `system_prompt=` kwarg (#140)
+
+**What changed.**
+
+`TextAgent.generate(...)` accepts a new `system_prompt=None` keyword. When set, it replaces the persisted persona (`self.instructions`) for the call — mirroring `JSONAgent.generate(system_prompt=...)`. `additional_instructions` still appends as a task-level suffix to whichever system message is in play. All four `generate_text` adapters (`openai_compat`, `gemini`, `local_model`, `mock_model`) accept the same kwarg so the dispatch layer doesn't TypeError on a non-openai provider.
+
+**Behavior change.**
+
+Additive. `system_prompt=None` (the default) preserves the pre-#140 wire shape on every adapter. No consumer change required.
+
+**Why.**
+
+Previously, a per-call persona passed via `additional_instructions` could only **append** to the agent's persisted `instructions` — it could not **replace** them. Consumers that needed a strong conflicting per-call persona (e.g. "output ONLY a screenplay") had to allocate a throwaway `TextAgent` whose `instructions` were the per-call primer. `JSONAgent.generate` already supported this through `system_prompt=`; #140 closes the asymmetry.
+
 ### `local_model` + `flux` adopt `extract_or_malformed` for typed-2xx translation (#142)
 
 **What changed.**

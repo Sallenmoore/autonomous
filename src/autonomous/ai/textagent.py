@@ -24,11 +24,21 @@ class TextAgent(BaseAgent):
         self.add_to_job_meta("Last SUMMARY", result)
         return result
 
-    def generate(self, message, additional_instructions="", uri="", context="", temperature=None):
+    def generate(
+        self,
+        message,
+        additional_instructions="",
+        uri="",
+        context="",
+        temperature=None,
+        system_prompt=None,
+    ):
         # self.add_to_job_meta("prompt", message)
         kwargs = {}
         if temperature is not None:
             kwargs["temperature"] = temperature
+        if system_prompt is not None:
+            kwargs["system_prompt"] = system_prompt
         result = self.get_client(
             os.environ.get("TEXT_AI_AGENT", self.provider)
         ).generate_text(message, additional_instructions, uri=uri, context=context, **kwargs)

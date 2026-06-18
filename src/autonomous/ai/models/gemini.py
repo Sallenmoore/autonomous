@@ -445,7 +445,15 @@ class GeminiAIModel(AutoModel):
                 raw="",
             ) from e
 
-    def generate_text(self, message, additional_instructions="", uri="", context=None, temperature=None):
+    def generate_text(
+        self,
+        message,
+        additional_instructions="",
+        uri="",
+        context=None,
+        temperature=None,
+        system_prompt=None,
+    ):
         context = context or {}
         contents = [message]
         if context:
@@ -457,8 +465,11 @@ class GeminiAIModel(AutoModel):
         if uri:
             contents.append(Part.from_uri(file_uri=uri, mime_type="application/json"))
 
+        # system_prompt replaces the persisted persona for this call
+        # (mirrors generate_json). additional_instructions still appends.
+        base_system = system_prompt or self.instructions
         config_kwargs = {
-            "system_instruction": f"{self.instructions}.{additional_instructions}",
+            "system_instruction": f"{base_system}.{additional_instructions}",
         }
         if temperature is not None:
             config_kwargs["temperature"] = temperature

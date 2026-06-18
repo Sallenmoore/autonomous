@@ -406,8 +406,12 @@ class OpenAIClient(AutoModel):
         context=None,
         temperature=0.7,
         evaluation=False,
+        system_prompt=None,
     ):
-        system = self.instructions
+        # system_prompt replaces the persisted persona for this call
+        # (mirrors generate_json). additional_instructions still appends
+        # as a task-level suffix to whichever system message is in play.
+        system = system_prompt or self.instructions
         if additional_instructions:
             system = f"{system}\n{additional_instructions}"
         user = message

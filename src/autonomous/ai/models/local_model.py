@@ -379,6 +379,7 @@ class LocalAIModel(AutoModel):
         context=None,
         temperature=0.7,
         evaluation=False,
+        system_prompt=None,
     ):
         context = context or {}
         if context:
@@ -392,11 +393,24 @@ class LocalAIModel(AutoModel):
         if uri:
             additional_instructions += f"\nUse the following URI for reference: {uri}"
 
+        # Pre-#140 the system slot was `additional_instructions` alone
+        # (local_model historically didn't use self.instructions in
+        # generate_text). When `system_prompt` is set it prepends to the
+        # system slot — mirroring generate_json's persona-replacement
+        # semantics without changing the bare-call behavior.
+        system_content = additional_instructions
+        if system_prompt:
+            system_content = (
+                f"{system_prompt}\n{system_content}"
+                if system_content
+                else system_prompt
+            )
+
         # 3. Send to Ollama
         payload = {
             "model": self._text_model,
             "messages": [
-                {"role": "system", "content": additional_instructions},
+                {"role": "system", "content": system_content},
                 {"role": "user", "content": message},
             ],
             "stream": False,
