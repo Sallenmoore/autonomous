@@ -30,19 +30,17 @@ with provider-specific branches or silently regress one side's
 fail-fast / retry semantics. Helpers are the right altitude.
 
 The shared counter (``STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER``) lives
-here so the "shared resource" intent is obvious from imports rather
-than just from a comment on a duplicated module-level registration
-(``observability.counter`` is idempotent on name, so the
-pre-consolidation duplicate registrations produced the same singleton —
-the duplication was honest about the shared state but obscure).
+here so the "shared resource" intent is obvious from imports.
+(``observability.counter`` is idempotent on name, so a duplicated
+module-level registration in each adapter would resolve to the same
+singleton — but the shared intent would not be visible at import time.)
 
-A ``structured_outputs_unavailable`` emission helper was also
-prototyped, but reverted to inline call sites in each adapter because
-the existing test suites in ``tests/unit/`` patch the per-adapter
-``event`` symbol directly (a binding the patch-time helper extraction
-would invalidate). The shared counter is enough to keep the metric
-unified; the per-call event/counter boilerplate stays inline so the
-patch seam is preserved.
+Per-call ``event()`` + counter-inc emission stays INLINE at each
+adapter site. ``event`` is resolved through each adapter's module
+namespace, which is the patch seam the unit tests rely on
+(``patch.object(local_model, 'event')`` /
+``patch.object(openai_compat, 'event')``). Routing emission through a
+helper in THIS module would bypass those patches.
 """
 
 import json
@@ -82,12 +80,8 @@ def build_chat_json_messages(
     system_base:
         The resolved persona string — typically
         ``system_prompt or self.instructions`` at the caller. Resolution
-        stays at the call site (not here) so the short-circuit semantics
-        of ``or`` preserve the pre-#146 contract: an explicit
-        ``system_prompt`` never triggers an ``instructions`` descriptor
-        read. The test pattern of constructing a model instance with
-        ``__new__`` + ``object.__setattr__`` for a couple of fields then
-        passing ``system_prompt=`` requires this short-circuit to hold.
+        stays at the call site so an explicit ``system_prompt`` never
+        triggers the ``instructions`` descriptor read.
     context:
         Optional dict of ground-truth context. Serialized into the user
         message as a fenced JSON block.

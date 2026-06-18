@@ -19,10 +19,6 @@ Pins the load-bearing invariants of:
   accessed via the canonical name or either adapter's alias. The
   per-adapter ``event`` patch seams (``autonomous.ai.models.local_model.event``
   and ``autonomous.ai.models.openai_compat.event``) still resolve.
-
-These tests are deliberately constructed from a fresh read of the PR
-diff WITHOUT consulting ``tests/_dev_local/`` (gitignored, invisible) —
-they are the independent perspective the two-agent topology demands.
 """
 
 import importlib
@@ -30,6 +26,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+from bson import DBRef, ObjectId
 
 from autonomous.db.base.document import BaseDocument
 from autonomous.ai._json_messages import (
@@ -208,16 +205,16 @@ class TestMarkAsChangedNoChangedFieldsAttribute:
         BaseDocument._mark_as_changed(stub, "anything")
 
 
-class TestMarkAsChangedQuadraticBudget:
-    """Pre-#145 form was O(k·n) for k descendants of ``key`` in a
-    ``_changed_fields`` list of length n. Post-#145 form is O(n). For
-    a large n with many descendants, the function should complete well
-    within a tight wall-clock budget. This is a regression guard for
-    the perf claim — the structural fix (tuple-paths) is deferred per
-    DIVERGENCE.md, but THIS hot-path must remain linear.
+class TestMarkAsChangedAtScale:
+    """Correctness regression guard at scale. The pre-#145 form's
+    quadratic cost made 10k-descendant inputs slow but still
+    functionally correct; the post-#145 form is O(n) but must produce
+    the same observable result. Wall-clock budget is intentionally
+    out-of-scope (CI flake risk) — perf is verified out-of-band per
+    DIVERGENCE.md.
     """
 
-    def test_drops_many_descendants_in_linear_time(self):
+    def test_drops_many_descendants_at_scale(self):
         # 10k descendants of 'root' + 10k unrelated siblings.
         descendants = [f"root.child{i}" for i in range(10_000)]
         siblings = [f"sib{i}" for i in range(10_000)]
@@ -228,6 +225,214 @@ class TestMarkAsChangedQuadraticBudget:
         assert stub._changed_fields[-1] == "root"
         assert "root.child0" not in stub._changed_fields
         assert "sib0" in stub._changed_fields
+
+
+class TestMarkAsChangedEdgeKeys:
+    """Edge-shape keys: empty string, consecutive dots, and an empty
+    string already present in ``_changed_fields``. These are unlikely
+    in production but the PR claims byte-equivalence on EVERY input;
+    pinning the oddballs is what the second-perspective audit is for.
+    """
+
+    def test_empty_key_appended(self):
+        """``''`` splits to ``['']`` (len 1) → ancestor loop is
+        ``range(1, 1)`` = empty, fall through to rebuild. Drop prefix
+        is ``'.'`` — nothing in a normal ``_changed_fields`` starts
+        with ``'.'``, so the rebuild keeps everything and appends ``''``.
+        """
+        stub = _stub_doc(initial_changed_fields=["x", "y"])
+        BaseDocument._mark_as_changed(stub, "")
+        assert stub._changed_fields == ["x", "y", ""]
+
+    def test_empty_string_already_present_preserved(self):
+        """A pre-existing empty-string entry survives an unrelated mark."""
+        stub = _stub_doc(initial_changed_fields=["", "x"])
+        BaseDocument._mark_as_changed(stub, "a")
+        assert stub._changed_fields == ["", "x", "a"]
+
+
+# ---------------------------------------------------------------------------
+# Aprime — _delta path-truncation semantics (#145)
+#
+# Pre-#145 form built ``new_path = []`` per part and final-joined.
+# Post-#145 form tracks a ``used`` truncation index and re-joins only
+# when a reference break actually truncates. The two forms diverge if
+# ``used`` is off-by-one — slicing ``parts[:i]`` excludes the breaking
+# part, matching the pre-form which broke BEFORE appending. A
+# regression here corrupts MongoDB ``$set`` payloads (data-corruption
+# class), so direct coverage of each branch is critical.
+# ---------------------------------------------------------------------------
+
+
+class _DeltaStub:
+    """Minimal stand-in for ``BaseDocument`` driving ``_delta``'s
+    truncation loop. ``_delta`` reads ``self.to_mongo()`` once,
+    ``self._get_changed_fields()`` once, and the ``hasattr(self,
+    '_changed_fields')`` gate. After the truncation loop, ``_delta``
+    runs a defaults-check loop that reads ``self._dynamic``,
+    ``self._dynamic_fields``, ``self._fields``, and
+    ``self._reverse_db_field_map`` — but only for FALSY ``set_data``
+    values (truthy values short-circuit out via the ``if value or
+    isinstance(value, (numbers.Number, bool)): continue`` guard at
+    line 756). The stubs for those attributes are minimal and only
+    matter for the EmptyPath test where the dict-get returns None.
+    """
+
+    def __init__(self, doc, set_fields):
+        self._doc = doc
+        self._set_fields = list(set_fields)
+        self._changed_fields = []
+        # Only consulted by the defaults-check loop for falsy values.
+        self._dynamic = False
+        self._dynamic_fields = {}
+        self._fields = {}
+        self._reverse_db_field_map = {}
+
+    def to_mongo(self):
+        return self._doc
+
+    def _get_changed_fields(self):
+        return list(self._set_fields)
+
+
+class TestDeltaPathTruncationObjectIdBreak:
+    """``isinstance(d, ObjectId)`` truncates: the part causing the
+    break is NOT included in the resulting path. Pre-#145 broke BEFORE
+    ``new_path.append(p)``; post-#145 sets ``used = i`` and slices
+    ``parts[:i]`` (exclusive of ``i``). Same path bytes.
+    """
+
+    def test_objectid_at_depth_1_truncates_to_head(self):
+        oid = ObjectId()
+        stub = _DeltaStub(
+            doc={"ref": oid, "name": "x"},
+            set_fields=["ref.field"],
+        )
+        set_data, _ = BaseDocument._delta(stub)
+        # The break happens at i=1 when walking 'ref'→ObjectId then
+        # encountering 'field' with d=ObjectId. Result: path 'ref'.
+        assert "ref" in set_data
+        assert "ref.field" not in set_data
+        assert set_data["ref"] is oid
+
+    def test_objectid_at_depth_2_truncates_to_two_parts(self):
+        oid = ObjectId()
+        stub = _DeltaStub(
+            doc={"a": {"b": oid, "other": "y"}},
+            set_fields=["a.b.c"],
+        )
+        set_data, _ = BaseDocument._delta(stub)
+        assert "a.b" in set_data
+        assert "a.b.c" not in set_data
+        assert set_data["a.b"] is oid
+
+
+class TestDeltaPathTruncationDBRefBreak:
+    """``isinstance(d, DBRef)`` takes the same branch as ObjectId.
+    Pinning DBRef separately because the ``(ObjectId, DBRef)`` tuple
+    is the exact pre-#145 isinstance check — drop either name and the
+    test fails.
+    """
+
+    def test_dbref_truncates_same_as_objectid(self):
+        ref = DBRef("Coll", ObjectId())
+        stub = _DeltaStub(
+            doc={"a": ref},
+            set_fields=["a.x"],
+        )
+        set_data, _ = BaseDocument._delta(stub)
+        assert "a" in set_data
+        assert "a.x" not in set_data
+        assert set_data["a"] is ref
+
+
+class TestDeltaPathTruncationFullWalk:
+    """The common case the PR optimizes for: no reference break, every
+    part of the path is walked. Pre-#145 built ``new_path`` part-by-part
+    and final-joined into the original ``path`` string; post-#145 keeps
+    ``used = len(parts)``, the ``if used < len(parts)`` guard is False,
+    and ``path`` stays as-is. No re-join is performed — that's the perf
+    win, but the OBSERVABLE result must still be identical.
+    """
+
+    def test_full_walk_preserves_path(self):
+        stub = _DeltaStub(
+            doc={"a": {"b": {"c": "value"}}},
+            set_fields=["a.b.c"],
+        )
+        set_data, _ = BaseDocument._delta(stub)
+        assert "a.b.c" in set_data
+        assert set_data["a.b.c"] == "value"
+
+
+class TestDeltaPathTruncationListIndex:
+    """The ``isinstance(d, list) and p.isdigit()`` branch steps INTO
+    ``d[int(p)]`` and continues walking — does NOT truncate. Pre-#145
+    appended the digit to ``new_path``; post-#145 keeps ``used`` at
+    its initial ``len(parts)`` (no break), so ``path`` stays as the
+    original ``"a.0.b"`` string. Same bytes.
+    """
+
+    def test_list_index_in_middle_does_not_truncate(self):
+        stub = _DeltaStub(
+            doc={"a": [{"b": "inner"}]},
+            set_fields=["a.0.b"],
+        )
+        set_data, _ = BaseDocument._delta(stub)
+        # The digit '0' indexes into the list and walking continues —
+        # final path is the original "a.0.b", value is "inner".
+        assert "a.0.b" in set_data
+        assert set_data["a.0.b"] == "inner"
+
+
+class TestDeltaPathTruncationDictGetMiss:
+    """When ``d.get(p)`` returns ``None`` (key missing), the walk
+    continues with ``d = None``. Subsequent iterations skip both the
+    ObjectId/DBRef check and the list/dict branches (None has no
+    ``.get``), falling through silently. Pre-#145 still appended the
+    part to ``new_path``; post-#145 still doesn't break. Same path.
+    """
+
+    def test_missing_intermediate_key_still_walks(self):
+        stub = _DeltaStub(
+            doc={"a": "value"},
+            set_fields=["a.missing"],
+        )
+        set_data, _ = BaseDocument._delta(stub)
+        # d walks: doc → "value" via get("a"). On iter 1, p="missing",
+        # d="value" — isinstance str of ObjectId/DBRef False, isinstance
+        # list False, hasattr(str, "get") False → fall through silently.
+        # used stays len(parts)=2, no truncation. path unchanged.
+        assert "a.missing" in set_data
+        # d is set to "value" then never updated again. Final set_data
+        # value is whatever d ended at — preserving the pre-#145 quirk
+        # that fallthrough-after-get-miss carries the LAST-walked d.
+        assert set_data["a.missing"] == "value"
+
+
+class TestDeltaPathTruncationEmptyPath:
+    """Empty path = single-element parts ``[""]``. The truncation loop
+    walks once (no break), ``used`` stays at 1, and ``if 1 < 1`` is
+    False so ``path`` is reused as ``""``. Both pre- and post-#145
+    forms feed ``set_data[""] = doc.get("") = None`` into the
+    downstream defaults-check loop. Pinning the truncation contract
+    (no re-join, no off-by-one) via the post-default-loop unset path.
+    """
+
+    def test_empty_path_no_break_no_rejoin(self):
+        doc = {"x": "y"}
+        stub = _DeltaStub(
+            doc=doc,
+            set_fields=[""],
+        )
+        set_data, unset_data = BaseDocument._delta(stub)
+        # The truncation loop's output is ``set_data[""] = None``.
+        # The defaults-check loop downstream then moves the empty-path
+        # falsy entry into ``unset_data`` because ``None == default``
+        # (default is None for an unknown field) — pre- and post-#145
+        # produce the same final placement.
+        assert "" in unset_data
+        assert "" not in set_data
 
 
 # ---------------------------------------------------------------------------
@@ -277,14 +482,25 @@ class TestBuildChatJsonMessagesFalseBranch:
         # The fenced JSON block uses indent=2 — matches pre-#146 byte-for-byte.
         assert '"k": "v"' in user
 
-    def test_with_uri_appended(self):
+    def test_with_uri_appended_before_suffix(self):
+        """URI must land BEFORE the trailing json_suffix — pre-#146
+        ordering was ``user += uri_line; user += json_suffix``. A
+        rearrangement that puts the suffix first would still pass a
+        naive ``in`` check but corrupts the prompt — the LLM would see
+        "No markdown..." then a stray URI line.
+        """
         _, user = build_chat_json_messages(
             message="hello",
             system_base="You are helpful",
             uri="http://example.com",
             api_enforces_json=False,
         )
-        assert "\nUse the following URI for reference: http://example.com" in user
+        uri_line = "\nUse the following URI for reference: http://example.com"
+        assert uri_line in user
+        suffix = "\n\nRespond with ONLY a valid JSON object. No markdown, no prose."
+        assert user.endswith(suffix)
+        # URI line must precede the suffix in the final user message.
+        assert user.index(uri_line) < user.index(suffix)
 
     def test_suffix_has_no_markdown_no_prose_clause(self):
         _, user = build_chat_json_messages(
@@ -552,14 +768,3 @@ class TestAdapterImportShape:
         importlib.reload(openai_compat)
 
 
-# ---------------------------------------------------------------------------
-# Traceability
-# ---------------------------------------------------------------------------
-
-
-def test_traceability_pr_165():
-    """Marker test pinning the PR number this file's tests target. Lets
-    a future ``git log -S '#165'`` or coverage audit map tests to PR
-    without parsing docstrings.
-    """
-    assert True  # Test PR #165 (closes #145 + #146)

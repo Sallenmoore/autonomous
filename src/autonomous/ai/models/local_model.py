@@ -174,11 +174,10 @@ class LocalAIModel(AutoModel):
             key = (self._text_model, self._ollama_url)
             if key not in _STRUCTURED_OUTPUTS_LOGGED:
                 _STRUCTURED_OUTPUTS_LOGGED.add(key)
-                # Inline event+counter to preserve the
-                # ``autonomous.ai.models.local_model.event`` patch target
-                # tests rely on (symmetric with openai_compat — DRYing
-                # this into a helper was tried under #146 and reverted
-                # because it broke the test seam).
+                # Inline event+counter: ``event`` resolves through this
+                # module's namespace so ``patch.object(local_model,
+                # 'event')`` continues to intercept. A cross-module
+                # helper would bypass that patch seam.
                 event(
                     "structured_outputs_unavailable",
                     level="warning",
@@ -203,12 +202,10 @@ class LocalAIModel(AutoModel):
         # carries the full enforcement burden (verbose JSON instructions +
         # "Adhere strictly to this context:" label + "No markdown, no
         # prose." suffix).
-        # Caller-side `or` preserves the pre-#146 short-circuit: an explicit
-        # `system_prompt` never triggers `self.instructions`'s descriptor
-        # read. Tests pass system_prompt= against an instance whose `_data`
-        # isn't initialized; resolving at the call site keeps them passing.
-        # `system_msg` (not `system_prompt`) so the input parameter stays
-        # accessible to any future retry/fallback path below.
+        # Caller-side `or` short-circuit: an explicit `system_prompt`
+        # never triggers `self.instructions`'s descriptor read. Naming
+        # the result `system_msg` keeps the input `system_prompt`
+        # parameter unmodified.
         system_msg, user_message = build_chat_json_messages(
             message=message,
             system_base=system_prompt or self.instructions,

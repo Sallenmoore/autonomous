@@ -526,17 +526,13 @@ class OpenAIClient(AutoModel):
             # loose without re-probing. Do NOT move this .add() below
             # the retry branch; that would cause repeated probe failures.
             _UNSUPPORTED_STRICT_MODE.add(endpoint_key)
-            # Cross-adapter helper was tried under #146 and reverted —
-            # ``tests/unit/test_unit_resilience_124_125_*.py`` patches
-            # ``autonomous.ai.models.openai_compat.event``; routing the
-            # call through a helper in another module silently bypasses
-            # that patch. The intra-module helper used here calls
-            # ``event`` via openai_compat's module namespace, so the
-            # patch target still intercepts. Per-call kwargs (``status``,
+            # Intra-module helper resolves ``event`` through
+            # openai_compat's namespace so ``patch.object(openai_compat,
+            # 'event')`` continues to intercept (a cross-module helper
+            # would bypass that seam). Per-call kwargs (``status``,
             # ``body_excerpt``, ``detection``) are openai_compat-specific
-            # and intentionally NOT mirrored by local_model — local
-            # carries ``fallback=`` instead because its prompt-only path
-            # has no HTTP fallback to describe.
+            # — local carries ``fallback=`` instead because its
+            # prompt-only path has no HTTP fallback to describe.
             self._emit_strict_unavailable(
                 status=resp.status_code,
                 body_excerpt=resp.text[:200],
