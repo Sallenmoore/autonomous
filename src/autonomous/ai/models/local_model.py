@@ -396,15 +396,13 @@ class LocalAIModel(AutoModel):
         # Pre-#140 the system slot was `additional_instructions` alone
         # (local_model historically didn't use self.instructions in
         # generate_text). When `system_prompt` is set it prepends to the
-        # system slot — mirroring generate_json's persona-replacement
-        # semantics without changing the bare-call behavior.
-        system_content = additional_instructions
-        if system_prompt:
-            system_content = (
-                f"{system_prompt}\n{system_content}"
-                if system_content
-                else system_prompt
-            )
+        # system slot. `filter(None, ...)` drops empty strings and None,
+        # so all four cases collapse to one expression: bare-call →
+        # additional_instructions; system_prompt only → system_prompt;
+        # both → "system_prompt\nadditional_instructions"; neither → "".
+        system_content = "\n".join(
+            filter(None, [system_prompt, additional_instructions])
+        )
 
         # 3. Send to Ollama
         payload = {

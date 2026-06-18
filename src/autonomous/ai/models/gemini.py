@@ -17,7 +17,7 @@ from autonomous.ai.exceptions import (
     GenerateJSONEmptyResponseError,
     GenerateJSONParseError,
 )
-from autonomous.ai.models._image_utils import resolve_image_config
+from autonomous.ai._image_utils import resolve_image_config
 from autonomous.model.autoattr import ListAttr, StringAttr
 from autonomous.model.automodel import AutoModel
 

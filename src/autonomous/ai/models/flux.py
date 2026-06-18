@@ -26,7 +26,7 @@ import requests
 from autonomous import log
 from autonomous.ai._extract import extract_or_malformed
 from autonomous.ai.exceptions import MalformedResponseError
-from autonomous.ai.models._image_utils import resolve_image_config
+from autonomous.ai._image_utils import resolve_image_config
 from autonomous.ai.protocol import NotSupportedByProvider
 from autonomous.config import env_str, settings
 from autonomous.http import HttpClient

@@ -5,11 +5,27 @@ recent first.
 
 ## Unreleased
 
+### `QuerySet.snapshot()` removed (#154)
+
+**What changed.**
+
+`QuerySet.snapshot(enabled)` is gone. PyMongo 3+ ignored the option entirely, so the method has been a no-op for the whole supported pymongo range (emitting a `DeprecationWarning` on every call). Removing it also drops the dead `_snapshot` flag in `BaseQuerySet.__init__`, the entry in `_clone_into`'s `copy_props` tuple, and the warning re-fire in `_cursor_args`.
+
+**Behavior change.**
+
+Any direct caller of `qs.snapshot(...)` now raises `AttributeError` instead of receiving a no-op + DeprecationWarning. There is no replacement — PyMongo dropped the underlying capability years ago. Callers should simply delete the call.
+
 ### `TextAgent.generate` and all `generate_text` adapters gain `system_prompt=` kwarg (#140)
 
 **What changed.**
 
-`TextAgent.generate(...)` accepts a new `system_prompt=None` keyword. When set, it replaces the persisted persona (`self.instructions`) for the call — mirroring `JSONAgent.generate(system_prompt=...)`. `additional_instructions` still appends as a task-level suffix to whichever system message is in play. All four `generate_text` adapters (`openai_compat`, `gemini`, `local_model`, `mock_model`) accept the same kwarg so the dispatch layer doesn't TypeError on a non-openai provider.
+`TextAgent.generate(...)` accepts a new `system_prompt=None` keyword. The semantic is adapter-specific:
+
+- `openai_compat.generate_text` and `gemini.generate_text` **replace** the persisted persona (`self.instructions`) with `system_prompt` for the call (mirrors `JSONAgent.generate(system_prompt=...)`).
+- `local_model.generate_text` has historically never used `self.instructions` in the text path (the system slot was `additional_instructions` alone); `system_prompt` **prepends** to that slot rather than replacing a persona that doesn't exist there.
+- `mock_model.generate_text` accepts the kwarg for dispatch parity and ignores it.
+
+In all four adapters, `additional_instructions` still appends as a task-level suffix to whatever system message ends up in play.
 
 **Behavior change.**
 

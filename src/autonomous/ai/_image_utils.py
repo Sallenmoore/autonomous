@@ -10,6 +10,11 @@ and `GeminiAIModel`; the 2026-06-18 multi-agent audit flagged the
 duplication and #149 collapses it. The two adapters' existing unit-test
 suites pin the per-provider wire-shape outputs and become the regression
 check.
+
+Lives at `autonomous.ai._image_utils` (sibling of `_extract.py`) rather
+than under `models/` so non-adapter callers (e.g. ImageAgent dispatch)
+can validate the canonical vocabulary without reaching into a private
+sub-namespace.
 """
 
 from __future__ import annotations
