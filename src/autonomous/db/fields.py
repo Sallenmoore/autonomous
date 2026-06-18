@@ -1,4 +1,5 @@
 import datetime
+import functools
 import inspect
 import itertools
 import re
@@ -150,12 +151,24 @@ class StringField(BaseField):
                 regex = value
 
             if op == "regex":
-                value = re.compile(regex, flags)
+                value = _compile_cached(regex, flags)
             else:
                 # escape unsafe characters which could lead to a re.error
                 value = re.escape(value)
-                value = re.compile(regex % value, flags)
+                value = _compile_cached(regex % value, flags)
         return super().prepare_query_value(op, value)
+
+
+# Issue #144 (D.3): repeated string queries against the same field with
+# the same operator/value recompile the same pattern every call. LRU-
+# cached compilation amortizes that to one ``re.compile`` per distinct
+# ``(pattern, flags)`` pair, bounded so adversarial input can't grow the
+# cache without bound. ``maxsize=512`` is large enough to cover a busy
+# request's per-call patterns while keeping the cache well under a
+# megabyte of compiled regex state.
+@functools.lru_cache(maxsize=512)
+def _compile_cached(pattern: str, flags: int) -> re.Pattern[str]:
+    return re.compile(pattern, flags)
 
 
 class EmailField(StringField):
