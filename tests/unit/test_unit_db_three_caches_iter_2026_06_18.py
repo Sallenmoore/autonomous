@@ -82,18 +82,14 @@ class TestToMongoCoVarnamesCache:
         # Sanity: same value as a direct re-introspection.
         assert second == StringField.to_mongo.__code__.co_varnames
 
-    def test_keyed_by_class_not_instance(self):
-        """Two different field CLASSES → two cache entries; an INSTANCE
-        of an already-cached class does NOT add a new entry (since the
-        cache key is the class, passing the class object — not an
-        instance — is the documented contract)."""
+    def test_two_distinct_classes_two_entries(self):
+        """Two different field CLASSES → two cache entries; re-calling
+        with the same class does NOT grow the cache."""
         _to_mongo_co_varnames(StringField)
         _to_mongo_co_varnames(IntField)
-        # Two distinct misses → two cache entries.
         assert _to_mongo_co_varnames.cache_info().currsize == 2
         assert _to_mongo_co_varnames.cache_info().misses == 2
 
-        # Re-calling with the same StringField CLASS does not grow the cache.
         before = _to_mongo_co_varnames.cache_info().currsize
         _to_mongo_co_varnames(StringField)
         assert _to_mongo_co_varnames.cache_info().currsize == before
@@ -188,11 +184,19 @@ class TestLookupFieldSubclassCache:
         """A failed lookup must NOT add a ``None`` (or any) entry for
         ``(parent, missing_name)`` — otherwise a subclass registered
         AFTER the failure could never resolve via the parent.
+
+        Pinned two ways: (a) the specific key not in the cache, and
+        (b) overall cache size unchanged. (a) alone could be defeated
+        by a regression that writes a ``None`` value (since
+        ``cached_field is not None`` would still mask it from a key
+        membership check); (b) catches that.
         """
         from autonomous.db import Document
 
         class _D144EmptyParent(Document):
             meta = {"abstract": True, "allow_inheritance": True}
+
+        size_before = len(_LOOKUP_FIELD_SUBCLASS_CACHE)
 
         # No subclass has the field yet — first lookup must raise.
         with pytest.raises(LookUpError):
@@ -201,6 +205,15 @@ class TestLookupFieldSubclassCache:
         assert (_D144EmptyParent, "latecomer") not in _LOOKUP_FIELD_SUBCLASS_CACHE, (
             "miss must not be cached (additive-only invariant)"
         )
+        assert len(_LOOKUP_FIELD_SUBCLASS_CACHE) == size_before, (
+            "cache size must not grow on miss (catches a ``None`` write "
+            "regression that key-membership alone would miss)"
+        )
+
+        # Repeated miss should also stay uncached.
+        with pytest.raises(LookUpError):
+            _D144EmptyParent._lookup_field(["latecomer"])
+        assert len(_LOOKUP_FIELD_SUBCLASS_CACHE) == size_before
 
     def test_late_registered_subclass_can_resolve_after_initial_miss(self):
         """The behavioral consequence of additive-only: a subclass
@@ -309,9 +322,29 @@ class TestCompileCached:
         assert b.match("hello") is not None
 
     def test_bounded_maxsize(self):
-        """The cache is bounded at 512 entries (adversarial input
-        protection per the PR body)."""
-        assert _compile_cached.cache_info().maxsize == 512
+        """The cache is bounded (adversarial input protection per the
+        PR body). Pins "bounded and non-trivial" without freezing the
+        exact number — a future tuning of the cap shouldn't break the
+        test as long as it stays bounded and large enough to cover a
+        busy request's distinct patterns."""
+        info = _compile_cached.cache_info()
+        assert info.maxsize is not None, "must be bounded, not unbounded"
+        assert info.maxsize >= 128, "non-trivial size"
+
+    def test_re_escape_applied_before_caching_for_non_regex_ops(self):
+        """For non-``regex`` ops, ``prepare_query_value`` runs the input
+        through ``re.escape`` BEFORE compiling. Pin the escape so a
+        future "optimization" that caches the raw, un-escaped value
+        can't silently degrade the literal-match contract.
+        ``startswith("a.b")`` must match strings starting with the
+        literal three characters ``a.b`` — NOT any-char-between."""
+        f = StringField()
+        pat = f.prepare_query_value("startswith", "a.b")
+        # The literal three characters match.
+        assert pat.match("a.b-suffix") is not None
+        # ``.`` should NOT be interpreted as "any character" — if escape
+        # is dropped, ``axb-suffix`` would match.
+        assert pat.match("axb-suffix") is None
 
     def test_endtoend_stringfield_query_value_caches(self):
         """End-to-end: ``StringField.prepare_query_value("startswith",

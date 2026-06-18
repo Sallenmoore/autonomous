@@ -53,10 +53,13 @@ def _to_mongo_co_varnames(field_class):
 # whole subclass tree. Mirrors the additive-only cache pattern in
 # ``autonomous.model.automodel:_LOAD_MODEL_CACHE``: successful lookups
 # are cached; misses aren't (a subclass may register later in the
-# process and a cached miss would mask that). Module-level dict because
-# the cache key is ``(cls, field_name)`` and class objects aren't
-# hashable through ``lru_cache``'s ``functools._make_key`` in a way
-# that's stable across runs of cleared subclass registries.
+# process and a cached miss would mask that).
+#
+# Plain dict rather than ``@lru_cache`` because ``lru_cache`` would
+# memoize both hits AND misses (the wrapper has no "skip on this
+# return value" hook), which breaks the additive-only invariant above.
+# A miss would write a sentinel that no later subclass registration
+# could displace.
 _LOOKUP_FIELD_SUBCLASS_CACHE: dict = {}
 
 

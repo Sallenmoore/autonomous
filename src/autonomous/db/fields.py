@@ -162,10 +162,10 @@ class StringField(BaseField):
 # Issue #144 (D.3): repeated string queries against the same field with
 # the same operator/value recompile the same pattern every call. LRU-
 # cached compilation amortizes that to one ``re.compile`` per distinct
-# ``(pattern, flags)`` pair, bounded so adversarial input can't grow the
-# cache without bound. ``maxsize=512`` is large enough to cover a busy
-# request's per-call patterns while keeping the cache well under a
-# megabyte of compiled regex state.
+# ``(pattern, flags)`` pair, bounded so adversarial input (many distinct
+# query values) can't grow the cache without bound. ``maxsize=512`` is
+# large enough to cover a busy request's per-call patterns while keeping
+# the cache size bounded.
 @functools.lru_cache(maxsize=512)
 def _compile_cached(pattern: str, flags: int) -> re.Pattern[str]:
     return re.compile(pattern, flags)
