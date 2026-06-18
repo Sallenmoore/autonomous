@@ -17,6 +17,7 @@ from autonomous.ai.exceptions import (
     GenerateJSONEmptyResponseError,
     GenerateJSONParseError,
 )
+from autonomous.ai.models._image_utils import resolve_image_config
 from autonomous.model.autoattr import ListAttr, StringAttr
 from autonomous.model.automodel import AutoModel
 
@@ -564,55 +565,43 @@ class GeminiAIModel(AutoModel):
             log(f"==== Audio Gen Error: {e} ====", _print=True)
             raise
 
+    # Per-tier wire-shape mapping for Gemini. Pre-#149 these branches
+    # were inline in _get_image_config; pulling the vocabulary parse out
+    # (see _image_utils.resolve_image_config) lets us collapse the
+    # duplicated mapping with Flux.
+    #
+    # Image-size constraints (issues #29, #30):
+    # - Gemini's ``types.ImageConfig.image_size`` accepts ``"1K"`` /
+    #   ``"2K"`` / ``"4K"``. ``"0.5K"`` is NOT a valid value — the API
+    #   returns ``400 INVALID_ARGUMENT``.
+    # - The current default model ``gemini-3.1-flash-image-preview``
+    #   additionally rejects ``"4K"`` (only ``"1K"`` / ``"2K"`` work
+    #   against it). The "4K" tier is therefore clamped to "2K" in the
+    #   wire-shape table below; ``_get_image_config`` logs a breadcrumb
+    #   so callers can detect the silent downgrade.
+    _GEMINI_SIZE_BY_TIER = {
+        "low": "1K",  # was "0.5K" — issue #29 (invalid for Gemini)
+        "2K":  "2K",
+        "4K":  "2K",  # was "4K" — issue #30 (flash-image-preview rejects 4K)
+    }
+
     def _get_image_config(self, aspect_ratio_input):
+        """Map autonomous's aspect-ratio vocabulary to Gemini's
+        ``(aspect_ratio, image_size)`` pair.
+
+        Canonical vocabulary parse lives in
+        ``_image_utils.resolve_image_config``; this method only
+        translates the canonical ``(ratio, tier)`` to Gemini's wire
+        shape plus the "4K"→"2K" clamp breadcrumb.
         """
-        Parses custom aspect ratio keys (e.g., '2KPortrait') into valid
-        Google Gemini API parameters for ratio and size.
-
-        Image-size constraints (issues #29, #30):
-        - Gemini's ``types.ImageConfig.image_size`` accepts ``"1K"`` /
-          ``"2K"`` / ``"4K"``. ``"0.5K"`` is NOT a valid value — the
-          API returns ``400 INVALID_ARGUMENT``.
-        - The current default model ``gemini-3.1-flash-image-preview``
-          additionally rejects ``"4K"`` (only ``"1K"`` / ``"2K"`` work
-          against it). A future model wired via ``GEMINI_IMAGE_MODEL``
-          may accept ``"4K"``; this mapping clamps to ``"2K"`` for now
-          so high-resolution callers degrade gracefully rather than
-          hard-fail.
-
-        The cheap-default tier maps to ``"1K"`` (smallest valid size).
-        Bare ratio inputs (``"1:1"``, ``"3:4"`` etc.) inherit the
-        default size — previously they inherited the now-invalid
-        ``"0.5K"`` default, breaking every bare-ratio caller.
-        """
-        # Default fallback — "1K" is the smallest size Gemini actually
-        # accepts. Previously "0.5K" (issue #29) which the API rejected.
-        ratio = "3:4"
-        size = "1K"
-
-        # Logic Mapping
-        # Keys match what your App sends in ttrpgbase.py
-        if aspect_ratio_input == "Portrait":
-            ratio = "3:4"
-            size = "1K"   # was "0.5K" — issue #29 (invalid for Gemini)
-        elif aspect_ratio_input == "Landscape":
-            ratio = "16:9"
-            size = "1K"
-        elif aspect_ratio_input == "2K":
-            ratio = "16:9"
-            size = "2K"
-        elif aspect_ratio_input == "2KPortrait":
-            ratio = "3:4"
-            size = "2K"
-        elif aspect_ratio_input in ["4K", "Map"]:
-            ratio = "16:9"
-            size = "2K"   # was "4K" — issue #30 (flash-image-preview rejects 4K)
+        ratio, tier = resolve_image_config(aspect_ratio_input)
+        if tier == "4K":
             # Breadcrumb so a 4K caller can detect the silent downgrade.
             # The clamp policy is correct (return *something* rather than
             # hard-fail), but the silence was: storyteller workers stored
             # the WebP and had no way to know the resolution contract was
-            # downgraded. Mirrors the breadcrumb pattern at
-            # imageagent.py (hybrid_upscale / provider_fallback_used).
+            # downgraded. Mirrors imageagent.py's breadcrumb pattern
+            # (hybrid_upscale / provider_fallback_used).
             log(
                 f"[GEMINI-IMAGE-CLAMP] aspect_ratio={aspect_ratio_input!r} "
                 f"requested 4K resolution; clamped to image_size='2K' "
@@ -620,20 +609,7 @@ class GeminiAIModel(AutoModel):
                 f"GEMINI_IMAGE_MODEL to a 4K-capable variant to lift.",
                 _print=False,
             )
-        elif aspect_ratio_input == "4KPortrait":
-            ratio = "3:4"
-            size = "2K"   # was "4K" — issue #30 (flash-image-preview rejects 4K)
-            log(
-                f"[GEMINI-IMAGE-CLAMP] aspect_ratio='4KPortrait' "
-                f"requested 4K resolution; clamped to image_size='2K' "
-                f"(model {self._image_model!r} rejects 4K). Set "
-                f"GEMINI_IMAGE_MODEL to a 4K-capable variant to lift.",
-                _print=False,
-            )
-        elif aspect_ratio_input in ["1:1", "3:4", "4:3", "9:16", "16:9"]:
-            ratio = aspect_ratio_input
-            # size stays at "1K" default (previously the invalid "0.5K")
-
+        size = self._GEMINI_SIZE_BY_TIER.get(tier, "1K")
         return ratio, size
 
     def generate_image(

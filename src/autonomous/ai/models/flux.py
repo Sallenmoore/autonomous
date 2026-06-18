@@ -26,6 +26,7 @@ import requests
 from autonomous import log
 from autonomous.ai._extract import extract_or_malformed
 from autonomous.ai.exceptions import MalformedResponseError
+from autonomous.ai.models._image_utils import resolve_image_config
 from autonomous.ai.protocol import NotSupportedByProvider
 from autonomous.config import env_str, settings
 from autonomous.http import HttpClient
@@ -138,6 +139,16 @@ class FluxAIModel(AutoModel):
     # up retry tests should instead do ``monkeypatch.setattr(_HTTP,
     # "retry_backoff", 0.0)``.
 
+    # Per-(ratio, tier) wire-shape mapping for fal.ai. Pre-#149 these
+    # branches were inline in _get_image_config; pulling the vocabulary
+    # parse out lets us collapse the duplicated mapping with Gemini.
+    _FLUX_SIZE_BY_RATIO_TIER = {
+        ("16:9", "2K"): "landscape_4_3",
+        ("3:4",  "2K"): "portrait_4_3",
+        ("16:9", "4K"): "landscape_16_9",
+        ("3:4",  "4K"): "portrait_16_9",
+    }
+
     def _get_image_config(self, aspect_ratio_input):
         """Map autonomous's aspect-ratio vocabulary to fal.ai's
         ``(aspect_ratio, image_size)`` pair.
@@ -145,24 +156,12 @@ class FluxAIModel(AutoModel):
         fal.ai accepts ``aspect_ratio`` from {1:1, 16:9, 9:16, 4:3, 3:4,
         ...} and ``image_size`` from a preset enum
         (square/square_hd/portrait_4_3/portrait_16_9/landscape_4_3/
-        landscape_16_9). The mapping below mirrors GeminiAIModel's
-        ``_get_image_config`` so the two adapters present the same
-        external vocabulary."""
-        ratio, size = "3:4", "square_hd"  # default fallback
-        if aspect_ratio_input == "Portrait":
-            ratio, size = "3:4", "square_hd"
-        elif aspect_ratio_input == "Landscape":
-            ratio, size = "16:9", "square_hd"
-        elif aspect_ratio_input == "2K":
-            ratio, size = "16:9", "landscape_4_3"
-        elif aspect_ratio_input == "2KPortrait":
-            ratio, size = "3:4", "portrait_4_3"
-        elif aspect_ratio_input in ("4K", "Map"):
-            ratio, size = "16:9", "landscape_16_9"
-        elif aspect_ratio_input == "4KPortrait":
-            ratio, size = "3:4", "portrait_16_9"
-        elif aspect_ratio_input in ("1:1", "3:4", "4:3", "9:16", "16:9"):
-            ratio = aspect_ratio_input
+        landscape_16_9). The canonical vocabulary parse lives in
+        ``_image_utils.resolve_image_config``; this method only
+        translates the canonical ``(ratio, tier)`` to fal's wire shape.
+        """
+        ratio, tier = resolve_image_config(aspect_ratio_input)
+        size = self._FLUX_SIZE_BY_RATIO_TIER.get((ratio, tier), "square_hd")
         return ratio, size
 
     def _require_api_key(self):
