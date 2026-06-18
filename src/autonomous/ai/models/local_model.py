@@ -9,7 +9,12 @@ from pydub.exceptions import PydubException
 
 from autonomous import log
 from autonomous.ai._extract import extract_or_malformed
+from autonomous.ai._json_messages import (
+    STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER as _STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER,
+    build_chat_json_messages,
+)
 from autonomous.ai._json_utils import clean_json_response
+from autonomous.observability import event
 from autonomous.ai.exceptions import (
     GenerateJSONEmptyResponseError,
     GenerateJSONParseError,
@@ -20,7 +25,6 @@ from autonomous.config import env_str, settings
 from autonomous.http import HttpClient
 from autonomous.model.autoattr import ListAttr, StringAttr
 from autonomous.model.automodel import AutoModel
-from autonomous.observability import counter, event
 from autonomous.taskrunner.autotasks import AutoTasks
 
 # Module-level HTTP client for Ollama + media_ai calls (#50 slice C, README #16).
@@ -83,21 +87,6 @@ _HTTP = HttpClient(
 # the "no structured outputs support" marker for. Avoids log spam on
 # every JSON call. Cleared by process restart only.
 _STRUCTURED_OUTPUTS_LOGGED: set[tuple[str, str]] = set()
-
-# Process-wide counter for structured-outputs-unavailable fallbacks
-# (#51 step 3). Shared with openai_compat via the idempotent
-# ``counter()`` registry — both providers bump the same series, label
-# differentiates. The Counter is bumped on every (model, endpoint)
-# first-detection — same gating as the log emission — so the rate
-# reflects newly-discovered unsupported adapters, not per-call traffic.
-_STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER = counter(
-    "structured_outputs_unavailable_total",
-    description=(
-        "JSON adapters falling back from strict-mode schema enforcement "
-        "(first detection per (model, endpoint) per process)"
-    ),
-    label_names=("provider",),
-)
 
 
 class LocalAIModel(AutoModel):
@@ -185,13 +174,11 @@ class LocalAIModel(AutoModel):
             key = (self._text_model, self._ollama_url)
             if key not in _STRUCTURED_OUTPUTS_LOGGED:
                 _STRUCTURED_OUTPUTS_LOGGED.add(key)
-                # Migrated to ``observability.event()`` (#51 step 3) —
-                # preserves the ``[STRUCTURED-OUTPUTS-UNAVAILABLE]``
-                # prefix at line-start for grep-based scrapers; adds
-                # structured fields for parser-based consumers.
-                # ``print_to_stdout=False`` mirrors the pre-migration
-                # ``_print=False`` (symmetric with openai_compat — the
-                # log file is authoritative).
+                # Inline event+counter to preserve the
+                # ``autonomous.ai.models.local_model.event`` patch target
+                # tests rely on (symmetric with openai_compat — DRYing
+                # this into a helper was tried under #146 and reverted
+                # because it broke the test seam).
                 event(
                     "structured_outputs_unavailable",
                     level="warning",
@@ -210,26 +197,25 @@ class LocalAIModel(AutoModel):
                         f"counter inc failed: {exc!r}"
                     )
 
-        context = context or {}
-        system_prompt = system_prompt or self.instructions
-        system_prompt = system_prompt.rstrip(". ") + "."
-        system_prompt = (
-            f"{system_prompt}\n"
-            f"Your entire response MUST be a single valid JSON object.\n"
-            f"Start with {{ and end with }}. No markdown, no prose."
+        # Message construction consolidated to ``_json_messages`` (#146) —
+        # this adapter passes ``api_enforces_json=False`` because Ollama has
+        # no ``response_format=json_object`` equivalent, so the prompt
+        # carries the full enforcement burden (verbose JSON instructions +
+        # "Adhere strictly to this context:" label + "No markdown, no
+        # prose." suffix).
+        # Caller-side `or` preserves the pre-#146 short-circuit: an explicit
+        # `system_prompt` never triggers `self.instructions`'s descriptor
+        # read. Tests pass system_prompt= against an instance whose `_data`
+        # isn't initialized; resolving at the call site keeps them passing.
+        # `system_msg` (not `system_prompt`) so the input parameter stays
+        # accessible to any future retry/fallback path below.
+        system_msg, user_message = build_chat_json_messages(
+            message=message,
+            system_base=system_prompt or self.instructions,
+            context=context,
+            uri=uri,
+            api_enforces_json=False,
         )
-
-        # 2. Construct User Message
-        user_message = message
-        if context:
-            user_message += (
-                f"\n\n### GROUND TRUTH CONTEXT ###\n"
-                f"Adhere strictly to this context:\n"
-                f"{json.dumps(context, indent=2)}"
-            )
-        if uri:
-            user_message += f"\nUse the following URI for reference: {uri}"
-        user_message += "\n\nRespond with ONLY a valid JSON object. No markdown, no prose."
 
         # 3. Payload Construction
         # NOTE: `format: json` (grammar-constrained sampling) is intentionally
@@ -240,7 +226,7 @@ class LocalAIModel(AutoModel):
         payload = {
             "model": self._text_model,
             "messages": [
-                {"role": "system", "content": system_prompt},
+                {"role": "system", "content": system_msg},
                 {"role": "user", "content": user_message},
             ],
             "stream": False,
