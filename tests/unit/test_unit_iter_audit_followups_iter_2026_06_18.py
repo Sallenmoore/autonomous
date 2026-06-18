@@ -73,11 +73,12 @@ class TestResolveImageConfigTable:
     )
     def test_bare_ratios_pass_through_with_low_tier(self, bare_ratio):
         """Bare ratio inputs ride through as-is with tier="low". The
-        pre-#149 Flux/Gemini default fallback for bare ratios was
-        "square_hd"/"0.5K" — neither of which is in the canonical
-        vocabulary. The translation now happens at the adapter, so
-        bare-ratio callers see provider-specific defaults via the
-        size-table .get(...) fallback."""
+        immediate pre-#149 Flux/Gemini default fallback for bare
+        ratios was "square_hd"/"1K" (Gemini's "0.5K" was already
+        fixed by #29 before #149 landed). The translation now
+        happens at the adapter, so bare-ratio callers see
+        provider-specific defaults via the size-table .get(...)
+        fallback."""
         from autonomous.ai._image_utils import resolve_image_config
         assert resolve_image_config(bare_ratio) == (bare_ratio, "low")
 
@@ -143,10 +144,11 @@ def _gemini_bare():
 
 class TestGeminiGetImageConfig:
     """Pin gemini's _get_image_config end-to-end (no existing test
-    covers this method). Critical: the "low" tier maps to "1K" — the
-    pre-#149 inline code mapped to "0.5K" which Gemini's API
-    rejects (issue #29). Bare-ratio inputs MUST inherit "1K", not the
-    invalid old default."""
+    covers this method). The "low" tier maps to "1K" — issue #29
+    fixed the pre-existing "0.5K" default (which Gemini's API
+    rejects) BEFORE #149 landed; #149 preserves the #29 fix through
+    the refactor. The test below also guards against any path
+    re-introducing "0.5K"."""
 
     @pytest.mark.parametrize(
         "input_key,expected",
@@ -158,7 +160,7 @@ class TestGeminiGetImageConfig:
             ("4K",         ("16:9", "2K")),   # clamp per #30
             ("Map",        ("16:9", "2K")),   # clamp per #30
             ("4KPortrait", ("3:4",  "2K")),   # clamp per #30
-            ("1:1",        ("1:1",  "1K")),   # bare ratio → "1K" not "0.5K" (#29)
+            ("1:1",        ("1:1",  "1K")),   # bare ratio → "1K" (post-#29; preserved through #149)
             ("3:4",        ("3:4",  "1K")),
             ("4:3",        ("4:3",  "1K")),
             ("9:16",       ("9:16", "1K")),
@@ -171,10 +173,12 @@ class TestGeminiGetImageConfig:
         assert gem._get_image_config(input_key) == expected
 
     def test_low_tier_never_emits_the_invalid_half_K(self):
-        """Issue #29 regression guard. The pre-#149 inline code had
-        ``size = "0.5K"`` as the default and for bare-ratio inputs,
-        which Gemini's API rejects with 400 INVALID_ARGUMENT. Pin
-        that no path through the new dispatch can emit "0.5K"."""
+        """Issue #29 regression guard, preserved through #149. The
+        pre-#29 inline code had ``size = "0.5K"`` as the default and
+        for bare-ratio inputs, which Gemini's API rejects with 400
+        INVALID_ARGUMENT. #29 fixed it to "1K"; #149 refactored
+        the dispatch but preserved the fix. Pin that no path
+        through the new dispatch can emit "0.5K"."""
         gem = _gemini_bare()
         for key in ["Portrait", "Landscape", "1:1", "3:4", "16:9",
                     "Unknown", "", "garbage"]:
@@ -314,11 +318,19 @@ class TestTextAgentGenerateForwarding:
         assert adapter.calls[0]["system_prompt"] == "be terse"
 
     def test_default_system_prompt_is_none(self, monkeypatch):
-        """Pre-#140 wire-shape preservation: when the caller omits
-        system_prompt, the adapter sees system_prompt=None.
-        Adapter-side `system_prompt or self.instructions` then falls
-        through to the persisted persona — i.e. the pre-#140 default
-        is preserved."""
+        """Pre-#140 wire-shape preservation at the dispatcher layer:
+        when the caller omits system_prompt, the adapter sees
+        system_prompt=None. What each adapter DOES with that None
+        is adapter-specific:
+        - openai_compat/gemini: `system_prompt or self.instructions`
+          falls through to the persisted persona (REPLACE semantic
+          when system_prompt is truthy).
+        - local_model: PREPENDS to additional_instructions; the
+          persona is never read in either case (the documented #140
+          asymmetry — see TestLocalModelGenerateTextSystemPromptPrepend).
+        - mock_model: ignores the kwarg.
+        This dispatcher-level pin is necessary but NOT sufficient —
+        the per-adapter pins below cover the asymmetric semantics."""
         monkeypatch.delenv("TEXT_AI_AGENT", raising=False)
         adapter = _FakeAdapter()
         agent = _textagent_bare(adapter)
@@ -355,6 +367,27 @@ class TestTextAgentGenerateForwarding:
         agent.generate("hello", temperature=0.2)
 
         assert adapter.calls[0]["temperature"] == 0.2
+
+    def test_uri_and_context_propagate_to_adapter(self, monkeypatch):
+        """Pin that `uri=` and `context=` ride through unchanged.
+        TextAgent.generate passes them as named kwargs at the call
+        site (textagent.py:49-51). A refactor that consolidates
+        forwarding into `**kwargs` and accidentally drops either
+        name would pass `test_explicit_system_prompt_forwards_unchanged`
+        but silently break the uri/context contracts. Bug shape
+        flagged by independent test-coverage review."""
+        monkeypatch.delenv("TEXT_AI_AGENT", raising=False)
+        adapter = _FakeAdapter()
+        agent = _textagent_bare(adapter)
+
+        agent.generate(
+            "hello",
+            uri="https://example.invalid/ref.json",
+            context={"persona": "bard"},
+        )
+
+        assert adapter.calls[0]["uri"] == "https://example.invalid/ref.json"
+        assert adapter.calls[0]["context"] == {"persona": "bard"}
 
     def test_generate_signature_accepts_system_prompt(self):
         """If a refactor removes the kwarg from TextAgent.generate but
@@ -641,9 +674,13 @@ class TestLocalModelGenerateTextSystemPromptPrepend:
         assert calls[0]["messages"][0]["content"] == "EXTRA"
 
     def test_both_compose_with_newline_prepend(self, monkeypatch):
-        """system_prompt PREPENDS to additional_instructions —
-        opposite order from openai_compat (where system_prompt is
-        BASE and additional is the suffix)."""
+        """system_prompt as base, additional_instructions appended —
+        same join ORDER as openai_compat/gemini. The genuine #140
+        asymmetry is what occupies the BASE slot: openai_compat/gemini
+        put `self.instructions` (the persona) there when system_prompt
+        is absent; local_model leaves the base empty. See
+        TestLocalModelGenerateTextSystemPromptPrepend.test_self_instructions_does_not_leak_into_system_slot
+        for the persona-non-leakage pin."""
         calls = _stub_local_http_post(monkeypatch)
         adapter = _local_model_bare()
         adapter.generate_text(
@@ -740,15 +777,17 @@ class TestQuerySetSnapshotRemoval:
         `warnings.warn("snapshot is not anymore available with
         PyMongo 3+", DeprecationWarning)` block guarded by
         self._snapshot. With _snapshot removed, that block is dead
-        code; pin it's gone."""
+        code; pin it's gone.
+
+        Narrowed to `_cursor_args` only (was `BaseQuerySet` whole-
+        class source): a future legitimately-named "snapshot"
+        identifier elsewhere in BaseQuerySet (e.g. MongoDB session
+        snapshot isolation) should not trip this test."""
         from autonomous.db.queryset.base import BaseQuerySet
-        source = inspect.getsource(BaseQuerySet)
-        # The block was the only mention of "snapshot" in the cursor
-        # args path; the whole file should be snapshot-free after
-        # #154 (verified by `grep -n snapshot` finding nothing).
+        source = inspect.getsource(BaseQuerySet._cursor_args.fget)
         assert "snapshot" not in source.lower(), (
-            "BaseQuerySet source still references snapshot; #154 "
-            "intended a clean removal"
+            "_cursor_args still references snapshot; #154 intended "
+            "a clean removal of the warning re-fire"
         )
 
 

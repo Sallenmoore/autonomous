@@ -393,13 +393,14 @@ class LocalAIModel(AutoModel):
         if uri:
             additional_instructions += f"\nUse the following URI for reference: {uri}"
 
-        # Pre-#140 the system slot was `additional_instructions` alone
-        # (local_model historically didn't use self.instructions in
-        # generate_text). When `system_prompt` is set it prepends to the
-        # system slot. `filter(None, ...)` drops empty strings and None,
-        # so all four cases collapse to one expression: bare-call →
-        # additional_instructions; system_prompt only → system_prompt;
-        # both → "system_prompt\nadditional_instructions"; neither → "".
+        # Deliberate asymmetry vs openai_compat/gemini per MIGRATIONS.md
+        # #140: generate_text never reads self.instructions. The system
+        # slot is system_prompt prepended to additional_instructions
+        # (see test_self_instructions_does_not_leak_into_system_slot
+        # for the persona-non-leakage pin). `filter(None, ...)` drops
+        # empty strings, collapsing all four corner cases to one
+        # expression. Note this differs from generate_json on this
+        # same class, which DOES use `system_prompt or self.instructions`.
         system_content = "\n".join(
             filter(None, [system_prompt, additional_instructions])
         )

@@ -27,6 +27,8 @@ Any direct caller of `qs.snapshot(...)` now raises `AttributeError` instead of r
 
 In all four adapters, `additional_instructions` still appends as a task-level suffix to whatever system message ends up in play.
 
+**Intra-`local_model` asymmetry (deliberate).** `LocalAIModel.generate_json` already had the **replace-persona** semantic for `system_prompt=` (matching `openai_compat`/`gemini`); only `LocalAIModel.generate_text` keeps the **prepend-without-persona** behavior described above. The two methods on the same class therefore handle `self.instructions` differently — generate_json reads it as a fallback, generate_text never reads it. This is deliberate (text-path has no persona slot historically) and load-bearing for current consumers; future "harmonize sibling methods" PRs need to confront this difference and update the test pin at `tests/unit/test_unit_iter_audit_followups_iter_2026_06_18.py::test_self_instructions_does_not_leak_into_system_slot`.
+
 **Behavior change.**
 
 Additive. `system_prompt=None` (the default) preserves the pre-#140 wire shape on every adapter. No consumer change required.
