@@ -51,10 +51,14 @@ class TestGetImageConfig:
 class _FakeResponse:
     """Stand-in for requests.Response. Only the surface FluxAIModel uses."""
 
-    def __init__(self, *, status=200, json_data=None, content=b""):
+    def __init__(self, *, status=200, json_data=None, content=b"", text=""):
         self.status_code = status
         self._json = json_data or {}
         self.content = content
+        # ``text`` is read by ``MalformedResponseError.from_response`` for
+        # the body excerpt (#142 adoption of ``extract_or_malformed``).
+        self.text = text or repr(json_data or {})
+        self.headers = {"Content-Type": "application/json"}
 
     def json(self):
         return self._json
@@ -188,8 +192,13 @@ class TestGenerateImage:
             flux_mod.FluxAIModel.generate_image(_flux(), "prompt")
         assert calls["post"] == 3   # HttpClient.max_attempts default
 
-    def test_empty_images_array_raises_value_error(self, monkeypatch):
+    def test_empty_images_array_raises_malformed(self, monkeypatch):
         # No retry path exercised here — patch _HTTP.post directly.
+        # Issue #142: malformed-2xx (empty ``images`` array) now
+        # translates to ``MalformedResponseError`` via the shared
+        # ``extract_or_malformed`` helper, symmetric with openai_compat.
+        # The original ``ValueError`` is preserved on ``__cause__``.
+        from autonomous.ai.exceptions import MalformedResponseError
         monkeypatch.setenv("FAL_KEY", "fal-test-key")
 
         def fake_post(url, headers=None, json=None, timeout=None):
@@ -198,11 +207,15 @@ class TestGenerateImage:
         from autonomous.ai.models import flux as flux_mod
         monkeypatch.setattr(flux_mod._HTTP, "post", fake_post)
 
-        with pytest.raises(ValueError, match="no images"):
+        with pytest.raises(MalformedResponseError, match="no images"):
             flux_mod.FluxAIModel.generate_image(_flux(), "prompt")
 
-    def test_image_missing_url_raises_value_error(self, monkeypatch):
-        # No retry path exercised here — patch _HTTP.post directly.
+    def test_image_missing_url_raises_malformed(self, monkeypatch):
+        # Issue #142: same translation as the empty-array case. The
+        # inner ``ValueError("fal.ai response missing image URL: ...")``
+        # raised by the extractor is caught by ``MALFORMED_2XX_EXCEPTIONS``
+        # and re-raised as the typed error.
+        from autonomous.ai.exceptions import MalformedResponseError
         monkeypatch.setenv("FAL_KEY", "fal-test-key")
 
         def fake_post(url, headers=None, json=None, timeout=None):
@@ -211,7 +224,7 @@ class TestGenerateImage:
         from autonomous.ai.models import flux as flux_mod
         monkeypatch.setattr(flux_mod._HTTP, "post", fake_post)
 
-        with pytest.raises(ValueError, match="image URL"):
+        with pytest.raises(MalformedResponseError, match="image URL"):
             flux_mod.FluxAIModel.generate_image(_flux(), "prompt")
 
 
