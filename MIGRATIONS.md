@@ -5,6 +5,62 @@ recent first.
 
 ## Unreleased
 
+### `local_model` + `flux` adopt `extract_or_malformed` for typed-2xx translation (#142)
+
+**What changed.**
+
+- New shared helper `autonomous.ai._extract.extract_or_malformed(response, endpoint, extractor)`. Same body as the private `_extract_or_malformed` introduced in `openai_compat` (#92); moved out so other adapters can adopt the same translation without a cross-adapter import. `openai_compat._extract_or_malformed` is now a thin re-export — the call-site grep history is unchanged.
+- `LocalAIModel.generate_json` (`/api/chat` chat extraction), `LocalAIModel.generate_text` (`/api/chat` chat extraction), and `LocalAIModel.generate_transcription` (`/transcribe` body validation) route their `response.json().get(...)` walks through `extract_or_malformed`. A non-dict 2xx body (list / scalar) now raises `MalformedResponseError` from the shared helper instead of leaking a raw `AttributeError` / `TypeError`.
+- `FluxAIModel.generate_image` (`/fal/generate` `images[0]["url"]` walk) routes the same way. The previous explicit `raise ValueError(...)` for "no images" and "missing image URL" both happen *inside* the extractor and are caught by `MALFORMED_2XX_EXCEPTIONS` → translated to `MalformedResponseError` with the original `ValueError` preserved on `__cause__` and embedded in the wrapper message.
+
+**Behavior change — externally visible.**
+
+- `FluxAIModel.generate_image`: previously raised `ValueError` on malformed-2xx (no images / no URL); **now raises `MalformedResponseError`** (the typed shape already in the consumer contract via `openai_compat`). The `__cause__` chain preserves the original `ValueError` and its message, and the wrapper message includes the same descriptive text, so log-scraper consumers see the same human-readable detail. A consumer catching `ValueError` specifically on `FluxAIModel.generate_image` malformed-2xx needs to either:
+  - catch `MalformedResponseError` instead (recommended — symmetric with the other adapters), or
+  - catch both for transitional compatibility.
+- `LocalAIModel.generate_json`: the outer `except` ladder now catches `MalformedResponseError` and re-raises as `GenerateJSONEmptyResponseError` — matches `openai_compat.generate_json`'s pattern. Callers continue to see only the documented `GenerateJSONEmptyResponseError` / `GenerateJSONParseError` surface, so no consumer-side change at this site.
+- `LocalAIModel.generate_text` and `LocalAIModel.generate_transcription`: the existing degrade contracts are preserved (`generate_text` returns its initial `"Error generating text."` literal, `generate_transcription` returns `{"segments": [], "text": ""}`). The except tuples gained `MalformedResponseError` alongside the existing `requests.RequestException` / `json.JSONDecodeError` / `ValueError` entries so the typed exception is degraded internally; no consumer-visible change at these sites.
+
+**Migration.**
+
+- Storyteller-side or other consumers catching `ValueError` specifically on `FluxAIModel.generate_image` malformed-2xx: update to catch `MalformedResponseError` (or both transitionally). The `__cause__` chain preserves the original `ValueError` for any observability that walks it.
+- Consumers of `LocalAIModel.generate_json` / `.generate_text` / `.generate_transcription`: no action required — the existing contract surface is unchanged at the call-site boundary.
+
+**Why.**
+
+- Three independent angles in the 2026-06-18 multi-agent audit (architecture, duplicate-pattern, test-gap) all surfaced the same finding: `openai_compat` had the shared helper, `local_model` + `flux` had 4 unprotected `response.json()` sites that surfaced raw stdlib exceptions instead of the typed `MalformedResponseError`. This entry closes that asymmetry and is the warm-up for #146 (`JSONGenerationMixin` extraction).
+
+### `AutoUser.authenticate` no longer downgrades elevated roles on login (#136)
+
+**Symptom this fixes.**
+
+`AutoUser.authenticate()` previously set `user.role = "user"`
+**unconditionally** on every OAuth login. Any role granted out-of-band
+(e.g. an admin UI flipping `role` to `"admin"`, or a direct DB write)
+was silently reset to `"user"` the next time that user signed in,
+making a persistent `admin` (or any non-default) role impossible for
+OAuth users.
+
+**Fix.**
+
+`authenticate()` now only promotes the schema-default `"guest"` role to
+`"user"`. Any non-default role is left untouched. New users still land
+at `"user"` (they are constructed at the schema default `"guest"` and
+get bumped in the same step); existing `admin`/elevated users keep
+their role across login.
+
+**Consumer impact.**
+
+Purely fixative for consumers who rely on `is_admin` after granting
+`role="admin"` out-of-band. Consumers that worked around the bug with
+a subclass override that recaptured-and-restored the elevated role
+around `super().authenticate(...)` can drop the override — the upstream
+method now does the right thing.
+
+**Files touched.**
+- `src/autonomous/auth/user.py` — `AutoUser.authenticate` role-assignment
+  branch.
+
 ### `lore:<pk>` vector-index hash gains a `world_pk` discriminator (#132)
 
 **New capability.**

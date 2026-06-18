@@ -140,7 +140,12 @@ class AutoUser(AutoModel):
             user.email = email
         user.last_login = datetime.now()
         user.state = "authenticated"
-        user.role = "user"
+        # Promote the schema default ("guest"); never downgrade an existing
+        # elevated role. Admin (or any non-default) role granted out-of-band
+        # must survive login — unconditional assignment here previously
+        # wiped it.
+        if user.role == "guest":
+            user.role = "user"
         user.save()
         return user
 

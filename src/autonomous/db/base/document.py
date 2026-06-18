@@ -1,7 +1,7 @@
 import copy
 import numbers
 import warnings
-from functools import partial
+from functools import lru_cache, partial
 
 import pymongo
 from bson import SON, DBRef, ObjectId, json_util
@@ -34,6 +34,33 @@ try:
     GEOHAYSTACK = pymongo.GEOHAYSTACK
 except AttributeError:
     GEOHAYSTACK = None
+
+
+# Issue #144 (D.1): ``to_mongo`` signature introspection caches.
+# ``co_varnames`` is the same code object for every instance of a given
+# field class — there's no reason to do the ``__code__`` round-trip per
+# field per ``to_mongo()`` call. ``lru_cache`` keyed by field CLASS keeps
+# the cache small (one entry per registered field type) and lookup
+# constant-time. ``maxsize=None`` is safe because the number of distinct
+# field classes is bounded by the schema, not by traffic.
+@lru_cache(maxsize=None)
+def _to_mongo_co_varnames(field_class):
+    return field_class.to_mongo.__code__.co_varnames
+
+
+# Issue #144 (D.2): ``__subclasses__()`` walk in ``_lookup_field`` was
+# uncached — every failed field lookup on a parent class re-walked the
+# whole subclass tree. Mirrors the additive-only cache pattern in
+# ``autonomous.model.automodel:_LOAD_MODEL_CACHE``: successful lookups
+# are cached; misses aren't (a subclass may register later in the
+# process and a cached miss would mask that).
+#
+# Plain dict rather than ``@lru_cache`` because ``lru_cache`` would
+# memoize both hits AND misses (the wrapper has no "skip on this
+# return value" hook), which breaks the additive-only invariant above.
+# A miss would write a sentinel that no later subclass registration
+# could displace.
+_LOOKUP_FIELD_SUBCLASS_CACHE: dict = {}
 
 
 class BaseDocument:
@@ -353,7 +380,7 @@ class BaseDocument:
                 field = self._dynamic_fields.get(field_name)
 
             if value is not None:
-                f_inputs = field.to_mongo.__code__.co_varnames
+                f_inputs = _to_mongo_co_varnames(type(field))
                 ex_vars = {}
                 if fields and "fields" in f_inputs:
                     key = "%s." % field_name
@@ -1056,17 +1083,28 @@ class BaseDocument:
                 elif cls._meta.get("allow_inheritance") or cls._meta.get(
                     "abstract", False
                 ):
-                    # 744: in case the field is defined in a subclass
-                    for subcls in cls.__subclasses__():
-                        try:
-                            field = subcls._lookup_field([field_name])[0]
-                        except LookUpError:
-                            continue
-
-                        if field is not None:
-                            break
+                    # 744: in case the field is defined in a subclass.
+                    # Issue #144 (D.2): cache successful resolutions —
+                    # the walk is O(subclass-tree) and was repeated on
+                    # every failed parent-class lookup. Additive-only:
+                    # a miss doesn't poison the cache because a
+                    # subclass may register later.
+                    cache_key = (cls, field_name)
+                    cached_field = _LOOKUP_FIELD_SUBCLASS_CACHE.get(cache_key)
+                    if cached_field is not None:
+                        field = cached_field
                     else:
-                        raise LookUpError('Cannot resolve field "%s"' % field_name)
+                        for subcls in cls.__subclasses__():
+                            try:
+                                field = subcls._lookup_field([field_name])[0]
+                            except LookUpError:
+                                continue
+
+                            if field is not None:
+                                _LOOKUP_FIELD_SUBCLASS_CACHE[cache_key] = field
+                                break
+                        else:
+                            raise LookUpError('Cannot resolve field "%s"' % field_name)
                 else:
                     raise LookUpError('Cannot resolve field "%s"' % field_name)
             else:

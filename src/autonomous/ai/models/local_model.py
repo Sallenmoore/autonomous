@@ -8,10 +8,12 @@ from pydub import AudioSegment
 from pydub.exceptions import PydubException
 
 from autonomous import log
+from autonomous.ai._extract import extract_or_malformed
 from autonomous.ai._json_utils import clean_json_response
 from autonomous.ai.exceptions import (
     GenerateJSONEmptyResponseError,
     GenerateJSONParseError,
+    MalformedResponseError,
 )
 from autonomous.ai.retry import retry
 from autonomous.config import env_str, settings
@@ -276,7 +278,16 @@ class LocalAIModel(AutoModel):
             )
             last_raw["response"] = response
             response.raise_for_status()
-            result_text = response.json().get("message", {}).get("content", "{}")
+            # Issue #142: route malformed-2xx through the shared helper so a
+            # non-dict ``.json()`` body (list, scalar) becomes a typed
+            # ``MalformedResponseError`` translated below to
+            # ``GenerateJSONEmptyResponseError`` — symmetric with
+            # ``openai_compat`` rather than leaking ``AttributeError``.
+            result_text = extract_or_malformed(
+                response,
+                "/api/chat",
+                lambda body: body.get("message", {}).get("content", "{}"),
+            )
             last_raw["text"] = result_text
             if not result_text.strip():
                 raise ValueError("Ollama returned empty content")
@@ -350,6 +361,15 @@ class LocalAIModel(AutoModel):
             raise GenerateJSONEmptyResponseError(
                 f"Ollama response missing expected keys: {exc}"
             ) from exc
+        except MalformedResponseError as exc:
+            # Issue #142: a non-dict body (or any shape ``extract_or_malformed``
+            # couldn't walk) escaped the retry as the typed exception.
+            # Translate to the JSON-empty contract so callers see only the
+            # documented ``GenerateJSONEmptyResponseError`` / ``ParseError``
+            # surface — matches openai_compat.generate_json's behavior.
+            raise GenerateJSONEmptyResponseError(
+                f"Ollama returned a malformed 2xx body: {exc}"
+            ) from exc
 
     def generate_text(
         self,
@@ -405,8 +425,18 @@ class LocalAIModel(AutoModel):
                 payload["messages"][1]["content"] = eval_res
                 response = _HTTP.post(f"{self._ollama_url}/api/chat", json=payload, timeout=self._text_timeout)
                 response.raise_for_status()
-            result = response.json().get("message", {}).get("content", "")
-        except (requests.RequestException, json.JSONDecodeError, ValueError) as e:
+            # Issue #142: shared malformed-2xx translation.
+            result = extract_or_malformed(
+                response,
+                "/api/chat",
+                lambda body: body.get("message", {}).get("content", ""),
+            )
+        except (
+            requests.RequestException,
+            json.JSONDecodeError,
+            ValueError,
+            MalformedResponseError,
+        ) as e:
             log(f"==== LocalAI Text Error: {e} ====", _print=True)
         return result
 
@@ -468,9 +498,27 @@ class LocalAIModel(AutoModel):
                 timeout=self._media_timeout,
             )
             response.raise_for_status()
-            # Return the structured JSON dict containing 'segments'
-            return response.json()
-        except (requests.RequestException, json.JSONDecodeError, ValueError) as e:
+            # Issue #142: validate the response is a dict via the extractor
+            # so a non-dict body (list, scalar) translates to
+            # ``MalformedResponseError`` and is caught below alongside the
+            # other malformed-shape signals, preserving the existing
+            # empty-result degrade contract.
+            def _require_dict_body(body):
+                if not isinstance(body, dict):
+                    raise TypeError(
+                        f"expected dict body, got {type(body).__name__}"
+                    )
+                return body
+
+            return extract_or_malformed(
+                response, "/transcribe", _require_dict_body
+            )
+        except (
+            requests.RequestException,
+            json.JSONDecodeError,
+            ValueError,
+            MalformedResponseError,
+        ) as e:
             log(f"Transcription API Error: {e}", _print=True)
             return {"segments": [], "text": ""}
 
