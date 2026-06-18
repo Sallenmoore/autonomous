@@ -313,6 +313,7 @@ class FluxAIModel(AutoModel):
         uri="",
         context=None,
         temperature=None,
+        model=None,
     ):
         raise NotSupportedByProvider(
             method="generate_json",

@@ -344,6 +344,7 @@ class GeminiAIModel(AutoModel):
         uri="",
         context=None,
         temperature=None,
+        model=None,
     ):
         # Canonical AIModelProtocol signature (#47 slice 3). Translation
         # to gemini's native ``function=`` dict happens inline here —
@@ -391,8 +392,9 @@ class GeminiAIModel(AutoModel):
         if temperature is not None:
             config_kwargs["temperature"] = temperature
 
+        # `model` (#173) overrides the default `self._json_model`.
         response = self.client.models.generate_content(
-            model=self._json_model,
+            model=model or self._json_model,
             contents=contents,
             config=types.GenerateContentConfig(**config_kwargs),
         )
@@ -454,6 +456,7 @@ class GeminiAIModel(AutoModel):
         context=None,
         temperature=None,
         system_prompt=None,
+        model=None,
     ):
         context = context or {}
         contents = [message]
@@ -475,14 +478,15 @@ class GeminiAIModel(AutoModel):
         if temperature is not None:
             config_kwargs["temperature"] = temperature
 
+        # `model` (#173) overrides the default `self._text_model`.
         response = self.client.models.generate_content(
-            model=self._text_model,
+            model=model or self._text_model,
             config=types.GenerateContentConfig(**config_kwargs),
             contents=contents,
         )
         return response.text
 
-    def summarize_text(self, text, primer=""):
+    def summarize_text(self, text, primer="", model=None):
         primer = primer or self.instructions
         updated_prompt_list = []
         words = re.findall(r"\w+", text)
@@ -492,10 +496,12 @@ class GeminiAIModel(AutoModel):
                 " ".join(words[i : i + self.MAX_SUMMARY_TOKEN_LENGTH])
             )
 
+        # `model` (#173) overrides the default `self._summary_model`.
+        effective_model = model or self._summary_model
         full_summary = ""
         for p in updated_prompt_list:
             response = self.client.models.generate_content(
-                model=self._summary_model,
+                model=effective_model,
                 config=types.GenerateContentConfig(system_instruction=f"{primer}"),
                 contents=p,
             )

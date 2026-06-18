@@ -5,6 +5,34 @@ recent first.
 
 ## Unreleased
 
+### Per-call `model=` override on the AI generation pipeline (#173)
+
+**What changed.**
+
+- `TextAgent.generate(...)`, `TextAgent.summarize_text(...)`, and `JSONAgent.generate(...)` accept a new `model=None` keyword. The agent threads it through to the adapter; `None` keeps the role-default model the adapter resolves from env (provider-specific: `HPC_TEXT_MODEL` / `HPC_JSON_MODEL` / `HPC_SUMMARY_MODEL` on openai_compat; `OLLAMA_TEXT_MODEL` on local_model — which uses the text model for JSON and summarization too; `GEMINI_TEXT_MODEL` / `GEMINI_JSON_MODEL` / `GEMINI_SUMMARY_MODEL` on gemini).
+- `generate_text`, `generate_json`, and `summarize_text` on every adapter — `openai_compat.OpenAIClient`, `local_model.LocalAIModel`, `gemini.GeminiAIModel`, `mock_model.MockAIModel` — gain a trailing `model=None` parameter. `flux.FluxAIModel.generate_json` also gains it (the method still raises `NotSupportedByProvider`, but the signature matches the protocol so `AIModelProtocol` conformance holds).
+- `AIModelProtocol.generate_json` adds `model: str | None = None` to the canonical contract.
+- `openai_compat.OpenAIClient.generate_json`: the strict-mode negative cache and the `structured_outputs_unavailable` event payload key on the EFFECTIVE per-call model (i.e. `model or self._json_model`), not the class default. A strict-mode probe failure for an explicit per-call model no longer poisons the cache entry for the env-configured default, and vice versa.
+- `local_model.LocalAIModel.generate_json`: the once-per-process `structured_outputs_unavailable` emission and the on-retry `flush_memory(...)` call use the effective model for the same reason — a per-call override gets its own emission and its own KV-cache flush.
+
+**Behavior change — externally visible.**
+
+Purely additive at every call site. Omitting `model` (the default) preserves the pre-#173 wire shape on every adapter, including the persisted `_text_model` / `_json_model` / `_summary_model` lookups and the strict-mode cache keying — the existing `(self._json_model, self._base_url)` key shape is unchanged when no per-call model is supplied. No consumer change required.
+
+**Migration.**
+
+Recommended: replace consumer workarounds that mutate `client._text_model` / `_json_model` / `_summary_model` before a call with the public `model=` kwarg. Storyteller#319 was the originating use case.
+
+```python
+# before — fragile (private attr + relies on persist=False client binding)
+client = agent.get_client(provider, persist=False)
+client._text_model = "mixtral:8x22b-instruct"
+agent.generate(prompt)
+
+# after
+agent.generate(prompt, model="mixtral:8x22b-instruct")
+```
+
 ### Shared JSON-chat message build for `local_model` + `openai_compat` (#146)
 
 **What changed.**
