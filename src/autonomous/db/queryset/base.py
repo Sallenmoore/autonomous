@@ -485,7 +485,12 @@ class BaseQuerySet:
 
             if rule == DENY:
                 refs = document_cls.objects(**{field_name + "__in": self})
-                if refs.limit(1).count() > 0:
+                # Issue #143: ``first() is not None`` is a single-doc fetch
+                # versus ``count()``'s full-collection server-side tally —
+                # we only care that at least one referrer exists. ``first()``
+                # already applies ``limit(1)`` internally so an explicit
+                # chain step would be redundant.
+                if refs.first() is not None:
                     raise OperationError(
                         "Could not delete document (%s.%s refers to it)"
                         % (document_cls.__name__, field_name)
@@ -506,7 +511,10 @@ class BaseQuerySet:
                 refs = document_cls.objects(
                     **{field_name + "__in": self, "pk__nin": cascade_refs}
                 )
-                if refs.count() > 0:
+                # Issue #143: same swap as the DENY arm above — ``first()``
+                # is enough to detect "anything to cascade through" without
+                # paying for a full ``count()`` over the matching set.
+                if refs.first() is not None:
                     refs.delete(write_concern=write_concern, cascade_refs=cascade_refs)
             elif rule == NULLIFY:
                 document_cls.objects(**{field_name + "__in": self}).update(
