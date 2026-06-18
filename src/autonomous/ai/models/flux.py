@@ -24,6 +24,8 @@ import json
 import requests
 
 from autonomous import log
+from autonomous.ai._extract import extract_or_malformed
+from autonomous.ai.exceptions import MalformedResponseError
 from autonomous.ai.protocol import NotSupportedByProvider
 from autonomous.config import env_str, settings
 from autonomous.http import HttpClient
@@ -235,18 +237,30 @@ class FluxAIModel(AutoModel):
             resp = _HTTP.post(
                 url, headers=headers, json=body, timeout=self._media_timeout
             )
-            payload = resp.json()
-            images = payload.get("images") or []
-            if not images:
-                raise ValueError(
-                    f"fal.ai returned success but no images in response: "
-                    f"{payload!r}"
-                )
-            image_url = images[0].get("url")
-            if not image_url:
-                raise ValueError(
-                    f"fal.ai response missing image URL: {images[0]!r}"
-                )
+
+            # Issue #142: shared malformed-2xx translation. The walk
+            # (``payload["images"][0]["url"]`` with explicit empty/missing
+            # checks) lives inside the extractor so ``ValueError`` /
+            # ``KeyError`` / ``AttributeError`` / ``IndexError`` raised by
+            # any step become a single typed ``MalformedResponseError``
+            # carrying the body excerpt — symmetric with ``openai_compat``.
+            def _extract_image_url(body):
+                images = body.get("images") or []
+                if not images:
+                    raise ValueError(
+                        f"fal.ai returned success but no images in response: "
+                        f"{body!r}"
+                    )
+                image_url = images[0].get("url")
+                if not image_url:
+                    raise ValueError(
+                        f"fal.ai response missing image URL: {images[0]!r}"
+                    )
+                return image_url
+
+            image_url = extract_or_malformed(
+                resp, "/fal/generate", _extract_image_url
+            )
             # CDN fetch uses ``max_attempts=1`` (issue #77): a fal.ai
             # signed URL that 4xxes is permanently invalid (expired
             # token, deleted image, 403 from key drift), so burning
@@ -263,7 +277,12 @@ class FluxAIModel(AutoModel):
                 image_url, timeout=self._media_timeout, max_attempts=1
             )
             return img_resp.content
-        except (requests.RequestException, ValueError, OSError) as e:
+        except (
+            requests.RequestException,
+            ValueError,
+            OSError,
+            MalformedResponseError,
+        ) as e:
             log(f"==== Error: FLUX image generation failed ==== {e}", _print=True)
             raise
 
