@@ -124,12 +124,15 @@ class LocalAIModel(AutoModel):
     def _clean_json_response(self, text):
         return clean_json_response(text)
 
-    def _evaluate_response(self, instruction, content, goal):
+    def _evaluate_response(self, instruction, content, goal, model=None):
+        # `model` (#173) is the effective per-call model the surrounding
+        # generate_text invocation is using — flow it through so the eval
+        # critic runs on the same model as the generation being evaluated.
+        # When omitted, read live so an OLLAMA_TEXT_MODEL flip lands without
+        # a restart (mirrors the original os.environ.get at this call site;
+        # do not switch to settings.ollama_text_model).
         eval_prompt = {
-            # Read live (not via the settings snapshot) so an OLLAMA_TEXT_MODEL
-            # flip lands without a restart — mirrors the original os.environ.get
-            # at this call site. Do not switch to settings.ollama_text_model.
-            "model": env_str("OLLAMA_TEXT_MODEL", "gemma4:26b"),
+            "model": model or env_str("OLLAMA_TEXT_MODEL", "gemma4:26b"),
             "messages": [
                 {
                     "role": "user",
@@ -428,8 +431,10 @@ class LocalAIModel(AutoModel):
             response = _HTTP.post(f"{self._ollama_url}/api/chat", json=payload, timeout=self._text_timeout)
             response.raise_for_status()
             if evaluation:
+                # Pass effective_model so the eval critic uses the same model
+                # as the surrounding generation (#173 alignment).
                 eval_res = self._evaluate_response(
-                    message, response, additional_instructions
+                    message, response, additional_instructions, model=effective_model
                 )
                 log(f"Evaluation:\n {eval_res}")
                 payload["messages"][1]["content"] = eval_res

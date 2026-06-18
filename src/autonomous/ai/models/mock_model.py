@@ -29,7 +29,7 @@ class MockAIModel(AutoModel):
         "UklGRigAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAEA"
     )
 
-    def generate_json(self, message, system_prompt=None, uri="", context=None, temperature=None, _mock_response=None, **kwargs):
+    def generate_json(self, message, system_prompt=None, uri="", context=None, temperature=None, _mock_response=None, model=None, **kwargs):
         """
         Returns a rich dummy JSON object.
         It attempts to guess the context based on keys found in the prompt,

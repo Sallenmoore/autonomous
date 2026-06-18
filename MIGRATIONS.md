@@ -9,7 +9,7 @@ recent first.
 
 **What changed.**
 
-- `TextAgent.generate(...)`, `TextAgent.summarize_text(...)`, and `JSONAgent.generate(...)` accept a new `model=None` keyword. The agent threads it through to the adapter; `None` keeps the role-default model from env (`HPC_TEXT_MODEL` / `HPC_JSON_MODEL` / `HPC_SUMMARY_MODEL`, or the equivalent gemini class attrs).
+- `TextAgent.generate(...)`, `TextAgent.summarize_text(...)`, and `JSONAgent.generate(...)` accept a new `model=None` keyword. The agent threads it through to the adapter; `None` keeps the role-default model the adapter resolves from env (provider-specific: `HPC_TEXT_MODEL` / `HPC_JSON_MODEL` / `HPC_SUMMARY_MODEL` on openai_compat; `OLLAMA_TEXT_MODEL` on local_model — which uses the text model for JSON and summarization too; `GEMINI_TEXT_MODEL` / `GEMINI_JSON_MODEL` / `GEMINI_SUMMARY_MODEL` on gemini).
 - `generate_text`, `generate_json`, and `summarize_text` on every adapter — `openai_compat.OpenAIClient`, `local_model.LocalAIModel`, `gemini.GeminiAIModel`, `mock_model.MockAIModel` — gain a trailing `model=None` parameter. `flux.FluxAIModel.generate_json` also gains it (the method still raises `NotSupportedByProvider`, but the signature matches the protocol so `AIModelProtocol` conformance holds).
 - `AIModelProtocol.generate_json` adds `model: str | None = None` to the canonical contract.
 - `openai_compat.OpenAIClient.generate_json`: the strict-mode negative cache and the `structured_outputs_unavailable` event payload key on the EFFECTIVE per-call model (i.e. `model or self._json_model`), not the class default. A strict-mode probe failure for an explicit per-call model no longer poisons the cache entry for the env-configured default, and vice versa.
