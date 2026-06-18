@@ -19,8 +19,12 @@ import requests
 
 from autonomous import log
 from autonomous.ai.protocol import NotSupportedByProvider
-from autonomous.observability import counter, event
+from autonomous.ai._json_messages import (
+    STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER,
+    build_chat_json_messages,
+)
 from autonomous.ai._json_utils import clean_json_response
+from autonomous.observability import event
 from autonomous.ai.exceptions import (
     MALFORMED_2XX_EXCEPTIONS,
     GenerateJSONEmptyResponseError,
@@ -161,18 +165,11 @@ _HTTP = HttpClient(
 # accompany worker restarts.
 _UNSUPPORTED_STRICT_MODE: set[tuple[str, str]] = set()
 
-# Shared counter with local_model.py (#51 step 3). Idempotent on name
-# via the observability registry — the first caller registers, the
-# second returns the same singleton. Bumped on first detection per
-# (model, endpoint) per process, matching the log emission's gate.
-_STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER = counter(
-    "structured_outputs_unavailable_total",
-    description=(
-        "JSON adapters falling back from strict-mode schema enforcement "
-        "(first detection per (model, endpoint) per process)"
-    ),
-    label_names=("provider",),
-)
+# Counter is now owned by ``autonomous.ai._json_messages`` (#146). The
+# module-level alias is kept so existing patch targets continue to
+# resolve via this module — the registry is idempotent on name, so both
+# names refer to the same singleton.
+_STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER = STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER
 
 # Substrings that indicate a 4xx response was specifically about
 # strict-mode unsupported-ness (rather than a real client bug like
@@ -431,17 +428,20 @@ class OpenAIClient(AutoModel):
         json_schema=None,
         schema_name="response",
     ):
-        system = system_prompt or self.instructions
-        system = system.rstrip(". ") + ".\nYour response MUST be a single valid JSON object."
-        user = message
-        if context:
-            user += (
-                f"\n\n### GROUND TRUTH CONTEXT ###\n"
-                f"{json.dumps(context, indent=2)}"
-            )
-        if uri:
-            user += f"\nUse the following URI for reference: {uri}"
-        user += "\n\nRespond with ONLY a valid JSON object."
+        # Message construction consolidated to ``_json_messages`` (#146) —
+        # this adapter passes ``api_enforces_json=True`` because the
+        # OpenAI-compatible ``response_format`` payload below enforces JSON
+        # shape, so the prompt can be lighter (no "Adhere strictly" label,
+        # no "No markdown, no prose." suffix).
+        # Caller-side `or` preserves the pre-#146 short-circuit (see the
+        # corresponding comment in local_model.generate_json).
+        system, user = build_chat_json_messages(
+            message=message,
+            system_base=system_prompt or self.instructions,
+            context=context,
+            uri=uri,
+            api_enforces_json=True,
+        )
 
         # Build the response_format payload. Strict mode when:
         #   - caller passed a schema
@@ -495,15 +495,12 @@ class OpenAIClient(AutoModel):
             # loose without re-probing. Do NOT move this .add() below
             # the retry branch; that would cause repeated probe failures.
             _UNSUPPORTED_STRICT_MODE.add(endpoint_key)
-            # Migrated to ``observability.event()`` (#51 step 3) —
-            # preserves the ``[STRUCTURED-OUTPUTS-UNAVAILABLE]`` prefix
-            # at line-start for grep-based scrapers; adds structured
-            # fields for parser-based consumers.
-            # print_to_stdout=False: the entry lands in
-            # logs/current_run_error_log.log regardless. Avoiding stdout
-            # keeps the marker from interleaving with structured loggers
-            # in embedding environments (web request logs, JSON-emitting
-            # workers). Operators grep the log file.
+            # Inline event+counter to preserve the
+            # ``autonomous.ai.models.openai_compat.event`` patch target
+            # that test_unit_resilience_124_125_*.py relies on. The
+            # shape is identical to the local_model emission — DRYing
+            # this into a helper was tried under #146 and reverted
+            # because it broke the test seam.
             event(
                 "structured_outputs_unavailable",
                 level="warning",

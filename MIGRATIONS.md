@@ -5,6 +5,33 @@ recent first.
 
 ## Unreleased
 
+### Shared JSON-chat message build for `local_model` + `openai_compat` (#146)
+
+**What changed.**
+
+- New shared module `autonomous.ai._json_messages` owns:
+  - `build_chat_json_messages(message, system_base, context=None, uri="", *, api_enforces_json)` — returns the `(system, user)` tuple, switching JSON-instruction verbosity, context label, and trailing suffix on the `api_enforces_json` flag (False for Ollama prompt-only enforcement; True for OpenAI-compatible `response_format=json_object` enforcement).
+  - `STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER` — the shared metric, formerly registered independently in each adapter (the observability registry is idempotent on name, so both registrations always produced the same singleton; this just makes the shared resource explicit at the import site).
+- `LocalAIModel.generate_json` and `OpenAIClient.generate_json` resolve the persona at the call site (`system_prompt or self.instructions`) and pass the resolved string to the helper. Caller-side resolution preserves the pre-#146 short-circuit semantics — an explicit `system_prompt=` never triggers `self.instructions`'s descriptor read, which test stubs constructed via `__new__` + `object.__setattr__` rely on.
+- Module-level aliases (`_STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER` in each adapter) are retained so existing patch targets continue to resolve.
+
+**Scope notes.**
+
+- The structured-outputs `event()`+counter-inc emission stays inline at each of the three call sites (one in `local_model`, two in `openai_compat`). A `emit_structured_outputs_unavailable` helper was prototyped during #146 and reverted: the existing `tests/unit/` test suites patch the per-adapter `event` symbol directly (`autonomous.ai.models.openai_compat.event`), and routing the emission through a helper invalidates that patch seam. The shared counter consolidation is enough to keep the metric unified; the per-call boilerplate stays adjacent to the call site so the test patch targets remain load-bearing.
+- The issue body's "extract `JSONGenerationMixin`" framing is honored as helpers, not a mixin. The retry shapes (outer `retry()` vs `HttpClient`-internal + strict→loose fallback) and exception-translation ladders are genuinely different per provider; forcing them into a mixin would either bloat the mixin with provider branches or silently regress one side's fail-fast / retry semantics.
+
+**Behavior change — externally visible.** None. The `(system, user)` strings the chat endpoints receive are byte-identical to the pre-#146 paths (`tests/_dev_local/test_146_*` pins this for the full parametrized matrix). The `structured_outputs_unavailable` event payload (level, marker, fields) is unchanged; the counter series name and labels are unchanged.
+
+**Migration.** No action required. The helper extraction is internal — `generate_json` keeps its parameter and exception surfaces. Code that previously patched `autonomous.ai.models.local_model._STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER` or `autonomous.ai.models.openai_compat._STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER` continues to work via the aliases. Code that wants a single import site can use `autonomous.ai._json_messages.STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER`.
+
+### Quadratic-removal fix in `BaseDocument._mark_as_changed` (#145)
+
+**What changed.** Three behavior-preserving perf wins in the vendored `autonomous.db.base.document.BaseDocument` change-tracking surface: (1) `_mark_as_changed`'s descendant-drop loop dropped from O(k·n) (`list.remove()` per match × O(n) per remove) to O(n) (single list-comprehension rebuild). (2) `_get_changed_fields` + `_nestable_types_changed_fields` no longer materialize a throwaway list per nesting level (`+= [list comp]` → `extend(generator)`). (3) `_delta` no longer rebuilds `new_path` part-by-part in the common case where every part of the path is walked (only re-joins when an `ObjectId` / `DBRef` break actually truncates). See `src/autonomous/db/DIVERGENCE.md` "Change-tracking perf tuning (#145)" for the explicit-deferral rationale on the full tuple-path + set-keyed parent-prefix structural fix.
+
+**Behavior change — externally visible.** None. `_changed_fields` final contents, `_get_changed_fields()` ordering, and `_delta()` `(set, unset)` tuples are unchanged. Worst-case parent-mark behavior is much faster on deeply-nested documents with many already-marked descendants; everything else has the same complexity it had before.
+
+**Migration.** No action required.
+
 ### `local_model` + `flux` adopt `extract_or_malformed` for typed-2xx translation (#142)
 
 **What changed.**
