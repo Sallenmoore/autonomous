@@ -164,3 +164,59 @@ class TestReferenceAttrDirtyTracking:
         field.__set__(doc, target)
 
         assert doc._data["ref"] is target
+
+
+# ---------------------------------------------------------------------------
+# Tests: ReferenceAttr.__get__ DoesNotExist -> None swallow (TEST-5 in #141)
+# ---------------------------------------------------------------------------
+#
+# The companion to the __set__ dirty-mark contract above. autoattr.py:88-92
+# overrides ``__get__`` to return ``None`` when the upstream
+# ``GenericReferenceField.__get__`` raises ``DoesNotExist`` — half of the
+# headline divergence documented in src/autonomous/db/DIVERGENCE.md
+# §`ReferenceAttr`. Without this, a de-fork or a refactor of
+# GenericReferenceField interaction would re-expose the raise, and every
+# consumer relying on "deleted ref reads as None" breaks with no test signal.
+
+
+class TestReferenceAttrGetSwallowsDoesNotExist:
+    """``ReferenceAttr.__get__`` returns None on ``DoesNotExist``."""
+
+    @pytest.fixture
+    def field(self):
+        f = ReferenceAttr()
+        f.name = "ref"
+        f.db_field = "ref"
+        f.null = True
+        f.default = None
+        return f
+
+    def test_doesnotexist_in_super_get_returns_none(self, field, monkeypatch):
+        from autonomous.db import DoesNotExist
+        from autonomous.db.fields import GenericReferenceField
+
+        doc = _make_doc(ref_data=None)
+
+        def _raises_doesnotexist(self, instance, owner):
+            raise DoesNotExist
+
+        monkeypatch.setattr(GenericReferenceField, "__get__", _raises_doesnotexist)
+
+        result = field.__get__(doc, type(doc))
+
+        assert result is None
+
+    def test_normal_value_from_super_get_is_returned(self, field, monkeypatch):
+        from autonomous.db.fields import GenericReferenceField
+
+        doc = _make_doc(ref_data=None)
+        target = _make_target_doc()
+
+        def _returns_target(self, instance, owner):
+            return target
+
+        monkeypatch.setattr(GenericReferenceField, "__get__", _returns_target)
+
+        result = field.__get__(doc, type(doc))
+
+        assert result is target

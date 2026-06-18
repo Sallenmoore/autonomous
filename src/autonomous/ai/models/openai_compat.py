@@ -258,30 +258,11 @@ _TRANSCRIPTION_ENDPOINT = "/audio/transcriptions"
 _EMBEDDINGS_ENDPOINT = "/embeddings"
 
 
-def _extract_or_malformed(response, endpoint, extractor):
-    """Parse ``response.json()``, run ``extractor`` over it, and translate
-    the malformed-2xx failure family into ``MalformedResponseError``.
-
-    Centralizes the three near-identical try/except blocks in ``_chat``,
-    ``get_embedding``, and ``generate_transcription`` (issue #92). The
-    ``extractor`` callable keeps the per-endpoint walk
-    (``body["choices"][0]...`` vs ``body["data"][0]...`` vs the
-    transcription shape) at the call site, but the catch tuple
-    (``MALFORMED_2XX_EXCEPTIONS``, issue #102), the
-    ``MalformedResponseError`` construction, and the defensive
-    ``response.text`` read (``from_response``, issue #90) live in one
-    place — so the walk stays inside the protected block (an empty
-    ``{"choices": []}`` still translates instead of leaking ``IndexError``)
-    while the boilerplate is DRY.
-    """
-    try:
-        return extractor(response.json())
-    except MALFORMED_2XX_EXCEPTIONS as exc:
-        raise MalformedResponseError.from_response(
-            response,
-            f"HPC {endpoint} endpoint returned a malformed 2xx body: {exc}",
-            endpoint=endpoint,
-        ) from exc
+# Issue #142: the body of ``_extract_or_malformed`` moved to
+# ``autonomous.ai._extract`` so ``local_model`` and ``flux`` can adopt the
+# same typed-exception translation without a cross-adapter import. The
+# local name is preserved so the per-call-site grep history stays clean.
+from autonomous.ai._extract import extract_or_malformed as _extract_or_malformed
 
 
 def _normalize_transcription_body(body):
