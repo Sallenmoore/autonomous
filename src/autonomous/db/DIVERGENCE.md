@@ -129,6 +129,35 @@ callers.
   connects signals directly; we delegate through these so subclasses
   can specialize without touching the signal wiring.
 
+### Change-tracking perf tuning (#145)
+
+`BaseDocument._mark_as_changed`, `._get_changed_fields`, and `._delta`
+preserve upstream's string-path representation of `_changed_fields` but
+shed three quadratic-or-allocating patterns the upstream form carries:
+
+- `_mark_as_changed`: the descendant-drop loop was `O(k·n)` (one
+  `list.remove()` per match × O(n) per remove). The replacement rebuilds
+  `_changed_fields` in a single list comprehension — O(n). The
+  ancestor-prefix scan was rewritten as an early-return loop with no
+  intermediate `else`-on-while branch but produces the same
+  ancestor-already-covers-this-mark outcome.
+- `_get_changed_fields` (and `_nestable_types_changed_fields`): the
+  `changed_fields += [list comp]` pattern materialized a throwaway list
+  per nesting level. Replaced with `changed_fields.extend(generator)`,
+  same observable list contents, no temporary.
+- `_delta`: the per-path `new_path = []` rebuild + final
+  `".".join(new_path)` was wasted work in the common case where every
+  part of the path is walked. Replaced with a `used` index that re-joins
+  only when a `(ObjectId, DBRef)` break actually truncates.
+
+A fuller refactor representing paths as tuples + a parallel set-keyed
+parent-prefix cache is **explicitly deferred**. That shape would force
+invariant maintenance across every `_changed_fields` mutation site
+(`_clear_changed_fields`, `_from_son`, `BaseList`/`BaseDict` mutation
+callbacks, dynamic-field paths) — high risk for a vendored ORM. The
+behavior-preserving wins above capture the worst case (the
+`_mark_as_changed` quadratic) without the invariant surface area.
+
 ## What we don't diverge on
 
 Scope note: this section describes the vendored `autonomous.db.*`

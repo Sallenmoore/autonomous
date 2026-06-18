@@ -557,20 +557,26 @@ class BaseDocument:
         else:
             key = self._db_field_map.get(key, key)
 
-        if key not in self._changed_fields:
-            levels, idx = key.split("."), 1
-            while idx <= len(levels):
-                if ".".join(levels[:idx]) in self._changed_fields:
-                    break
-                idx += 1
-            else:
-                self._changed_fields.append(key)
-                # remove lower level changed fields
-                level = ".".join(levels[:idx]) + "."
-                remove = self._changed_fields.remove
-                for field in self._changed_fields[:]:
-                    if field.startswith(level):
-                        remove(field)
+        changed = self._changed_fields
+        if key in changed:
+            return
+
+        # If any ancestor of `key` is already marked, the parent-mark
+        # already covers this descendant — nothing to do.
+        levels = key.split(".")
+        for idx in range(1, len(levels)):
+            if ".".join(levels[:idx]) in changed:
+                return
+
+        # No ancestor present → mark `key` and drop any descendants in a
+        # single O(n) rebuild. The pre-#145 form called list.remove() per
+        # descendant match, which is O(n) per removal and O(k·n) overall
+        # when k descendants needed dropping (issue #145, perf #3/#8/#10).
+        level_prefix = key + "."
+        self._changed_fields = [
+            f for f in changed if not f.startswith(level_prefix)
+        ]
+        self._changed_fields.append(key)
 
     def _clear_changed_fields(self):
         """Using _get_changed_fields iterate and remove any fields that
@@ -655,7 +661,11 @@ class BaseDocument:
 
             if hasattr(value, "_get_changed_fields"):
                 changed = value._get_changed_fields()
-                changed_fields += [f"{item_key}{k}" for k in changed if k]
+                # Issue #145: extend(gen) avoids the throwaway list
+                # comprehension that `+=` materialized per level.
+                changed_fields.extend(
+                    f"{item_key}{k}" for k in changed if k
+                )
             elif isinstance(value, (list, tuple, dict)):
                 BaseDocument._nestable_types_changed_fields(
                     changed_fields, item_key, value
@@ -686,7 +696,11 @@ class BaseDocument:
             if isinstance(data, EmbeddedDocument):
                 # Find all embedded fields that have been changed
                 changed = data._get_changed_fields()
-                changed_fields += [f"{key}{k}" for k in changed if k]
+                # Issue #145: extend(gen) avoids the throwaway list
+                # comprehension that `+=` materialized per level.
+                changed_fields.extend(
+                    f"{key}{k}" for k in changed if k
+                )
             elif isinstance(data, (list, tuple, dict)):
                 if hasattr(field, "field") and isinstance(
                     field.field,
@@ -712,10 +726,15 @@ class BaseDocument:
             for path in set_fields:
                 parts = path.split(".")
                 d = doc
-                new_path = []
-                for p in parts:
+                # Issue #145: track the truncation index instead of
+                # rebuilding `new_path` part-by-part. Only re-join when a
+                # reference break actually truncates — the common case
+                # walks all parts and reuses `path` as-is.
+                used = len(parts)
+                for i, p in enumerate(parts):
                     if isinstance(d, (ObjectId, DBRef)):
                         # Don't dig in the references
+                        used = i
                         break
                     elif isinstance(d, list) and p.isdigit():
                         # An item of a list (identified by its index) is updated
@@ -723,8 +742,8 @@ class BaseDocument:
                     elif hasattr(d, "get"):
                         # dict-like (dict, embedded document)
                         d = d.get(p)
-                    new_path.append(p)
-                path = ".".join(new_path)
+                if used < len(parts):
+                    path = ".".join(parts[:used])
                 set_data[path] = d
         else:
             set_data = doc
