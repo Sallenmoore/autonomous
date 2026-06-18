@@ -797,12 +797,23 @@ class TestQuerySetSnapshotRemoval:
 
 
 class TestVersionBump:
-    """PR #163 bumps __init__.py to 0.3.162 — matching the
-    release.sh push that prod already shipped at the end of the
-    prior cycle. The bump existing in dev means dev/test/main agree
-    on the latest published version; a drift here would mean the
-    next prod release.sh patch-bump would land on the wrong base."""
+    """Drift guard for ``autonomous.__version__``.
 
-    def test_version_string_is_0_3_162(self):
+    Originally this pinned an exact literal (``== "0.3.162"``), but
+    ``scripts/release.sh`` bumps ``__version__`` one commit after every
+    ``test → main`` merge — so an exact match guarantees a red main CI on
+    every release (see #166). De-pinned to a format + monotonic-floor
+    check: still catches a malformed version string or an accidental
+    downgrade below the 0.3.162 floor, without breaking on a legitimate
+    forward bump."""
+
+    def test_version_string_is_valid_and_not_downgraded(self):
+        import re
+
         import autonomous
-        assert autonomous.__version__ == "0.3.162"
+
+        v = autonomous.__version__
+        assert re.fullmatch(r"\d+\.\d+\.\d+", v), f"malformed version: {v!r}"
+        assert tuple(int(p) for p in v.split(".")) >= (0, 3, 162), (
+            f"version regressed below 0.3.162 floor: {v}"
+        )
