@@ -98,7 +98,11 @@ deprecated; use the aggregation pipeline via
 
 **QuerySet methods** — `QuerySet.map_reduce()`,
 `QuerySet.item_frequencies()` and their helpers. Aggregation covers
-the only production use.
+the only production use. `QuerySet.snapshot()` (PyMongo 3+ ignores
+the option entirely — the method was already a no-op for the whole
+supported pymongo range; removed in #154 along with the dead
+`_snapshot` flag in `__init__`, the `clone()` copy list, and the
+`_cursor_args` warning re-fire).
 
 **Query operators** — geo operators (`within_*`, `near`, `near_sphere`,
 `geo_within*`, `geo_intersects`, `max_distance`, `min_distance`) and

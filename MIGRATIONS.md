@@ -17,7 +17,7 @@ recent first.
 
 **Scope notes.**
 
-- The structured-outputs `event()`+counter-inc emission stays inline at each of the three call sites (one in `local_model`, two in `openai_compat`). A `emit_structured_outputs_unavailable` helper was prototyped during #146 and reverted: the existing `tests/unit/` test suites patch the per-adapter `event` symbol directly (`autonomous.ai.models.openai_compat.event`), and routing the emission through a helper invalidates that patch seam. The shared counter consolidation is enough to keep the metric unified; the per-call boilerplate stays adjacent to the call site so the test patch targets remain load-bearing.
+- The structured-outputs `event()`+counter-inc emission stays inline at each of the three call sites (one in `local_model`, two in `openai_compat`). A cross-adapter `emit_structured_outputs_unavailable` helper was prototyped during #146 and reverted: the existing `tests/unit/` test suites patch the per-adapter `event` symbol directly (`autonomous.ai.models.openai_compat.event`), and routing the emission through a helper in another module invalidates that patch seam. Within `openai_compat` the two emission sites DO share a module-private `_emit_strict_unavailable` helper — same-module resolution preserves the patch seam.
 - The issue body's "extract `JSONGenerationMixin`" framing is honored as helpers, not a mixin. The retry shapes (outer `retry()` vs `HttpClient`-internal + strict→loose fallback) and exception-translation ladders are genuinely different per provider; forcing them into a mixin would either bloat the mixin with provider branches or silently regress one side's fail-fast / retry semantics.
 
 **Behavior change — externally visible.** None. The `(system, user)` strings the chat endpoints receive are byte-identical to the pre-#146 paths (`tests/_dev_local/test_146_*` pins this for the full parametrized matrix). The `structured_outputs_unavailable` event payload (level, marker, fields) is unchanged; the counter series name and labels are unchanged.
@@ -31,6 +31,38 @@ recent first.
 **Behavior change — externally visible.** None. `_changed_fields` final contents, `_get_changed_fields()` ordering, and `_delta()` `(set, unset)` tuples are unchanged. Worst-case parent-mark behavior is much faster on deeply-nested documents with many already-marked descendants; everything else has the same complexity it had before.
 
 **Migration.** No action required.
+
+### `QuerySet.snapshot()` removed (#154)
+
+**What changed.**
+
+`QuerySet.snapshot(enabled)` is gone. PyMongo 3+ ignored the option entirely, so the method has been a no-op for the whole supported pymongo range (emitting a `DeprecationWarning` on every call). Removing it also drops the dead `_snapshot` flag in `BaseQuerySet.__init__`, the entry in `_clone_into`'s `copy_props` tuple, and the warning re-fire in `_cursor_args`.
+
+**Behavior change.**
+
+Any direct caller of `qs.snapshot(...)` now raises `AttributeError` instead of receiving a no-op + DeprecationWarning. There is no replacement — PyMongo dropped the underlying capability years ago. Callers should simply delete the call.
+
+### `TextAgent.generate` and all `generate_text` adapters gain `system_prompt=` kwarg (#140)
+
+**What changed.**
+
+`TextAgent.generate(...)` accepts a new `system_prompt=None` keyword. The semantic is adapter-specific:
+
+- `openai_compat.generate_text` and `gemini.generate_text` **replace** the persisted persona (`self.instructions`) with `system_prompt` for the call (mirrors `JSONAgent.generate(system_prompt=...)`).
+- `local_model.generate_text` has historically never used `self.instructions` in the text path (the system slot was `additional_instructions` alone); `system_prompt` **prepends** to that slot rather than replacing a persona that doesn't exist there.
+- `mock_model.generate_text` accepts the kwarg for dispatch parity and ignores it.
+
+In all four adapters, `additional_instructions` still appends as a task-level suffix to whatever system message ends up in play.
+
+**Intra-`local_model` asymmetry (deliberate).** `LocalAIModel.generate_json` already had the **replace-persona** semantic for `system_prompt=` (matching `openai_compat`/`gemini`); only `LocalAIModel.generate_text` keeps the **prepend-without-persona** behavior described above. The two methods on the same class therefore handle `self.instructions` differently — generate_json reads it as a fallback, generate_text never reads it. This is deliberate (text-path has no persona slot historically) and load-bearing for current consumers; future "harmonize sibling methods" PRs need to confront this difference and update the test pin at `tests/unit/test_unit_iter_audit_followups_iter_2026_06_18.py::test_self_instructions_does_not_leak_into_system_slot`.
+
+**Behavior change.**
+
+Additive. `system_prompt=None` (the default) preserves the pre-#140 wire shape on every adapter. No consumer change required.
+
+**Why.**
+
+Previously, a per-call persona passed via `additional_instructions` could only **append** to the agent's persisted `instructions` — it could not **replace** them. Consumers that needed a strong conflicting per-call persona (e.g. "output ONLY a screenplay") had to allocate a throwaway `TextAgent` whose `instructions` were the per-call primer. `JSONAgent.generate` already supported this through `system_prompt=`; #140 closes the asymmetry.
 
 ### `local_model` + `flux` adopt `extract_or_malformed` for typed-2xx translation (#142)
 
