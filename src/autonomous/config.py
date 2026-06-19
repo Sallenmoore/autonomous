@@ -211,7 +211,17 @@ _SPEC: tuple[Field, ...] = (
     Field("hpc_summary_model", "HPC_SUMMARY_MODEL", "str", "gemma4:26b", "ai_hpc", "Summary model"),
     Field("hpc_embedding_model", "HPC_EMBEDDING_MODEL", "str", "dengcao/Qwen3-Embedding-8B:F16", "ai_hpc", "Embedding model"),
     Field("hpc_stt_model", "HPC_STT_MODEL", "str", "whisper-1", "ai_hpc", "Speech-to-text model"),
-    Field("hpc_request_timeout", "HPC_REQUEST_TIMEOUT", "int", 120, "ai_hpc", "Per-request timeout (s)"),
+    Field("hpc_request_timeout", "HPC_REQUEST_TIMEOUT", "int", 120, "ai_hpc",
+          "DEPRECATED single-value timeout (s). Use HPC_CONNECT_TIMEOUT + HPC_READ_TIMEOUT. "
+          "Retained as a back-compat fallback: when HPC_READ_TIMEOUT is unset, "
+          "hpc_read_timeout inherits this value so existing deployments keep working."),
+    Field("hpc_connect_timeout", "HPC_CONNECT_TIMEOUT", "int", 10, "ai_hpc",
+          "TCP connect timeout (s). Low default so a dropped VPN fails fast "
+          "instead of pinning a worker (#177)."),
+    Field("hpc_read_timeout", "HPC_READ_TIMEOUT", "int", 120, "ai_hpc",
+          "Per-request read timeout (s). Bounds the wait between sent body and "
+          "first response byte; a stalled HPC backend now surfaces as "
+          "HPCUnreachableError instead of a silent indefinite block (#177)."),
     Field("hpc_retry_attempts", "HPC_RETRY_ATTEMPTS", "int", 3, "ai_hpc", "Retry attempts"),
     Field("hpc_retry_backoff", "HPC_RETRY_BACKOFF", "int", 10, "ai_hpc", "Retry backoff (s)"),
     Field("hpc_unreachable_throttle_seconds", "HPC_UNREACHABLE_THROTTLE_SECONDS", "int", 0, "ai_hpc",
@@ -282,7 +292,7 @@ class Settings:
     coercing each through its parser. Access fields as plain attributes::
 
         from autonomous.config import settings
-        timeout = settings.hpc_request_timeout   # int
+        connect, read = settings.hpc_connect_timeout, settings.hpc_read_timeout
 
     Construction never raises — malformed values fall back to documented
     defaults with a logged breadcrumb (see the ``env_*`` parsers).
@@ -298,6 +308,14 @@ class Settings:
         # ``os.environ.get("HPC_JSON_MODEL", _text_model)`` (an explicitly
         # empty value is preserved, only a missing key falls back).
         self.hpc_json_model = env_str("HPC_JSON_MODEL", self.hpc_text_model)
+        # Derived default: HPC_READ_TIMEOUT inherits HPC_REQUEST_TIMEOUT
+        # when the new split-timeout knob is absent OR empty (#177).
+        # Matches the env_str precedent immediately above; env_int's
+        # absent-and-empty-fall-back semantics mean a blank value in a
+        # templated env file (the most likely shape of a misconfigured
+        # Docker/k8s entry) still inherits the legacy single-knob value
+        # rather than silently downgrading to the field default.
+        self.hpc_read_timeout = env_int("HPC_READ_TIMEOUT", self.hpc_request_timeout)
 
     def reload(self) -> "Settings":
         """Re-read every field from the current ``os.environ`` in place.

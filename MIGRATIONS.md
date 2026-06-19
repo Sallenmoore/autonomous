@@ -5,6 +5,38 @@ recent first.
 
 ## Unreleased
 
+### Bounded `(connect, read)` timeouts on the HPC HTTP client (#177)
+
+**What changed.**
+
+- `OpenAIClient._timeout` is now a `(connect, read)` tuple rather than a single int, fed directly to `requests` (which accepts the tuple shape natively). A stalled HPC backend that holds an ESTABLISHED TCP connection without sending any bytes back now surfaces as `HPCUnreachableError` after the bounded `read` window, instead of blocking indefinitely (or for whatever `HPC_REQUEST_TIMEOUT` was set to, which in some deployments was sized for genuinely slow inference and dwarfed the RQ job timeout — the worker just sat).
+- Two new env knobs:
+  - `HPC_CONNECT_TIMEOUT` (default `10`) — TCP connect timeout. Low default so a dropped VPN fails fast.
+  - `HPC_READ_TIMEOUT` (default `120`) — between-bytes read timeout. The actual stall ceiling.
+- The legacy `HPC_REQUEST_TIMEOUT` knob is retained as a back-compat fallback: when `HPC_READ_TIMEOUT` is **unset or empty**, the resolved `hpc_read_timeout` inherits whatever `HPC_REQUEST_TIMEOUT` produced (its default is also 120, so byte-identical to the pre-#177 single-knob behavior). Deployments that set `HPC_REQUEST_TIMEOUT=N` keep `read=N` and pick up the new low-connect default. Implementation mirrors the existing `HPC_JSON_MODEL` → `hpc_text_model` fallback precedent (`env_int("HPC_READ_TIMEOUT", self.hpc_request_timeout)`), so a blank value in a templated env file inherits the legacy knob rather than silently downgrading to the field default.
+
+**Behavior change — externally visible.**
+
+- **Connect timeout dropped from `hpc_request_timeout` to 10s by default.** A deployment that intentionally raised `HPC_REQUEST_TIMEOUT` to absorb slow-completing inference also unintentionally widened the connect phase to the same value. The split makes connect a separate, small budget. If you need a larger connect phase (slow TLS handshake, corporate proxy chains), set `HPC_CONNECT_TIMEOUT` explicitly.
+- **Stalled-backend wedges convert to fast, logged failures.** The 24-minute silent worker pin reported in #177 now surfaces as an `HPCUnreachableError` after `HPC_READ_TIMEOUT` seconds. The error flows through `_HTTP`'s existing transport-class translation (it's a `requests.exceptions.ReadTimeout` → `RequestException`), so retries engage per `hpc_retry_attempts`, the `[HPC-UNREACHABLE]` log line is emitted, and RQ frees the worker slot.
+
+**Migration.**
+
+No action required for deployments at default settings. Deployments that set `HPC_REQUEST_TIMEOUT` should consider migrating to the explicit pair:
+
+```bash
+# before — single knob, applied to both connect and read phases
+HPC_REQUEST_TIMEOUT=900
+
+# after — split, with the connect phase small
+HPC_CONNECT_TIMEOUT=10
+HPC_READ_TIMEOUT=900
+```
+
+The legacy single-knob path stays supported (so the `before` example above is also a working back-compat configuration) but is documented as deprecated in the field's description for future removal.
+
+**Out of scope (deferred).** Per-stream idle/byte-arrival timeout for streamed responses. The current `_chat` call site sets `"stream": False`, so the bounded read-timeout above fully covers it. A streaming code path would need a separate idle timer (the read budget resets on each chunk in `requests` streaming mode).
+
 ### Per-call `model=` override on the AI generation pipeline (#173)
 
 **What changed.**

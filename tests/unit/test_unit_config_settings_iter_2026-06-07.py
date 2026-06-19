@@ -411,10 +411,16 @@ class TestMigratedAdapterImportSafety:
         return proc
 
     def test_openai_compat_tolerates_malformed_timeout(self):
+        # Post-#177 _timeout is a (connect, read) tuple. Malformed
+        # HPC_REQUEST_TIMEOUT falls back to the field default 120, which
+        # then propagates into hpc_read_timeout (the back-compat
+        # derived-default in Settings.__init__); hpc_connect_timeout
+        # is its own field at default 10. Same import-safe-fallback
+        # intent as pre-#177, new shape.
         snippet = (
             "from autonomous.ai.models.openai_compat import OpenAIClient;"
-            "assert OpenAIClient._timeout == 120,"
-            "f'expected 120 fallback, got {OpenAIClient._timeout!r}';"
+            "assert OpenAIClient._timeout == (10, 120),"
+            "f'expected (10, 120) fallback, got {OpenAIClient._timeout!r}';"
             "print('OK')"
         )
         proc = self._import_in_subprocess(
