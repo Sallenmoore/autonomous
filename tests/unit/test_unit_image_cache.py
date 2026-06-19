@@ -130,3 +130,96 @@ class TestEdgeCases:
     def test_traversal_attempt_returns_none(self, storage):
         # Item 7 makes get_path raise ValueError; get_url swallows.
         assert storage.get_url("../etc/passwd") is None
+
+
+class TestRotateInteractionWithVariantCache:
+    """Issue #150: pin the rotate() ↔ variant-invalidation handshake.
+
+    rotate() clears variants then rewrites orig.webp. A subsequent
+    get_url(size=...) MUST regenerate from the rotated original, not
+    serve the stale pre-rotation cached variant. A refactor of either
+    rotate()'s clear-then-save ordering or _regenerate_variant's
+    mtime-pin could silently serve a stale variant — visually wrong,
+    no exception, no signal.
+    """
+
+    def test_rotate_invalidates_cached_variant(self, storage):
+        # Non-square so rotation visibly swaps aspect ratio.
+        asset_id = storage.save(_make_png(size=(40, 60)), folder="rotate-test")
+
+        # Prime the variant.
+        storage.get_url(asset_id, size="thumbnail")
+        variant_path = Path(storage.get_path(asset_id)) / "thumbnail.webp"
+        assert variant_path.is_file()
+        with Image.open(variant_path) as variant:
+            pre_w, pre_h = variant.size
+        assert pre_w < pre_h, "fixture sanity: pre-rotation should be portrait"
+
+        storage.rotate(asset_id, amount=90)
+
+        # rotate() called clear_cached() — variant file is gone.
+        assert not variant_path.is_file()
+
+        # Re-request the same variant — must regenerate from the
+        # rotated original. The file-gone-then-file-back sequence
+        # proves a write happened; inode comparison is unreliable
+        # on tmpfs-style filesystems that reuse freed inodes.
+        url = storage.get_url(asset_id, size="thumbnail")
+        assert url
+        assert variant_path.is_file()
+        # Orientation swapped — proves the variant was rebuilt from the
+        # ROTATED original, not served from a pre-rotation cache. This
+        # is the load-bearing check: a regenerate-from-stale-cache bug
+        # would still produce a portrait variant.
+        with Image.open(variant_path) as variant:
+            post_w, post_h = variant.size
+        assert post_w > post_h
+
+    def test_flip_invalidates_cached_variant(self, storage):
+        """flip() takes the same clear-then-save path as rotate() — pin
+        it too so a "DRY-up" of the two methods can't regress only one.
+
+        Uses a non-symmetric image (half blue / half red) so a flipx
+        produces visibly different pixels at a known coordinate; without
+        this asymmetry the test could pass on a regeneration-skipped
+        bug since a uniformly-colored variant looks identical pre/post
+        flip."""
+        # Build a 40x40 with the left half blue and the right half red,
+        # so flipx swaps the visible pixel at x=5 from blue→red.
+        buf = io.BytesIO()
+        img = Image.new("RGB", (40, 40), color="red")
+        for x in range(20):
+            for y in range(40):
+                img.putpixel((x, y), (0, 0, 255))  # blue left half
+        img.save(buf, format="PNG")
+        asset_id = storage.save(buf.getvalue(), folder="flip-test")
+
+        storage.get_url(asset_id, size="small")
+        variant_path = Path(storage.get_path(asset_id)) / "small.webp"
+        assert variant_path.is_file()
+        with Image.open(variant_path) as variant:
+            # In the source-sized "small" variant, x=5 should still be
+            # in the left (blue) half pre-flip.
+            pre_pixel_left = variant.convert("RGB").getpixel((5, 20))
+        # Allow some webp/Pillow color drift — just assert "more blue than red".
+        assert pre_pixel_left[2] > pre_pixel_left[0], (
+            f"fixture sanity: pre-flip left half should be predominantly "
+            f"blue; got {pre_pixel_left!r}"
+        )
+
+        storage.flip(asset_id, flipx=True, flipy=False)
+
+        # Cache cleared by flip().
+        assert not variant_path.is_file()
+
+        storage.get_url(asset_id, size="small")
+        assert variant_path.is_file()
+        with Image.open(variant_path) as variant:
+            # Post-flipx: x=5 is now on the side that USED to be at
+            # x=35 (the red side). Pixel should be predominantly red.
+            post_pixel_left = variant.convert("RGB").getpixel((5, 20))
+        assert post_pixel_left[0] > post_pixel_left[2], (
+            f"post-flip left half should be predominantly red (flipped "
+            f"in from the right); got {post_pixel_left!r} — likely a "
+            f"stale cached variant served"
+        )

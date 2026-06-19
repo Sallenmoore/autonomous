@@ -297,7 +297,20 @@ class OpenAIClient(AutoModel):
     _summary_model = settings.hpc_summary_model
     _embedding_model = settings.hpc_embedding_model
     _stt_model = settings.hpc_stt_model
-    _timeout = settings.hpc_request_timeout
+    # ``(connect, read)`` tuple — ``requests``-native shape. Pre-#177 this
+    # was a single int ``hpc_request_timeout`` propagated to both legs,
+    # which meant a backend that accepted the TCP+body and then went
+    # silent could block a worker for the full ``read`` budget (the
+    # in-tree default 120s wasn't the offender; deployments that set
+    # ``HPC_REQUEST_TIMEOUT`` high — to absorb genuinely slow inference —
+    # also unintentionally made the connect phase that long, and saw
+    # multi-hour silent wedges when the backend stalled mid-response).
+    # Split into a small ``connect`` (fast-fail on VPN drop) and a
+    # bounded ``read`` (backend-stall ceiling). The legacy
+    # ``HPC_REQUEST_TIMEOUT`` knob is preserved as a back-compat
+    # single-knob fallback for ``read`` only — see
+    # ``Settings.__init__`` derived-default logic.
+    _timeout = (settings.hpc_connect_timeout, settings.hpc_read_timeout)
     # ``_retry_attempts`` and ``_retry_backoff`` (settings.hpc_retry_attempts /
     # settings.hpc_retry_backoff) used to live here as class attrs the
     # inner ``_post`` retry wrapper read. Post-#50-slice-F the retry
