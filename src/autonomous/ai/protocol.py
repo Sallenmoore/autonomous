@@ -98,6 +98,7 @@ class AIModelProtocol(Protocol):
         uri: str = "",
         context: dict | None = None,
         temperature: float | None = None,
+        model: str | None = None,
     ) -> dict: ...
 
     def generate_transcription(
