@@ -392,7 +392,6 @@ class GeminiAIModel(AutoModel):
         if temperature is not None:
             config_kwargs["temperature"] = temperature
 
-        # `model` (#173) overrides the default `self._json_model`.
         response = self.client.models.generate_content(
             model=model or self._json_model,
             contents=contents,
@@ -478,7 +477,6 @@ class GeminiAIModel(AutoModel):
         if temperature is not None:
             config_kwargs["temperature"] = temperature
 
-        # `model` (#173) overrides the default `self._text_model`.
         response = self.client.models.generate_content(
             model=model or self._text_model,
             config=types.GenerateContentConfig(**config_kwargs),
@@ -496,7 +494,6 @@ class GeminiAIModel(AutoModel):
                 " ".join(words[i : i + self.MAX_SUMMARY_TOKEN_LENGTH])
             )
 
-        # `model` (#173) overrides the default `self._summary_model`.
         effective_model = model or self._summary_model
         full_summary = ""
         for p in updated_prompt_list:

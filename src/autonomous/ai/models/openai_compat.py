@@ -427,9 +427,9 @@ class OpenAIClient(AutoModel):
         ``_json_messages``) so the existing test patch target
         ``autonomous.ai.models.openai_compat.event`` continues to
         intercept — ``event`` is resolved through this module's
-        namespace at call time. ``provider`` / ``endpoint``
-        are stable across both sites; ``status`` / ``body_excerpt`` /
-        ``detection`` are the only fields that vary.
+        namespace at call time. ``provider`` and ``endpoint`` are stable
+        across both sites; ``status`` / ``body_excerpt`` / ``detection``
+        / ``model`` vary.
 
         ``model`` is the effective per-call model (#173). When omitted,
         falls back to ``self._json_model`` so existing callers stay

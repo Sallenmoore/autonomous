@@ -37,12 +37,11 @@ class TextAgent(BaseAgent):
         system_prompt=None,
         model=None,
     ):
-        # self.add_to_job_meta("prompt", message)
         # `temperature` stays conditional because adapters have heterogeneous
         # defaults (local/openai_compat=0.7; gemini/mock=None) and forwarding
-        # an explicit None would override their defaults. `system_prompt`
-        # and `model` (#173) are uniform across all four adapters
-        # (default None = "no override"), so they ride as direct kwargs.
+        # an explicit None would override their defaults. `system_prompt` and
+        # `model` are uniform — every adapter defaults them to None meaning
+        # "no override" — so they ride as direct kwargs.
         kwargs = {}
         if temperature is not None:
             kwargs["temperature"] = temperature

@@ -44,9 +44,26 @@ from __future__ import annotations
 
 import inspect
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
+
+
+def _make_agent(agent_class, provider="mock"):
+    """Build an agent without triggering AutoModel / MongoEngine setup.
+    Mirrors the pattern in tests/unit/test_unit_temperature_override.py."""
+    a = agent_class.__new__(agent_class)
+    object.__setattr__(a, "_data", {
+        "name": "test-agent",
+        "provider": provider,
+        "instructions": "test instructions",
+        "description": "test description",
+    })
+    object.__setattr__(a, "_dynamic_fields", {})
+    object.__setattr__(a, "_changed_fields", [])
+    object.__setattr__(a, "_initialised", True)
+    object.__setattr__(a, "_created", False)
+    return a
 
 
 # ---------------------------------------------------------------------------
@@ -855,3 +872,96 @@ class TestMigrationsDocumentationPin:
         # are content that could legitimately rephrase.
         assert "Per-call `model=` override" in migrations
         assert "#173" in migrations
+
+
+# ---------------------------------------------------------------------------
+# G — Agent-level threading proof (TextAgent / JSONAgent forward model=)
+# ---------------------------------------------------------------------------
+
+
+class TestTextAgentModelThreading:
+    """``TextAgent.generate(model=...)`` forwards to
+    ``client.generate_text(model=...)``. Omitting passes ``model=None``."""
+
+    @pytest.fixture
+    def agent(self):
+        from autonomous.ai.textagent import TextAgent
+
+        return _make_agent(TextAgent)
+
+    def test_generate_forwards_explicit_model(self, agent):
+        client = MagicMock()
+        client.generate_text.return_value = "result"
+
+        with patch.object(agent, "get_client", return_value=client):
+            with patch.object(agent, "add_to_job_meta"):
+                agent.generate("hello", model="override-text")
+
+        _, kwargs = client.generate_text.call_args
+        assert kwargs["model"] == "override-text"
+
+    def test_generate_forwards_none_when_omitted(self, agent):
+        client = MagicMock()
+        client.generate_text.return_value = "result"
+
+        with patch.object(agent, "get_client", return_value=client):
+            with patch.object(agent, "add_to_job_meta"):
+                agent.generate("hello")
+
+        _, kwargs = client.generate_text.call_args
+        # Uniform-kwarg contract (parallel to system_prompt): always sent,
+        # default None means "no override".
+        assert kwargs["model"] is None
+
+    def test_summarize_text_forwards_explicit_model(self, agent):
+        client = MagicMock()
+        client.summarize_text.return_value = "summary"
+
+        with patch.object(agent, "get_client", return_value=client):
+            with patch.object(agent, "add_to_job_meta"):
+                agent.summarize_text("long text", model="override-sum")
+
+        _, kwargs = client.summarize_text.call_args
+        assert kwargs["model"] == "override-sum"
+
+    def test_summarize_text_forwards_none_when_omitted(self, agent):
+        client = MagicMock()
+        client.summarize_text.return_value = "summary"
+
+        with patch.object(agent, "get_client", return_value=client):
+            with patch.object(agent, "add_to_job_meta"):
+                agent.summarize_text("long text")
+
+        _, kwargs = client.summarize_text.call_args
+        assert kwargs["model"] is None
+
+
+class TestJSONAgentModelThreading:
+    """``JSONAgent.generate(model=...)`` forwards to
+    ``client.generate_json(model=...)``."""
+
+    @pytest.fixture
+    def agent(self):
+        from autonomous.ai.jsonagent import JSONAgent
+
+        return _make_agent(JSONAgent)
+
+    def test_generate_forwards_explicit_model(self, agent):
+        client = MagicMock()
+        client.generate_json.return_value = {"k": "v"}
+
+        with patch.object(agent, "get_client", return_value=client):
+            agent.generate("build json", model="override-json")
+
+        _, kwargs = client.generate_json.call_args
+        assert kwargs["model"] == "override-json"
+
+    def test_generate_forwards_none_when_omitted(self, agent):
+        client = MagicMock()
+        client.generate_json.return_value = {"k": "v"}
+
+        with patch.object(agent, "get_client", return_value=client):
+            agent.generate("build json")
+
+        _, kwargs = client.generate_json.call_args
+        assert kwargs["model"] is None
