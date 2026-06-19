@@ -23,8 +23,10 @@ Sections:
 - D — ``OpenAIClient._timeout`` is a tuple keyed on the live snapshot
 - E — Tuple reaches ``_HTTP.post`` on both code paths (json + files)
 - F — ``HttpClient.timeout`` accepts the tuple shape (type widening)
-- G — HPCUnreachable translation wiring preserved post-#177
+- G — HPCUnreachable translation wiring preserved post-#177, including
+      an end-to-end ``ReadTimeout`` → ``HPCUnreachableError`` translation
 - H — Documentation pins (MIGRATIONS.md + configuration.md guide)
+- I — Version bump pin (ride-along inseparability)
 """
 
 from __future__ import annotations
@@ -273,7 +275,13 @@ class _FakeResponse:
 class TestTupleReachesHttpPost:
     def test_json_body_path_forwards_timeout_tuple(self, monkeypatch):
         """``_post`` json-body branch (chat, embeddings) — must forward
-        the class-attr ``_timeout`` tuple to ``_HTTP.post(timeout=)``."""
+        the class-attr ``_timeout`` tuple to ``_HTTP.post(timeout=)``.
+
+        Reads the LIVE ``_timeout`` (not a sentinel) so the assertion
+        also pins the source's tuple shape; on a revert to the pre-#177
+        scalar ``_timeout = settings.hpc_request_timeout``, the
+        ``isinstance(tuple)`` guard fails and surfaces the regression.
+        """
         from autonomous.ai.models import openai_compat as oc
 
         captured = {}
@@ -285,21 +293,30 @@ class TestTupleReachesHttpPost:
             return _FakeResponse()
 
         monkeypatch.setattr(oc._HTTP, "post", fake_post)
-        # Use a sentinel tuple that can't be confused with the default.
-        monkeypatch.setattr(oc.OpenAIClient, "_timeout", (3, 7))
+        # Do NOT monkeypatch _timeout — let it default to the live class
+        # attr so the shape assertion below is load-bearing on revert.
         monkeypatch.setattr(oc.OpenAIClient, "_base_url", "http://hpc.test")
 
         client = _make_openai_client()
         client._post("/v1/chat/completions", json_body={"model": "x"})
 
-        assert captured["timeout"] == (3, 7)
+        # Forwarding contract — whatever _timeout is, it threads through.
+        assert captured["timeout"] == oc.OpenAIClient._timeout
+        # Shape contract (post-#177): it's a 2-tuple, not a scalar.
+        assert isinstance(captured["timeout"], tuple), (
+            f"captured timeout must be a tuple post-#177, got "
+            f"{type(captured['timeout']).__name__}"
+        )
+        assert len(captured["timeout"]) == 2
         assert captured["url"] == "http://hpc.test/v1/chat/completions"
         assert captured["json"] == {"model": "x"}
 
     def test_files_path_forwards_timeout_tuple(self, monkeypatch):
         """``_post`` multipart branch (transcriptions) — same forwarding
-        contract. A refactor of the two branches that drops ``timeout=``
-        on one would slip through any single-branch test."""
+        contract AND tuple shape. A refactor of the two branches that
+        drops ``timeout=`` on one would slip through any single-branch
+        test. Reads the live ``_timeout`` (no monkeypatch) so the shape
+        assertion is load-bearing on revert."""
         from autonomous.ai.models import openai_compat as oc
 
         captured = {}
@@ -311,7 +328,6 @@ class TestTupleReachesHttpPost:
             return _FakeResponse()
 
         monkeypatch.setattr(oc._HTTP, "post", fake_post)
-        monkeypatch.setattr(oc.OpenAIClient, "_timeout", (3, 7))
         monkeypatch.setattr(oc.OpenAIClient, "_base_url", "http://hpc.test")
 
         client = _make_openai_client()
@@ -321,7 +337,9 @@ class TestTupleReachesHttpPost:
             data={"model": "whisper-1"},
         )
 
-        assert captured["timeout"] == (3, 7)
+        assert captured["timeout"] == oc.OpenAIClient._timeout
+        assert isinstance(captured["timeout"], tuple)
+        assert len(captured["timeout"]) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -353,9 +371,14 @@ class TestHttpClientTimeoutTypeWidening:
     def test_request_signature_declares_tuple_in_annotation(self):
         """Type-annotation pin. The IDE / mypy contract for adapter code
         depends on ``request()`` declaring the tuple shape as legal. A
-        refactor that revertis the annotation back to ``float | None``
+        refactor that reverts the annotation back to ``float | None``
         would re-introduce a typing-time error for the HPC client without
-        any runtime signal."""
+        any runtime signal.
+
+        Type annotations are non-load-bearing at runtime, so this is a
+        forward-looking guard on the contract surface — the runtime
+        path still works without it; this catches future re-emergence
+        of the type error."""
         from autonomous.http.client import HttpClient
 
         sig = inspect.signature(HttpClient.request)
@@ -416,6 +439,60 @@ class TestHpcUnreachableTranslationWiring:
                 f"non-transport carve-out — that would bypass the "
                 f"HPCUnreachableError translation #177 depends on."
             )
+
+    def test_read_timeout_translates_to_hpc_unreachable_end_to_end(
+        self, monkeypatch
+    ):
+        """End-to-end translation pin — the headline behavior of #177.
+        A simulated ``requests.exceptions.ReadTimeout`` raised at the
+        ``requests.Session`` boundary (the actual stalled-backend shape)
+        must surface from ``_post`` as ``HPCUnreachableError`` so the
+        existing retry budget + [HPC-UNREACHABLE]-aware consumers fire.
+
+        Section G's wiring tests (transport_error_cls, carve-out)
+        prove the configuration is correct; this proves the
+        configuration actually translates an end-to-end ReadTimeout
+        through the HttpClient → openai_compat boundary. ``Timeout``
+        (the parent class) is already pinned in
+        ``test_unit_openai_client.py``; pinning ``ReadTimeout``
+        specifically catches a future MRO shift in ``requests`` that
+        would slip through the parent-class catch."""
+        import requests
+
+        from autonomous.ai.models import openai_compat as oc
+
+        # Bypass retry sleeps so the test runs fast even if retry kicks in.
+        # _HTTP has max_attempts wired from settings.hpc_retry_attempts;
+        # forcing max_attempts=1 keeps the assertion focused on the
+        # single-attempt translation chain.
+        monkeypatch.setattr(oc._HTTP, "max_attempts", 1)
+        monkeypatch.setattr(oc._HTTP, "retry_backoff", 0)
+        monkeypatch.setattr(oc.OpenAIClient, "_base_url", "http://hpc.test")
+
+        def stalled_backend(*args, **kwargs):
+            # The exact shape of issue #177: client sent the body and
+            # the backend went silent. requests raises ReadTimeout
+            # after the bounded read window.
+            raise requests.exceptions.ReadTimeout(
+                "backend stalled mid-response (simulated)"
+            )
+
+        # Patch at the requests.Session.request level so the full
+        # HttpClient classification + wrapping path runs.
+        monkeypatch.setattr(oc._HTTP.session, "request", stalled_backend)
+
+        client = _make_openai_client()
+        with pytest.raises(oc.HPCUnreachableError) as excinfo:
+            client._post("/v1/chat/completions", json_body={"model": "x"})
+
+        # The exception message must carry the ReadTimeout context so
+        # operators triaging logs see what actually went wrong.
+        assert "ReadTimeout" in str(excinfo.value) or "stalled" in str(
+            excinfo.value
+        ).lower(), (
+            f"HPCUnreachableError message should reference the underlying "
+            f"ReadTimeout for operator triage; got: {excinfo.value!r}"
+        )
 
 
 # ---------------------------------------------------------------------------
