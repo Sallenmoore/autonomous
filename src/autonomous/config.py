@@ -213,7 +213,7 @@ _SPEC: tuple[Field, ...] = (
     Field("hpc_stt_model", "HPC_STT_MODEL", "str", "whisper-1", "ai_hpc", "Speech-to-text model"),
     Field("hpc_request_timeout", "HPC_REQUEST_TIMEOUT", "int", 120, "ai_hpc",
           "DEPRECATED single-value timeout (s). Use HPC_CONNECT_TIMEOUT + HPC_READ_TIMEOUT. "
-          "Retained as a back-compat fallback: when HPC_READ_TIMEOUT is unset, "
+          "Retained as a back-compat fallback: when HPC_READ_TIMEOUT is unset or empty, "
           "hpc_read_timeout inherits this value so existing deployments keep working."),
     Field("hpc_connect_timeout", "HPC_CONNECT_TIMEOUT", "int", 10, "ai_hpc",
           "TCP connect timeout (s). Low default so a dropped VPN fails fast "
