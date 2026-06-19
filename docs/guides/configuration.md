@@ -107,7 +107,9 @@ forms co-exist during the transition, so existing deployments are unaffected. Th
 | `HPC_SUMMARY_MODEL` | str | `gemma4:26b` | `hpc_summary_model` | ✅ | Summary model |
 | `HPC_EMBEDDING_MODEL` | str | `dengcao/Qwen3-Embedding-8B:F16` | `hpc_embedding_model` | ✅ | Embedding model |
 | `HPC_STT_MODEL` | str | `whisper-1` | `hpc_stt_model` | ✅ | Speech-to-text model |
-| `HPC_REQUEST_TIMEOUT` | int | `120` | `hpc_request_timeout` | ✅ | Per-request timeout (s) |
+| `HPC_REQUEST_TIMEOUT` | int | `120` | `hpc_request_timeout` | ✅ | **DEPRECATED** — single-value timeout (s). Use `HPC_CONNECT_TIMEOUT` + `HPC_READ_TIMEOUT`. Retained as a back-compat fallback: when `HPC_READ_TIMEOUT` is unset or empty, `hpc_read_timeout` inherits this value. |
+| `HPC_CONNECT_TIMEOUT` | int | `10` | `hpc_connect_timeout` | ✅ | TCP connect timeout (s). Low default so a dropped VPN fails fast instead of pinning a worker (#177). |
+| `HPC_READ_TIMEOUT` | int | `120` | `hpc_read_timeout` | ✅ | Per-request read timeout (s); bounds the wait between sent body and first response byte. Unset/empty → inherits `HPC_REQUEST_TIMEOUT` for back-compat (#177). |
 | `HPC_RETRY_ATTEMPTS` | int | `3` | `hpc_retry_attempts` | ✅ | Retry attempts |
 | `HPC_RETRY_BACKOFF` | int | `10` | `hpc_retry_backoff` | ✅ | Retry backoff (s) |
 | `HPC_UNREACHABLE_THROTTLE_SECONDS` | int | `0` | `hpc_unreachable_throttle_seconds` | ✅ | Throttle window for [HPC-UNREACHABLE] log floods (0 = disabled) |

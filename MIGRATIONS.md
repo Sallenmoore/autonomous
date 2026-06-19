@@ -13,7 +13,7 @@ recent first.
 - Two new env knobs:
   - `HPC_CONNECT_TIMEOUT` (default `10`) — TCP connect timeout. Low default so a dropped VPN fails fast.
   - `HPC_READ_TIMEOUT` (default `120`) — between-bytes read timeout. The actual stall ceiling.
-- The legacy `HPC_REQUEST_TIMEOUT` knob is retained as a back-compat fallback: when `HPC_READ_TIMEOUT` is **unset**, the resolved `hpc_read_timeout` inherits whatever `HPC_REQUEST_TIMEOUT` produced (its default is also 120, so byte-identical to the pre-#177 single-knob behavior). Deployments that set `HPC_REQUEST_TIMEOUT=N` keep `read=N` and pick up the new low-connect default.
+- The legacy `HPC_REQUEST_TIMEOUT` knob is retained as a back-compat fallback: when `HPC_READ_TIMEOUT` is **unset or empty**, the resolved `hpc_read_timeout` inherits whatever `HPC_REQUEST_TIMEOUT` produced (its default is also 120, so byte-identical to the pre-#177 single-knob behavior). Deployments that set `HPC_REQUEST_TIMEOUT=N` keep `read=N` and pick up the new low-connect default. Implementation mirrors the existing `HPC_JSON_MODEL` → `hpc_text_model` fallback precedent (`env_int("HPC_READ_TIMEOUT", self.hpc_request_timeout)`), so a blank value in a templated env file inherits the legacy knob rather than silently downgrading to the field default.
 
 **Behavior change — externally visible.**
 
