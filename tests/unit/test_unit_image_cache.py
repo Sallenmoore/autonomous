@@ -130,3 +130,64 @@ class TestEdgeCases:
     def test_traversal_attempt_returns_none(self, storage):
         # Item 7 makes get_path raise ValueError; get_url swallows.
         assert storage.get_url("../etc/passwd") is None
+
+
+class TestRotateInteractionWithVariantCache:
+    """Issue #150: pin the rotate() ↔ variant-invalidation handshake.
+
+    rotate() clears variants then rewrites orig.webp. A subsequent
+    get_url(size=...) MUST regenerate from the rotated original, not
+    serve the stale pre-rotation cached variant. A refactor of either
+    rotate()'s clear-then-save ordering or _regenerate_variant's
+    mtime-pin could silently serve a stale variant — visually wrong,
+    no exception, no signal.
+    """
+
+    def test_rotate_invalidates_cached_variant(self, storage):
+        # Non-square so rotation visibly swaps aspect ratio.
+        asset_id = storage.save(_make_png(size=(40, 60)), folder="rotate-test")
+
+        # Prime the variant.
+        storage.get_url(asset_id, size="thumbnail")
+        variant_path = Path(storage.get_path(asset_id)) / "thumbnail.webp"
+        assert variant_path.is_file()
+        first_inode = variant_path.stat().st_ino
+        with Image.open(variant_path) as variant:
+            pre_w, pre_h = variant.size
+        assert pre_w < pre_h, "fixture sanity: pre-rotation should be portrait"
+
+        storage.rotate(asset_id, amount=90)
+
+        # rotate() called clear_cached() — variant is gone.
+        assert not variant_path.is_file()
+
+        # Re-request the same variant.
+        url = storage.get_url(asset_id, size="thumbnail")
+        assert url
+        assert variant_path.is_file()
+        # New inode — os.replace wrote a fresh file, not just touched.
+        assert variant_path.stat().st_ino != first_inode
+        # Orientation swapped — proves the variant was rebuilt from the
+        # ROTATED original, not served from a pre-rotation cache.
+        with Image.open(variant_path) as variant:
+            post_w, post_h = variant.size
+        assert post_w > post_h
+
+    def test_flip_invalidates_cached_variant(self, storage):
+        """flip() takes the same clear-then-save path as rotate() — pin
+        it too so a "DRY-up" of the two methods can't regress only one."""
+        asset_id = storage.save(_make_png(color="blue"), folder="flip-test")
+
+        storage.get_url(asset_id, size="small")
+        variant_path = Path(storage.get_path(asset_id)) / "small.webp"
+        assert variant_path.is_file()
+        first_inode = variant_path.stat().st_ino
+
+        storage.flip(asset_id, flipx=True, flipy=False)
+
+        # Cache cleared by flip().
+        assert not variant_path.is_file()
+
+        storage.get_url(asset_id, size="small")
+        assert variant_path.is_file()
+        assert variant_path.stat().st_ino != first_inode
