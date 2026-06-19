@@ -398,12 +398,16 @@ class OpenAIClient(AutoModel):
         temperature=0.7,
         evaluation=False,
         system_prompt=None,
+        model=None,
     ):
         # system_prompt replaces the persisted persona for this call —
         # mirrors generate_json's `system_prompt or self.instructions`
         # base-slot semantic. additional_instructions is generate_text-
         # only (generate_json has no such kwarg) and appends as a
         # task-level suffix to whichever base is in play.
+        # `model` (#173) is a per-call override of the role-default
+        # `self._text_model` (HPC_TEXT_MODEL); `None` keeps the env
+        # default so no-arg callers see no behavior change.
         system = system_prompt or self.instructions
         if additional_instructions:
             system = f"{system}\n{additional_instructions}"
@@ -415,17 +419,21 @@ class OpenAIClient(AutoModel):
             )
         if uri:
             user += f"\nUse the following URI for reference: {uri}"
-        return self._chat(self._text_model, system, user, temperature=temperature)
+        return self._chat(model or self._text_model, system, user, temperature=temperature)
 
-    def _emit_strict_unavailable(self, *, status, body_excerpt, detection):
+    def _emit_strict_unavailable(self, *, status, body_excerpt, detection, model=None):
         """Private helper for the two ``structured_outputs_unavailable``
         emission sites in ``generate_json``. Lives in this module (not
         ``_json_messages``) so the existing test patch target
         ``autonomous.ai.models.openai_compat.event`` continues to
         intercept — ``event`` is resolved through this module's
-        namespace at call time. ``provider`` / ``model`` / ``endpoint``
-        are stable across both sites; ``status`` / ``body_excerpt`` /
-        ``detection`` are the only fields that vary.
+        namespace at call time. ``provider`` and ``endpoint`` are stable
+        across both sites; ``status`` / ``body_excerpt`` / ``detection``
+        / ``model`` vary.
+
+        ``model`` is the effective per-call model (#173). When omitted,
+        falls back to ``self._json_model`` so existing callers stay
+        attribution-correct against the configured default.
         """
         event(
             "structured_outputs_unavailable",
@@ -433,7 +441,7 @@ class OpenAIClient(AutoModel):
             marker="STRUCTURED-OUTPUTS-UNAVAILABLE",
             print_to_stdout=False,
             provider="openai_compat",
-            model=self._json_model,
+            model=model or self._json_model,
             endpoint=self._base_url,
             status=status,
             body_excerpt=body_excerpt,
@@ -458,6 +466,7 @@ class OpenAIClient(AutoModel):
         evaluation=False,
         json_schema=None,
         schema_name="response",
+        model=None,
     ):
         # Message construction consolidated to ``_json_messages`` (#146) —
         # this adapter passes ``api_enforces_json=True`` because the
@@ -474,11 +483,17 @@ class OpenAIClient(AutoModel):
             api_enforces_json=True,
         )
 
+        # `model` (#173) is a per-call override of `self._json_model`.
+        # Key the negative cache on the EFFECTIVE model so a strict-mode
+        # probe failure for an explicit per-call model does not poison
+        # the entry for the env-configured default (and vice versa).
+        effective_model = model or self._json_model
+
         # Build the response_format payload. Strict mode when:
         #   - caller passed a schema
         #   - this (model, endpoint) is not in the negative cache
         # Otherwise loose mode (preserved existing behavior).
-        endpoint_key = (self._json_model, self._base_url)
+        endpoint_key = (effective_model, self._base_url)
         use_strict = (
             json_schema is not None
             and endpoint_key not in _UNSUPPORTED_STRICT_MODE
@@ -503,7 +518,7 @@ class OpenAIClient(AutoModel):
         # escape past the typed-exception contract.
         try:
             raw = self._chat(
-                self._json_model,
+                effective_model,
                 system,
                 user,
                 response_format=response_format,
@@ -537,11 +552,12 @@ class OpenAIClient(AutoModel):
                 status=resp.status_code,
                 body_excerpt=resp.text[:200],
                 detection="first",
+                model=effective_model,
             )
             # Retry once with loose mode.
             try:
                 raw = self._chat(
-                    self._json_model,
+                    effective_model,
                     system,
                     user,
                     response_format={"type": "json_object"},
@@ -592,10 +608,11 @@ class OpenAIClient(AutoModel):
                         status=200,
                         body_excerpt=raw[:200],
                         detection="parse_failure_200",
+                        model=effective_model,
                     )
                     try:
                         loose_raw = self._chat(
-                            self._json_model,
+                            effective_model,
                             system,
                             user,
                             response_format={"type": "json_object"},
@@ -628,11 +645,12 @@ class OpenAIClient(AutoModel):
                     raw=raw,
                 ) from exc
 
-    def summarize_text(self, text, primer=""):
+    def summarize_text(self, text, primer="", model=None):
         primer = primer or "Summarize the following text concisely."
         # OpenAI-compatible endpoints don't need the chunk-by-context-window
         # dance Ollama did; modern models handle 32k+ context comfortably.
-        return self._chat(self._summary_model, primer, text, temperature=0.5)
+        # `model` (#173) overrides the role-default `self._summary_model`.
+        return self._chat(model or self._summary_model, primer, text, temperature=0.5)
 
     # ---------------- transcription ----------------
 

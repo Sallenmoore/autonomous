@@ -124,12 +124,15 @@ class LocalAIModel(AutoModel):
     def _clean_json_response(self, text):
         return clean_json_response(text)
 
-    def _evaluate_response(self, instruction, content, goal):
+    def _evaluate_response(self, instruction, content, goal, model=None):
+        # `model` (#173) is the effective per-call model the surrounding
+        # generate_text invocation is using — flow it through so the eval
+        # critic runs on the same model as the generation being evaluated.
+        # When omitted, read live so an OLLAMA_TEXT_MODEL flip lands without
+        # a restart (mirrors the original os.environ.get at this call site;
+        # do not switch to settings.ollama_text_model).
         eval_prompt = {
-            # Read live (not via the settings snapshot) so an OLLAMA_TEXT_MODEL
-            # flip lands without a restart — mirrors the original os.environ.get
-            # at this call site. Do not switch to settings.ollama_text_model.
-            "model": env_str("OLLAMA_TEXT_MODEL", "gemma4:26b"),
+            "model": model or env_str("OLLAMA_TEXT_MODEL", "gemma4:26b"),
             "messages": [
                 {
                     "role": "user",
@@ -165,13 +168,21 @@ class LocalAIModel(AutoModel):
         evaluation=False,
         json_schema=None,
         schema_name="response",
+        model=None,
     ):
+        # `model` (#173) is a per-call override of the default
+        # `self._text_model` (Ollama uses the text model for JSON too —
+        # there is no separate `_json_model` on this adapter). Key the
+        # once-per-process log on the EFFECTIVE model so a per-call
+        # model and the env default each get their own emission.
+        effective_model = model or self._text_model
+
         # The local Ollama path has no equivalent of OpenAI's strict-mode
         # response_format. Log once per (model, endpoint) so operators know
         # they're on the prompt-only enforcement path, and proceed as today.
         # Client-side validation in JSONAgent.generate provides the safety net.
         if json_schema is not None:
-            key = (self._text_model, self._ollama_url)
+            key = (effective_model, self._ollama_url)
             if key not in _STRUCTURED_OUTPUTS_LOGGED:
                 _STRUCTURED_OUTPUTS_LOGGED.add(key)
                 # Inline event+counter: ``event`` resolves through this
@@ -184,7 +195,7 @@ class LocalAIModel(AutoModel):
                     marker="STRUCTURED-OUTPUTS-UNAVAILABLE",
                     print_to_stdout=False,
                     provider="local",
-                    model=self._text_model,
+                    model=effective_model,
                     endpoint=self._ollama_url,
                     fallback="prompt_only_with_client_validation",
                 )
@@ -221,7 +232,7 @@ class LocalAIModel(AutoModel):
         # Instead, we rely on the system prompt instruction ("Output ONLY valid
         # JSON") and _clean_json_response() to extract valid JSON from free output.
         payload = {
-            "model": self._text_model,
+            "model": effective_model,
             "messages": [
                 {"role": "system", "content": system_msg},
                 {"role": "user", "content": user_message},
@@ -293,7 +304,9 @@ class LocalAIModel(AutoModel):
             # unparseable prose for the same prompt is equally stuck
             # (and retrying the same prompt without a flush burns
             # tokens for no benefit). Cheap to flush, expensive to skip.
-            self.flush_memory(self._text_model)
+            # Flush for the EFFECTIVE model (#173) — per-call overrides
+            # should clear their own KV cache, not the class default's.
+            self.flush_memory(effective_model)
 
         try:
             # ``catch`` lists ONLY concrete transient classes plus the
@@ -363,7 +376,11 @@ class LocalAIModel(AutoModel):
         temperature=0.7,
         evaluation=False,
         system_prompt=None,
+        model=None,
     ):
+        # `model` (#173) overrides the default `self._text_model`;
+        # `None` keeps env behavior unchanged for existing callers.
+        effective_model = model or self._text_model
         context = context or {}
         if context:
             additional_instructions += (
@@ -390,7 +407,7 @@ class LocalAIModel(AutoModel):
 
         # 3. Send to Ollama
         payload = {
-            "model": self._text_model,
+            "model": effective_model,
             "messages": [
                 {"role": "system", "content": system_content},
                 {"role": "user", "content": message},
@@ -414,8 +431,10 @@ class LocalAIModel(AutoModel):
             response = _HTTP.post(f"{self._ollama_url}/api/chat", json=payload, timeout=self._text_timeout)
             response.raise_for_status()
             if evaluation:
+                # Pass effective_model so the eval critic uses the same model
+                # as the surrounding generation (#173 alignment).
                 eval_res = self._evaluate_response(
-                    message, response, additional_instructions
+                    message, response, additional_instructions, model=effective_model
                 )
                 log(f"Evaluation:\n {eval_res}")
                 payload["messages"][1]["content"] = eval_res
@@ -436,15 +455,18 @@ class LocalAIModel(AutoModel):
             log(f"==== LocalAI Text Error: {e} ====", _print=True)
         return result
 
-    def summarize_text(self, text, primer=""):
+    def summarize_text(self, text, primer="", model=None):
         primer = primer or "Summarize the following text concisely."
         max_chars = self._context_limit * 4
         chunks = [text[i : i + max_chars] for i in range(0, len(text), max_chars)]
 
+        # `model` (#173) overrides the default summary model (Ollama
+        # uses `_text_model` for summarization too — see generate_json).
+        effective_model = model or self._text_model
         full_summary = ""
         for chunk in chunks:
             payload = {
-                "model": self._text_model,
+                "model": effective_model,
                 "messages": [
                     {"role": "system", "content": primer},
                     {"role": "user", "content": chunk},
