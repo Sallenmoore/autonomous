@@ -211,7 +211,17 @@ _SPEC: tuple[Field, ...] = (
     Field("hpc_summary_model", "HPC_SUMMARY_MODEL", "str", "gemma4:26b", "ai_hpc", "Summary model"),
     Field("hpc_embedding_model", "HPC_EMBEDDING_MODEL", "str", "dengcao/Qwen3-Embedding-8B:F16", "ai_hpc", "Embedding model"),
     Field("hpc_stt_model", "HPC_STT_MODEL", "str", "whisper-1", "ai_hpc", "Speech-to-text model"),
-    Field("hpc_request_timeout", "HPC_REQUEST_TIMEOUT", "int", 120, "ai_hpc", "Per-request timeout (s)"),
+    Field("hpc_request_timeout", "HPC_REQUEST_TIMEOUT", "int", 120, "ai_hpc",
+          "DEPRECATED single-value timeout (s). Use HPC_CONNECT_TIMEOUT + HPC_READ_TIMEOUT. "
+          "Retained as a back-compat fallback: when HPC_READ_TIMEOUT is unset, "
+          "hpc_read_timeout inherits this value so existing deployments keep working."),
+    Field("hpc_connect_timeout", "HPC_CONNECT_TIMEOUT", "int", 10, "ai_hpc",
+          "TCP connect timeout (s). Low default so a dropped VPN fails fast "
+          "instead of pinning a worker (#177)."),
+    Field("hpc_read_timeout", "HPC_READ_TIMEOUT", "int", 120, "ai_hpc",
+          "Per-request read timeout (s). Bounds the wait between sent body and "
+          "first response byte; a stalled HPC backend now surfaces as "
+          "HPCUnreachableError instead of a silent indefinite block (#177)."),
     Field("hpc_retry_attempts", "HPC_RETRY_ATTEMPTS", "int", 3, "ai_hpc", "Retry attempts"),
     Field("hpc_retry_backoff", "HPC_RETRY_BACKOFF", "int", 10, "ai_hpc", "Retry backoff (s)"),
     Field("hpc_unreachable_throttle_seconds", "HPC_UNREACHABLE_THROTTLE_SECONDS", "int", 0, "ai_hpc",
@@ -298,6 +308,16 @@ class Settings:
         # ``os.environ.get("HPC_JSON_MODEL", _text_model)`` (an explicitly
         # empty value is preserved, only a missing key falls back).
         self.hpc_json_model = env_str("HPC_JSON_MODEL", self.hpc_text_model)
+        # Derived default: HPC_READ_TIMEOUT inherits HPC_REQUEST_TIMEOUT
+        # when the new split-timeout knob is absent (#177). Existing
+        # deployments that set HPC_REQUEST_TIMEOUT=N (and nothing else)
+        # see their read timeout preserved; new deployments set
+        # HPC_CONNECT_TIMEOUT + HPC_READ_TIMEOUT explicitly. The check is
+        # against os.environ so an explicitly-empty HPC_READ_TIMEOUT is
+        # treated as "set" and does NOT fall back (env_int already
+        # converted it to the default during the primary pass).
+        if "HPC_READ_TIMEOUT" not in os.environ:
+            self.hpc_read_timeout = self.hpc_request_timeout
 
     def reload(self) -> "Settings":
         """Re-read every field from the current ``os.environ`` in place.
