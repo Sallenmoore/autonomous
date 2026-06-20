@@ -189,10 +189,16 @@ class HttpClient:
     ``_safe_hook``).
 
     Args:
-        timeout: Default per-call timeout in seconds. Per-call
+        timeout: Default per-call timeout in seconds, or a
+            ``(connect, read)`` tuple to budget the two phases
+            independently (``requests``-native shape). Per-call
             ``timeout=`` overrides. ``None`` disables timeout (matches
             ``requests`` semantics) — avoid unless you have a hard
-            external wall-clock cap.
+            external wall-clock cap. The tuple form is the recommended
+            shape for backends that may accept a connection and then
+            stall mid-response (see openai_compat's HPC client + #177);
+            a small connect-leg lets a dropped VPN fail fast while a
+            bounded read-leg caps backend-stall worker pin time.
         max_attempts: Retry budget. ``1`` (default) disables retry —
             each call is a single attempt. Counts the first attempt,
             so ``3`` = original + 2 retries.
@@ -226,7 +232,7 @@ class HttpClient:
     def __init__(
         self,
         *,
-        timeout: float | None = 30.0,
+        timeout: float | tuple[float, float] | None = 30.0,
         max_attempts: int = 1,
         retry_backoff: float = 0.0,
         retry_jitter: float = 0.0,
@@ -296,7 +302,7 @@ class HttpClient:
         json: Any = None,
         data: Any = None,
         files: Any = None,
-        timeout: float | None = None,
+        timeout: float | tuple[float, float] | None = None,
         max_attempts: int | None = None,
         **kwargs: Any,
     ) -> requests.Response:
