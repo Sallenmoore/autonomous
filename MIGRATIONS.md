@@ -5,6 +5,33 @@ recent first.
 
 ## Unreleased
 
+### Exponential backoff on the HPC retry budget (#182)
+
+**What changed.**
+
+- `autonomous.ai.retry.retry(...)` gains a `backoff_factor: float = 1.0` keyword. The wait BEFORE attempt `n` (1-indexed) is now `sleep_seconds * backoff_factor ** (n - 1)`. With the default `1.0` this is the **legacy flat backoff** — every gap is exactly `sleep_seconds` — so existing callers are byte-identical. `2.0` yields classic exponential backoff (`sleep_seconds`, `2×`, `4×`, …). The value must be a finite float `>= 1.0` (a shrinking or non-finite factor raises `ValueError`, same guard shape as the existing `jitter` validation).
+- `autonomous.http.HttpClient(...)` gains a matching `retry_backoff_factor: float = 1.0` constructor keyword, threaded into its internal `retry(...)` call. Default `1.0` keeps every existing adapter's flat backoff unchanged; it's validated at construction (`>= 1.0`, finite) so a misconfigured module-level client fails at import rather than on the first transient failure.
+- The HPC client (`ai.models.openai_compat._HTTP`) opts into exponential backoff via a new env knob `HPC_RETRY_BACKOFF_FACTOR` (default **`2.0`**). With the existing `HPC_RETRY_ATTEMPTS=3` / `HPC_RETRY_BACKOFF=10`, the inter-attempt waits become `10s` then `20s` (was `10s`, `10s`), so the same 3-attempt budget rides out a longer transient-degraded backend window before surfacing `HPCUnreachableError`.
+
+**Behavior change — externally visible.**
+
+- **The HPC client's retry spacing widened (flat → exponential) by default.** A transient `ReadTimeout` (or any transport-class failure) that previously exhausted the retry budget in ~20s of backoff now spans ~30s before raising `HPCUnreachableError`. This is the #182 fix: the observed degraded windows (4 self-healing failures over ~50min–2.5h windows) outlasted the old flat budget. A `ReadTimeout` was **already** riding the retry budget (`requests.ReadTimeout` is a `RequestException`, wrapped into `HPCUnreachableError` by `HttpClient`, caught by the outer retry tuple) — the gap was only the spacing, not a missing retry. **The public exception contract is unchanged**: a permanent failure still surfaces as `HPCUnreachableError` after the budget is exhausted; only the spacing of the retries changed. Worst-case worker pin time per call grows accordingly (bounded by `sum of (connect+read) per attempt + sum of backoffs`).
+- **No change for any other adapter.** `local_model`, `flux`, `db_sync`, and `auth.autoauth` construct `HttpClient` / call `retry` without `retry_backoff_factor` / `backoff_factor`, so they keep flat backoff.
+
+**Migration.**
+
+No action required at default settings. To restore the pre-#182 flat HPC backoff, set `HPC_RETRY_BACKOFF_FACTOR=1.0`. A malformed or out-of-range value (`<1.0`, `inf`, `nan`, non-numeric) falls back to the `2.0` default with a `[CONFIG]` breadcrumb rather than crashing import.
+
+```bash
+# opt back into legacy flat backoff
+HPC_RETRY_BACKOFF_FACTOR=1.0
+
+# or widen the ride-out further (e.g. 10s, 30s, 90s)
+HPC_RETRY_BACKOFF_FACTOR=3.0
+```
+
+**Out of scope (deferred).** Increasing `HPC_RETRY_ATTEMPTS` beyond 3: each extra attempt adds a full `read`-timeout stall on the fast path (a genuinely-down backend would block the worker longer), so the fix preferred widening the spacing of the existing budget over adding attempts. Operators who want more attempts can still raise `HPC_RETRY_ATTEMPTS`.
+
 ### Bounded `(connect, read)` timeouts on the HPC HTTP client (#177)
 
 **What changed.**
