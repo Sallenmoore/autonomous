@@ -43,6 +43,7 @@ old reads co-exist with the catalog during the transition.
 
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass
 from typing import Any
@@ -223,7 +224,13 @@ _SPEC: tuple[Field, ...] = (
           "first response byte; a stalled HPC backend now surfaces as "
           "HPCUnreachableError instead of a silent indefinite block (#177)."),
     Field("hpc_retry_attempts", "HPC_RETRY_ATTEMPTS", "int", 3, "ai_hpc", "Retry attempts"),
-    Field("hpc_retry_backoff", "HPC_RETRY_BACKOFF", "int", 10, "ai_hpc", "Retry backoff (s)"),
+    Field("hpc_retry_backoff", "HPC_RETRY_BACKOFF", "int", 10, "ai_hpc", "Retry backoff base (s)"),
+    Field("hpc_retry_backoff_factor", "HPC_RETRY_BACKOFF_FACTOR", "float", 2.0, "ai_hpc",
+          "Exponential-backoff growth base for HPC retries (#182). With the default 2.0 the "
+          "inter-attempt waits are hpc_retry_backoff, 2x, 4x, ... so a brief degraded backend "
+          "window (transient ReadTimeout) gets ridden out across the existing attempt budget "
+          "instead of failing fast on flat backoff. Set 1.0 to restore the legacy flat backoff. "
+          "Must be >= 1.0; a malformed value falls back to 2.0."),
     Field("hpc_unreachable_throttle_seconds", "HPC_UNREACHABLE_THROTTLE_SECONDS", "int", 0, "ai_hpc",
           "Throttle window for [HPC-UNREACHABLE] log floods (0 = disabled)"),
 
@@ -316,6 +323,22 @@ class Settings:
         # Docker/k8s entry) still inherits the legacy single-knob value
         # rather than silently downgrading to the field default.
         self.hpc_read_timeout = env_int("HPC_READ_TIMEOUT", self.hpc_request_timeout)
+        # Range-clamp HPC_RETRY_BACKOFF_FACTOR (#182). ``env_float`` only
+        # falls back on a *non-numeric* value; a numeric-but-invalid
+        # entry (e.g. ``0.5`` shrinking backoff, or a non-finite
+        # ``inf``/``nan``) would survive parsing and then hard-crash the
+        # ``HttpClient(retry_backoff_factor=...)`` constructor at package
+        # import — a far worse failure mode than a config breadcrumb. The
+        # constructor and ``retry()`` both require ``>= 1.0`` and finite,
+        # so sanitize the snapshot here to the documented default rather
+        # than let a templated-env typo brick the import.
+        if not math.isfinite(self.hpc_retry_backoff_factor) or self.hpc_retry_backoff_factor < 1.0:
+            log(
+                f"[CONFIG] HPC_RETRY_BACKOFF_FACTOR="
+                f"{self.hpc_retry_backoff_factor!r} is out of range "
+                f"(must be a finite float >= 1.0); using default 2.0"
+            )
+            self.hpc_retry_backoff_factor = 2.0
 
     def reload(self) -> "Settings":
         """Re-read every field from the current ``os.environ`` in place.
