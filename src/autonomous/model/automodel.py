@@ -70,6 +70,24 @@ def _ensure_connected() -> None:
     connect_from_env()
 
 
+def _maybe_select_related(qs, flag):
+    """Apply ``.select_related(max_depth=...)`` to ``qs`` per ``flag``, else
+    return ``qs`` unchanged.
+
+    ``flag``: falsy (``False`` / ``0`` / ``None``) → off; ``True`` → depth 1;
+    int ``N`` (≥ 1) → depth ``N``. ``bool`` is an ``int`` subclass, so both
+    pass the type check; other types raise ``TypeError``; negative ints raise
+    ``ValueError``.
+    """
+    if not flag:                       # False / 0 / None → off
+        return qs
+    if not isinstance(flag, int):      # bool & int pass; str/float/list rejected
+        raise TypeError("_select_related must be a bool or int")
+    if flag < 1:                       # negative (truthy) int
+        raise ValueError("_select_related must be True or a positive int")
+    return qs.select_related(max_depth=int(flag))
+
+
 class AutoModel(Document):
     meta = {"abstract": True, "allow_inheritance": True, "strict": False}
     last_updated = DateTimeField(default=datetime.now)
@@ -285,16 +303,22 @@ class AutoModel(Document):
         return cls._from_son(random_document) if random_document else None
 
     @classmethod
-    def all(cls) -> list[Self]:
-        """Return every instance of this model. Use ``search`` for filtering."""
+    def all(cls, _select_related: bool | int = False) -> list[Self]:
+        """Return every instance of this model. Use ``search`` for filtering.
+
+        ``_select_related`` (default ``False``) opts into batch dereference of
+        reference fields: ``True`` → depth 1, int ``N`` → depth ``N``. Off by
+        default — behavior is unchanged for existing callers.
+        """
         _ensure_connected()
-        return list(cls.objects())
+        return list(_maybe_select_related(cls.objects(), _select_related))
 
     @classmethod
     def search(
         cls,
         _order_by: tuple[str, ...] | list[str] | None = None,
         _limit: int | list[int] | None = None,
+        _select_related: bool | int = False,
         **kwargs: Any,
     ) -> list[Self]:
         """Case-insensitive substring search across the supplied fields.
@@ -302,6 +326,10 @@ class AutoModel(Document):
         String values become ``__icontains`` queries; non-string values
         become exact matches. ``_order_by`` is forwarded to mongoengine;
         ``_limit`` accepts either a slice end or a ``[start, end]`` pair.
+        ``_select_related`` (default ``False``) opts into batch dereference of
+        reference fields on the returned rows: ``True`` → depth 1, int ``N`` →
+        depth ``N``. Applied after ``_order_by`` / ``_limit`` so only returned
+        rows are fetched. Off by default — unchanged for existing callers.
         """
         _ensure_connected()
         new_kwargs: dict[str, Any] = {}
@@ -318,6 +346,7 @@ class AutoModel(Document):
                 results = results[_limit[0] : _limit[-1]]
             else:
                 results = results[:_limit]
+        results = _maybe_select_related(results, _select_related)
         return list(results)
 
     @classmethod
