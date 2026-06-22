@@ -318,6 +318,7 @@ class AutoModel(Document):
         cls,
         _order_by: tuple[str, ...] | list[str] | None = None,
         _limit: int | list[int] | None = None,
+        _select_related: bool | int = False,
         **kwargs: Any,
     ) -> list[Self]:
         """Case-insensitive substring search across the supplied fields.
@@ -325,6 +326,10 @@ class AutoModel(Document):
         String values become ``__icontains`` queries; non-string values
         become exact matches. ``_order_by`` is forwarded to mongoengine;
         ``_limit`` accepts either a slice end or a ``[start, end]`` pair.
+        ``_select_related`` (default ``False``) opts into batch dereference of
+        reference fields on the returned rows: ``True`` → depth 1, int ``N`` →
+        depth ``N``. Applied after ``_order_by`` / ``_limit`` so only returned
+        rows are fetched. Off by default — unchanged for existing callers.
         """
         _ensure_connected()
         new_kwargs: dict[str, Any] = {}
@@ -341,6 +346,7 @@ class AutoModel(Document):
                 results = results[_limit[0] : _limit[-1]]
             else:
                 results = results[:_limit]
+        results = _maybe_select_related(results, _select_related)
         return list(results)
 
     @classmethod
