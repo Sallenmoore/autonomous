@@ -9,6 +9,7 @@ from autonomous.web import (
     get_session,
     redirect,
 )
+from autonomous.web.session import _b64d, _b64e
 
 
 class TestResponse:
@@ -160,7 +161,18 @@ class TestSignedCookieSession:
         s = SignedCookieSession(self.secret, {"admin": False})
         token = s.dumps()
         payload_b64, sig_b64 = token.split(".", 1)
-        tampered = payload_b64 + "A" + "." + sig_b64
+        # Mutate the decoded payload bytes (flip the first byte) and re-encode,
+        # so the tamper is guaranteed to change what the verifier decodes — not
+        # just the base64 string. A naive "append a base64 char" tamper can be a
+        # decode no-op for some payload byte-lengths, which would let the
+        # unchanged payload re-verify and flake (see git history for #190).
+        payload_bytes = _b64d(payload_b64)
+        mutated = bytes([payload_bytes[0] ^ 0xFF]) + payload_bytes[1:]
+        tampered_payload_b64 = _b64e(mutated)
+        # Guard: the tamper MUST change the decoded bytes, else the test would
+        # silently pass by re-verifying an unmodified payload.
+        assert _b64d(tampered_payload_b64) != payload_bytes
+        tampered = tampered_payload_b64 + "." + sig_b64
         loaded = SignedCookieSession.from_cookie(self.secret, tampered)
         assert dict(loaded) == {}
 
@@ -168,7 +180,16 @@ class TestSignedCookieSession:
         s = SignedCookieSession(self.secret, {"admin": False})
         token = s.dumps()
         payload_b64, sig_b64 = token.split(".", 1)
-        tampered = payload_b64 + "." + sig_b64[:-2] + "AA"
+        # Mutate the decoded signature bytes (flip the first byte) and re-encode.
+        # Replacing the last base64 char(s) of a 32-byte HMAC is a decode no-op
+        # for ~1/1024 signatures (trailing don't-care padding bits), which let
+        # an unchanged signature re-verify and flake (see git history for #190).
+        sig_bytes = _b64d(sig_b64)
+        mutated = bytes([sig_bytes[0] ^ 0xFF]) + sig_bytes[1:]
+        tampered_sig_b64 = _b64e(mutated)
+        # Guard: the tamper MUST change the decoded signature bytes.
+        assert _b64d(tampered_sig_b64) != sig_bytes
+        tampered = payload_b64 + "." + tampered_sig_b64
         loaded = SignedCookieSession.from_cookie(self.secret, tampered)
         assert dict(loaded) == {}
 
