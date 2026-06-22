@@ -320,6 +320,59 @@ extracts the first integer substring from non-numeric input
 behavior for everything else. Same form-input ergonomics motive
 as `ListAttr.__set__`.
 
+## Known limitations
+
+### Reference dereference is N+1 by default — use `select_related()`
+
+Accessing a reference field triggers one DB round-trip per access.
+`ReferenceField.__get__` / `GenericReferenceField.__get__`
+(`fields.py`) call `_lazy_load_ref` → `ref_cls._get_db().dereference(dbref)`
+the first time you touch the field (the result is then cached on the
+instance). Iterating a result set and reading the reference on each
+element is therefore the classic N+1: the query for the set, plus one
+dereference per element.
+
+```python
+# 1 query for the posts, then N more — one per .author access:
+for post in Post.where(published=True):
+    print(post.author.name)
+```
+
+The fix already ships — `QuerySet.select_related(max_depth=N)`
+(`queryset/base.py`) pre-fetches every reference across the whole result
+set in **one `$in` / `in_bulk` query per collection** (via
+`DeReference._fetch_objects`, `dereference.py`) and stitches the results
+into each instance, so the later `.author` access is already cached:
+
+```python
+# 1 query for the posts + one batched fetch per referenced
+# collection — N+1 collapses to a small constant:
+for post in Post.where(published=True).select_related():
+    print(post.author.name)
+```
+
+This batches both plain `DBRef` references and the generic
+`{_cls, _ref}` references that `ReferenceAttr` (the Layer-2 reference
+field — see above) stores, so it covers every reference in the
+autonomous data model.
+
+Notes:
+
+- **`max_depth` controls nested-reference depth.** `select_related(1)`
+  (the default) resolves the references directly on each result;
+  `select_related(2)` also batches the references *those* referents hold,
+  and so on.
+- **It materializes the result set.** `select_related()` walks the whole
+  queryset to collect refs, so it trades memory for round-trips — reach
+  for it on a bounded set you were going to iterate anyway, not as a
+  blanket default on unbounded queries.
+- **Chain it off `where()`, not `all()` / `search()`.** The list helpers
+  `AutoModel.all()` and `AutoModel.search()` return plain `list`s
+  (`automodel.py`), which have no `.select_related()`. Use
+  `AutoModel.where(...)`, which returns the chainable QuerySet, when you
+  want to batch the dereference:
+  `Model.where(active=True).select_related()`.
+
 ## How to make a change here
 
 1. If you're fixing a bug, add a note to this file only if the fix
