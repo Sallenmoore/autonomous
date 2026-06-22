@@ -113,6 +113,26 @@ def _throttle_window_seconds() -> int:
     return env_int("HPC_UNREACHABLE_THROTTLE_SECONDS", 0)
 
 
+# Default lifetime of a ``sync_token:<coll>:<pk>`` key (#183). The token
+# only has to outlive the real-time dedup window — the 5s debounce plus a
+# margin for a rapid second save to overwrite it — so the legacy 300s is
+# generous and preserved as the default. It is NOT a correctness gate on
+# bulk reindex anymore: as of #183 an expired/absent token falls through
+# to process rather than skipping, so a backlog that outlasts the TTL
+# still indexes. The knob exists so operators can widen the dedup window
+# (e.g. on a deployment with bursty, closely-spaced saves) without a
+# code change.
+_DEFAULT_SYNC_TOKEN_TTL_SECONDS = 300
+
+
+def _sync_token_ttl_seconds() -> int:
+    """Read the sync-token TTL from env each call so a config flip lands
+    without restart (mirrors :func:`_throttle_window_seconds`). Falls back
+    to ``_DEFAULT_SYNC_TOKEN_TTL_SECONDS`` when the var is unset, empty, or
+    malformed (via the shared ``env_int`` guard, issue #49)."""
+    return env_int("SYNC_TOKEN_TTL_SECONDS", _DEFAULT_SYNC_TOKEN_TTL_SECONDS)
+
+
 def _emit_hpc_unreachable(signature: str, message: str) -> None:
     """Print an ``[HPC-UNREACHABLE]`` line, optionally throttled, and
     bump the in-process counter (#51 slice 2).
@@ -671,10 +691,28 @@ def process_single_object_sync(object_id, collection_name, token):
     time.sleep(5)
 
     # 2. THE VERIFICATION
-    # Check if a newer save happened while we slept
+    # Check if a newer save happened while we slept.
+    #
+    # The supersede guard dedupes rapid real-time re-saves: a second
+    # ``request_indexing`` overwrites ``token_key`` with a fresh token, so
+    # the first (now-stale) job sees a *different* live token here and
+    # bows out, letting the newest job carry the index forward.
+    #
+    # The guard must distinguish two ``r.get`` outcomes that both differ
+    # from ``token`` (#183):
+    #   * a DIFFERENT, still-live token  -> genuinely superseded -> skip;
+    #   * ``None`` (the key's 5-min TTL expired, or it was deleted)
+    #     -> NOT superseded, just aged out -> process.
+    # On a bulk reindex a single worker drains the backlog far slower than
+    # the TTL (~5-20s/object vs 300s), so most jobs woke after their
+    # token's TTL had lapsed; ``None != token`` then mis-fired the skip and
+    # the reindex silently no-opped past the first ~15 objects. Gating the
+    # skip on a present-and-different token leaves the real-time dedup
+    # intact (a live ``t2`` still supersedes a stale ``t1``) while letting
+    # an expired/absent token fall through to execute.
     current_active_token = r.get(token_key)
 
-    if current_active_token != token:
+    if current_active_token is not None and current_active_token != token:
         print(f"Skipping sync for {str_id}: Superseded by a newer save.")
         return
 
@@ -787,7 +825,9 @@ def request_indexing(object_id, collection_name):
     current_token = str(uuid.uuid4())
 
     # 2. SAVE TOKEN TO REDIS (Instant)
-    _get_redis().set(token_key, current_token, ex=300)
+    # TTL governs the real-time supersede-dedup window (#183), not bulk
+    # reindex correctness — env-configurable via SYNC_TOKEN_TTL_SECONDS.
+    _get_redis().set(token_key, current_token, ex=_sync_token_ttl_seconds())
 
     # 3. ENQUEUE THE TASK (Instant)
     try:

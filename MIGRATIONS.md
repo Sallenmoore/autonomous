@@ -5,6 +5,27 @@ recent first.
 
 ## Unreleased
 
+### Bulk reindex no longer silently no-ops past the token TTL (#183)
+
+**What changed.**
+
+- `autonomous.db.db_sync.process_single_object_sync` no longer skips a job when its supersede token has **expired**. The verification guard was `if current_active_token != token: skip`, which treated an absent/expired token (`r.get` returns `None`) the same as a genuinely superseded one. It is now `if current_active_token is not None and current_active_token != token: skip` — only a *different, still-live* token causes a skip; an expired/absent token falls through and indexes.
+- New env knob `SYNC_TOKEN_TTL_SECONDS` (default **`300`**) parameterizes the `sync_token:<collection>:<pk>` Redis key TTL (was a hardcoded `ex=300`). Read live via `autonomous.config.env_int`, so a config flip lands without a worker restart. It governs the **real-time supersede-dedup window only** — it is no longer a correctness gate on bulk reindex.
+
+**Behavior change — externally visible.**
+
+- **Repopulating an emptied RAG store now indexes the whole store, not just the first ~15 objects.** A consumer that walks every object calling `request_indexing` (e.g. after dropping the embedding index) previously lost every object whose job ran after its token's 300s TTL lapsed — on a single-worker backlog (~5–20s/object) that was nearly all of them past the first handful, each logging `Skipping sync for <id>: Superseded by a newer save.`. With the expired-token fall-through those jobs now index.
+- **Real-time supersede-dedup is unchanged.** A rapid double-save (token `t1` then `t2`, with `t2` live in Redis) still skips the stale `t1` job — only the *expired/absent* token case changed behavior. No change to the indexed wire shape or the `lore:<id>` hash.
+
+**Migration.**
+
+No action required. The fix is automatic. To widen the real-time dedup window on a deployment with bursty, closely-spaced saves, set `SYNC_TOKEN_TTL_SECONDS` higher; the default `300` reproduces the legacy TTL. A malformed value falls back to `300` with a `[CONFIG]` breadcrumb rather than raising.
+
+```bash
+# widen the real-time supersede-dedup window to 10 minutes
+SYNC_TOKEN_TTL_SECONDS=600
+```
+
 ### Exponential backoff on the HPC retry budget (#182)
 
 **What changed.**
