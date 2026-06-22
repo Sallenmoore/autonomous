@@ -303,10 +303,15 @@ class AutoModel(Document):
         return cls._from_son(random_document) if random_document else None
 
     @classmethod
-    def all(cls) -> list[Self]:
-        """Return every instance of this model. Use ``search`` for filtering."""
+    def all(cls, _select_related: bool | int = False) -> list[Self]:
+        """Return every instance of this model. Use ``search`` for filtering.
+
+        ``_select_related`` (default ``False``) opts into batch dereference of
+        reference fields: ``True`` → depth 1, int ``N`` → depth ``N``. Off by
+        default — behavior is unchanged for existing callers.
+        """
         _ensure_connected()
-        return list(cls.objects())
+        return list(_maybe_select_related(cls.objects(), _select_related))
 
     @classmethod
     def search(
