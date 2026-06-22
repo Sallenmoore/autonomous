@@ -91,7 +91,7 @@ class TestExpiredTokenProcesses:
     fix."""
 
     def test_none_token_falls_through_to_find_one(self, monkeypatch):
-        redis_client, mongo_db, _ = _setup_process_stubs(
+        _, mongo_db, _ = _setup_process_stubs(
             monkeypatch,
             get_token_return=None,
             find_one_doc=_RICH_DOC,
@@ -198,7 +198,7 @@ def _setup_request_stubs(monkeypatch):
     monkeypatch.setattr(db_sync, "_get_redis", lambda: redis_client)
     # request_indexing does `from autonomous.taskrunner.autotasks import
     # AutoTasks, TaskPriority` at call time, so patch on that module.
-    import autonomous.taskrunner.autotasks as autotasks
+    from autonomous.taskrunner import autotasks
     monkeypatch.setattr(autotasks, "AutoTasks", MagicMock(name="AutoTasks"))
     return redis_client
 
