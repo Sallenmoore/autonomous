@@ -121,10 +121,19 @@ class TestTokenSupersedeShortCircuits:
             "fingerprint for this branch"
         )
 
-    def test_none_token_response_also_supersedes(self, monkeypatch):
-        """``redis.get`` returns ``None`` for a missing key — must also
-        be treated as "this job is stale" rather than matching the
-        ``token`` arg by accident."""
+    def test_none_token_response_processes_not_supersedes(
+        self, monkeypatch, capsys
+    ):
+        """``redis.get`` returns ``None`` for an expired/absent key — the
+        job is NOT superseded, just aged out, and must PROCESS (#183).
+
+        This previously asserted the inverse (``None`` -> skip), which was
+        exactly the #183 bug: on a bulk reindex a single worker drains the
+        backlog slower than the 300s token TTL, so most jobs wake after
+        their token has expired and ``r.get`` returns ``None``. Treating
+        that as "superseded" silently no-opped the reindex past the first
+        handful of objects. The fix gates the skip on a *present-and-
+        different* token, so ``None`` falls through to index."""
         redis_client, mongo_db = _setup_stubs(
             monkeypatch,
             get_token_return=None,
@@ -133,8 +142,15 @@ class TestTokenSupersedeShortCircuits:
 
         db_sync.process_single_object_sync("abc123", "lore", "tok")
 
-        mongo_db.__getitem__.return_value.find_one.assert_not_called()
-        redis_client.hset.assert_not_called()
+        # The job must fall through the supersede guard and reach the
+        # find_one lookup — an expired/absent token is not a supersede.
+        mongo_db.__getitem__.return_value.find_one.assert_called_once()
+        # And it must NOT log the supersede breadcrumb.
+        out = capsys.readouterr().out
+        assert "Superseded" not in out, (
+            "an expired/absent token (None) must not be reported as a "
+            "supersede — that was the #183 bug"
+        )
 
 
 # ---- 2. Document not found ------------------------------------------------
