@@ -134,11 +134,21 @@ class TestTokenSupersedeShortCircuits:
         that as "superseded" silently no-opped the reindex past the first
         handful of objects. The fix gates the skip on a *present-and-
         different* token, so ``None`` falls through to index."""
-        redis_client, mongo_db = _setup_stubs(
+        _, mongo_db = _setup_stubs(
             monkeypatch,
             get_token_return=None,
-            find_one_doc={"_id": "ignored"},
+            # Enough content to clear MIN_CONTENT_CHARS so the job runs the
+            # full process path rather than short-circuiting at the
+            # content-threshold gate — exercises the supersede-guard fall-
+            # through end to end.
+            find_one_doc={"_id": "ignored", "name": "a" * 20},
         )
+        # Override the suite-shared get_vector (which RAISES on call) to
+        # return None: with None->process the job now reaches get_vector,
+        # and a None vector keeps ``if vector:`` False so the numpy import
+        # inside that block (db_sync.py:780) is never reached — numpy is
+        # not installed in the unit-CI env.
+        monkeypatch.setattr(db_sync, "get_vector", lambda _: None)
 
         db_sync.process_single_object_sync("abc123", "lore", "tok")
 
