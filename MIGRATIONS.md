@@ -5,6 +5,31 @@ recent first.
 
 ## Unreleased
 
+### Added — `_select_related` flag on `AutoModel.all()` / `search()` (#195)
+
+**What changed.**
+
+- `AutoModel.all()` and `AutoModel.search()` gain an optional `_select_related: bool | int = False` control argument. When set, the queryset is routed through the existing `QuerySet.select_related(max_depth=...)` batch-dereference path before materializing — one `$in` / `in_bulk` per referenced collection instead of one lazy fetch per reference access. `True` → `max_depth=1`; int `N` (≥ 1) → `max_depth=N`; falsy (`False` / `0` / `None`, the default) → off. A negative int raises `ValueError`; a non-bool/non-int raises `TypeError`.
+- In `search()` the flag is applied **after** `_order_by` / `_limit`, so only the rows actually returned are batch-dereferenced.
+- The leading-underscore name matches the existing `_order_by` / `_limit` control-argument convention and keeps it out of the field-filter `**kwargs`.
+
+**Behavior change — externally visible.**
+
+- **None for existing callers.** The default (`False`) never calls `select_related`, so `all()` / `search()` are byte-identical to before — purely additive opt-in.
+- New capability: a consumer iterating `all()` / `search()` results and reading a reference per element (the classic N+1) can pass `_select_related=True` to collapse it to one batched fetch per collection. Covers both plain `DBRef` and the generic `{_cls, _ref}` / `ReferenceAttr` references real models use.
+
+**Migration.**
+
+No action required. Opt in per call site where an N+1 reference loop is hot:
+
+```python
+# 1 query + one batched fetch per referenced collection (was 1 + N):
+for post in Post.search(published=True, _select_related=True):
+    use(post.author)
+```
+
+For chained queries or single documents, continue to use `where(...).select_related()` (see `db/DIVERGENCE.md` → "Reference dereference is N+1 by default"). `find()` / `get()` / `random()` are unchanged.
+
 ### Bulk reindex no longer silently no-ops past the token TTL (#183)
 
 **What changed.**
