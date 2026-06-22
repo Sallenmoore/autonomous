@@ -202,6 +202,10 @@ _SPEC: tuple[Field, ...] = (
     Field("redis_db", "REDIS_DB", "int", 0, "redis", "Redis logical DB index", migrated=False),
     Field("redis_username", "REDIS_USERNAME", "str", "", "redis", "Redis username", secret=True, migrated=False),
     Field("redis_password", "REDIS_PASSWORD", "str", "", "redis", "Redis password", secret=True, migrated=False),
+    Field("sync_token_ttl_seconds", "SYNC_TOKEN_TTL_SECONDS", "int", 300, "redis",
+          "TTL (s) of an embedding-sync supersede token (db.db_sync). Governs the "
+          "real-time re-save dedup window only; an expired token no longer skips "
+          "indexing (#183), so bulk reindex works regardless of this value."),
 
     # --- AI: HPC / OpenAI-compatible adapter (ai.models.openai_compat) ------
     Field("hpc_api_base_url", "HPC_API_BASE_URL", "str", "", "ai_hpc", "Open WebUI / HPC base URL"),
