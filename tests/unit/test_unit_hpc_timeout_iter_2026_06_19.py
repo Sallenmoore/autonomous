@@ -538,13 +538,30 @@ class TestMigrationsAndConfigurationDocsPin:
 
 
 class TestVersionBumpPin:
-    def test_version_bumped_to_0_3_165(self):
-        """PR #178 bumps the patch version. Locking the literal string
-        catches an accidental revert during a back-merge resolve, which
-        would silently re-publish 0.3.164 on the next ``release.sh``
-        and break the storyteller-side ``requirements.txt`` pin contract."""
+    """Drift guard for ``autonomous.__version__``.
+
+    Originally this pinned an exact literal (``== "0.3.165"``) to catch an
+    accidental revert during a back-merge resolve — a downgrade would
+    silently re-publish an older wheel on the next ``release.sh`` and break
+    the storyteller-side ``requirements.txt`` pin contract. But the exact
+    literal also reds main CI on *every* legitimate forward bump:
+    ``scripts/release.sh`` pushes a patch bump one commit after each
+    ``test → main`` merge, and the ``main → dev → test`` back-flow carries
+    that newer version onto this branch before the literal is updated (this
+    is exactly the 0.3.165 → 0.3.166 skew this PR hit). De-pinned to a
+    format + monotonic-floor check — same shape PR #166 (commit ``b90a7fa``,
+    ``test_unit_iter_audit_followups_iter_2026_06_18.py``) used. The
+    revert-protection intent is preserved: a downgrade below the floor or a
+    malformed version string still fails loudly; only legitimate forward
+    bumps pass."""
+
+    def test_version_string_is_valid_and_not_downgraded(self):
+        import re
+
         import autonomous
 
-        assert autonomous.__version__ == "0.3.165", (
-            f"PR #178 bumps to 0.3.165; got {autonomous.__version__!r}"
+        v = autonomous.__version__
+        assert re.fullmatch(r"\d+\.\d+\.\d+", v), f"malformed version: {v!r}"
+        assert tuple(int(p) for p in v.split(".")) >= (0, 3, 166), (
+            f"version regressed below 0.3.166 floor: {v}"
         )

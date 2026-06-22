@@ -145,10 +145,28 @@ def _is_transport_failure(status) -> bool:
 # requests.exceptions.* names" PR would silently regress this — the
 # in-source breadcrumb is the second line of defense beyond
 # ``test_unit_followup_iter_2026_05_17_pr107_followups.py``'s pin.
+# **Exponential backoff on the HPC retry budget (#182).** A ReadTimeout
+# already rides the retry budget — ``requests.ReadTimeout`` is a
+# ``requests.RequestException`` (not in HttpClient's config-error carve-out),
+# so the ``except requests.RequestException`` branch in ``HttpClient._attempt``
+# wraps it into ``HPCUnreachableError``, which the outer ``catch=
+# (HPCUnreachableError,)`` retry tuple catches. The gap the consumer
+# (#182 / storyteller #326) hit was the *flat* backoff: 3 attempts × 10s
+# flat = ~20s of riding-out, too short for the observed transient-degraded
+# windows. ``retry_backoff_factor`` makes the inter-attempt waits grow
+# geometrically (10s, 20s with the default factor 2.0) so the same
+# attempt budget rides out a longer blip without inflating ``max_attempts``
+# (extra attempts would add extra full read-timeout stalls on the fast
+# path — the wrong lever). The factor is a settings knob
+# (``HPC_RETRY_BACKOFF_FACTOR``, default 2.0; set 1.0 to restore the
+# legacy flat backoff). The public exception contract is unchanged: a
+# *permanent* failure still surfaces as ``HPCUnreachableError`` after the
+# budget is exhausted — only the spacing of the retries changed.
 _HTTP = HttpClient(
     timeout=None,
     max_attempts=settings.hpc_retry_attempts,
     retry_backoff=settings.hpc_retry_backoff,
+    retry_backoff_factor=settings.hpc_retry_backoff_factor,
     transport_failure_codes=_TRANSPORT_FAILURE_CODES,
     transport_error_cls=HPCUnreachableError,
     extra_non_transport_exceptions=(
@@ -319,7 +337,10 @@ class OpenAIClient(AutoModel):
     # ``monkeypatch.setattr(OpenAIClient, "_retry_attempts", 1)`` to
     # speed up retry tests should instead do
     # ``monkeypatch.setattr(_HTTP, "max_attempts", 1)`` (and
-    # ``_HTTP.retry_backoff`` for the sleep interval).
+    # ``_HTTP.retry_backoff`` for the base sleep interval,
+    # ``_HTTP.retry_backoff_factor`` for the exponential growth base —
+    # #182; set both to a small value or factor 1.0 to keep retry tests
+    # fast without real backoff sleeps).
 
     def _headers(self, content_type="application/json"):
         h = {"Authorization": f"Bearer {self._api_key}"}

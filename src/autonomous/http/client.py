@@ -25,6 +25,7 @@ Design choices worth pinning:
 
 from __future__ import annotations
 
+import math
 from typing import Any, Callable, Iterable, Mapping
 
 import requests
@@ -203,7 +204,17 @@ class HttpClient:
             each call is a single attempt. Counts the first attempt,
             so ``3`` = original + 2 retries.
         retry_backoff: Seconds to sleep between failed attempts.
-            Passed through to ``autonomous.ai.retry.retry``.
+            Passed through to ``autonomous.ai.retry.retry`` as the base
+            sleep.
+        retry_backoff_factor: Geometric growth base for the inter-attempt
+            sleep, passed through to ``autonomous.ai.retry.retry``.
+            ``1.0`` (default) keeps the legacy flat backoff — every gap
+            is exactly ``retry_backoff`` — so existing adapters are
+            unaffected. ``2.0`` yields exponential backoff
+            (``retry_backoff``, ``2×``, ``4×``, …) so a client can ride
+            out a longer transient-degradation window without inflating
+            ``max_attempts`` on the fast path (issue #182, the HPC
+            ReadTimeout case). Must be ``>= 1.0``.
         retry_jitter: Fraction in ``[0, 1)``. ``0.0`` keeps the legacy
             no-jitter shape; ``0.3`` smears retries by ±30% so many
             concurrent retriers don't wake in lockstep.
@@ -235,6 +246,7 @@ class HttpClient:
         timeout: float | tuple[float, float] | None = 30.0,
         max_attempts: int = 1,
         retry_backoff: float = 0.0,
+        retry_backoff_factor: float = 1.0,
         retry_jitter: float = 0.0,
         transport_failure_codes: Iterable[int] = (),
         transport_error_cls: type[Exception] = TransportError,
@@ -267,6 +279,16 @@ class HttpClient:
         self.timeout = timeout
         self.max_attempts = max_attempts
         self.retry_backoff = retry_backoff
+        # Validate eagerly at construction (mirrors the ``max_attempts``
+        # check above) rather than deferring to the first ``retry()``
+        # call deep inside ``request()`` — a misconfigured
+        # ``retry_backoff_factor`` should fail at adapter import, not on
+        # the first transient failure in prod. ``retry()`` re-validates
+        # too, but a module-level ``HttpClient(...)`` constant (the usual
+        # shape — see ``openai_compat._HTTP``) gets caught at import.
+        if not math.isfinite(retry_backoff_factor) or retry_backoff_factor < 1.0:
+            raise ValueError("retry_backoff_factor must be a finite float >= 1.0")
+        self.retry_backoff_factor = retry_backoff_factor
         self.retry_jitter = retry_jitter
         self.transport_failure_codes = frozenset(transport_failure_codes)
         self.transport_error_cls = transport_error_cls
@@ -452,6 +474,17 @@ class HttpClient:
         # introspection even though ``__suppress_context__`` hid it
         # from default tracebacks) is closed.
         captured_http_error: requests.HTTPError | None = None
+        # Only forward ``backoff_factor`` when it's the non-default
+        # exponential value. ``backoff_factor=1.0`` is a true no-op in
+        # ``retry()`` (each gap is multiplied by ``1.0 ** (n-1) == 1``),
+        # so omitting it for flat-backoff clients (every adapter except
+        # the opted-in HPC client) leaves the call signature — and thus
+        # the observed behavior — byte-identical to pre-#182. The
+        # conditional keeps the common call site minimal rather than
+        # threading a parameter that can't change anything.
+        retry_kwargs: dict[str, Any] = {}
+        if self.retry_backoff_factor != 1.0:
+            retry_kwargs["backoff_factor"] = self.retry_backoff_factor
         try:
             result = retry(
                 _attempt,
@@ -459,6 +492,7 @@ class HttpClient:
                 sleep_seconds=self.retry_backoff,
                 jitter=self.retry_jitter,
                 catch=(self.transport_error_cls,),
+                **retry_kwargs,
             )
         except _NonTransportHTTPError as wrapper:
             captured_http_error = wrapper.original
