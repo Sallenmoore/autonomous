@@ -70,6 +70,24 @@ def _ensure_connected() -> None:
     connect_from_env()
 
 
+def _maybe_select_related(qs, flag):
+    """Apply ``.select_related(max_depth=...)`` to ``qs`` per ``flag``, else
+    return ``qs`` unchanged.
+
+    ``flag``: falsy (``False`` / ``0`` / ``None``) → off; ``True`` → depth 1;
+    int ``N`` (≥ 1) → depth ``N``. ``bool`` is an ``int`` subclass, so both
+    pass the type check; other types raise ``TypeError``; negative ints raise
+    ``ValueError``.
+    """
+    if not flag:                       # False / 0 / None → off
+        return qs
+    if not isinstance(flag, int):      # bool & int pass; str/float/list rejected
+        raise TypeError("_select_related must be a bool or int")
+    if flag < 1:                       # negative (truthy) int
+        raise ValueError("_select_related must be True or a positive int")
+    return qs.select_related(max_depth=int(flag))
+
+
 class AutoModel(Document):
     meta = {"abstract": True, "allow_inheritance": True, "strict": False}
     last_updated = DateTimeField(default=datetime.now)
