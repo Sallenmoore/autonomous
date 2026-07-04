@@ -261,6 +261,15 @@ _SPEC: tuple[Field, ...] = (
     # FAL_KEY is read live at call time in flux._require_api_key (not snapshotted).
     Field("fal_key", "FAL_KEY", "str", "", "ai_flux", "fal.ai API key", secret=True, migrated=False),
 
+    # --- AI: LiteLLM OpenAI-compatible image adapter (ai.models.litellm) ----
+    Field("litellm_image_api_base_url", "LITELLM_IMAGE_API_BASE_URL", "str", "", "ai_litellm",
+          "OpenAI-compatible image gateway base URL (POST {base}/v1/images/generations; a "
+          "trailing /v1 in the base is tolerated)"),
+    Field("litellm_api_key", "LITELLM_API_KEY", "str", "", "ai_litellm",
+          "LiteLLM gateway API key (Bearer); header omitted when unset", secret=True),
+    Field("litellm_image_model", "LITELLM_IMAGE_MODEL", "str", "image-flux", "ai_litellm",
+          "Gateway image model/alias (default leans on the gateway's own fallback chain)"),
+
     # --- AI: Gemini adapter (ai.models.gemini) — catalogued, not yet migrated
     Field("gemini_text_model", "GEMINI_TEXT_MODEL", "str", "gemini-2.5-pro", "ai_gemini", "Gemini text model", migrated=False),
     Field("gemini_summary_model", "GEMINI_SUMMARY_MODEL", "str", "gemini-2.5-flash", "ai_gemini", "Gemini summary model", migrated=False),

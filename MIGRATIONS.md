@@ -5,6 +5,32 @@ recent first.
 
 ## Unreleased
 
+### Added — `litellm` OpenAI-compatible image provider for `ImageAgent` (#199)
+
+**What changed.**
+
+- New image-provider adapter `autonomous.ai.models.litellm.LiteLLMImageModel`, registered in `BaseAgent.MODEL_REGISTRY` under the key **`litellm`** (and added to the `client` `ReferenceAttr` choices). It speaks the OpenAI image shape — `POST {base}/v1/images/generations` with body `{model, prompt, n: 1, size}` — so a consumer can route entity-image generation through a shared LiteLLM gateway (unified routing / fallbacks / cost tracking) while keeping the same underlying models (Gemini, FLUX, Imagen) behind the gateway.
+- `generate_image(...)`: text-to-image only. `files` empty → POST, then read `data[0].b64_json` (base64 → bytes) or `data[0].url` (fetched, single-attempt). `files` non-empty → raises `NotImplementedError` (same as `FluxAIModel`), so the `ImageAgent` caller's `fallback_provider="gemini"` carries the reference-image path unchanged. `upscale_image(...)` is an honest no-op passthrough returning `image_content` (same as Flux/Gemini). Aspect-ratio maps to an OpenAI `size` by orientation via the shared `resolve_image_config`.
+- Three new env vars (config group `ai_litellm`): `LITELLM_IMAGE_API_BASE_URL` (gateway base URL; a trailing `/v1` is tolerated so both `.../v1` and bare-host bases work), `LITELLM_API_KEY` (Bearer auth, secret; the header is omitted when unset), and `LITELLM_IMAGE_MODEL` (gateway image model/alias, default **`image-flux`** to lean on the gateway's own fallback chain).
+- Transport parity with the other adapters via `autonomous.http.HttpClient` (retry, `408`/`429` transport-failure handling, malformed-2xx translation through the shared `extract_or_malformed` helper).
+
+**Behavior change — externally visible.**
+
+- **Purely additive.** New class + one `MODEL_REGISTRY` entry + three config fields. No existing provider, default, or `ImageAgent` call site changes — the new provider is inert until a consumer opts in.
+
+**Migration.**
+
+No action required. To route image generation through a LiteLLM gateway, set `IMAGE_AI_AGENT=litellm` (or construct `ImageAgent(provider="litellm")`) and the `LITELLM_*` env vars:
+
+```bash
+IMAGE_AI_AGENT=litellm
+LITELLM_IMAGE_API_BASE_URL=https://litellm.example/v1   # trailing /v1 optional
+LITELLM_API_KEY=sk-...                                   # omit if the gateway is unauthenticated
+LITELLM_IMAGE_MODEL=image-flux                           # or image-gemini-3.1 for exact prod parity
+```
+
+Keep `fallback_provider="gemini"` on the `ImageAgent` (the default) so reference-image / multi-subject calls, which this provider defers with `NotImplementedError`, still route to direct Gemini. The OpenAI `/v1/images/edits` multi-subject path is a deliberate follow-up.
+
 ### Added — `_select_related` flag on `AutoModel.all()` / `search()` (#195)
 
 **What changed.**
