@@ -939,7 +939,25 @@ _DEINDEX_CHUNK = 500
 _DEINDEX_MAX_CONSECUTIVE_FAILURES = 2
 
 
-def deindex_many(object_ids) -> bool:
+class DeindexOutcome(int):
+    """``bool``-compatible result of :func:`deindex_many` (#215 review).
+
+    Truthiness keeps the documented contract — truthy when every chunk
+    landed, falsy otherwise — so existing ``if not deindex_many(...)``
+    consumers see no change. ``gave_up`` additionally marks the
+    consecutive-failure early return, the actual outage signature: it
+    lets the chunked delete funnel's across-calls breaker distinguish
+    "Redis is down" (stop paying connect timeouts) from "one chunk
+    blipped inside an otherwise-landed call" (keep de-indexing).
+    """
+
+    def __new__(cls, ok, gave_up=False):
+        self = super().__new__(cls, bool(ok))
+        self.gave_up = gave_up
+        return self
+
+
+def deindex_many(object_ids) -> "DeindexOutcome":
     """Remove many objects' vector-index entries. Best-effort, never raises.
 
     Batch form of :func:`deindex`, called from the QuerySet delete
@@ -957,10 +975,12 @@ def deindex_many(object_ids) -> bool:
     100k-document teardown from stalling every other Redis client;
     N/500 round-trips is still the right order of magnitude versus N.
 
-    Same contract as :func:`deindex` — True when every chunk landed,
-    False when Redis could not be reached, and a False return leaks
-    those hashes permanently (see :func:`deindex` for why nothing
-    reconciles them afterwards).
+    Same contract as :func:`deindex` — truthy when every chunk landed,
+    falsy when any could not be sent, and a falsy return leaks those
+    hashes permanently (see :func:`deindex` for why nothing reconciles
+    them afterwards). The return is a :class:`DeindexOutcome`, whose
+    ``gave_up`` flag additionally distinguishes the
+    consecutive-failure early return (outage) from an isolated blip.
 
     Two failure shapes, handled differently. A single chunk failing is a
     blip: the loop steps over it, because every key it skips leaks with
@@ -980,7 +1000,7 @@ def deindex_many(object_ids) -> bool:
         # The common case for a filtered bulk delete that matched
         # nothing. Return before ``_get_redis()`` so an empty delete
         # neither builds a client nor pays a round-trip.
-        return True
+        return DeindexOutcome(True)
     ok = True
     consecutive_failures = 0
     for start in range(0, len(keys), _DEINDEX_CHUNK):
@@ -1003,8 +1023,8 @@ def deindex_many(object_ids) -> bool:
                     f"{consecutive_failures} consecutive chunk failures; "
                     f"{unattempted} key(s) never attempted"
                 )
-                return False
-    return ok
+                return DeindexOutcome(False, gave_up=True)
+    return DeindexOutcome(ok)
 
 
 def request_indexing(object_id, collection_name):

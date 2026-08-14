@@ -31,11 +31,7 @@ from bson import ObjectId
 
 from autonomous.db import db_sync
 from autonomous.db.queryset import base as qs_base
-from autonomous.db.queryset.base import (
-    DO_NOTHING,
-    BaseQuerySet,
-    _any_vector_indexed,
-)
+from autonomous.db.queryset.base import BaseQuerySet, _any_vector_indexed
 
 # ---------------------------------------------------------------------------
 # Stubs
@@ -404,13 +400,25 @@ class TestRegimeSelection:
         # the chunked path's refill sweep would delete late-matching
         # documents with DENY/CASCADE/NULLIFY/PULL bypassed. Ruled
         # models keep the #207 single-pass shape at any size.
+        #
+        # NULLIFY from a concrete referrer — the field machinery only
+        # registers rules != DO_NOTHING (metaclasses), so pinning the
+        # gate with a registrable shape keeps this test honest against
+        # a stricter gate.
+        class _NullifiedRefs:
+            def update(self, **kwargs):
+                return 0
+
         class _RuleTarget:
             _meta = {"abstract": False}
+
+            def objects(self, **filter_kwargs):
+                return _NullifiedRefs()
 
         pks = [ObjectId() for _ in range(30)]
         collection = _StatefulCollection(pks)
         doc = _DocClass()
-        doc._meta["delete_rules"] = {(_RuleTarget, "ref"): DO_NOTHING}
+        doc._meta["delete_rules"] = {(_RuleTarget(), "ref"): qs_base.NULLIFY}
         qs = _QuerySetStub(collection, doc)
 
         assert BaseQuerySet.delete(qs) == 30
@@ -418,6 +426,24 @@ class TestRegimeSelection:
         assert deindexed == [pks], (
             "the unbounded single-pass scan must still cover every pk "
             "past the buffer cap"
+        )
+
+    def test_abstract_only_rules_still_chunk(self, small_bounds, deindexed):
+        # The rule arms skip abstract referrers, so an abstract-only
+        # rule set enforces nothing — it must not deny the memory bound.
+        class _AbstractReferrer:
+            _meta = {"abstract": True}
+
+        pks = [ObjectId() for _ in range(25)]
+        collection = _StatefulCollection(pks)
+        doc = _DocClass()
+        doc._meta["delete_rules"] = {(_AbstractReferrer, "ref"): qs_base.NULLIFY}
+        qs = _QuerySetStub(collection, doc)
+
+        assert BaseQuerySet.delete(qs) == 25
+        assert all("$and" in q for q in collection.delete_queries), (
+            "a rule the arms never enforce must not force the unbounded "
+            "single-pass buffer"
         )
 
 
@@ -507,6 +533,13 @@ class TestChunkedTeardown:
 
         assert BaseQuerySet.delete(qs) is None
         assert collection.matching == []
+        # The w=0 contract: deleted_count means nothing, so every chunk
+        # pays a bounded existence re-check, and only pks the re-check
+        # confirmed gone are de-indexed — here all of them, because the
+        # stub really deleted them.
+        assert collection.confirm_chunks, "w=0 must re-check every chunk"
+        assert all(len(c) <= 4 for c in collection.confirm_chunks)
+        assert sorted(map(str, _flat(deindexed))) == sorted(map(str, pks))
 
 
 # ===========================================================================
@@ -529,6 +562,26 @@ class TestFailureContainment:
             "the fallback must finish the caller's delete on the filter"
         )
         assert any("without de-indexing" in m for m in logged)
+        assert deindexed == [], (
+            "the failed chunk's pks were never confirmed deleted — "
+            "de-indexing them anyway could strip a live document's "
+            "vector, the unrecoverable direction"
+        )
+
+    def test_all_scans_project_id_only(self, small_bounds, deindexed):
+        # The {'_id': 1} projection IS the memory bound: without it a
+        # refill buffers full documents, not ObjectIds.
+        pks = [ObjectId() for _ in range(25)]
+        collection = _StatefulCollection(pks)
+        qs = _QuerySetStub(collection, _DocClass())
+
+        BaseQuerySet.delete(qs)
+
+        assert len(collection.scan_calls) >= 2, "detection scan + refills"
+        assert all(
+            projection == {"_id": 1} for _q, projection in collection.scan_calls
+        )
+        assert all(q == {"world": "w1"} for q, _p in collection.scan_calls)
 
     def test_refill_scan_failure_falls_back_and_completes(
         self, small_bounds, deindexed, logged
@@ -552,16 +605,24 @@ class TestFailureContainment:
         collection = _StatefulCollection(pks)
 
         def _relentless_writer(coll):
-            fresh = [ObjectId() for _ in range(11)]
-            coll.matching.extend(fresh)
-            coll.alive.update(fresh)
+            # Insert on refill scans only (ordinal >= 2), so the cap
+            # arithmetic below is deterministic.
+            if len(coll.scan_calls) >= 2:
+                fresh = [ObjectId() for _ in range(11)]
+                coll.matching.extend(fresh)
+                coll.alive.update(fresh)
 
         collection.on_scan = _relentless_writer
         qs = _QuerySetStub(collection, _DocClass())
 
         result = BaseQuerySet.delete(qs)
 
-        assert result is not None and result > 0
+        # Detection batch 11; refill #1 buffers 10 of the 11 fresh;
+        # refill #2 buffers 10 of the 12 now matching; cap (2 refills)
+        # then fires and the fallback deletes the 2 stragglers:
+        # 11 + 10 + 10 + 2 = 33, of which the fallback's 2 leak.
+        assert result == 33
+        assert len(_flat(deindexed)) == 31
         assert collection.delete_queries[-1] == {"world": "w1"}, (
             "a writer racing inserts must hit the cap and finish via "
             "the fallback, not loop forever"
@@ -585,6 +646,53 @@ class TestFailureContainment:
             "timeouts; the teardown must stop after the breaker trips"
         )
 
+    def test_blip_false_does_not_trip_the_breaker(
+        self, small_bounds, monkeypatch
+    ):
+        # deindex_many returns falsy when ONE chunk failed inside an
+        # otherwise-landed call; only its gave-up early return is the
+        # outage signature. Blips must not abandon the bookkeeping.
+        from autonomous.db.db_sync import DeindexOutcome
+
+        calls = []
+
+        def _blippy(pks):
+            calls.append(list(pks))
+            return DeindexOutcome(False, gave_up=False)
+
+        monkeypatch.setattr(db_sync, "deindex_many", _blippy)
+        pks = [ObjectId() for _ in range(25)]  # 7 chunks of <=4
+        collection = _StatefulCollection(pks)
+        qs = _QuerySetStub(collection, _DocClass())
+
+        assert BaseQuerySet.delete(qs) == 25
+        assert len(calls) == 7, "every chunk must still be attempted"
+
+    def test_breaker_trip_routes_to_the_fallback_tail(
+        self, small_bounds, monkeypatch, logged
+    ):
+        # After the trip, continuing to scan/delete/confirm per chunk
+        # would pay full teardown cost for bookkeeping that feeds
+        # nothing; the tail finishes in one delete_many.
+        from autonomous.db.db_sync import DeindexOutcome
+
+        monkeypatch.setattr(
+            db_sync,
+            "deindex_many",
+            lambda pks: DeindexOutcome(False, gave_up=True),
+        )
+        pks = [ObjectId() for _ in range(25)]
+        collection = _StatefulCollection(pks)
+        qs = _QuerySetStub(collection, _DocClass())
+
+        assert BaseQuerySet.delete(qs) == 25
+        assert len(collection.delete_queries) == 3, (
+            "two $in chunk deletes to trip the breaker, then ONE "
+            "fallback delete_many — not a chunk-by-chunk crawl"
+        )
+        assert collection.delete_queries[-1] == {"world": "w1"}
+        assert any("treating Redis as down" in m for m in logged)
+
     def test_one_deindex_success_resets_the_breaker(
         self, small_bounds, monkeypatch
     ):
@@ -606,4 +714,66 @@ class TestFailureContainment:
 
         assert len(calls) == 4, (
             "fail(1) success fail(1) fail(2)->trip: exactly four calls"
+        )
+
+
+# ===========================================================================
+# 7. DeindexOutcome — the bool-compatible status deindex_many now returns
+# ===========================================================================
+
+
+class TestDeindexOutcome:
+    def test_truthiness_matches_ok(self):
+        from autonomous.db.db_sync import DeindexOutcome
+
+        assert DeindexOutcome(True)
+        assert not DeindexOutcome(False)
+        assert not DeindexOutcome(False, gave_up=True)
+
+    def test_gave_up_defaults_false(self):
+        from autonomous.db.db_sync import DeindexOutcome
+
+        assert DeindexOutcome(False).gave_up is False
+        assert DeindexOutcome(False, gave_up=True).gave_up is True
+
+    def test_empty_input_returns_truthy_outcome(self):
+        out = db_sync.deindex_many([])
+        assert out
+        assert out.gave_up is False
+
+    def test_total_outage_sets_gave_up(self, monkeypatch):
+        class _DeadRedis:
+            def delete(self, *keys):
+                raise ConnectionError("down")
+
+        monkeypatch.setattr(db_sync, "_get_redis", lambda: _DeadRedis())
+        monkeypatch.setattr(db_sync, "log", lambda *a, **kw: None)
+
+        out = db_sync.deindex_many([ObjectId() for _ in range(1200)])
+
+        assert not out
+        assert out.gave_up is True, (
+            "the consecutive-failure early return is the outage signature"
+        )
+
+    def test_isolated_blip_is_not_marked_gave_up(self, monkeypatch):
+        class _FlakyRedis:
+            def __init__(self):
+                self.calls = 0
+
+            def delete(self, *keys):
+                self.calls += 1
+                if self.calls == 1:
+                    raise ConnectionError("blip")
+                return len(keys)
+
+        flaky = _FlakyRedis()
+        monkeypatch.setattr(db_sync, "_get_redis", lambda: flaky)
+        monkeypatch.setattr(db_sync, "log", lambda *a, **kw: None)
+
+        out = db_sync.deindex_many([ObjectId() for _ in range(1200)])
+
+        assert not out, "a lost chunk still reports failure for sweeps"
+        assert out.gave_up is False, (
+            "one blip in an otherwise-landed call must not read as outage"
         )

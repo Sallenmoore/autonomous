@@ -413,8 +413,9 @@ class AutoModel(Document):
         declares ``meta = {"vector_index": False}``. Both delete paths
         honor that flag by skipping de-index bookkeeping (#215), so
         indexing an opted-out model here would create hashes nothing
-        ever removes; refusing at the only place hashes are created is
-        what keeps the flag safe to trust.
+        ever removes; refusing on the normal write path is what keeps
+        the flag safe to trust. (A direct ``db_sync.request_indexing``
+        call bypasses this gate — see MIGRATIONS.)
         """
         _ensure_connected()
         super().save()
