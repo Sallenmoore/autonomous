@@ -231,6 +231,19 @@ def _get_redis():
     return _redis_client
 
 
+def _index_key(object_id) -> str:
+    """Redis key holding one object's vector-index hash.
+
+    Single source of truth for the key shape. It used to be inlined at
+    each site, and the two sites disagreed: the writer produced
+    ``lore:<pk>`` while the sync worker's not-found self-heal deleted
+    ``<collection>:<pk>``, a prefix nothing ever wrote — so the self-heal
+    silently cleaned nothing (#204). One helper makes that class of drift
+    impossible.
+    """
+    return f"lore:{object_id}"
+
+
 def _get_mongo_db():
     global _mongo_client, _mongo_db
     if _mongo_db is None:
@@ -727,7 +740,7 @@ def process_single_object_sync(object_id, collection_name, token):
 
     if not doc:
         print(f"Object {object_id} not found in collection '{collection_name}'")
-        r.delete(f"{collection_name}:{object_id}")
+        r.delete(_index_key(object_id))
         return
 
     # 2. Construct Searchable Text
@@ -780,7 +793,7 @@ def process_single_object_sync(object_id, collection_name, token):
         import numpy as np
         world_pk = _extract_world_pk(doc)
         _get_redis().hset(
-            f"lore:{object_id}",
+            _index_key(object_id),
             mapping={
                 "mongo_id": str(object_id),
                 "collection": collection_name,  # Useful for debugging
@@ -802,6 +815,39 @@ def process_single_object_sync(object_id, collection_name, token):
         # If hset raises, the worker's existing degrade path takes over.
         record_embedding_sync_event("success")
         print(f"Successfully Indexed: {doc.get('name')}")
+
+
+def deindex(object_id) -> bool:
+    """Remove one object's vector-index entry. Best-effort, never raises.
+
+    The inverse of ``request_indexing`` — called by ``AutoModel.delete``
+    so a deleted document stops answering KNN queries instead of leaking
+    its embedding forever (#204, #205). Deletion is immediate rather than
+    enqueued: it's a single ``DEL`` with nothing to debounce, and routing
+    it through the low-priority queue would leave the stale vector
+    readable for the length of the backlog.
+
+    Returns True when the key was deleted (or was already gone), False
+    when Redis could not be reached. Every failure is swallowed and
+    logged: the Mongo document is the source of truth and its delete has
+    already happened, so an unreachable Redis must not turn a successful
+    delete into an exception. The leaked hash self-heals the next time
+    the sync worker looks for that pk (see the not-found branch in
+    ``process_single_object_sync``).
+
+    A pending index job for the same pk needs no cancellation: it wakes
+    after its debounce, finds no document, and takes that same not-found
+    branch — which now deletes the key this function targets.
+    """
+    try:
+        _get_redis().delete(_index_key(object_id))
+        return True
+    except Exception as e:
+        # Deliberately broad: the caller is mid-delete and any failure
+        # here — RedisError, a connection timeout, redis not installed
+        # (it's an optional extra) — must stay non-fatal.
+        print(f"De-index failed for {_index_key(object_id)}: {e}")
+        return False
 
 
 def request_indexing(object_id, collection_name):

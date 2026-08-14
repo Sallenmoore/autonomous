@@ -436,9 +436,21 @@ class AutoModel(Document):
         sender.auto_post_save(sender, document, **kwargs)
 
     def delete(self) -> None:
-        """Delete this document from the database."""
+        """Delete this document from the database and drop its vector entry.
+
+        De-indexing is unconditional — unlike ``save(sync=True)``, there
+        is no flag to opt in with. A delete that only cleaned up when the
+        caller remembered to ask would reproduce the leak this fixes
+        (#204, #205): the code deleting an object is rarely the code that
+        indexed it. ``db_sync.deindex`` is best-effort and swallows its
+        own failures, so a missing or unreachable Redis costs one no-op
+        call and never blocks the Mongo delete.
+        """
         _ensure_connected()
-        return super().delete()
+        pk = self.pk  # captured before delete, which may clear it
+        result = super().delete()
+        db_sync.deindex(pk)
+        return result
 
 
 signals.pre_init.connect(AutoModel._auto_pre_init)

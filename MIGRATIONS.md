@@ -5,6 +5,72 @@ recent first.
 
 ## Unreleased
 
+### Added — `db_sync.deindex(pk)`; `AutoModel.delete()` now drops the vector entry (#204, #205)
+
+**What changed.**
+
+- New public function `autonomous.db.db_sync.deindex(object_id)` (also reachable as `autonomous.db.deindex`) — the inverse of `request_indexing`. It deletes the object's vector-index hash `lore:<pk>` from Redis and returns `True` on success (including "key was already gone"), `False` when Redis could not be reached. **It never raises**: every failure is caught and logged, because the caller is mid-delete and an unreachable Redis must not turn a successful Mongo delete into an exception.
+- `AutoModel.delete()` now calls `deindex(self.pk)` after the Mongo delete. This is **unconditional** — there is no `sync=` flag to opt in with, unlike `save(sync=True)`. A cleanup that only ran when the caller remembered to ask would reproduce the leak: the code deleting an object is rarely the code that indexed it.
+- **Bug fix in the sync worker's self-heal path.** `process_single_object_sync`'s document-not-found branch deleted `<collection>:<pk>` — a key prefix no writer ever produces — while the writer stores under `lore:<pk>`. The self-heal therefore cleaned nothing. Both sites (plus `deindex`) now build the key through one `_index_key()` helper, so the prefixes cannot drift apart again.
+
+**Behavior change — externally visible.**
+
+- **`AutoModel.delete()` now performs one Redis `DEL` per call.** Previously it touched Mongo only. For consumers that never index, this is a no-op `DEL` against a key that does not exist; if Redis is absent or unreachable it is caught internally and logged as `De-index failed for lore:<pk>: <err>`, and the delete still succeeds. Deletes are not slowed in any way that a caller can observe beyond that single round-trip.
+- **Deleted documents stop answering KNN queries.** Previously every deleted indexed object leaked its embedding permanently, and `FT.SEARCH` kept returning hits for documents that no longer existed. Consumers that worked around this with their own sweep can drop it.
+- Additive on the API surface: no existing signature, default, or return type changes.
+
+**Migration.**
+
+No action required — `AutoModel.delete()` cleans up on its own from this version on.
+
+Two cases warrant a one-time action:
+
+```python
+from autonomous.db import db_sync
+
+# 1. Objects deleted BEFORE this version already leaked their hashes;
+#    nothing back-fills them. Sweep the known pks once:
+for pk in orphaned_pks:
+    db_sync.deindex(pk)
+
+# 2. Deleting a document outside AutoModel.delete() (raw pymongo, a
+#    bulk drop, a QuerySet delete) still bypasses the hook — call
+#    deindex per pk yourself:
+for doc in collection.find({"world": world_pk}, {"_id": 1}):
+    db_sync.deindex(doc["_id"])
+```
+
+Consumers holding a world- or tenant-scoped sweep (`FT.SEARCH @world_pk:{...}` → `DEL`) can keep it for bulk teardown; per-object cleanup is now the framework's job.
+
+### Added — `GenerateImageEmptyResponseError` + bounded retry on the Gemini image path (#203)
+
+**What changed.**
+
+- `GeminiAIModel.generate_image` retries the **empty-Success** response — HTTP Success with `finish_reason=STOP` but an empty content part and no inline image bytes — instead of raising on the first occurrence. Three attempts with a 1s → 2s backoff, via the shared `autonomous.ai.retry.retry`. The failure is transient provider misbehavior: the same prompt succeeds on the immediate next call.
+- The retry catch is narrow. `genai.errors.APIError` / `OSError` keep their existing fail-fast behavior — a permanent 4xx should not burn the retry budget.
+- New `autonomous.ai.exceptions.GenerateImageEmptyResponseError`, raised when the budget is exhausted. It **subclasses `ValueError`**, not `RuntimeError` like the `GenerateJSONError` family, specifically so the previous bare `ValueError("API returned Success but no image data found")` contract still holds for consumers already catching it.
+- A candidate whose `.content` is `None` (safety filter dropped it entirely) is now treated as the same empty case. Previously it escaped as an uncaught `AttributeError` from `None.parts` — a type neither the caller's `except ValueError` nor the adapter's own handler caught.
+
+**Behavior change — externally visible.**
+
+- A transient empty image response now costs up to ~3s of in-library backoff and returns an image, where it previously raised immediately. Callers doing their own retry around `generate_image` will see it fire far less often.
+- The exception type on genuine exhaustion narrows from `ValueError` to a subclass of `ValueError` — `except ValueError` still catches it.
+
+**Migration.**
+
+No action required. Consumers that shipped their own empty-image retry wrapper (StoryTeller's `generate_with_retry`) can keep it — it now sits above a path that rarely fails — or drop it and catch the typed error to distinguish a transient empty response from an argument error:
+
+```python
+from autonomous.ai.exceptions import GenerateImageEmptyResponseError
+
+try:
+    img = ImageAgent(provider="gemini").generate(prompt=prompt)
+except GenerateImageEmptyResponseError:
+    degrade()          # provider gave up after 3 attempts
+except ValueError:
+    fix_the_call()     # genuine argument error
+```
+
 ### Added — `litellm` OpenAI-compatible image provider for `ImageAgent` (#199)
 
 **What changed.**
