@@ -409,15 +409,27 @@ class AutoModel(Document):
         """Persist this document and return its primary key.
 
         With ``sync=True`` the new ``pk`` is also enqueued for vector
-        re-indexing via ``autonomous.db.db_sync``.
+        re-indexing via ``autonomous.db.db_sync`` — unless the model
+        declares ``meta = {"vector_index": False}``. Both delete paths
+        honor that flag by skipping de-index bookkeeping (#215), so
+        indexing an opted-out model here would create hashes nothing
+        ever removes; refusing on the normal write path is what keeps
+        the flag safe to trust. (A direct ``db_sync.request_indexing``
+        call bypasses this gate — see MIGRATIONS.)
         """
         _ensure_connected()
         super().save()
 
         if sync:
-            db_sync.request_indexing(
-                self.pk, collection_name=self._get_collection_name()
-            )
+            if self._meta.get("vector_index", True):
+                db_sync.request_indexing(
+                    self.pk, collection_name=self._get_collection_name()
+                )
+            else:
+                log(
+                    f"[WARNING] save(sync=True) on {type(self).__name__}, "
+                    "which declares vector_index: False — not indexing"
+                )
 
         return self.pk
 
@@ -438,11 +450,18 @@ class AutoModel(Document):
     def delete(self, signal_kwargs=None, **write_concern) -> None:
         """Delete this document from the database and drop its vector entry.
 
-        De-indexing is unconditional — unlike ``save(sync=True)``, there
-        is no flag to opt in with. A delete that only cleaned up when the
-        caller remembered to ask would reproduce the leak this fixes
-        (#204, #205): the code deleting an object is rarely the code that
-        indexed it. ``db_sync.deindex`` is best-effort and swallows its
+        De-indexing has no per-call flag — unlike ``save(sync=True)``,
+        there is nothing to opt in with. A delete that only cleaned up
+        when the caller remembered to ask would reproduce the leak this
+        fixes (#204, #205): the code deleting an object is rarely the
+        code that indexed it. The one opt-out is class-level (#215):
+        ``meta = {"vector_index": False}`` declares the model's
+        documents are never vector-indexed, so its deletes skip the
+        bookkeeping entirely — a property of the model, which is exactly
+        what a call site can't be trusted to know. ``save(sync=True)``
+        refuses to index an opted-out model, so the flag cannot quietly
+        accumulate hashes its deletes would then leak; in no case can it
+        strand a live document. ``db_sync.deindex`` is best-effort and swallows its
         own failures, so a missing or unreachable Redis costs one no-op
         call and never blocks the Mongo delete.
 
@@ -479,8 +498,11 @@ class AutoModel(Document):
         pk = self.pk
         super().delete(signal_kwargs=signal_kwargs, **write_concern)
         # A never-saved document has no pk and therefore no index entry;
-        # de-indexing it would issue a pointless ``DEL lore:None``.
-        if pk is not None:
+        # de-indexing it would issue a pointless ``DEL lore:None``. A
+        # model that declared itself never-indexed has no entry either —
+        # and, with Redis down, ``deindex``'s no-op costs a connect
+        # timeout per delete, so the skip is worth having (#215).
+        if pk is not None and self._meta.get("vector_index", True):
             db_sync.deindex(pk)
 
 
