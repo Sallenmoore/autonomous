@@ -782,6 +782,35 @@ def process_single_object_sync(object_id, collection_name, token):
         r.delete(_index_key(object_id))
         return
 
+    # THE FLAG CHECK (#220). ``vector_index: False`` is the class-level
+    # "never indexed" declaration (#215) that both delete paths honor,
+    # so a hash written here would leak permanently. ``save(sync=True)``
+    # already refuses, but a direct ``request_indexing`` call (the bulk
+    # reindex pattern, #183) or a job enqueued before the flag was
+    # added lands here — the hash write is the last place the flag can
+    # hold. ``_cls`` is stored on every AutoModel document
+    # (``allow_inheritance``); an absent or unregistered ``_cls``
+    # defaults to indexing, the pre-#220 behavior.
+    doc_cls_name = doc.get("_cls")
+    if doc_cls_name:
+        try:
+            from autonomous.db.base import get_document
+
+            doc_cls = get_document(doc_cls_name)
+        except Exception:  # noqa: BLE001 — not registered in this process
+            doc_cls = None
+        if doc_cls is not None and not doc_cls._meta.get("vector_index", True):
+            # Same shape as the not-found branch above: drop any stale
+            # hash a pre-flag save left behind, so re-saves self-heal
+            # the documented leak instead of preserving it.
+            print(
+                f"Skipping embedding for {collection_name}:{object_id}: "
+                f"{doc_cls_name} declares vector_index: False"
+            )
+            r.delete(_index_key(object_id))
+            record_embedding_sync_event("silent_skip")
+            return
+
     # 2. Construct Searchable Text
     log(doc.get("associations"))
 
@@ -1038,22 +1067,26 @@ def request_indexing(object_id, collection_name):
     import redis
     from autonomous.taskrunner.autotasks import AutoTasks, TaskPriority
 
-    # Initialize the Task Runner
-    task_runner = AutoTasks()
-
     str_id = str(object_id)
     token_key = f"sync_token:{collection_name}:{str_id}"
 
     # 1. GENERATE NEW TOKEN
     current_token = str(uuid.uuid4())
 
-    # 2. SAVE TOKEN TO REDIS (Instant)
+    # 2. SAVE TOKEN TO REDIS + 3. ENQUEUE THE TASK (both instant)
     # TTL governs the real-time supersede-dedup window (#183), not bulk
     # reindex correctness — env-configurable via SYNC_TOKEN_TTL_SECONDS.
-    _get_redis().set(token_key, current_token, ex=_sync_token_ttl_seconds())
-
-    # 3. ENQUEUE THE TASK (Instant)
+    #
+    # One umbrella for every Redis touch (#220): the enqueue always
+    # reported an unreachable Redis as ``return False``, but the token
+    # ``set`` above it sat outside the try — so the same outage instead
+    # raised ``redis.ConnectionError`` up through ``save(sync=True)``
+    # for a document Mongo had already committed, while every
+    # delete-side Redis call swallows by contract. Same contract now:
+    # a request that cannot reach Redis reports False.
     try:
+        task_runner = AutoTasks()
+        _get_redis().set(token_key, current_token, ex=_sync_token_ttl_seconds())
         task_runner.task(
             process_single_object_sync,  # The function to run later
             object_id=str_id,
@@ -1063,5 +1096,5 @@ def request_indexing(object_id, collection_name):
         )
         return True
     except (redis.RedisError, ConnectionError) as e:
-        print(f"Sync Enqueue failed: {e}")
+        print(f"Sync request failed: {e}")
         return False

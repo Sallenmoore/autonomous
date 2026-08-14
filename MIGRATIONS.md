@@ -5,6 +5,20 @@ recent first.
 
 ## Unreleased
 
+### Fixed — the `vector_index` opt-out is enforced at the hash write; `save(sync=True)` no longer raises on a downed Redis (#220)
+
+**What changed.**
+
+- **The sync worker (`process_single_object_sync`) now checks the model's `vector_index` flag at the hash write** — the last place it can hold. It resolves the document's stored `_cls` through the document registry; opted-out documents are skipped with a log line and a `silent_skip` health event, **and any stale hash from a pre-flag save is deleted** (re-saves self-heal the leak 0.3.173 documented). An absent or unregistered `_cls` defaults to indexing, the previous behavior. This closes the `db_sync.request_indexing` bypass the 0.3.173 entry cautioned about.
+- **`request_indexing` reports an unreachable Redis as `return False` instead of raising.** The enqueue arm always did; the sync-token `set` above it sat outside the try, so the same outage raised `redis.ConnectionError` up through `save(sync=True)` for a document Mongo had already committed. All Redis touches in the function now share one umbrella, matching the delete side's never-raises convention.
+
+**Behavior change — externally visible.**
+
+- `save(sync=True)` with Redis down now saves the document and returns normally (the failed sync request is printed and reported as `False` from `request_indexing`) instead of raising after the Mongo write. Callers that relied on the raise to detect a failed sync request should call `db_sync.request_indexing` directly and check its return.
+- A consumer bulk-reindex that enqueues opted-out documents now cleans up their stale hashes instead of writing new ones.
+
+**Migration.** No action required. The "sweep once before adding the flag to an already-indexed model" advice from 0.3.173 still applies for documents that are deleted (not re-saved) after the flag lands — deletes skip de-indexing for opted-out models, and only a re-save routes through the worker's self-heal.
+
 ### Changed — bulk-delete de-indexing is bounded and gateable; new `meta = {"vector_index": False}` opt-out (#215)
 
 **What changed.**

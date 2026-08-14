@@ -782,11 +782,10 @@ class BaseQuerySet:
         # the code deleting an object is rarely the code that indexed it.
         # The gate covers the class's whole subtree (see
         # ``_any_vector_indexed``), and ``AutoModel.save(sync=True)``
-        # refuses to index an opted-out model, so the normal write path
-        # cannot quietly accumulate hashes no delete would remove
-        # (direct ``db_sync.request_indexing`` calls still can — see
-        # MIGRATIONS) — and in no case can the flag strand a live
-        # document.
+        # refuses to index an opted-out model and the worker enforces
+        # the flag again at the hash write (#220), so hashes no delete
+        # would remove cannot quietly accumulate — and in no case can
+        # the flag strand a live document.
         #
         # The buffer is bounded (#215): buffering is still what lets the
         # de-index run *after* ``delete_many`` — streaming the cursor

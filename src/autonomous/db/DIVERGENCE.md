@@ -247,7 +247,9 @@ vector-index surface:
   class's whole subtree via `_any_vector_indexed`, since a base-class
   delete matches subclass documents — and skips the single-pk `DEL` in
   `AutoModel.delete()`. `AutoModel.save(sync=True)` refuses to index an
-  opted-out model, which is what keeps the flag leak-free. Upstream
+  opted-out model, and the worker re-checks the flag at the hash write
+  via the document's stored `_cls` (#220), which is what keeps the
+  flag leak-free. Upstream
   mongoengine has no such meta key; it is autonomous-specific.
 
 Still uncovered by design: raw pymongo deletes and dropped collections

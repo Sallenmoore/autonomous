@@ -414,8 +414,10 @@ class AutoModel(Document):
         honor that flag by skipping de-index bookkeeping (#215), so
         indexing an opted-out model here would create hashes nothing
         ever removes; refusing on the normal write path is what keeps
-        the flag safe to trust. (A direct ``db_sync.request_indexing``
-        call bypasses this gate — see MIGRATIONS.)
+        the flag safe to trust. The worker enforces the same flag at
+        the hash write itself (#220), so even a direct
+        ``db_sync.request_indexing`` call cannot index an opted-out
+        model.
         """
         _ensure_connected()
         super().save()
