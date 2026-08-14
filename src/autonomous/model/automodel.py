@@ -409,15 +409,26 @@ class AutoModel(Document):
         """Persist this document and return its primary key.
 
         With ``sync=True`` the new ``pk`` is also enqueued for vector
-        re-indexing via ``autonomous.db.db_sync``.
+        re-indexing via ``autonomous.db.db_sync`` — unless the model
+        declares ``meta = {"vector_index": False}``. Both delete paths
+        honor that flag by skipping de-index bookkeeping (#215), so
+        indexing an opted-out model here would create hashes nothing
+        ever removes; refusing at the only place hashes are created is
+        what keeps the flag safe to trust.
         """
         _ensure_connected()
         super().save()
 
         if sync:
-            db_sync.request_indexing(
-                self.pk, collection_name=self._get_collection_name()
-            )
+            if self._meta.get("vector_index", True):
+                db_sync.request_indexing(
+                    self.pk, collection_name=self._get_collection_name()
+                )
+            else:
+                log(
+                    f"[WARNING] save(sync=True) on {type(self).__name__}, "
+                    "which declares vector_index: False — not indexing"
+                )
 
         return self.pk
 
@@ -446,9 +457,10 @@ class AutoModel(Document):
         ``meta = {"vector_index": False}`` declares the model's
         documents are never vector-indexed, so its deletes skip the
         bookkeeping entirely — a property of the model, which is exactly
-        what a call site can't be trusted to know. A stale ``False``
-        leaks index hashes (recoverable); it can never strand a live
-        document. ``db_sync.deindex`` is best-effort and swallows its
+        what a call site can't be trusted to know. ``save(sync=True)``
+        refuses to index an opted-out model, so the flag cannot quietly
+        accumulate hashes its deletes would then leak; in no case can it
+        strand a live document. ``db_sync.deindex`` is best-effort and swallows its
         own failures, so a missing or unreachable Redis costs one no-op
         call and never blocks the Mongo delete.
 
