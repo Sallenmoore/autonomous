@@ -415,11 +415,11 @@ class AutoModel(Document):
         indexing an opted-out model here would create hashes nothing
         ever removes; refusing on the normal write path is what keeps
         the flag safe to trust. Direct ``db_sync.request_indexing``
-        calls are gated at enqueue time (#220) — where the registry can
-        resolve the collection's models — with a worker-side re-check
-        at the hash write as defense-in-depth; a process that cannot
-        resolve the model defaults to indexing, so keep the
-        sweep-before-flagging advice in MIGRATIONS in mind.
+        calls are gated at enqueue time (#220) — resolving the
+        document's stored class where the registry is populated — with
+        a worker-side re-check at the hash write as defense-in-depth;
+        anything unresolvable defaults to indexing (fail-open), so keep
+        the sweep-before-flagging advice in MIGRATIONS in mind.
         """
         _ensure_connected()
         super().save()

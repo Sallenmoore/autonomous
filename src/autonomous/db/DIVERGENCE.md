@@ -248,9 +248,9 @@ vector-index surface:
   delete matches subclass documents — and skips the single-pk `DEL` in
   `AutoModel.delete()`. `AutoModel.save(sync=True)` refuses to index an
   opted-out model; #220 additionally gates `db_sync.request_indexing`
-  at enqueue time (collection → registered classes) and re-checks in
-  the worker via the document's stored `_cls` where that process can
-  resolve it — enforcement is as strong as the resolving process's
+  at enqueue time (the document's stored `_cls` → exact registry hit,
+  via a projected point-read in the calling process) and re-checks in
+  the worker via the same `_cls` where that process can resolve it — enforcement is as strong as the resolving process's
   registry, and unresolvable cases default to indexing. Upstream
   mongoengine has no such meta key; it is autonomous-specific.
 
