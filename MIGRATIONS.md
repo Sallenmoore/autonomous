@@ -5,6 +5,65 @@ recent first.
 
 ## Unreleased
 
+### Fixed — `AutoModel.delete()` accepts `signal_kwargs` and write concern again (#213)
+
+**What changed.** `AutoModel.delete()` is now `delete(self, signal_kwargs=None, **write_concern)` and forwards both to `Document.delete()`. 0.3.171 (#204, #205) shipped it as a bare `def delete(self)`, which *narrowed* the base signature — see the struck-through line in that entry below.
+
+**Behavior change — externally visible.**
+
+- `obj.delete(signal_kwargs={...})` works again. Under 0.3.171 it raised `TypeError`.
+- **`Model.objects(...).skip(n)` / `.limit(n)` deletes, and any delete on a model with a connected `pre_delete`/`post_delete` receiver, work again.** These are the ones worth re-checking: `BaseQuerySet.delete()` cannot express them as a single `delete_many`, so it early-returns to `for doc in queryset: doc.delete(**write_concern)` — meaning `Model.objects(...).limit(2).delete(write_concern={"w": 1})` raised `TypeError: AutoModel.delete() got an unexpected keyword argument 'w'` from inside the ORM, at a call site the consumer never wrote.
+- **A write concern passed to a single `obj.delete(w=2)` is honored rather than silently dropped.** Under 0.3.171 the `TypeError` at least made the direct-call case loud; the pass-through is what makes it correct.
+- De-index behavior is unchanged: still unconditional, still after the Mongo delete, still reading the pk before it.
+
+**Migration.** No action required. Consumers who pinned around 0.3.171 by dropping write concerns or avoiding `skip`/`limit` deletes can undo that.
+
+### Fixed — bulk and CASCADE deletes now de-index too; new `db_sync.deindex_many(pks)` (#207)
+
+**What changed.**
+
+- `BaseQuerySet.delete()` — the funnel every delete converges on — now collects the matched pks before its `delete_many` and drops their `lore:<pk>` hashes afterwards. This closes the two paths 0.3.171 left open: `Model.objects(...).delete()` / `where(...).delete()` bulk deletes, and `reverse_delete_rule=CASCADE` children, which a parent's `delete()` removes through `refs.delete(...)` inside that same method and which therefore never reached `AutoModel.delete()`'s hook.
+- New public function `autonomous.db.db_sync.deindex_many(object_ids)` (also reachable as `autonomous.db.deindex_many`) — the batch form of `deindex`. Same best-effort contract: it never raises, returns `True` when every chunk landed and `False` when Redis could not be reached. It sends one variadic `DEL` per 500 keys rather than one `DEL` per key, so a 200-child cascade costs one Redis round-trip instead of 200 (each of which would have been bounded by `REDIS_SOCKET_TIMEOUT_SECONDS`). The chunking exists because `DEL` is O(N) on Redis's single thread — an unbounded teardown would stall every other client.
+- `AutoModel.delete()`'s own `deindex` call is **unchanged and still load-bearing.** `Document.delete()` reaches the funnel with `_from_doc_delete=True`, and that flag skips the pk pre-scan: the single-document path already knows its pk, so scanning would add a Mongo round-trip to the most common delete in the library for no new coverage. The two hooks cover disjoint paths. CASCADE children of a single-document delete are still covered — the `refs.delete()` recursion does not forward the flag.
+
+**Behavior change — externally visible.**
+
+- **Bulk and cascade deletes now perform one extra Mongo `find` and one Redis `DEL` batch.** The `find` uses an `{"_id": 1}` projection, and `delete_many` itself is untouched — there is no degrade to a per-document loop. Consumers who never index pay the pre-scan on bulk deletes regardless; it is a projected read over documents Mongo is about to scan anyway. A second `find` runs only when the delete's `deleted_count` disagrees with the scan size, or when an unacknowledged write concern (`w=0`) makes that count meaningless.
+- **Only documents Mongo confirms it deleted get de-indexed.** The scan and the delete are separate operations, so a document concurrently mutated out of the query survives the delete — de-indexing it would leave a live document permanently unreachable by KNN with nothing to restore it. The reverse case (a document that starts matching after the scan) is deleted without being de-indexed, which leaks a hash a sweep can recover.
+- **Nothing in this cleanup can fail a delete.** Both Mongo steps and the Redis batch swallow and log their own failures, matching `deindex`'s existing contract.
+- **Cascade-deleted children stop answering KNN queries.** Previously `parent.delete()` de-indexed the parent and silently leaked every child's embedding.
+- Additive on the API surface: *this* change alters no existing signature, default, or return type. (The #213 entry above does widen `AutoModel.delete()` — deliberately and compatibly. Scoping the claim to one entry is the lesson from the struck-through line in the #204/#205 entry below, where the same sentence was written for a release that had in fact narrowed a signature.)
+
+**Migration.**
+
+No action required. Consumers holding a workaround sweep for the cascade case — StoryTeller's world-scoped `FT.SEARCH @world_pk:{pk}` → `DEL` teardown, for one — can drop the per-object cascade part of it. Keep the sweep itself: see "Keep a periodic sweep" in the #204/#205 entry below, which still applies whenever `deindex` / `deindex_many` returns `False`.
+
+**Which deletes are still not covered.**
+
+| Path | Covered |
+|---|---|
+| `obj.delete()` on an `AutoModel` | yes |
+| `Model.objects(...).delete()` (bulk QuerySet delete) | yes (this change) |
+| `reverse_delete_rule=CASCADE` children of a deleted parent | yes (this change) |
+| raw pymongo / a dropped collection | **no** |
+
+Raw pymongo deletes and dropped collections never enter the ORM's `delete()` at all, so no hook there can see them. De-index those pks yourself, or keep a sweep:
+
+```python
+from autonomous.db import db_sync
+
+# Materialize the pks first, delete, THEN de-index. The order matters:
+# `deindex_many` consumes its argument eagerly, so passing the cursor
+# expression inline would send every DEL before `delete_many` ran — and
+# a delete that then failed would leave live documents with no vector
+# and nothing to rebuild it. That is the one direction this release's
+# `_confirm_deleted` exists to prevent; a leaked hash (delete succeeds,
+# de-index fails) is recoverable by a sweep, the reverse is not.
+pks = [doc["_id"] for doc in collection.find({"world": world_pk}, {"_id": 1})]
+collection.delete_many({"world": world_pk})
+db_sync.deindex_many(pks)
+```
+
 ### Added — `db_sync.deindex(pk)`; `AutoModel.delete()` now drops the vector entry (#204, #205)
 
 **What changed.**
@@ -18,7 +77,7 @@ recent first.
 
 - **`AutoModel.delete()` now performs one Redis `DEL` per call.** Previously it touched Mongo only. For consumers that never index, this is a no-op `DEL` against a key that does not exist; if Redis is absent or unreachable it is caught internally and logged as `[WARNING] De-index failed for lore:<pk>: <err>`, and the delete still succeeds. The added latency is bounded by `REDIS_SOCKET_TIMEOUT_SECONDS` (default 2s) — with the retry policy disabled (above) that bound is real: a blackholed host costs one timeout, a refused connection returns immediately, and the typical cost is one local round-trip.
 - **Deleted documents stop answering KNN queries.** Previously every deleted indexed object leaked its embedding permanently, and `FT.SEARCH` kept returning hits for documents that no longer existed. Consumers that worked around this with their own sweep can drop it.
-- Additive on the API surface: no existing signature, default, or return type changes.
+- ~~Additive on the API surface: no existing signature, default, or return type changes.~~ **Correction (found 2026-08-14, tracked as #213):** this was wrong. `AutoModel.delete()` overrode `Document.delete(self, signal_kwargs=None, **write_concern)` with a bare `def delete(self)`, which *narrowed* an existing signature. `obj.delete(signal_kwargs=...)` became a hard break, single deletes silently dropped any write concern passed to them, and `Model.objects(...).limit(2).delete(write_concern={"w": 1})` raised `TypeError: AutoModel.delete() got an unexpected keyword argument 'w'` — the funnel's skip/limit/signal branch calls `doc.delete(**write_concern)`. **Fixed in the #213 entry at the top of Unreleased**, which ships in the same release as this correction; 0.3.171 itself carries the narrowing.
 
 **Migration.**
 
@@ -40,16 +99,16 @@ for doc in collection.find({"world": world_pk}, {"_id": 1}):
     db_sync.deindex(doc["_id"])
 ```
 
-**Which deletes are still not covered.** `AutoModel.delete()` is the only hooked path. These bypass it and leak:
+**Which deletes are still not covered.** As of this version `AutoModel.delete()` is the only hooked path. These bypass it and leak:
 
-| Path | Covered |
-|---|---|
-| `obj.delete()` on an `AutoModel` | yes |
-| `Model.objects(...).delete()` (bulk QuerySet delete) | **no** |
-| `reverse_delete_rule=CASCADE` children of a deleted parent | **no** |
-| raw pymongo / a dropped collection | **no** |
+| Path | Covered as of this version | Covered now |
+|---|---|---|
+| `obj.delete()` on an `AutoModel` | yes | yes |
+| `Model.objects(...).delete()` (bulk QuerySet delete) | **no** | yes, via #207 above |
+| `reverse_delete_rule=CASCADE` children of a deleted parent | **no** | yes, via #207 above |
+| raw pymongo / a dropped collection | **no** | **no** |
 
-The cascade row is the one to watch, because it is invisible at the call site: `parent.delete()` de-indexes the parent, and mongoengine resolves CASCADE by calling `delete()` on a *QuerySet* of the children, which never reaches `AutoModel.delete()`. Hooking the QuerySet layer instead would push vector-index knowledge into the vendored ORM fork (see `db/DIVERGENCE.md`) and add a pk-fetch to every bulk delete, so it is deliberately left out of this change. **Tracked as #207** — if you rely on cascades, keep sweeping until it lands.
+The cascade row was the one to watch, because it is invisible at the call site: `parent.delete()` de-indexes the parent, and mongoengine resolves CASCADE by calling `delete()` on a *QuerySet* of the children, which never reaches `AutoModel.delete()`. Hooking the QuerySet layer pushes vector-index knowledge into the vendored ORM fork (see `db/DIVERGENCE.md`) and adds a pk-fetch to every bulk delete, so it was deliberately left out of *this* change and tracked as #207 — **which has since landed** (see the entry above). Consumers reading this entry in isolation should not plan around the "no" column.
 
 **A delete during an in-flight embedding no longer resurrects the vector (#210).** The sync worker reads the document, spends seconds inside `get_vector()`'s HTTP call, then writes the hash. A delete landing in that window issued its `DEL` before the worker's `hset` put the entry back, and the resurrection was permanent because nothing re-enqueues an index job for a deleted pk. `process_single_object_sync` now re-checks existence immediately before the write — a `find_one` on the same `_id` filter with a `{"_id": 1}` projection — and returns without writing when the document is gone. This is a check, not a lock: a delete landing in the microseconds between that re-check and the `hset` still resurrects the vector. Closing *that* needs a Redis-side compare-and-set or a tombstone the writer honors, which is not worth its cost for a window this short.
 
