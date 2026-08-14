@@ -5,19 +5,22 @@ recent first.
 
 ## Unreleased
 
-### Fixed — the `vector_index` opt-out is enforced at the hash write; `save(sync=True)` no longer raises on a downed Redis (#220)
+### Fixed — the `vector_index` opt-out is enforced on the write side; `save(sync=True)` no longer raises on a downed Redis (#220)
 
 **What changed.**
 
-- **The sync worker (`process_single_object_sync`) now checks the model's `vector_index` flag at the hash write** — the last place it can hold. It resolves the document's stored `_cls` through the document registry; opted-out documents are skipped with a log line and a `silent_skip` health event, **and any stale hash from a pre-flag save is deleted** (re-saves self-heal the leak 0.3.173 documented). An absent or unregistered `_cls` defaults to indexing, the previous behavior. This closes the `db_sync.request_indexing` bypass the 0.3.173 entry cautioned about.
-- **`request_indexing` reports an unreachable Redis as `return False` instead of raising.** The enqueue arm always did; the sync-token `set` above it sat outside the try, so the same outage raised `redis.ConnectionError` up through `save(sync=True)` for a document Mongo had already committed. All Redis touches in the function now share one umbrella, matching the delete side's never-raises convention.
+- **`request_indexing` now gates at enqueue time**: when every registered model for the target collection declares `vector_index: False`, the request is skipped (printed, `return False`) before any token or job is created. This is the load-bearing enforcement — it runs in the process that imported the models, so the registry can resolve the collection; it covers inheritance subtrees (skip only when the whole subtree opts out); and it spares the worker queue a 5-second debounce stall per no-op job.
+- **The sync worker re-checks at the hash write** as defense-in-depth, resolving the document's stored `_cls` by *exact* registry lookup (never the fuzzy suffix fallback). An opted-out document is skipped (recorded under the existing `silent_skip` health event, disambiguated by its log line) and its stale hash is removed via best-effort `deindex`. **Enforcement is as strong as the resolving process's registry**: a bare `rq worker` that imports no consumer models cannot resolve `_cls` (printed, indexes by default), and an `allow_inheritance: False` model stores no `_cls` at all — the #215 entry's sweep advice below is still the backstop for anything that slips through, and for pre-flag hashes whose documents are **deleted** rather than re-saved (deletes honor the flag and skip de-indexing).
+- **`request_indexing` never raises**: its whole body — lazy imports (an ORM-only install without the `[tasks]` extra), the sync-token `set`, and the enqueue — sits under one broad umbrella. Failures log at `[WARNING]` (previously a bare print, and the token `set` raised `redis.ConnectionError` up through `save(sync=True)` after the Mongo commit). On failure the just-written token is best-effort deleted so an in-flight predecessor job doesn't skip itself as "superseded" by a job that never enqueued.
+- `SYNC_TOKEN_TTL_SECONDS` is clamped to ≥1 (`set(ex=0)` from a config typo raised a RedisError per request).
+- New shared predicate `db_sync.vector_indexed(cls)` — the single read of the flag used by both delete gates, `save(sync=True)`, and the worker.
 
 **Behavior change — externally visible.**
 
-- `save(sync=True)` with Redis down now saves the document and returns normally (the failed sync request is printed and reported as `False` from `request_indexing`) instead of raising after the Mongo write. Callers that relied on the raise to detect a failed sync request should call `db_sync.request_indexing` directly and check its return.
-- A consumer bulk-reindex that enqueues opted-out documents now cleans up their stale hashes instead of writing new ones.
+- `save(sync=True)` with Redis down/misconfigured now saves the document and returns normally; the failed sync request is logged at `[WARNING]` and `request_indexing` reports `False`. Callers that relied on the raise to detect a failed sync request should call `db_sync.request_indexing` directly and check its return. Note an enqueue-side auth/config problem no longer fails the first save loudly — watch the `[WARNING] Sync request failed` log line.
+- `request_indexing` on a fully opted-out collection returns `False` (request not made). Consumer bulk-reindex loops that count `False` as an error should expect it for opted-out models.
 
-**Migration.** No action required. The "sweep once before adding the flag to an already-indexed model" advice from 0.3.173 still applies for documents that are deleted (not re-saved) after the flag lands — deletes skip de-indexing for opted-out models, and only a re-save routes through the worker's self-heal.
+**Migration.** No action required. When adding `vector_index: False` to an **already-indexed** model, sweep its hashes once (the #215 entry's advice): re-saves no longer enqueue anything for opted-out models, deletes skip de-indexing, and the worker's stale-hash cleanup only fires for jobs that were already queued — the sweep is the reliable cleanup path.
 
 ### Changed — bulk-delete de-indexing is bounded and gateable; new `meta = {"vector_index": False}` opt-out (#215)
 
