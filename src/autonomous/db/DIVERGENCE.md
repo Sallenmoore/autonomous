@@ -193,11 +193,16 @@ Constraints the implementation holds to:
   The two hooks cover disjoint paths — neither is redundant. CASCADE
   children of such a delete are still covered, because `refs.delete()`
   does not forward the flag.
-- **One guarded call, imported lazily.** The fork's whole vector
-  vocabulary at this site is `from autonomous.db import db_sync` plus
-  `deindex_many(pks)`. The import must stay function-local:
-  `autonomous.db.__init__` imports `db_sync`, and this module is
-  imported while that `__init__` is still executing.
+- **One guarded call, imported function-locally.** The fork's whole
+  vector vocabulary at this site is `from autonomous.db import db_sync`
+  plus `deindex_many(pks)`, and keeping the name inside the function is
+  what holds it to that. This is a boundary choice, **not** a
+  circular-import workaround — `autonomous.db.__init__` imports
+  `db_sync` before `queryset`, so it is fully initialized by the time
+  this module loads. Verified by hoisting the import to module level and
+  importing `autonomous`, `autonomous.db`, `autonomous.db.queryset.base`
+  and `autonomous.model.automodel`: all clean. Re-run that check before
+  citing circularity as the reason to leave it alone.
 - **Fail-soft end to end.** `deindex_many` swallows and logs every
   failure, and so do the two Mongo steps around it — the pk pre-scan
   (the only part that runs *before* the delete, and therefore the only

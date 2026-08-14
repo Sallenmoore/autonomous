@@ -616,11 +616,19 @@ class BaseQuerySet:
 
         deindex_pks = _confirm_deleted(queryset._collection, deindex_pks, result)
         if deindex_pks:
-            # Imported lazily and called through exactly one entry point:
-            # this fork carries no other vector-index knowledge, and
-            # ``db_sync`` is imported by ``autonomous.db.__init__`` while
-            # this module is still being imported, so a module-level
-            # import would be circular. Best-effort by contract —
+            # Called through exactly one entry point: this fork carries
+            # no other vector-index knowledge, and keeping the name
+            # function-local is what keeps it that way.
+            #
+            # NOT a circular-import workaround, despite how it reads.
+            # ``autonomous.db.__init__`` imports ``db_sync`` *before*
+            # ``queryset``, so it is fully initialized by the time this
+            # module loads and a module-level import resolves fine —
+            # checked by hoisting it and importing ``autonomous``,
+            # ``autonomous.db``, ``autonomous.db.queryset.base`` and
+            # ``autonomous.model.automodel``, all clean. Keep it here for
+            # the boundary, not for a hazard that isn't there.
+            # Best-effort by contract —
             # ``deindex_many`` swallows and logs everything, so an absent
             # or unreachable Redis cannot fail a delete that Mongo has
             # already committed. See db/DIVERGENCE.md.
