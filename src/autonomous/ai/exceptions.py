@@ -72,6 +72,25 @@ class GenerateJSONParseError(GenerateJSONError):
         self.payload = payload
 
 
+class GenerateImageEmptyResponseError(ValueError):
+    """``generate_image`` got a Success response carrying no image bytes.
+
+    The provider answered HTTP Success with ``finish_reason=STOP`` but an
+    empty content part (``parts=[Part(text='')]``) — or dropped
+    ``.content`` entirely — so there is nothing to decode. Transient
+    provider misbehavior: the same prompt typically succeeds on retry,
+    which is why the adapter retries this and only this before it
+    propagates (issue #203).
+
+    Subclasses ``ValueError`` rather than ``RuntimeError`` (unlike the
+    ``GenerateJSONError`` family) for back-compat: the adapter used to
+    raise a bare ``ValueError`` here, and consumers already catch that
+    to drive their own retry/degrade. Catching the specific class buys
+    the ability to distinguish this transient case from a genuine
+    argument error out of the same call.
+    """
+
+
 # The catch tuple every ``MalformedResponseError`` raise site uses to
 # translate a malformed-2xx body (issue #102). Promoting it to a single
 # module-level constant removes the drift risk between the docstring
