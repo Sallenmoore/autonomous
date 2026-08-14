@@ -929,6 +929,84 @@ def deindex(object_id) -> bool:
         return False
 
 
+# One ``DEL`` per this many keys. Not a tunable — see ``deindex_many``.
+_DEINDEX_CHUNK = 500
+
+# Consecutive chunk failures before ``deindex_many`` stops trying. One
+# failure is a blip worth stepping over; two in a row is an outage, and
+# every further chunk then costs a fresh connect timeout on a delete
+# Mongo has already committed.
+_DEINDEX_MAX_CONSECUTIVE_FAILURES = 2
+
+
+def deindex_many(object_ids) -> bool:
+    """Remove many objects' vector-index entries. Best-effort, never raises.
+
+    Batch form of :func:`deindex`, called from the QuerySet delete
+    funnel (#207) where one bulk or CASCADE delete removes N documents
+    at once. Sending N separate ``DEL``s would drop N round-trips into
+    the path of a single ``delete_many`` — and each one is bounded by
+    ``REDIS_SOCKET_TIMEOUT_SECONDS``, so an unreachable Redis would
+    cost N×2s on a delete that has already succeeded. redis-py's
+    ``delete`` is variadic: a chunk is one round-trip and one
+    server-side command.
+
+    Chunked rather than one giant ``DEL`` because that command is O(N)
+    and runs to completion on Redis's single thread, with the whole
+    argument list buffered on both ends. Capping the chunk keeps a
+    100k-document teardown from stalling every other Redis client;
+    N/500 round-trips is still the right order of magnitude versus N.
+
+    Same contract as :func:`deindex` — True when every chunk landed,
+    False when Redis could not be reached, and a False return leaks
+    those hashes permanently (see :func:`deindex` for why nothing
+    reconciles them afterwards).
+
+    Two failure shapes, handled differently. A single chunk failing is a
+    blip: the loop steps over it, because every key it skips leaks with
+    nothing to reconcile it, and 0.3.171 disabled redis-py's retry policy
+    so even a momentary error surfaces here immediately. Redis being
+    *down*, though, fails chunk 1 and chunk 200 alike — and with retries
+    off, each of those pays a fresh ``socket_connect_timeout`` against a
+    host that is not answering. Continuing would put N/500×2s of blocking
+    on a delete Mongo already committed (~6.7 min for a 100k-document
+    teardown), which is the very cost the batching exists to avoid. So
+    the loop steps over isolated failures but gives up after
+    ``_DEINDEX_MAX_CONSECUTIVE_FAILURES`` in a row, logging what it never
+    attempted so the leak is sweepable.
+    """
+    keys = [_index_key(object_id) for object_id in object_ids]
+    if not keys:
+        # The common case for a filtered bulk delete that matched
+        # nothing. Return before ``_get_redis()`` so an empty delete
+        # neither builds a client nor pays a round-trip.
+        return True
+    ok = True
+    consecutive_failures = 0
+    for start in range(0, len(keys), _DEINDEX_CHUNK):
+        chunk = keys[start : start + _DEINDEX_CHUNK]
+        try:
+            # Per chunk, not around the loop: an isolated failure must
+            # not abandon the chunks after it.
+            _get_redis().delete(*chunk)
+            consecutive_failures = 0
+        except Exception as e:  # noqa: BLE001
+            # Deliberately broad, and logged at ``[WARNING]``, for exactly
+            # the reasons spelled out in ``deindex`` above.
+            log(f"[WARNING] De-index failed for {len(chunk)} keys ({chunk[0]}, ...): {e}")
+            ok = False
+            consecutive_failures += 1
+            if consecutive_failures >= _DEINDEX_MAX_CONSECUTIVE_FAILURES:
+                unattempted = len(keys) - (start + len(chunk))
+                log(
+                    f"[WARNING] De-index abandoned after "
+                    f"{consecutive_failures} consecutive chunk failures; "
+                    f"{unattempted} key(s) never attempted"
+                )
+                return False
+    return ok
+
+
 def request_indexing(object_id, collection_name):
     """
     THE TRIGGER FUNCTION (Runs in Main App).
