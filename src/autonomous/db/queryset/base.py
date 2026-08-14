@@ -64,10 +64,19 @@ def _confirm_deleted(collection, pks, result):
     closed on the write side.
 
     Free in the common case. An acknowledged delete whose
-    ``deleted_count`` matches the scan size proves every scanned pk is
-    gone, so no extra query runs. Only a mismatch — or an unacknowledged
-    write concern, where the count means nothing — pays a chunked
-    existence re-check.
+    ``deleted_count`` matches the scan size is taken as clean, so no
+    extra query runs. Only a mismatch — or an unacknowledged write
+    concern, where the count means nothing — pays a chunked existence
+    re-check.
+
+    That fast path is a heuristic, not a proof: a count match is not a
+    set match. If one scanned pk is mutated out of the filter (survives)
+    while a document inserted after the scan starts matching it, the
+    delete removes a different set of the same size and the survivor is
+    de-indexed anyway. Closing that needs the re-check to run
+    unconditionally, which would put N/500 extra queries on every bulk
+    delete in the library — not worth it for a window this narrow, but
+    the guard is narrower than "only confirmed-deleted pks" suggests.
 
     A pk that started matching *after* the scan is deleted without being
     de-indexed. That direction leaks a hash, which a sweep can recover;

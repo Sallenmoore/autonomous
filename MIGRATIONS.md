@@ -52,8 +52,16 @@ Raw pymongo deletes and dropped collections never enter the ORM's `delete()` at 
 ```python
 from autonomous.db import db_sync
 
-db_sync.deindex_many(doc["_id"] for doc in collection.find({"world": world_pk}, {"_id": 1}))
+# Materialize the pks first, delete, THEN de-index. The order matters:
+# `deindex_many` consumes its argument eagerly, so passing the cursor
+# expression inline would send every DEL before `delete_many` ran — and
+# a delete that then failed would leave live documents with no vector
+# and nothing to rebuild it. That is the one direction this release's
+# `_confirm_deleted` exists to prevent; a leaked hash (delete succeeds,
+# de-index fails) is recoverable by a sweep, the reverse is not.
+pks = [doc["_id"] for doc in collection.find({"world": world_pk}, {"_id": 1})]
 collection.delete_many({"world": world_pk})
+db_sync.deindex_many(pks)
 ```
 
 ### Added — `db_sync.deindex(pk)`; `AutoModel.delete()` now drops the vector entry (#204, #205)

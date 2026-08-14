@@ -429,10 +429,32 @@ class TestSurvivorProtection:
         BaseQuerySet.delete(qs)
 
         assert collection.confirm_chunks == [], (
-            "an acknowledged delete whose count matches the scan proves "
-            "the batch is clean — the confirmation must stay free here"
+            "an acknowledged delete whose count matches the scan is "
+            "taken as clean — the confirmation must stay free here"
         )
         assert deindexed == [pks]
+
+    def test_matching_count_is_a_heuristic_not_a_proof(self):
+        # Documenting the known hole rather than pretending it is closed:
+        # a count match is not a set match. One scanned pk mutated out of
+        # the filter (survivor) plus one document inserted into it after
+        # the scan gives a delete of the same size over a different set,
+        # and the survivor is de-indexed anyway. Closing it means running
+        # the re-check unconditionally, which costs N/500 queries on
+        # every bulk delete in the library.
+        survivor, gone = ObjectId(), ObjectId()
+        scanned = [survivor, gone]
+        collection = _CollectionStub(scanned, survivors=[survivor])
+        # deleted_count == len(scanned) because a late-inserted document
+        # was removed in the survivor's place.
+        result = _DeleteResult(acknowledged=True, deleted_count=2)
+
+        assert _confirm_deleted(collection, scanned, result) == scanned, (
+            "pinning the CURRENT behavior, hole included — if this ever "
+            "returns [gone], the fast path was made exact and this test "
+            "should be rewritten to demand that, not deleted"
+        )
+        assert collection.confirm_chunks == []
 
     def test_deleted_count_mismatch_drops_the_survivor(self, deindexed):
         # The race the mismatch reveals: one document was mutated out of
@@ -459,6 +481,13 @@ class TestSurvivorProtection:
         # that happens to equal the scan size proves nothing. Trusting it
         # would de-index survivors on exactly the write concern that can
         # least afford it.
+        #
+        # Two things are pinned, deliberately: the survivor is spared,
+        # AND the provably-gone pk is still de-indexed. Bailing out with
+        # `[]` on any unacknowledged delete would also spare the
+        # survivor, but at the price of leaking every w=0 delete in the
+        # library forever. If that trade is ever taken it should be taken
+        # on purpose, by editing this test.
         gone, survivor = ObjectId(), ObjectId()
         collection = _CollectionStub(
             [gone, survivor],
@@ -680,11 +709,22 @@ class TestDeindexManyChunking:
 
 
 class TestDeindexManyPerChunkIsolation:
-    def test_a_failing_chunk_does_not_abandon_the_rest(self, monkeypatch):
-        # The isolation that matters: try/except around the loop would
-        # pass every happy-path test above and leak every key after the
-        # first blip. With redis-py's retry policy disabled (0.3.171) a
-        # single transient error raises immediately.
+    """What these pin is *isolation of an isolated failure* — a blip on
+    one chunk must not cost the chunks after it — NOT "every chunk is
+    always attempted". A persistent outage deliberately gives up early
+    (see ``TestDeindexManyGivesUpOnOutage``), so an assertion of the
+    stronger form would forbid that bound. This is the same trap the
+    ``params == ["self"]`` pin in
+    ``test_unit_deindex_on_delete_iter_2026_08_14.py`` fell into:
+    freezing a mechanism when only the intent was meant.
+    """
+
+    def test_a_transient_chunk_failure_does_not_abandon_the_rest(self, monkeypatch):
+        # try/except around the loop would pass every happy-path test
+        # above and leak every key after the first blip. With redis-py's
+        # retry policy disabled (0.3.171) a single transient error
+        # surfaces here immediately, so stepping over it is the whole
+        # reason the except sits inside the loop.
         redis = _RedisStub(raise_on_chunk=[1])
         monkeypatch.setattr(db_sync, "_get_redis", lambda: redis)
         monkeypatch.setattr(db_sync, "log", lambda *a, **kw: None)
@@ -704,7 +744,63 @@ class TestDeindexManyPerChunkIsolation:
         assert deindex_many([f"pk{i}" for i in range(1100)]) is False
         assert len(redis.delete_calls) == 3
 
-    def test_every_chunk_failing_returns_false_without_raising(self, monkeypatch):
+    def test_a_success_resets_the_failure_run(self, monkeypatch):
+        # Alternating failures are still blips, not an outage: the
+        # give-up bound counts *consecutive* failures, so a batch that
+        # keeps landing keys must keep going.
+        redis = _RedisStub(raise_on_chunk=[0, 2])
+        monkeypatch.setattr(db_sync, "_get_redis", lambda: redis)
+        monkeypatch.setattr(db_sync, "log", lambda *a, **kw: None)
+
+        assert deindex_many([f"pk{i}" for i in range(2000)]) is False
+        assert len(redis.delete_calls) == 4, (
+            "failures on chunks 1 and 3 with a success between them must "
+            "not trip the consecutive-failure bound"
+        )
+
+
+class TestDeindexManyGivesUpOnOutage:
+    """The other half of the isolation trade.
+
+    Redis being down fails chunk 1 and chunk 200 alike, and with
+    redis-py's retries disabled each chunk pays a fresh
+    ``socket_connect_timeout`` against a host that is not answering.
+    Grinding through all of them would put N/500 × 2s of blocking on a
+    delete Mongo has already committed — roughly 6.7 minutes for a
+    100k-document teardown, which is exactly the cost the batching was
+    introduced to avoid.
+    """
+
+    def test_stops_after_consecutive_failures(self, monkeypatch):
+        redis = _RedisStub(raise_on_chunk=range(20))  # everything fails
+        monkeypatch.setattr(db_sync, "_get_redis", lambda: redis)
+        monkeypatch.setattr(db_sync, "log", lambda *a, **kw: None)
+
+        assert deindex_many([f"pk{i}" for i in range(5000)]) is False
+        assert len(redis.delete_calls) == db_sync._DEINDEX_MAX_CONSECUTIVE_FAILURES, (
+            "a dead Redis must not be retried once per chunk for the "
+            "whole batch — the delete has already committed"
+        )
+
+    def test_bound_is_two(self):
+        # Low enough that an outage costs ~4s rather than minutes, high
+        # enough that one isolated blip does not abandon the batch.
+        assert db_sync._DEINDEX_MAX_CONSECUTIVE_FAILURES == 2
+
+    def test_logs_what_it_never_attempted(self, monkeypatch):
+        # The abandoned keys leak with nothing to reconcile them, so the
+        # count is the operator's only handle on the size of the leak.
+        logged = []
+        monkeypatch.setattr(db_sync, "_get_redis", lambda: _RedisStub(raise_on_chunk=range(20)))
+        monkeypatch.setattr(db_sync, "log", lambda msg, *a, **kw: logged.append(str(msg)))
+
+        deindex_many([f"pk{i}" for i in range(5000)])
+
+        assert any("never attempted" in m and "4000" in m for m in logged), (
+            f"the abandoned-key count must be logged; got {logged!r}"
+        )
+
+    def test_short_batch_still_reports_failure_without_raising(self, monkeypatch):
         redis = _RedisStub(raise_on_chunk=[0, 1])
         monkeypatch.setattr(db_sync, "_get_redis", lambda: redis)
         monkeypatch.setattr(db_sync, "log", lambda *a, **kw: None)
