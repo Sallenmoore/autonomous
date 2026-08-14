@@ -193,15 +193,18 @@ Constraints the implementation holds to:
   The two hooks cover disjoint paths — neither is redundant. CASCADE
   children of such a delete are still covered, because `refs.delete()`
   does not forward the flag.
-- **One guarded call, imported function-locally.** The fork's whole
-  vector vocabulary at this site is `from autonomous.db import db_sync`
-  plus `deindex_many(pks)`, and keeping the name inside the function is
-  what holds it to that. This is a boundary choice, **not** a
-  circular-import workaround — `autonomous.db.__init__` imports
-  `db_sync` before `queryset`, so it is fully initialized by the time
-  this module loads. Verified by hoisting the import to module level and
-  importing `autonomous`, `autonomous.db`, `autonomous.db.queryset.base`
-  and `autonomous.model.automodel`: all clean. Re-run that check before
+- **Guarded calls from the delete funnel only, imported
+  function-locally.** The fork's whole vector vocabulary lives in this
+  module's two delete regimes (the single-pass path here and
+  `_delete_in_chunks`, #215) plus the `vector_index` meta key their
+  shared gate reads: `from autonomous.db import db_sync` plus
+  `deindex_many(pks)`, with the import kept inside the functions.
+  This is a boundary choice, **not** a circular-import workaround —
+  `autonomous.db.__init__` imports `db_sync` before `queryset`, so it
+  is fully initialized by the time this module loads. Verified by
+  hoisting the import to module level and importing `autonomous`,
+  `autonomous.db`, `autonomous.db.queryset.base` and
+  `autonomous.model.automodel`: all clean. Re-run that check before
   citing circularity as the reason to leave it alone.
 - **Fail-soft end to end.** `deindex_many` swallows and logs every
   failure, and so do the two Mongo steps around it — the pk pre-scan
@@ -213,13 +216,39 @@ Constraints the implementation holds to:
   `delete_many` are two operations against the same filter, so a
   document mutated out of the filter in between survives the delete
   while sitting in the de-index batch. `_confirm_deleted` catches that:
-  an acknowledged `deleted_count` equal to the scan size proves the set
-  is clean and costs no extra query, and only a mismatch (or `w=0`,
-  where the count means nothing) pays a chunked existence re-check.
-  The asymmetry is deliberate — a pk that starts matching *after* the
-  scan is deleted without being de-indexed, which leaks a hash a sweep
-  can recover, whereas de-indexing a live document cannot be recovered
-  at all.
+  an acknowledged `deleted_count` equal to the scan size is taken as
+  clean and costs no extra query (a heuristic on this path — see #214's
+  test pinning the narrow hole), and only a mismatch (or `w=0`, where
+  the count means nothing) pays a chunked existence re-check. On the
+  chunked path the same fast path is exact, because its deletes are
+  `$in`-restricted to the scanned pks. The asymmetry is deliberate — a
+  pk that starts matching *after* the scan is deleted without being
+  de-indexed, which leaks a hash a sweep can recover, whereas
+  de-indexing a live document cannot be recovered at all.
+
+#215 bounded and gated the cleanup, adding the rest of the fork's
+vector-index surface:
+
+- **The pk buffer is capped** (`_BULK_DEINDEX_BUFFER`, 100k) **for
+  models with no reverse-delete rules.** A scan that overflows it hands
+  the teardown to `_delete_in_chunks` — scan → `$in`-restricted
+  `delete_many` → confirm → de-index per batch, refilled until the
+  filter matches nothing. Three early-out paths (refill cap,
+  refill-scan failure, chunk-delete failure) finish the delete with one
+  `delete_many` on the caller's filter and leak the remainder's hashes;
+  a de-index breaker also stops calling Redis for the rest of a
+  teardown after two consecutive failing calls. Ruled models keep the
+  #207 single-pass shape unbounded: their rule arms run once against
+  the pre-teardown match set (chunking would bypass them on
+  late-matching documents), and their `__in` subqueries materialize the
+  full parent pk list anyway, so the bound would be fiction there.
+- **The `vector_index` meta key.** `meta = {"vector_index": False}`
+  (default `True`) skips the pre-scan on bulk deletes — gated over the
+  class's whole subtree via `_any_vector_indexed`, since a base-class
+  delete matches subclass documents — and skips the single-pk `DEL` in
+  `AutoModel.delete()`. `AutoModel.save(sync=True)` refuses to index an
+  opted-out model, which is what keeps the flag leak-free. Upstream
+  mongoengine has no such meta key; it is autonomous-specific.
 
 Still uncovered by design: raw pymongo deletes and dropped collections
 never enter this method at all. Consumers who need those cleaned keep a
