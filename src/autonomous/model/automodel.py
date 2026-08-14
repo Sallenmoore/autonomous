@@ -462,6 +462,17 @@ class AutoModel(Document):
         ``_from_doc_delete=True``, which skips the pk pre-scan precisely
         because this line already handled it. Raw pymongo deletes still
         bypass both — documented in MIGRATIONS.
+
+        Known gap, NOT fixed here: this signature is narrower than
+        ``Document.delete(signal_kwargs=None, **write_concern)``, and the
+        funnel's skip/limit/signal branch calls
+        ``doc.delete(**write_concern)``. So
+        ``objects(...).limit(2).delete(write_concern={"w": 1})`` raises
+        ``TypeError``, and a single delete silently drops any write
+        concern passed to it. Widening the signature is a one-line fix
+        but collides with a committed test that pins this parameter list
+        (``tests/unit/test_unit_deindex_on_delete_iter_2026_08_14.py``),
+        which the dev tree does not edit — tracked as #213.
         """
         _ensure_connected()
         # Read the pk up front: ``super().delete()`` sends ``post_delete``
