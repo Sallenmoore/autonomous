@@ -15,6 +15,7 @@ from autonomous import log
 from autonomous.ai.exceptions import (
     GeminiFileUploadTimeoutError,
     GenerateImageEmptyResponseError,
+    GenerateImageTransientEmptyError,
     GenerateJSONEmptyResponseError,
     GenerateJSONParseError,
 )
@@ -680,9 +681,19 @@ class GeminiAIModel(AutoModel):
                         break
 
             if not image:
-                raise GenerateImageEmptyResponseError(
-                    f"API returned Success but no image data found. Response: {response}"
+                # Only finish_reason=STOP is worth retrying. A safety
+                # block is deterministic for a given prompt, so retrying
+                # it costs three billed calls and still fails. ``.name``
+                # unwraps the genai enum (FinishReason.STOP); a plain
+                # string falls through unchanged.
+                finish_reason = getattr(candidate, "finish_reason", None)
+                msg = (
+                    f"API returned Success but no image data found. "
+                    f"finish_reason={finish_reason!r}. Response: {response}"
                 )
+                if str(getattr(finish_reason, "name", finish_reason)) == "STOP":
+                    raise GenerateImageTransientEmptyError(msg)
+                raise GenerateImageEmptyResponseError(msg)
             return image
 
         def _on_retry(attempt: int, exc: BaseException) -> None:
@@ -699,12 +710,14 @@ class GeminiAIModel(AutoModel):
             # keeps its fail-fast behavior — an APIError is usually a
             # permanent 4xx and burning the budget on it just delays the
             # error, the same trade local_model's #97 narrowing made.
+            # Note the catch is the TRANSIENT subclass, not the base: a
+            # safety-blocked candidate raises the base and fails fast.
             return retry(
                 _attempt,
                 max_attempts=self._IMAGE_MAX_ATTEMPTS,
                 sleep_seconds=self._IMAGE_RETRY_SLEEP,
                 backoff_factor=2.0,
-                catch=(GenerateImageEmptyResponseError,),
+                catch=(GenerateImageTransientEmptyError,),
                 on_retry=_on_retry,
             )
         except (genai.errors.APIError, ValueError, OSError) as e:

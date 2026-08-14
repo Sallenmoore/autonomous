@@ -86,8 +86,26 @@ class GenerateImageEmptyResponseError(ValueError):
     ``GenerateJSONError`` family) for back-compat: the adapter used to
     raise a bare ``ValueError`` here, and consumers already catch that
     to drive their own retry/degrade. Catching the specific class buys
-    the ability to distinguish this transient case from a genuine
-    argument error out of the same call.
+    the ability to distinguish this empty case from a genuine argument
+    error out of the same call.
+
+    This base class is the *deterministic* form — most often a candidate
+    the safety filter blocked (``finish_reason`` of ``SAFETY`` /
+    ``PROHIBITED_CONTENT``, which drops ``.content`` entirely). Re-asking
+    with the same prompt returns the same block, so the adapter does NOT
+    retry it. Catch this to catch both forms; catch the subclass below to
+    single out the retryable one.
+    """
+
+
+class GenerateImageTransientEmptyError(GenerateImageEmptyResponseError):
+    """The empty-image response carried ``finish_reason=STOP`` (#203).
+
+    The provider claims it finished normally and still returned no image
+    bytes — the observed transient misbehavior that clears on the very
+    next identical call. This is the only shape the adapter spends its
+    retry budget on: retrying a safety block would burn three billed
+    generate_content calls on a result that cannot change.
     """
 
 

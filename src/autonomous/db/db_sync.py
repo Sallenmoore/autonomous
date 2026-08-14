@@ -227,6 +227,14 @@ def _get_redis():
             host=os.getenv("REDIS_HOST", "cachedb"),
             port=int(os.getenv("REDIS_PORT", 6379)),
             decode_responses=True,
+            # Bound the blocking window. ``AutoModel.delete()`` issues a
+            # DEL on every delete now, and a host that resolves but
+            # blackholes (container network partition) would otherwise
+            # hang on TCP connect for the OS default — ~130s, per call.
+            # deindex's best-effort contract catches the exception but
+            # cannot catch the latency; only a timeout can.
+            socket_connect_timeout=2,
+            socket_timeout=5,
         )
     return _redis_client
 
@@ -786,6 +794,16 @@ def process_single_object_sync(object_id, collection_name, token):
     # See `_get_vector_local` / `_get_vector_openai` for the provider-
     # side observability contract.
     if vector:
+        # ponytail: a delete landing between the find_one above and this
+        # write still resurrects the vector — the doc was read before
+        # get_vector()'s multi-second HTTP call. Fixing it needs an
+        # existence re-check here, which adds a second find_one and trips
+        # the committed assertion in
+        # tests/unit/test_unit_db_sync_world_pk_iter_2026-06-16.py
+        # ("world_pk extraction MUST stay Mongo-light"). That test is the
+        # test agent's surface, so the fix and its lockstep test change
+        # land together in their cycle. Tracked separately.
+
         # numpy is only needed when actually writing a vector — keep it
         # out of the autonomous.db import-time graph so consumers that
         # don't use vector embeddings (most ORM usage) can install
@@ -831,13 +849,22 @@ def deindex(object_id) -> bool:
     when Redis could not be reached. Every failure is swallowed and
     logged: the Mongo document is the source of truth and its delete has
     already happened, so an unreachable Redis must not turn a successful
-    delete into an exception. The leaked hash self-heals the next time
-    the sync worker looks for that pk (see the not-found branch in
-    ``process_single_object_sync``).
+    delete into an exception.
 
-    A pending index job for the same pk needs no cancellation: it wakes
-    after its debounce, finds no document, and takes that same not-found
-    branch — which now deletes the key this function targets.
+    **A False return leaks that hash permanently.** There is no
+    reconciliation path: once the Mongo document is gone nothing calls
+    ``request_indexing`` for that pk again, so no future worker will ever
+    look at it. Consumers that cannot tolerate the leak need a periodic
+    sweep (``FT.SEARCH`` for hashes whose ``mongo_id`` no longer resolves,
+    or a tenant-scoped sweep at teardown) — de-indexing at delete time
+    reduces the sweep to a backstop, it does not remove the need for one.
+
+    A pending index job for the same pk needs no cancellation *if it has
+    not read the document yet*: it wakes after its debounce, finds no
+    document, and takes the not-found branch — which deletes the key this
+    function targets. A job already PAST its lookup and inside
+    ``get_vector()`` will still write the hash back afterwards and
+    resurrect the vector; see the ``ponytail:`` note at that write site.
     """
     try:
         _get_redis().delete(_index_key(object_id))
