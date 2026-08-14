@@ -129,8 +129,10 @@ def _sync_token_ttl_seconds() -> int:
     """Read the sync-token TTL from env each call so a config flip lands
     without restart (mirrors :func:`_throttle_window_seconds`). Falls back
     to ``_DEFAULT_SYNC_TOKEN_TTL_SECONDS`` when the var is unset, empty, or
-    malformed (via the shared ``env_int`` guard, issue #49)."""
-    return env_int("SYNC_TOKEN_TTL_SECONDS", _DEFAULT_SYNC_TOKEN_TTL_SECONDS)
+    malformed (via the shared ``env_int`` guard, issue #49). Clamped to
+    ≥1: redis rejects ``set(ex=0)``, so a zero from a config typo would
+    turn every sync request into a RedisError (#220 review)."""
+    return max(1, env_int("SYNC_TOKEN_TTL_SECONDS", _DEFAULT_SYNC_TOKEN_TTL_SECONDS))
 
 
 def _emit_hpc_unreachable(signature: str, message: str) -> None:
@@ -206,6 +208,57 @@ MIN_CONTENT_CHARS = 10
 # fields read can't distinguish a phantom typo field from a future event,
 # so an unknown event with no out-of-band signal silently underreports).
 _VALID_EMBEDDING_SYNC_EVENTS = frozenset(get_args(EmbeddingSyncEvent))
+
+
+def vector_indexed(doc_cls) -> bool:
+    """Whether ``doc_cls`` participates in vector indexing (#215/#220).
+
+    THE shared read of the ``vector_index`` meta key. The ``True``
+    default is the leak-safety invariant — an undeclared model must
+    index and de-index exactly as every model did before #215 — and it
+    is enforced from every gate site (both delete gates,
+    ``save(sync=True)``, the enqueue gate, and the worker's hash-write
+    check), so the read lives here once rather than as scattered
+    literals that can drift.
+    """
+    return doc_cls._meta.get("vector_index", True)
+
+
+def _requested_doc_vector_indexed(object_id, collection_name) -> bool:
+    """Whether the document behind a sync request may index (#220).
+
+    The enqueue gate's resolver — INSTANCE-accurate and fail-open. It
+    reads the document's stored ``_cls`` with a projected point-read
+    (in the calling process, the one place the registry is reliably
+    populated) and answers from an EXACT registry hit on that class.
+    Everything unresolvable answers ``True`` — enqueue, the pre-#220
+    behavior — because refusing on a guess is the dangerous direction:
+    a collection-wide rule was tried first and refused indexing for an
+    indexed subclass whenever the caller's process happened to import
+    only the opted-out base (test-gate review). Cases that fail open:
+    document not found (the worker's not-found branch cleans up),
+    ``_cls`` absent (``allow_inheritance: False`` models — also
+    invisible to the worker check; the sweep advice in MIGRATIONS is
+    their backstop), and ``_cls`` not registered here. The point-read
+    is one ``{"_cls": 1}``-projected ``_id`` lookup, trivial next to
+    the save round-trip that precedes every normal call.
+    """
+    from autonomous.db.base.common import _document_registry
+
+    try:
+        query = {"_id": bson.ObjectId(object_id)}
+    except (bson.errors.InvalidId, TypeError):
+        query = {"_id": object_id}
+    doc = _get_mongo_db()[collection_name].find_one(query, {"_cls": 1})
+    if not doc:
+        return True
+    doc_cls_name = doc.get("_cls")
+    if not doc_cls_name:
+        return True
+    doc_cls = _document_registry.get(doc_cls_name)
+    if doc_cls is None:
+        return True
+    return vector_indexed(doc_cls)
 
 # redis, rq, and autonomous.taskrunner are imported lazily inside the
 # functions that need them. They live in the [tasks] extra (and numpy
@@ -779,8 +832,60 @@ def process_single_object_sync(object_id, collection_name, token):
 
     if not doc:
         print(f"Object {object_id} not found in collection '{collection_name}'")
-        r.delete(_index_key(object_id))
+        # Via the helper, not a raw DEL: same key, plus the documented
+        # best-effort swallow — a Redis blip here must not fail the job
+        # while the opt-out branch below swallows the identical failure.
+        deindex(object_id)
         return
+
+    # THE FLAG CHECK (#220), defense-in-depth behind the enqueue-side
+    # gate in ``request_indexing``. ``vector_index: False`` is the
+    # class-level "never indexed" declaration (#215); a hash written
+    # here for an opted-out model would leak permanently, so a job that
+    # slipped past the gate (queued before the flag landed, or enqueued
+    # from a process whose registry couldn't resolve the collection) is
+    # re-checked at the write itself.
+    #
+    # Best-effort, honestly bounded: the lookup is an EXACT registry
+    # hit — never ``get_document``'s fuzzy suffix fallback, which could
+    # resolve a stale ``_cls`` to a same-named different class and
+    # drive the destructive ``deindex`` below off a guess. A bare
+    # ``rq worker`` imports no consumer models, so the registry is
+    # typically empty there and this check passes through (printed, not
+    # silent); a model with ``allow_inheritance: False`` stores no
+    # ``_cls`` at all. Both fall through to indexing — the pre-#220
+    # default — which is why the ENQUEUE gate, running where the
+    # registry is populated, is the load-bearing one.
+    doc_cls_name = doc.get("_cls")
+    if doc_cls_name:
+        from autonomous.db.base.common import _document_registry
+
+        doc_cls = _document_registry.get(doc_cls_name)
+        if doc_cls is None:
+            print(
+                f"vector_index unverified for {collection_name}:{object_id}: "
+                f"_cls {doc_cls_name!r} not registered in this process; "
+                "indexing by default"
+            )
+        elif not vector_indexed(doc_cls):
+            # Drop any stale hash a pre-flag save left behind (same
+            # cleanup shape as the not-found branch above). ``deindex``
+            # carries the documented best-effort swallow, so a Redis
+            # blip here cannot fail the job; the event is recorded
+            # either way so the health hash sees the skip.
+            print(
+                f"Skipping embedding for {collection_name}:{object_id}: "
+                f"{doc_cls_name} declares vector_index: False"
+            )
+            deindex(object_id)
+            # ``silent_skip`` is shared with the short-content branch —
+            # the print above disambiguates per-doc, and with the
+            # enqueue gate in place this branch only sees stale queued
+            # jobs, so the shared counter stays low-volume. A distinct
+            # event would flip the committed valid-event-set pin, which
+            # is the test agent's surface.
+            record_embedding_sync_event("silent_skip")
+            return
 
     # 2. Construct Searchable Text
     log(doc.get("associations"))
@@ -1032,14 +1137,31 @@ def request_indexing(object_id, collection_name):
     THE TRIGGER FUNCTION (Runs in Main App).
     MUST BE FAST. NO SLEEPING HERE.
     """
+    # THE ENQUEUE GATE (#220). This is the load-bearing enforcement of
+    # ``vector_index: False``: it runs in the process that imported the
+    # model (so the registry can resolve the document's stored class),
+    # unlike the worker, whose re-check is defense-in-depth that a bare
+    # ``rq worker``'s empty registry cannot honor. Skipping here also
+    # spares the queue the 5s debounce stall per no-op job.
+    #
+    # Its own try, failing OPEN: a gate error must enqueue (the
+    # pre-#220 behavior), never raise through ``save(sync=True)`` after
+    # the Mongo commit, and never be mistaken for the umbrella's
+    # "couldn't enqueue" False. The skip is logged and counted under
+    # ``silent_skip`` — a bulk skip printed to stdout only would be
+    # invisible to the health hash and to LOG_LEVEL-filtered logs.
+    try:
+        if not _requested_doc_vector_indexed(object_id, collection_name):
+            log(
+                f"Skipping sync request for {collection_name}:{object_id}: "
+                "its model declares vector_index: False"
+            )
+            record_embedding_sync_event("silent_skip")
+            return False
+    except Exception as e:  # noqa: BLE001 — fail open, never block an index
+        log(f"[WARNING] vector_index enqueue gate errored (indexing anyway): {e}")
+
     print("Requesting Indexing...")
-
-    # Lazy imports — see module-top comment.
-    import redis
-    from autonomous.taskrunner.autotasks import AutoTasks, TaskPriority
-
-    # Initialize the Task Runner
-    task_runner = AutoTasks()
 
     str_id = str(object_id)
     token_key = f"sync_token:{collection_name}:{str_id}"
@@ -1047,13 +1169,29 @@ def request_indexing(object_id, collection_name):
     # 1. GENERATE NEW TOKEN
     current_token = str(uuid.uuid4())
 
-    # 2. SAVE TOKEN TO REDIS (Instant)
+    # 2. SAVE TOKEN TO REDIS + 3. ENQUEUE THE TASK (both instant)
     # TTL governs the real-time supersede-dedup window (#183), not bulk
     # reindex correctness — env-configurable via SYNC_TOKEN_TTL_SECONDS.
-    _get_redis().set(token_key, current_token, ex=_sync_token_ttl_seconds())
-
-    # 3. ENQUEUE THE TASK (Instant)
+    #
+    # One umbrella for the whole request (#220): the enqueue always
+    # reported an unreachable Redis as ``return False``, but the token
+    # ``set`` above it sat outside the try — so the same outage instead
+    # raised ``redis.ConnectionError`` up through ``save(sync=True)``
+    # for a document Mongo had already committed. Deliberately broad,
+    # like the delete side: the lazy imports (an ORM-only install
+    # without the ``[tasks]`` extra), a malformed ``REDIS_PORT``, and
+    # auth/config RedisErrors all land here too, logged at [WARNING] so
+    # a standing misconfiguration is visible in the logs operators
+    # actually watch — a bare print was the old sole signal.
     try:
+        # Lazy imports — see module-top comment. ``import redis`` doubles
+        # as the [tasks]-extra probe: on an ORM-only install it raises
+        # here, inside the umbrella, instead of at module import time.
+        import redis  # noqa: F401
+        from autonomous.taskrunner.autotasks import AutoTasks, TaskPriority
+
+        task_runner = AutoTasks()
+        _get_redis().set(token_key, current_token, ex=_sync_token_ttl_seconds())
         task_runner.task(
             process_single_object_sync,  # The function to run later
             object_id=str_id,
@@ -1062,6 +1200,14 @@ def request_indexing(object_id, collection_name):
             priority=TaskPriority.LOW,
         )
         return True
-    except (redis.RedisError, ConnectionError) as e:
-        print(f"Sync Enqueue failed: {e}")
+    except Exception as e:  # noqa: BLE001 — never raise post-Mongo-commit
+        log(f"[WARNING] Sync request failed for {collection_name}:{str_id}: {e}")
+        # A token that landed before the enqueue failed would make an
+        # in-flight predecessor job skip itself as "superseded" while no
+        # successor exists — best-effort removal keeps the older job
+        # authoritative.
+        try:
+            _get_redis().delete(token_key)
+        except Exception:  # noqa: BLE001
+            pass
         return False
