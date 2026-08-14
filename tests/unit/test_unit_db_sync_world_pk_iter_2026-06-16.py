@@ -21,8 +21,11 @@ Independent perspective:
   written verbatim alongside, so a regression that swaps the mapping
   for a side-effect would fail.
 - The PR claims no extra Mongo round-trip is taken. Test pins that
-  ``find_one`` is called once and the helper takes its input from
-  the same doc dict (no second dereference).
+  the helper takes its input from the same doc dict (no second
+  dereference). The bound was literally "``find_one`` called once"
+  until the #210 existence re-check landed a second, deliberate
+  lookup; see ``test_no_extra_mongo_round_trip`` for the current
+  shape of the guard.
 - Hash field name + value are asserted as string ``"world_pk"`` (not
   bytes, not nested under another key) because consumers driving the
   ``@world_pk:{...}`` Redis-Search tag filter depend on exact RESP
@@ -400,9 +403,17 @@ class TestWorldPkOnTheWire:
 
     def test_no_extra_mongo_round_trip(self, stubbed_sync):
         # The PR body asserts "no extra Mongo round-trip is taken"
-        # for the new helper. Pin that ``find_one`` is called
-        # exactly once across the whole process — a refactor that
-        # dereferences ``world`` via a second find_one would fail.
+        # for the new helper: world_pk must come out of the doc dict
+        # already in hand, never a dereference of the ``world`` ref.
+        #
+        # The guard used to spell that as ``find_one.call_count == 1``.
+        # The #210 fix adds a second, deliberate lookup — the existence
+        # re-check immediately before the hset — so the literal count
+        # moved to 2. The guard is re-stated at its actual intent
+        # rather than deleted: bound the lookups, and pin that EVERY
+        # one of them is an ``_id`` lookup against the same collection.
+        # A dereference of ``world`` would necessarily break one of
+        # those two (a different collection, or a non-_id filter).
         _, _, set_doc, mongo_db = stubbed_sync
         oid = ObjectId()
         doc = {
@@ -417,10 +428,20 @@ class TestWorldPkOnTheWire:
         db_sync.process_single_object_sync("lore_x", "lore", "tok")
 
         collection_proxy = mongo_db.__getitem__.return_value
-        assert collection_proxy.find_one.call_count == 1, (
-            "world_pk extraction MUST stay Mongo-light; "
-            "a second find_one means the helper started "
-            "dereferencing the world doc"
+        assert collection_proxy.find_one.call_count <= 2, (
+            "process_single_object_sync MUST stay Mongo-light: the "
+            "initial fetch plus the #210 existence re-check is the "
+            "whole budget; a third find_one means something started "
+            "dereferencing"
+        )
+        for call in collection_proxy.find_one.call_args_list:
+            assert set(call.args[0]) == {"_id"}, (
+                "every lookup MUST be keyed on _id alone; a filter on "
+                f"another field means a dereference crept in: {call.args[0]!r}"
+            )
+        assert {c.args[0] for c in mongo_db.__getitem__.call_args_list} == {"lore"}, (
+            "world_pk extraction MUST NOT touch a second collection; "
+            f"got {mongo_db.__getitem__.call_args_list!r}"
         )
 
     def test_world_pk_not_written_when_vector_fails(self, stubbed_sync):

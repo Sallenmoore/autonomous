@@ -5,6 +5,86 @@ recent first.
 
 ## Unreleased
 
+### Added — `db_sync.deindex(pk)`; `AutoModel.delete()` now drops the vector entry (#204, #205)
+
+**What changed.**
+
+- New public function `autonomous.db.db_sync.deindex(object_id)` (also reachable as `autonomous.db.deindex`) — the inverse of `request_indexing`. It deletes the object's vector-index hash `lore:<pk>` from Redis and returns `True` on success (including "key was already gone"), `False` when Redis could not be reached. **It never raises**: every failure is caught and logged, because the caller is mid-delete and an unreachable Redis must not turn a successful Mongo delete into an exception.
+- `AutoModel.delete()` now calls `deindex(self.pk)` after the Mongo delete. This is **unconditional** — there is no `sync=` flag to opt in with, unlike `save(sync=True)`. A cleanup that only ran when the caller remembered to ask would reproduce the leak: the code deleting an object is rarely the code that indexed it.
+- **Bug fix in the sync worker's self-heal path.** `process_single_object_sync`'s document-not-found branch deleted `<collection>:<pk>` — a key prefix no writer ever produces — while the writer stores under `lore:<pk>`. The self-heal therefore cleaned nothing. Both sites (plus `deindex`) now build the key through one `_index_key()` helper, so the prefixes cannot drift apart again.
+- The shared Redis client is now built with `socket_connect_timeout` / `socket_timeout`, both from `REDIS_SOCKET_TIMEOUT_SECONDS` (default **2s**, sub-second values accepted), **and with redis-py's retry policy disabled**. It previously had neither timeout, so a host that resolved but blackholed blocked for minutes per call. The retry disable is load-bearing rather than incidental: redis-py's default is 3 retries with exponential-plus-jitter backoff, which multiplies the timeout by four and adds ~3.5s of sleeping on top — a refused Redis measured **4.9s per `DEL`** with the timeouts alone, and 0.0s with the retries off. A non-positive `REDIS_SOCKET_TIMEOUT_SECONDS` is refused (logged, falls back to 2s): redis-py passes it to `socket.settimeout`, where `0` means non-blocking — every command fails — and a negative raises. This matters more than it used to because `delete()` now touches Redis on every call, but it applies to `request_indexing`'s token write (documented "MUST BE FAST", on the request path) and the sync worker's own Redis I/O as well. Consumers who were relying on the implicit retry for transient blips get an exception instead: the worker's failed job is re-queued by RQ, and `deindex` is best-effort by contract.
+
+**Behavior change — externally visible.**
+
+- **`AutoModel.delete()` now performs one Redis `DEL` per call.** Previously it touched Mongo only. For consumers that never index, this is a no-op `DEL` against a key that does not exist; if Redis is absent or unreachable it is caught internally and logged as `[WARNING] De-index failed for lore:<pk>: <err>`, and the delete still succeeds. The added latency is bounded by `REDIS_SOCKET_TIMEOUT_SECONDS` (default 2s) — with the retry policy disabled (above) that bound is real: a blackholed host costs one timeout, a refused connection returns immediately, and the typical cost is one local round-trip.
+- **Deleted documents stop answering KNN queries.** Previously every deleted indexed object leaked its embedding permanently, and `FT.SEARCH` kept returning hits for documents that no longer existed. Consumers that worked around this with their own sweep can drop it.
+- Additive on the API surface: no existing signature, default, or return type changes.
+
+**Migration.**
+
+No action required — `AutoModel.delete()` cleans up on its own from this version on.
+
+Two cases warrant a one-time action:
+
+```python
+from autonomous.db import db_sync
+
+# 1. Objects deleted BEFORE this version already leaked their hashes;
+#    nothing back-fills them. Sweep the known pks once:
+for pk in orphaned_pks:
+    db_sync.deindex(pk)
+
+# 2. Deletes that do NOT route through AutoModel.delete() still bypass
+#    the hook — call deindex per pk yourself:
+for doc in collection.find({"world": world_pk}, {"_id": 1}):
+    db_sync.deindex(doc["_id"])
+```
+
+**Which deletes are still not covered.** `AutoModel.delete()` is the only hooked path. These bypass it and leak:
+
+| Path | Covered |
+|---|---|
+| `obj.delete()` on an `AutoModel` | yes |
+| `Model.objects(...).delete()` (bulk QuerySet delete) | **no** |
+| `reverse_delete_rule=CASCADE` children of a deleted parent | **no** |
+| raw pymongo / a dropped collection | **no** |
+
+The cascade row is the one to watch, because it is invisible at the call site: `parent.delete()` de-indexes the parent, and mongoengine resolves CASCADE by calling `delete()` on a *QuerySet* of the children, which never reaches `AutoModel.delete()`. Hooking the QuerySet layer instead would push vector-index knowledge into the vendored ORM fork (see `db/DIVERGENCE.md`) and add a pk-fetch to every bulk delete, so it is deliberately left out of this change. **Tracked as #207** — if you rely on cascades, keep sweeping until it lands.
+
+**A delete during an in-flight embedding no longer resurrects the vector (#210).** The sync worker reads the document, spends seconds inside `get_vector()`'s HTTP call, then writes the hash. A delete landing in that window issued its `DEL` before the worker's `hset` put the entry back, and the resurrection was permanent because nothing re-enqueues an index job for a deleted pk. `process_single_object_sync` now re-checks existence immediately before the write — a `find_one` on the same `_id` filter with a `{"_id": 1}` projection — and returns without writing when the document is gone. This is a check, not a lock: a delete landing in the microseconds between that re-check and the `hset` still resurrects the vector. Closing *that* needs a Redis-side compare-and-set or a tombstone the writer honors, which is not worth its cost for a window this short.
+
+**Keep a periodic sweep.** De-indexing at delete time is a large reduction, not a guarantee: `deindex` returning `False` (Redis unreachable at delete time) leaks that hash permanently, since nothing revisits a deleted pk. Consumers holding a world- or tenant-scoped sweep (`FT.SEARCH @world_pk:{...}` → `DEL`) should keep it as the backstop for that case and for the uncovered paths above.
+
+### Added — `GenerateImageEmptyResponseError` + bounded retry on the Gemini image path (#203)
+
+**What changed.**
+
+- `GeminiAIModel.generate_image` retries the **empty-Success** response — HTTP Success with `finish_reason=STOP` but an empty content part and no inline image bytes — instead of raising on the first occurrence. Three attempts with a 1s → 2s backoff, via the shared `autonomous.ai.retry.retry`. The failure is transient provider misbehavior: the same prompt succeeds on the immediate next call.
+- The retry catch is narrow. `genai.errors.APIError` / `OSError` keep their existing fail-fast behavior — a permanent 4xx should not burn the retry budget.
+- Two new exceptions in `autonomous.ai.exceptions`. `GenerateImageEmptyResponseError` **subclasses `ValueError`**, not `RuntimeError` like the `GenerateJSONError` family, specifically so the previous bare `ValueError("API returned Success but no image data found")` contract still holds for consumers already catching it. `GenerateImageTransientEmptyError` subclasses it and marks the retryable `finish_reason=STOP` shape.
+- **Only `finish_reason=STOP` is retried.** A safety-blocked candidate (`SAFETY` / `PROHIBITED_CONTENT`, which drops `.content` entirely) is deterministic for a given prompt, so it raises the base class and fails fast on the first call rather than spending three billed `generate_content` calls to fail anyway.
+- A candidate whose `.content` is `None` is now surfaced as that typed error. Previously it escaped as an uncaught `AttributeError` from `None.parts` — a type neither the caller's `except ValueError` nor the adapter's own handler caught.
+
+**Behavior change — externally visible.**
+
+- A transient empty image response now costs up to ~3s of in-library backoff **plus up to two additional image-generation round-trips** (the retried `generate_content` calls, which are billed) and returns an image, where it previously raised immediately. Callers doing their own retry around `generate_image` will see it fire far less often. Note the knock-on for `ImageAgent`: its provider fallback now fires that much later on exhaustion, because the fallback only starts once the in-library budget is spent. A safety-blocked response is unaffected — it still raises on the first call (see above).
+- The exception type on genuine exhaustion narrows from `ValueError` to a subclass of `ValueError` — `except ValueError` still catches it.
+
+**Migration.**
+
+No action required. Consumers that shipped their own empty-image retry wrapper (StoryTeller's `generate_with_retry`) can keep it — it now sits above a path that rarely fails — or drop it and catch the typed error to distinguish a transient empty response from an argument error:
+
+```python
+from autonomous.ai.exceptions import GenerateImageEmptyResponseError
+
+try:
+    img = ImageAgent(provider="gemini").generate(prompt=prompt)
+except GenerateImageEmptyResponseError:
+    degrade()          # provider gave up after 3 attempts
+except ValueError:
+    fix_the_call()     # genuine argument error
+```
+
 ### Added — `litellm` OpenAI-compatible image provider for `ImageAgent` (#199)
 
 **What changed.**
