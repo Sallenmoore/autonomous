@@ -198,10 +198,23 @@ Constraints the implementation holds to:
   `deindex_many(pks)`. The import must stay function-local:
   `autonomous.db.__init__` imports `db_sync`, and this module is
   imported while that `__init__` is still executing.
-- **Fail-soft.** `deindex_many` swallows and logs every failure, so an
-  absent or unreachable Redis cannot turn a committed Mongo delete into
-  an exception. The de-index runs after `delete_many` returns, so a
-  raising delete never removes vectors for documents that still exist.
+- **Fail-soft end to end.** `deindex_many` swallows and logs every
+  failure, and so do the two Mongo steps around it — the pk pre-scan
+  (the only part that runs *before* the delete, and therefore the only
+  part that could stop one) and the confirmation re-check. Nothing in
+  this cleanup can raise out of `delete()`. Failures cost vector
+  entries, never the delete the caller asked for.
+- **Only confirmed-deleted pks are de-indexed.** `find` and
+  `delete_many` are two operations against the same filter, so a
+  document mutated out of the filter in between survives the delete
+  while sitting in the de-index batch. `_confirm_deleted` catches that:
+  an acknowledged `deleted_count` equal to the scan size proves the set
+  is clean and costs no extra query, and only a mismatch (or `w=0`,
+  where the count means nothing) pays a chunked existence re-check.
+  The asymmetry is deliberate — a pk that starts matching *after* the
+  scan is deleted without being de-indexed, which leaks a hash a sweep
+  can recover, whereas de-indexing a live document cannot be recovered
+  at all.
 
 Still uncovered by design: raw pymongo deletes and dropped collections
 never enter this method at all. Consumers who need those cleaned keep a

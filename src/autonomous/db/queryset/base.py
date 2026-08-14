@@ -47,6 +47,52 @@ CASCADE = 2
 DENY = 3
 PULL = 4
 
+# Cap on the ``$in`` list in the de-index confirmation re-check. Keeps the
+# query document far below MongoDB's 16MB BSON limit on a large teardown.
+_PK_SCAN_CHUNK = 500
+
+
+def _confirm_deleted(collection, pks, result):
+    """Narrow ``pks`` to the ones the delete actually removed (#207).
+
+    ``find`` and ``delete_many`` are two operations against the same
+    filter, not one atomic step. A document that matched the scan can be
+    mutated out of the filter before the delete lands — it survives, but
+    its pk is already in the de-index batch. Dropping its vector then
+    would leave a *live* document permanently unreachable by KNN with
+    nothing to restore it: the same silent, unrecoverable failure #210
+    closed on the write side.
+
+    Free in the common case. An acknowledged delete whose
+    ``deleted_count`` matches the scan size proves every scanned pk is
+    gone, so no extra query runs. Only a mismatch — or an unacknowledged
+    write concern, where the count means nothing — pays a chunked
+    existence re-check.
+
+    A pk that started matching *after* the scan is deleted without being
+    de-indexed. That direction leaks a hash, which a sweep can recover;
+    the other direction cannot be recovered at all.
+    """
+    if not pks:
+        return []
+    try:
+        if result.acknowledged and result.deleted_count == len(pks):
+            return pks
+        survivors = set()
+        for start in range(0, len(pks), _PK_SCAN_CHUNK):
+            chunk = pks[start : start + _PK_SCAN_CHUNK]
+            survivors.update(
+                d["_id"] for d in collection.find({"_id": {"$in": chunk}}, {"_id": 1})
+            )
+        return [pk for pk in pks if pk not in survivors]
+    except Exception as e:  # noqa: BLE001
+        # Same contract as every other step here: index bookkeeping never
+        # raises out of a delete Mongo has already completed. Dropping the
+        # batch leaks those hashes — recoverable by a sweep — whereas
+        # de-indexing pks we could not verify is not.
+        log(f"[WARNING] De-index confirmation failed for {len(pks)} pks: {e}")
+        return []
+
 
 class BaseQuerySet:
     """A set of results returned from a query. Wraps a MongoDB cursor,
@@ -551,17 +597,24 @@ class BaseQuerySet:
         # not a new order of cost on the path that provoked #207. If a
         # teardown ever gets big enough to matter, chunk the whole
         # delete (scan → delete → de-index per batch), not just the DEL.
-        deindex_pks = (
-            []
-            if _from_doc_delete
-            else [
-                d["_id"] for d in queryset._collection.find(queryset._query, {"_id": 1})
-            ]
-        )
+        deindex_pks = []
+        if not _from_doc_delete:
+            try:
+                deindex_pks = [
+                    d["_id"]
+                    for d in queryset._collection.find(queryset._query, {"_id": 1})
+                ]
+            except Exception as e:  # noqa: BLE001
+                # The scan is the only part of this cleanup that runs
+                # BEFORE the delete, so it is the only part that could
+                # stop one. A dead cursor must cost the vector entries,
+                # never the delete the caller actually asked for.
+                log(f"[WARNING] De-index pk scan failed, skipping cleanup: {e}")
 
         with set_write_concern(queryset._collection, write_concern) as collection:
             result = collection.delete_many(queryset._query)
 
+        deindex_pks = _confirm_deleted(queryset._collection, deindex_pks, result)
         if deindex_pks:
             # Imported lazily and called through exactly one entry point:
             # this fork carries no other vector-index knowledge, and

@@ -962,16 +962,22 @@ def deindex_many(object_ids) -> bool:
         # nothing. Return before ``_get_redis()`` so an empty delete
         # neither builds a client nor pays a round-trip.
         return True
-    try:
-        client = _get_redis()
-        for start in range(0, len(keys), _DEINDEX_CHUNK):
-            client.delete(*keys[start : start + _DEINDEX_CHUNK])
-        return True
-    except Exception as e:  # noqa: BLE001
-        # Deliberately broad, and logged at ``[WARNING]``, for exactly
-        # the reasons spelled out in ``deindex`` above.
-        log(f"[WARNING] De-index failed for {len(keys)} keys ({keys[0]}, ...): {e}")
-        return False
+    ok = True
+    for start in range(0, len(keys), _DEINDEX_CHUNK):
+        chunk = keys[start : start + _DEINDEX_CHUNK]
+        try:
+            # Per chunk, not around the loop: one failure must not
+            # abandon the chunks after it. Every key we skip leaks
+            # permanently, and 0.3.171 disabled redis-py's retry policy,
+            # so a single transient blip raises immediately — exactly the
+            # case where finishing the batch matters most.
+            _get_redis().delete(*chunk)
+        except Exception as e:  # noqa: BLE001
+            # Deliberately broad, and logged at ``[WARNING]``, for exactly
+            # the reasons spelled out in ``deindex`` above.
+            log(f"[WARNING] De-index failed for {len(chunk)} keys ({chunk[0]}, ...): {e}")
+            ok = False
+    return ok
 
 
 def request_indexing(object_id, collection_name):
