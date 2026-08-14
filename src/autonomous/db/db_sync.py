@@ -741,11 +741,14 @@ def process_single_object_sync(object_id, collection_name, token):
     # 3. THE EXECUTION (Embedding generation)
     from bson.objectid import ObjectId
 
+    # The filter is built once and kept: the existence re-check before
+    # the write below (#210) has to look the document up the same way
+    # this did, and re-deriving it there would let the two drift.
     try:
-        oid = ObjectId(object_id)
-        doc = db[collection_name].find_one({"_id": oid})
+        query = {"_id": ObjectId(object_id)}
     except (bson.errors.InvalidId, TypeError):
-        doc = db[collection_name].find_one({"_id": object_id})
+        query = {"_id": object_id}
+    doc = db[collection_name].find_one(query)
 
     if not doc:
         print(f"Object {object_id} not found in collection '{collection_name}'")
@@ -795,18 +798,25 @@ def process_single_object_sync(object_id, collection_name, token):
     # See `_get_vector_local` / `_get_vector_openai` for the provider-
     # side observability contract.
     if vector:
-        # ponytail: a delete landing between the find_one above and this
-        # write still resurrects the vector permanently — the doc was
-        # read before get_vector()'s multi-second HTTP call, and nothing
-        # re-enqueues a deleted pk. Fix is an existence re-check here
-        # (#210); it adds a second find_one, which trips the committed
-        # assertion in
-        # tests/unit/test_unit_db_sync_world_pk_iter_2026-06-16.py
-        # ("world_pk extraction MUST stay Mongo-light" — broader than
-        # its own stated intent, which is only about dereferencing
-        # `world`). tests/unit/ is the test agent's exclusive surface,
-        # so the guard and its lockstep assertion update land together
-        # in that cycle.
+        # The doc was read BEFORE get_vector()'s multi-second HTTP call.
+        # A delete landing in that window issues its DEL first, and
+        # nothing re-enqueues an index job for a deleted pk — so the
+        # hash below would resurrect the vector permanently (#210).
+        # Re-check existence immediately before the write; the
+        # ``{"_id": 1}`` projection keeps it a covered-index lookup and
+        # reuses the same filter the original lookup used.
+        #
+        # ponytail: a check, not a lock. A delete landing between this
+        # find_one and the hset still resurrects — closing that needs a
+        # Redis-side compare-and-set (or a tombstone key the writer
+        # honors), which is not worth it for a window this short. What
+        # shipped narrows the exposure from seconds to microseconds.
+        if db[collection_name].find_one(query, {"_id": 1}) is None:
+            print(
+                f"Object {object_id} deleted during embedding; "
+                "skipping index write"
+            )
+            return
 
         # numpy is only needed when actually writing a vector — keep it
         # out of the autonomous.db import-time graph so consumers that
@@ -863,13 +873,14 @@ def deindex(object_id) -> bool:
     or a tenant-scoped sweep at teardown) — de-indexing at delete time
     reduces the sweep to a backstop, it does not remove the need for one.
 
-    A pending index job for the same pk needs no cancellation *if it has
-    not read the document yet*: it wakes after its debounce, finds no
+    A pending index job for the same pk needs no cancellation. If it has
+    not read the document yet it wakes after its debounce, finds no
     document, and takes the not-found branch — which deletes the key this
-    function targets. A job already PAST its lookup and inside
-    ``get_vector()`` will still write the hash back afterwards and
-    resurrect the vector permanently (#210); see the ``ponytail:`` note
-    at that write site.
+    function targets. If it is already PAST its lookup and inside
+    ``get_vector()``, the existence re-check before its ``hset`` (#210)
+    sees the document gone and skips the write. Only a delete landing in
+    the microseconds between that re-check and the ``hset`` still
+    resurrects the vector; see the ``ponytail:`` note at that write site.
     """
     try:
         _get_redis().delete(_index_key(object_id))
