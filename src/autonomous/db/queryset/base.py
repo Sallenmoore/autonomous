@@ -155,7 +155,9 @@ def _any_vector_indexed(doc_cls):
     it back to ``True``. Short-circuits on the default, so a class that
     never opted out (every stub, every pre-#215 model) pays nothing.
     """
-    if doc_cls._meta.get("vector_index", True):
+    from autonomous.db import db_sync
+
+    if db_sync.vector_indexed(doc_cls):
         return True
     subclasses = getattr(doc_cls, "__subclasses__", None)
     return subclasses is not None and any(
@@ -782,11 +784,11 @@ class BaseQuerySet:
         # the code deleting an object is rarely the code that indexed it.
         # The gate covers the class's whole subtree (see
         # ``_any_vector_indexed``), and ``AutoModel.save(sync=True)``
-        # refuses to index an opted-out model, so the normal write path
-        # cannot quietly accumulate hashes no delete would remove
-        # (direct ``db_sync.request_indexing`` calls still can — see
-        # MIGRATIONS) — and in no case can the flag strand a live
-        # document.
+        # refuses to index an opted-out model, and #220 gates direct
+        # ``request_indexing`` calls at enqueue (with a worker-side
+        # re-check where resolvable), so the write paths cannot quietly
+        # accumulate hashes no delete would remove — and in no case can
+        # the flag strand a live document.
         #
         # The buffer is bounded (#215): buffering is still what lets the
         # de-index run *after* ``delete_many`` — streaming the cursor

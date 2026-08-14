@@ -414,14 +414,18 @@ class AutoModel(Document):
         honor that flag by skipping de-index bookkeeping (#215), so
         indexing an opted-out model here would create hashes nothing
         ever removes; refusing on the normal write path is what keeps
-        the flag safe to trust. (A direct ``db_sync.request_indexing``
-        call bypasses this gate — see MIGRATIONS.)
+        the flag safe to trust. Direct ``db_sync.request_indexing``
+        calls are gated at enqueue time (#220) — where the registry can
+        resolve the collection's models — with a worker-side re-check
+        at the hash write as defense-in-depth; a process that cannot
+        resolve the model defaults to indexing, so keep the
+        sweep-before-flagging advice in MIGRATIONS in mind.
         """
         _ensure_connected()
         super().save()
 
         if sync:
-            if self._meta.get("vector_index", True):
+            if db_sync.vector_indexed(type(self)):
                 db_sync.request_indexing(
                     self.pk, collection_name=self._get_collection_name()
                 )
@@ -459,9 +463,13 @@ class AutoModel(Document):
         documents are never vector-indexed, so its deletes skip the
         bookkeeping entirely — a property of the model, which is exactly
         what a call site can't be trusted to know. ``save(sync=True)``
-        refuses to index an opted-out model, so the flag cannot quietly
-        accumulate hashes its deletes would then leak; in no case can it
-        strand a live document. ``db_sync.deindex`` is best-effort and swallows its
+        refuses to index an opted-out model and the worker re-checks the
+        flag at the hash write (#220), so the normal write paths cannot
+        quietly accumulate hashes. A hash indexed BEFORE the flag was
+        added still leaks when its document is deleted rather than
+        re-saved — sweep once when flagging an already-indexed model
+        (see MIGRATIONS). In no case can the flag strand a live
+        document. ``db_sync.deindex`` is best-effort and swallows its
         own failures, so a missing or unreachable Redis costs one no-op
         call and never blocks the Mongo delete.
 
@@ -502,7 +510,7 @@ class AutoModel(Document):
         # model that declared itself never-indexed has no entry either —
         # and, with Redis down, ``deindex``'s no-op costs a connect
         # timeout per delete, so the skip is worth having (#215).
-        if pk is not None and self._meta.get("vector_index", True):
+        if pk is not None and db_sync.vector_indexed(type(self)):
             db_sync.deindex(pk)
 
 
