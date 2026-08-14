@@ -81,6 +81,15 @@ def _confirm_deleted(collection, pks, result):
     A pk that started matching *after* the scan is deleted without being
     de-indexed. That direction leaks a hash, which a sweep can recover;
     the other direction cannot be recovered at all.
+
+    Under ``w=0`` the re-check is a best guess, not a check. An
+    unacknowledged ``delete_many`` has no ordering guarantee against a
+    read that follows it — the read may take a different pooled
+    connection and reach the server first — so documents the delete is
+    about to remove can still read as alive, and this returns fewer pks
+    than it could have. That is the safe direction (a leak, not a
+    de-indexed survivor), which is why the re-check runs anyway rather
+    than trusting a count that means nothing.
     """
     if not pks:
         return []

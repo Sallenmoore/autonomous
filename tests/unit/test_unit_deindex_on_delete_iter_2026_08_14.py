@@ -481,7 +481,7 @@ class TestAutoModelDeleteDeindexes:
             f"delete() must take no opt-in de-index flag; got {params!r}"
         )
 
-    def test_signature_stays_compatible_with_document_delete(self, delete_probe):
+    def test_signature_stays_compatible_with_document_delete(self):
         # An override may widen a base signature, never narrow one. The
         # funnel's skip/limit/signal branch splats a write-concern dict
         # into ``doc.delete(**write_concern)``, so a narrowed override
