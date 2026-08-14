@@ -524,14 +524,52 @@ class BaseQuerySet:
                     write_concern=write_concern, **{"pull_all__%s" % field_name: self}
                 )
 
+        # Collect the pks BEFORE the delete so their vector-index entries
+        # can be dropped after it (#207). This method is the funnel every
+        # delete converges on — bulk ``objects(...).delete()``, the
+        # CASCADE recursion through ``refs.delete(...)`` above, and
+        # ``Document.delete()`` — and the only one of the three that
+        # reaches ``AutoModel.delete()``'s own de-index hook is the last.
+        #
+        # ``_from_doc_delete`` is that last one, and it is skipped here:
+        # it already de-indexed the single pk it was handed, so a
+        # pre-scan would buy nothing and put an extra Mongo round-trip on
+        # the most common delete in the library. Its CASCADE children
+        # still land in this branch — ``refs.delete()`` does not forward
+        # the flag.
+        #
+        # Cost on the paths that do scan: one ``find`` with an
+        # ``{"_id": 1}`` projection. The ``delete_many`` fast path below
+        # is untouched — no degrade to a per-document loop.
+        deindex_pks = (
+            []
+            if _from_doc_delete
+            else [
+                d["_id"] for d in queryset._collection.find(queryset._query, {"_id": 1})
+            ]
+        )
+
         with set_write_concern(queryset._collection, write_concern) as collection:
             result = collection.delete_many(queryset._query)
 
-            # If we're using an unack'd write concern, we don't really know how
-            # many items have been deleted at this point, hence we only return
-            # the count for ack'd ops.
-            if result.acknowledged:
-                return result.deleted_count
+        if deindex_pks:
+            # Imported lazily and called through exactly one entry point:
+            # this fork carries no other vector-index knowledge, and
+            # ``db_sync`` is imported by ``autonomous.db.__init__`` while
+            # this module is still being imported, so a module-level
+            # import would be circular. Best-effort by contract —
+            # ``deindex_many`` swallows and logs everything, so an absent
+            # or unreachable Redis cannot fail a delete that Mongo has
+            # already committed. See db/DIVERGENCE.md.
+            from autonomous.db import db_sync
+
+            db_sync.deindex_many(deindex_pks)
+
+        # If we're using an unack'd write concern, we don't really know how
+        # many items have been deleted at this point, hence we only return
+        # the count for ack'd ops.
+        if result.acknowledged:
+            return result.deleted_count
 
     def update(
         self,

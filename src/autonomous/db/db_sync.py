@@ -929,6 +929,51 @@ def deindex(object_id) -> bool:
         return False
 
 
+# One ``DEL`` per this many keys. Not a tunable — see ``deindex_many``.
+_DEINDEX_CHUNK = 500
+
+
+def deindex_many(object_ids) -> bool:
+    """Remove many objects' vector-index entries. Best-effort, never raises.
+
+    Batch form of :func:`deindex`, called from the QuerySet delete
+    funnel (#207) where one bulk or CASCADE delete removes N documents
+    at once. Sending N separate ``DEL``s would drop N round-trips into
+    the path of a single ``delete_many`` — and each one is bounded by
+    ``REDIS_SOCKET_TIMEOUT_SECONDS``, so an unreachable Redis would
+    cost N×2s on a delete that has already succeeded. redis-py's
+    ``delete`` is variadic: a chunk is one round-trip and one
+    server-side command.
+
+    Chunked rather than one giant ``DEL`` because that command is O(N)
+    and runs to completion on Redis's single thread, with the whole
+    argument list buffered on both ends. Capping the chunk keeps a
+    100k-document teardown from stalling every other Redis client;
+    N/500 round-trips is still the right order of magnitude versus N.
+
+    Same contract as :func:`deindex` — True when every chunk landed,
+    False when Redis could not be reached, and a False return leaks
+    those hashes permanently (see :func:`deindex` for why nothing
+    reconciles them afterwards).
+    """
+    keys = [_index_key(object_id) for object_id in object_ids]
+    if not keys:
+        # The common case for a filtered bulk delete that matched
+        # nothing. Return before ``_get_redis()`` so an empty delete
+        # neither builds a client nor pays a round-trip.
+        return True
+    try:
+        client = _get_redis()
+        for start in range(0, len(keys), _DEINDEX_CHUNK):
+            client.delete(*keys[start : start + _DEINDEX_CHUNK])
+        return True
+    except Exception as e:  # noqa: BLE001
+        # Deliberately broad, and logged at ``[WARNING]``, for exactly
+        # the reasons spelled out in ``deindex`` above.
+        log(f"[WARNING] De-index failed for {len(keys)} keys ({keys[0]}, ...): {e}")
+        return False
+
+
 def request_indexing(object_id, collection_name):
     """
     THE TRIGGER FUNCTION (Runs in Main App).

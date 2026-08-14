@@ -5,6 +5,42 @@ recent first.
 
 ## Unreleased
 
+### Fixed — bulk and CASCADE deletes now de-index too; new `db_sync.deindex_many(pks)` (#207)
+
+**What changed.**
+
+- `BaseQuerySet.delete()` — the funnel every delete converges on — now collects the matched pks before its `delete_many` and drops their `lore:<pk>` hashes afterwards. This closes the two paths 0.3.171 left open: `Model.objects(...).delete()` / `where(...).delete()` bulk deletes, and `reverse_delete_rule=CASCADE` children, which a parent's `delete()` removes through `refs.delete(...)` inside that same method and which therefore never reached `AutoModel.delete()`'s hook.
+- New public function `autonomous.db.db_sync.deindex_many(object_ids)` (also reachable as `autonomous.db.deindex_many`) — the batch form of `deindex`. Same best-effort contract: it never raises, returns `True` when every chunk landed and `False` when Redis could not be reached. It sends one variadic `DEL` per 500 keys rather than one `DEL` per key, so a 200-child cascade costs one Redis round-trip instead of 200 (each of which would have been bounded by `REDIS_SOCKET_TIMEOUT_SECONDS`). The chunking exists because `DEL` is O(N) on Redis's single thread — an unbounded teardown would stall every other client.
+- `AutoModel.delete()`'s own `deindex` call is **unchanged and still load-bearing.** `Document.delete()` reaches the funnel with `_from_doc_delete=True`, and that flag skips the pk pre-scan: the single-document path already knows its pk, so scanning would add a Mongo round-trip to the most common delete in the library for no new coverage. The two hooks cover disjoint paths. CASCADE children of a single-document delete are still covered — the `refs.delete()` recursion does not forward the flag.
+
+**Behavior change — externally visible.**
+
+- **Bulk and cascade deletes now perform one extra Mongo `find` and one Redis `DEL` batch.** The `find` uses an `{"_id": 1}` projection, and `delete_many` itself is untouched — there is no degrade to a per-document loop. Consumers who never index pay the pre-scan on bulk deletes regardless; it is a projected read over documents Mongo is about to scan anyway.
+- **Cascade-deleted children stop answering KNN queries.** Previously `parent.delete()` de-indexed the parent and silently leaked every child's embedding.
+- Additive on the API surface: no existing signature, default, or return type changes.
+
+**Migration.**
+
+No action required. Consumers holding a workaround sweep for the cascade case — StoryTeller's world-scoped `FT.SEARCH @world_pk:{pk}` → `DEL` teardown, for one — can drop the per-object cascade part of it. Keep the sweep itself: see "Keep a periodic sweep" in the #204/#205 entry below, which still applies whenever `deindex` / `deindex_many` returns `False`.
+
+**Which deletes are still not covered.**
+
+| Path | Covered |
+|---|---|
+| `obj.delete()` on an `AutoModel` | yes |
+| `Model.objects(...).delete()` (bulk QuerySet delete) | yes (this change) |
+| `reverse_delete_rule=CASCADE` children of a deleted parent | yes (this change) |
+| raw pymongo / a dropped collection | **no** |
+
+Raw pymongo deletes and dropped collections never enter the ORM's `delete()` at all, so no hook there can see them. De-index those pks yourself, or keep a sweep:
+
+```python
+from autonomous.db import db_sync
+
+db_sync.deindex_many(doc["_id"] for doc in collection.find({"world": world_pk}, {"_id": 1}))
+collection.delete_many({"world": world_pk})
+```
+
 ### Added — `db_sync.deindex(pk)`; `AutoModel.delete()` now drops the vector entry (#204, #205)
 
 **What changed.**
@@ -40,16 +76,16 @@ for doc in collection.find({"world": world_pk}, {"_id": 1}):
     db_sync.deindex(doc["_id"])
 ```
 
-**Which deletes are still not covered.** `AutoModel.delete()` is the only hooked path. These bypass it and leak:
+**Which deletes are still not covered.** As of this version `AutoModel.delete()` is the only hooked path. These bypass it and leak:
 
-| Path | Covered |
-|---|---|
-| `obj.delete()` on an `AutoModel` | yes |
-| `Model.objects(...).delete()` (bulk QuerySet delete) | **no** |
-| `reverse_delete_rule=CASCADE` children of a deleted parent | **no** |
-| raw pymongo / a dropped collection | **no** |
+| Path | Covered as of this version | Covered now |
+|---|---|---|
+| `obj.delete()` on an `AutoModel` | yes | yes |
+| `Model.objects(...).delete()` (bulk QuerySet delete) | **no** | yes, via #207 above |
+| `reverse_delete_rule=CASCADE` children of a deleted parent | **no** | yes, via #207 above |
+| raw pymongo / a dropped collection | **no** | **no** |
 
-The cascade row is the one to watch, because it is invisible at the call site: `parent.delete()` de-indexes the parent, and mongoengine resolves CASCADE by calling `delete()` on a *QuerySet* of the children, which never reaches `AutoModel.delete()`. Hooking the QuerySet layer instead would push vector-index knowledge into the vendored ORM fork (see `db/DIVERGENCE.md`) and add a pk-fetch to every bulk delete, so it is deliberately left out of this change. **Tracked as #207** — if you rely on cascades, keep sweeping until it lands.
+The cascade row was the one to watch, because it is invisible at the call site: `parent.delete()` de-indexes the parent, and mongoengine resolves CASCADE by calling `delete()` on a *QuerySet* of the children, which never reaches `AutoModel.delete()`. Hooking the QuerySet layer pushes vector-index knowledge into the vendored ORM fork (see `db/DIVERGENCE.md`) and adds a pk-fetch to every bulk delete, so it was deliberately left out of *this* change and tracked as #207 — **which has since landed** (see the entry above). Consumers reading this entry in isolation should not plan around the "no" column.
 
 **A delete during an in-flight embedding no longer resurrects the vector (#210).** The sync worker reads the document, spends seconds inside `get_vector()`'s HTTP call, then writes the hash. A delete landing in that window issued its `DEL` before the worker's `hset` put the entry back, and the resurrection was permanent because nothing re-enqueues an index job for a deleted pk. `process_single_object_sync` now re-checks existence immediately before the write — a `find_one` on the same `_id` filter with a `{"_id": 1}` projection — and returns without writing when the document is gone. This is a check, not a lock: a delete landing in the microseconds between that re-check and the `hset` still resurrects the vector. Closing *that* needs a Redis-side compare-and-set or a tombstone the writer honors, which is not worth its cost for a window this short.
 
