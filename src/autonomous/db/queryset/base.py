@@ -541,6 +541,16 @@ class BaseQuerySet:
         # Cost on the paths that do scan: one ``find`` with an
         # ``{"_id": 1}`` projection. The ``delete_many`` fast path below
         # is untouched — no degrade to a per-document loop.
+        #
+        # ponytail: the pks are buffered whole, so a million-document
+        # delete holds a million ObjectIds. Buffering is what lets the
+        # de-index run *after* ``delete_many`` — streaming the cursor
+        # into DELs before it would strip vectors off documents that a
+        # failed delete leaves in place. The CASCADE arm above already
+        # materializes a pk list for its ``__in`` subquery, so this is
+        # not a new order of cost on the path that provoked #207. If a
+        # teardown ever gets big enough to matter, chunk the whole
+        # delete (scan → delete → de-index per batch), not just the DEL.
         deindex_pks = (
             []
             if _from_doc_delete
