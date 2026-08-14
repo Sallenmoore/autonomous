@@ -47,6 +47,52 @@ CASCADE = 2
 DENY = 3
 PULL = 4
 
+# Cap on the ``$in`` list in the de-index confirmation re-check. Keeps the
+# query document far below MongoDB's 16MB BSON limit on a large teardown.
+_PK_SCAN_CHUNK = 500
+
+
+def _confirm_deleted(collection, pks, result):
+    """Narrow ``pks`` to the ones the delete actually removed (#207).
+
+    ``find`` and ``delete_many`` are two operations against the same
+    filter, not one atomic step. A document that matched the scan can be
+    mutated out of the filter before the delete lands — it survives, but
+    its pk is already in the de-index batch. Dropping its vector then
+    would leave a *live* document permanently unreachable by KNN with
+    nothing to restore it: the same silent, unrecoverable failure #210
+    closed on the write side.
+
+    Free in the common case. An acknowledged delete whose
+    ``deleted_count`` matches the scan size proves every scanned pk is
+    gone, so no extra query runs. Only a mismatch — or an unacknowledged
+    write concern, where the count means nothing — pays a chunked
+    existence re-check.
+
+    A pk that started matching *after* the scan is deleted without being
+    de-indexed. That direction leaks a hash, which a sweep can recover;
+    the other direction cannot be recovered at all.
+    """
+    if not pks:
+        return []
+    try:
+        if result.acknowledged and result.deleted_count == len(pks):
+            return pks
+        survivors = set()
+        for start in range(0, len(pks), _PK_SCAN_CHUNK):
+            chunk = pks[start : start + _PK_SCAN_CHUNK]
+            survivors.update(
+                d["_id"] for d in collection.find({"_id": {"$in": chunk}}, {"_id": 1})
+            )
+        return [pk for pk in pks if pk not in survivors]
+    except Exception as e:  # noqa: BLE001
+        # Same contract as every other step here: index bookkeeping never
+        # raises out of a delete Mongo has already completed. Dropping the
+        # batch leaks those hashes — recoverable by a sweep — whereas
+        # de-indexing pks we could not verify is not.
+        log(f"[WARNING] De-index confirmation failed for {len(pks)} pks: {e}")
+        return []
+
 
 class BaseQuerySet:
     """A set of results returned from a query. Wraps a MongoDB cursor,
@@ -524,14 +570,69 @@ class BaseQuerySet:
                     write_concern=write_concern, **{"pull_all__%s" % field_name: self}
                 )
 
+        # Collect the pks BEFORE the delete so their vector-index entries
+        # can be dropped after it (#207). This method is the funnel every
+        # delete converges on — bulk ``objects(...).delete()``, the
+        # CASCADE recursion through ``refs.delete(...)`` above, and
+        # ``Document.delete()`` — and the only one of the three that
+        # reaches ``AutoModel.delete()``'s own de-index hook is the last.
+        #
+        # ``_from_doc_delete`` is that last one, and it is skipped here:
+        # it already de-indexed the single pk it was handed, so a
+        # pre-scan would buy nothing and put an extra Mongo round-trip on
+        # the most common delete in the library. Its CASCADE children
+        # still land in this branch — ``refs.delete()`` does not forward
+        # the flag.
+        #
+        # Cost on the paths that do scan: one ``find`` with an
+        # ``{"_id": 1}`` projection. The ``delete_many`` fast path below
+        # is untouched — no degrade to a per-document loop.
+        #
+        # ponytail: the pks are buffered whole, so a million-document
+        # delete holds a million ObjectIds. Buffering is what lets the
+        # de-index run *after* ``delete_many`` — streaming the cursor
+        # into DELs before it would strip vectors off documents that a
+        # failed delete leaves in place. The CASCADE arm above already
+        # materializes a pk list for its ``__in`` subquery, so this is
+        # not a new order of cost on the path that provoked #207. If a
+        # teardown ever gets big enough to matter, chunk the whole
+        # delete (scan → delete → de-index per batch), not just the DEL.
+        deindex_pks = []
+        if not _from_doc_delete:
+            try:
+                deindex_pks = [
+                    d["_id"]
+                    for d in queryset._collection.find(queryset._query, {"_id": 1})
+                ]
+            except Exception as e:  # noqa: BLE001
+                # The scan is the only part of this cleanup that runs
+                # BEFORE the delete, so it is the only part that could
+                # stop one. A dead cursor must cost the vector entries,
+                # never the delete the caller actually asked for.
+                log(f"[WARNING] De-index pk scan failed, skipping cleanup: {e}")
+
         with set_write_concern(queryset._collection, write_concern) as collection:
             result = collection.delete_many(queryset._query)
 
-            # If we're using an unack'd write concern, we don't really know how
-            # many items have been deleted at this point, hence we only return
-            # the count for ack'd ops.
-            if result.acknowledged:
-                return result.deleted_count
+        deindex_pks = _confirm_deleted(queryset._collection, deindex_pks, result)
+        if deindex_pks:
+            # Imported lazily and called through exactly one entry point:
+            # this fork carries no other vector-index knowledge, and
+            # ``db_sync`` is imported by ``autonomous.db.__init__`` while
+            # this module is still being imported, so a module-level
+            # import would be circular. Best-effort by contract —
+            # ``deindex_many`` swallows and logs everything, so an absent
+            # or unreachable Redis cannot fail a delete that Mongo has
+            # already committed. See db/DIVERGENCE.md.
+            from autonomous.db import db_sync
+
+            db_sync.deindex_many(deindex_pks)
+
+        # If we're using an unack'd write concern, we don't really know how
+        # many items have been deleted at this point, hence we only return
+        # the count for ack'd ops.
+        if result.acknowledged:
+            return result.deleted_count
 
     def update(
         self,

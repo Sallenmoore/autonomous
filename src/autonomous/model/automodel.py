@@ -452,8 +452,27 @@ class AutoModel(Document):
         delete signal is connected, degrades from a single bulk
         ``delete_many`` to a per-document Python loop. Connecting one
         here would silently turn every consumer's bulk delete into N
-        round-trips. The trade is that bulk/raw deletes bypass this hook
-        and must call ``deindex`` themselves — documented in MIGRATIONS.
+        round-trips.
+
+        This hook covers the single-document path only. Bulk and CASCADE
+        deletes are covered at the funnel they share instead —
+        ``BaseQuerySet.delete()`` collects the matched pks and calls
+        ``db_sync.deindex_many`` (#207). The two are disjoint, not
+        redundant: ``Document.delete()`` reaches that funnel with
+        ``_from_doc_delete=True``, which skips the pk pre-scan precisely
+        because this line already handled it. Raw pymongo deletes still
+        bypass both — documented in MIGRATIONS.
+
+        Known gap, NOT fixed here: this signature is narrower than
+        ``Document.delete(signal_kwargs=None, **write_concern)``, and the
+        funnel's skip/limit/signal branch calls
+        ``doc.delete(**write_concern)``. So
+        ``objects(...).limit(2).delete(write_concern={"w": 1})`` raises
+        ``TypeError``, and a single delete silently drops any write
+        concern passed to it. Widening the signature is a one-line fix
+        but collides with a committed test that pins this parameter list
+        (``tests/unit/test_unit_deindex_on_delete_iter_2026_08_14.py``),
+        which the dev tree does not edit — tracked as #213.
         """
         _ensure_connected()
         # Read the pk up front: ``super().delete()`` sends ``post_delete``

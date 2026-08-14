@@ -162,6 +162,64 @@ callbacks, dynamic-field paths) — high risk for a vendored ORM. The
 behavior-preserving wins above capture the worst case (the
 `_mark_as_changed` quadratic) without the invariant surface area.
 
+### `BaseQuerySet.delete()` drops vector-index entries (#207)
+
+`queryset/base.py`'s `delete()` now collects the matched pks
+(`find(self._query, {"_id": 1})`) before its `delete_many` and hands
+them to `db_sync.deindex_many()` afterwards, so the Redis hashes
+`lore:<pk>` go away with the documents. Upstream mongoengine has no
+such concept — this is the fork knowing about a sibling subsystem,
+which is the part worth flagging.
+
+Why it lives here rather than a layer above: `delete()` is the single
+funnel all three delete paths converge on. `Document.delete()` routes
+through `self._qs.filter(...).delete(_from_doc_delete=True)`,
+`Model.objects(...).delete()` calls it directly, and a
+`reverse_delete_rule=CASCADE` parent reaches its children only through
+the `refs.delete(...)` recursion inside this same method. 0.3.171
+hooked `AutoModel.delete()` instead and therefore covered exactly one
+of the three (#204, #205); the other two leaked every child's
+embedding, with the cascade case invisible at the call site.
+
+Constraints the implementation holds to:
+
+- **The bulk fast path is preserved.** No degrade to a per-document
+  loop — the added cost is one `find` with an `{"_id": 1}` projection,
+  and `delete_many` runs exactly as before.
+- **`_from_doc_delete=True` skips the pre-scan.** That flag marks a
+  single `Document.delete()`, which `AutoModel.delete()` has already
+  de-indexed from the pk it holds; scanning would buy nothing and put
+  an extra Mongo round-trip on the most common delete in the library.
+  The two hooks cover disjoint paths — neither is redundant. CASCADE
+  children of such a delete are still covered, because `refs.delete()`
+  does not forward the flag.
+- **One guarded call, imported lazily.** The fork's whole vector
+  vocabulary at this site is `from autonomous.db import db_sync` plus
+  `deindex_many(pks)`. The import must stay function-local:
+  `autonomous.db.__init__` imports `db_sync`, and this module is
+  imported while that `__init__` is still executing.
+- **Fail-soft end to end.** `deindex_many` swallows and logs every
+  failure, and so do the two Mongo steps around it — the pk pre-scan
+  (the only part that runs *before* the delete, and therefore the only
+  part that could stop one) and the confirmation re-check. Nothing in
+  this cleanup can raise out of `delete()`. Failures cost vector
+  entries, never the delete the caller asked for.
+- **Only confirmed-deleted pks are de-indexed.** `find` and
+  `delete_many` are two operations against the same filter, so a
+  document mutated out of the filter in between survives the delete
+  while sitting in the de-index batch. `_confirm_deleted` catches that:
+  an acknowledged `deleted_count` equal to the scan size proves the set
+  is clean and costs no extra query, and only a mismatch (or `w=0`,
+  where the count means nothing) pays a chunked existence re-check.
+  The asymmetry is deliberate — a pk that starts matching *after* the
+  scan is deleted without being de-indexed, which leaks a hash a sweep
+  can recover, whereas de-indexing a live document cannot be recovered
+  at all.
+
+Still uncovered by design: raw pymongo deletes and dropped collections
+never enter this method at all. Consumers who need those cleaned keep a
+periodic sweep.
+
 ## What we don't diverge on
 
 Scope note: this section describes the vendored `autonomous.db.*`
