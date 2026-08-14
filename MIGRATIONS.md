@@ -5,6 +5,22 @@ recent first.
 
 ## Unreleased
 
+### Changed — bulk-delete de-indexing is bounded and gateable; new `meta = {"vector_index": False}` opt-out (#215)
+
+**What changed.**
+
+- **The de-index pk pre-scan in `BaseQuerySet.delete()` no longer buffers an unbounded pk list.** Up to 100,000 matched pks (~10MB), nothing changes: one projected `find`, one `delete_many` on the caller's filter, exactly as #207 shipped. Past that, the delete switches to a chunked teardown — scan → `delete_many` restricted to `filter ∧ _id ∈ chunk` (10,000 pks per chunk) → confirm → de-index, repeating until the filter matches nothing. A 5M-document `Model.objects.delete()` previously held ~5M `ObjectId`s (~500MB) in memory; it now peaks at one refill buffer.
+- **New class-level opt-out:** `meta = {"vector_index": False}` on a model declares its documents are never vector-indexed. Bulk deletes on it skip the pre-scan entirely, and `obj.delete()` skips the single-pk Redis `DEL`. The default (`True`, including when the key is absent) preserves existing behavior for every model. There is still no per-call flag — that is what #204/#205 rejected; this is a property of the model, not of the call site.
+
+**Behavior change — externally visible.**
+
+- Deletes matching ≤100k documents are byte-for-byte unchanged.
+- Oversized deletes issue multiple `find`/`delete_many` round-trips instead of one of each; documents that start matching the filter mid-teardown are caught by a later refill scan. On this chunked path the "only confirmed-deleted pks are de-indexed" guard is exact, not heuristic: the `$in`-restricted delete cannot remove an unscanned document, so a count match proves the set. The narrow late-insert-masks-a-survivor race #214 documented now exists only on the ≤100k path.
+- The mismatch re-check is bounded per chunk — a concurrent insert during a large teardown no longer triggers an existence re-check of every scanned pk.
+- A model with `vector_index: False` whose documents somehow *were* indexed (someone called `save(sync=True)` on it) leaks its hashes on delete — the recoverable-by-sweep direction, never a stranded live document.
+
+**Migration.** No action required. Consumers with models that never use `save(sync=True)` / KNN can add `meta = {"vector_index": False}` to those models to make bulk deletes on them cost exactly what they did before 0.3.172.
+
 ### Fixed — `AutoModel.delete()` accepts `signal_kwargs` and write concern again (#213)
 
 **What changed.** `AutoModel.delete()` is now `delete(self, signal_kwargs=None, **write_concern)` and forwards both to `Document.delete()`. 0.3.171 (#204, #205) shipped it as a bare `def delete(self)`, which *narrowed* the base signature — see the struck-through line in that entry below.

@@ -51,6 +51,19 @@ PULL = 4
 # query document far below MongoDB's 16MB BSON limit on a large teardown.
 _PK_SCAN_CHUNK = 500
 
+# Most pks the single-pass delete path will buffer for de-indexing (#215).
+# Under this, the funnel stays one scan + one ``delete_many`` on the
+# caller's own filter — the shape every small and mid-size delete pays.
+# Over it, ``delete()`` switches to ``_delete_in_chunks`` so a
+# million-document teardown never holds a million ObjectIds. ~100k pks is
+# roughly 10MB of buffer, which is the point of the bound.
+_BULK_DEINDEX_BUFFER = 100_000
+
+# ``$in`` size per ``delete_many`` in the chunked path. 10k ObjectIds is
+# ~200KB of query document — far under the BSON limit — and keeps a 5M-doc
+# teardown at hundreds of round-trips instead of thousands.
+_BULK_DELETE_CHUNK = 10_000
+
 
 def _confirm_deleted(collection, pks, result):
     """Narrow ``pks`` to the ones the delete actually removed (#207).
@@ -77,6 +90,10 @@ def _confirm_deleted(collection, pks, result):
     unconditionally, which would put N/500 extra queries on every bulk
     delete in the library — not worth it for a window this narrow, but
     the guard is narrower than "only confirmed-deleted pks" suggests.
+    On the chunked path (``_delete_in_chunks``) the hole is closed for
+    free: its deletes are restricted to the scanned ``_id``s, so a
+    document the scan never saw cannot be removed in a survivor's place
+    and an acknowledged count match there *is* a set match.
 
     A pk that started matching *after* the scan is deleted without being
     de-indexed. That direction leaks a hash, which a sweep can recover;
@@ -110,6 +127,89 @@ def _confirm_deleted(collection, pks, result):
         # de-indexing pks we could not verify is not.
         log(f"[WARNING] De-index confirmation failed for {len(pks)} pks: {e}")
         return []
+
+
+def _delete_in_chunks(queryset, write_concern, pending):
+    """Delete an oversized match set batch-wise: scan → delete → de-index
+    per chunk (#215) — the upgrade path the single-pass buffer's note
+    always named.
+
+    Entered only when the pre-scan in ``delete()`` overflows
+    ``_BULK_DEINDEX_BUFFER``; ``pending`` is what that scan buffered
+    before giving up. Memory stays bounded at one refill buffer.
+
+    Each ``delete_many`` here is restricted to ``filter ∧ _id ∈ chunk``,
+    which quietly upgrades ``_confirm_deleted``'s fast path from
+    heuristic to proof on this path: the delete cannot remove a document
+    that was not scanned, so an acknowledged count match really is a set
+    match — the late-insert-masks-a-survivor race the single-pass path
+    tolerates cannot happen. It also bounds the mismatch re-check to one
+    chunk instead of the whole match set.
+
+    A document that starts matching the filter mid-teardown is caught by
+    a later refill scan; one mutated out of it stops matching and drops
+    out. Both directions converge, but a writer racing inserts against
+    the teardown could extend it indefinitely, so refills are capped —
+    on hitting the cap the remainder is deleted unscanned with one
+    ``delete_many`` on the caller's filter, leaking those hashes (the
+    recoverable direction) rather than looping forever or failing the
+    delete. Same trade when a refill scan dies: the delete the caller
+    asked for always completes.
+
+    Returns the total deleted count, or ``None`` when the write concern
+    is unacknowledged (mirroring the single-pass path).
+    """
+    total = 0
+    acknowledged = True
+    refills = _BULK_DEINDEX_BUFFER  # cap; generous beyond any real teardown
+    with set_write_concern(queryset._collection, write_concern) as collection:
+        while pending:
+            for start in range(0, len(pending), _BULK_DELETE_CHUNK):
+                chunk = pending[start : start + _BULK_DELETE_CHUNK]
+                result = collection.delete_many(
+                    {"$and": [queryset._query, {"_id": {"$in": chunk}}]}
+                )
+                if result.acknowledged:
+                    total += result.deleted_count
+                else:
+                    acknowledged = False
+                confirmed = _confirm_deleted(queryset._collection, chunk, result)
+                if confirmed:
+                    from autonomous.db import db_sync
+
+                    db_sync.deindex_many(confirmed)
+            refills -= 1
+            if refills <= 0:
+                log(
+                    "[WARNING] Chunked delete hit its refill cap; deleting "
+                    "the remainder without de-indexing"
+                )
+                pending = []
+                result = collection.delete_many(queryset._query)
+                if result.acknowledged:
+                    total += result.deleted_count
+                else:
+                    acknowledged = False
+                break
+            try:
+                scan = queryset._collection.find(queryset._query, {"_id": 1})
+                pending = [
+                    d["_id"]
+                    for d in itertools.islice(scan, _BULK_DEINDEX_BUFFER)
+                ]
+            except Exception as e:  # noqa: BLE001
+                log(
+                    f"[WARNING] De-index refill scan failed, deleting the "
+                    f"remainder without de-indexing: {e}"
+                )
+                pending = []
+                result = collection.delete_many(queryset._query)
+                if result.acknowledged:
+                    total += result.deleted_count
+                else:
+                    acknowledged = False
+    if acknowledged:
+        return total
 
 
 class BaseQuerySet:
@@ -606,21 +706,30 @@ class BaseQuerySet:
         # ``{"_id": 1}`` projection. The ``delete_many`` fast path below
         # is untouched — no degrade to a per-document loop.
         #
-        # ponytail: the pks are buffered whole, so a million-document
-        # delete holds a million ObjectIds. Buffering is what lets the
+        # A model can opt out of the scan entirely with
+        # ``meta = {"vector_index": False}`` (#215): a class-level
+        # declaration that its documents are never vector-indexed, so
+        # bulk deletes on it pay nothing here. Class-level, not per-call
+        # — the per-call flag is exactly what #204/#205 rejected, because
+        # the code deleting an object is rarely the code that indexed it.
+        # A stale ``False`` (someone later saves with ``sync=True``)
+        # leaks hashes, the recoverable direction; it can never strand a
+        # live document.
+        #
+        # The buffer is bounded (#215): buffering is still what lets the
         # de-index run *after* ``delete_many`` — streaming the cursor
         # into DELs before it would strip vectors off documents that a
-        # failed delete leaves in place. The CASCADE arm above already
-        # materializes a pk list for its ``__in`` subquery, so this is
-        # not a new order of cost on the path that provoked #207. If a
-        # teardown ever gets big enough to matter, chunk the whole
-        # delete (scan → delete → de-index per batch), not just the DEL.
+        # failed delete leaves in place — but a scan that overflows
+        # ``_BULK_DEINDEX_BUFFER`` hands the whole teardown to
+        # ``_delete_in_chunks`` (scan → delete → de-index per batch)
+        # instead of holding millions of ObjectIds.
         deindex_pks = []
-        if not _from_doc_delete:
+        if not _from_doc_delete and doc._meta.get("vector_index", True):
             try:
+                scan = queryset._collection.find(queryset._query, {"_id": 1})
                 deindex_pks = [
                     d["_id"]
-                    for d in queryset._collection.find(queryset._query, {"_id": 1})
+                    for d in itertools.islice(scan, _BULK_DEINDEX_BUFFER + 1)
                 ]
             except Exception as e:  # noqa: BLE001
                 # The scan is the only part of this cleanup that runs
@@ -628,6 +737,8 @@ class BaseQuerySet:
                 # stop one. A dead cursor must cost the vector entries,
                 # never the delete the caller actually asked for.
                 log(f"[WARNING] De-index pk scan failed, skipping cleanup: {e}")
+            if len(deindex_pks) > _BULK_DEINDEX_BUFFER:
+                return _delete_in_chunks(queryset, write_concern, deindex_pks)
 
         with set_write_concern(queryset._collection, write_concern) as collection:
             result = collection.delete_many(queryset._query)
