@@ -216,39 +216,49 @@ def vector_indexed(doc_cls) -> bool:
     THE shared read of the ``vector_index`` meta key. The ``True``
     default is the leak-safety invariant — an undeclared model must
     index and de-index exactly as every model did before #215 — and it
-    is enforced from four sites across three modules (both delete
-    gates, ``save(sync=True)``, and the worker's hash-write check), so
-    the read lives here once rather than as four literals that can
-    drift.
+    is enforced from every gate site (both delete gates,
+    ``save(sync=True)``, the enqueue gate, and the worker's hash-write
+    check), so the read lives here once rather than as scattered
+    literals that can drift.
     """
     return doc_cls._meta.get("vector_index", True)
 
 
-def _collection_vector_indexed(collection_name) -> bool:
-    """Whether any registered model storing to ``collection_name`` may
-    index (#220).
+def _requested_doc_vector_indexed(object_id, collection_name) -> bool:
+    """Whether the document behind a sync request may index (#220).
 
-    The enqueue-side gate's resolver. ``request_indexing`` runs in the
-    main app process — the one place the document registry is reliably
-    populated (the caller imported the model to save it), unlike a bare
-    ``rq worker`` that imports only this module. A collection maps to
-    potentially many classes (``allow_inheritance`` subtrees share the
-    base collection), and the pk's concrete class is unknowable here
-    without a fetch, so the gate skips only when EVERY registered class
-    for the collection opts out — mirroring the bulk-delete gate's
-    subtree rule. An unknown collection (nothing registered for it in
-    this process) defaults to indexing, the pre-#220 behavior.
+    The enqueue gate's resolver — INSTANCE-accurate and fail-open. It
+    reads the document's stored ``_cls`` with a projected point-read
+    (in the calling process, the one place the registry is reliably
+    populated) and answers from an EXACT registry hit on that class.
+    Everything unresolvable answers ``True`` — enqueue, the pre-#220
+    behavior — because refusing on a guess is the dangerous direction:
+    a collection-wide rule was tried first and refused indexing for an
+    indexed subclass whenever the caller's process happened to import
+    only the opted-out base (test-gate review). Cases that fail open:
+    document not found (the worker's not-found branch cleans up),
+    ``_cls`` absent (``allow_inheritance: False`` models — also
+    invisible to the worker check; the sweep advice in MIGRATIONS is
+    their backstop), and ``_cls`` not registered here. The point-read
+    is one ``{"_cls": 1}``-projected ``_id`` lookup, trivial next to
+    the save round-trip that precedes every normal call.
     """
     from autonomous.db.base.common import _document_registry
 
-    classes = [
-        cls
-        for cls in _document_registry.values()
-        if cls._meta.get("collection") == collection_name
-    ]
-    if not classes:
+    try:
+        query = {"_id": bson.ObjectId(object_id)}
+    except (bson.errors.InvalidId, TypeError):
+        query = {"_id": object_id}
+    doc = _get_mongo_db()[collection_name].find_one(query, {"_cls": 1})
+    if not doc:
         return True
-    return any(vector_indexed(cls) for cls in classes)
+    doc_cls_name = doc.get("_cls")
+    if not doc_cls_name:
+        return True
+    doc_cls = _document_registry.get(doc_cls_name)
+    if doc_cls is None:
+        return True
+    return vector_indexed(doc_cls)
 
 # redis, rq, and autonomous.taskrunner are imported lazily inside the
 # functions that need them. They live in the [tasks] extra (and numpy
@@ -822,7 +832,10 @@ def process_single_object_sync(object_id, collection_name, token):
 
     if not doc:
         print(f"Object {object_id} not found in collection '{collection_name}'")
-        r.delete(_index_key(object_id))
+        # Via the helper, not a raw DEL: same key, plus the documented
+        # best-effort swallow — a Redis blip here must not fail the job
+        # while the opt-out branch below swallows the identical failure.
+        deindex(object_id)
         return
 
     # THE FLAG CHECK (#220), defense-in-depth behind the enqueue-side
@@ -1126,17 +1139,27 @@ def request_indexing(object_id, collection_name):
     """
     # THE ENQUEUE GATE (#220). This is the load-bearing enforcement of
     # ``vector_index: False``: it runs in the process that imported the
-    # model (so the registry can resolve the collection), unlike the
-    # worker, whose re-check is defense-in-depth that a bare
+    # model (so the registry can resolve the document's stored class),
+    # unlike the worker, whose re-check is defense-in-depth that a bare
     # ``rq worker``'s empty registry cannot honor. Skipping here also
     # spares the queue the 5s debounce stall per no-op job.
-    if not _collection_vector_indexed(collection_name):
-        print(
-            f"Skipping sync request for {collection_name}:{object_id}: "
-            "every registered model for this collection declares "
-            "vector_index: False"
-        )
-        return False
+    #
+    # Its own try, failing OPEN: a gate error must enqueue (the
+    # pre-#220 behavior), never raise through ``save(sync=True)`` after
+    # the Mongo commit, and never be mistaken for the umbrella's
+    # "couldn't enqueue" False. The skip is logged and counted under
+    # ``silent_skip`` — a bulk skip printed to stdout only would be
+    # invisible to the health hash and to LOG_LEVEL-filtered logs.
+    try:
+        if not _requested_doc_vector_indexed(object_id, collection_name):
+            log(
+                f"Skipping sync request for {collection_name}:{object_id}: "
+                "its model declares vector_index: False"
+            )
+            record_embedding_sync_event("silent_skip")
+            return False
+    except Exception as e:  # noqa: BLE001 — fail open, never block an index
+        log(f"[WARNING] vector_index enqueue gate errored (indexing anyway): {e}")
 
     print("Requesting Indexing...")
 

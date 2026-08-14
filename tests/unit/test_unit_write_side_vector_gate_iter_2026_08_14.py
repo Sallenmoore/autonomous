@@ -2,11 +2,13 @@
 
 Written from the PR diff (two-perspective contract). The diff's claims:
 
-1. **The load-bearing gate is at enqueue.** ``request_indexing`` maps
-   the target collection to its registered classes — in the calling
-   process, where the registry is populated — and skips the request
-   only when every class for that collection opts out. Unknown
-   collections and mixed subtrees proceed.
+1. **The load-bearing gate is at enqueue, instance-accurate.**
+   ``request_indexing`` reads the document's stored ``_cls`` with a
+   projected point-read — in the calling process, where the registry
+   is populated — and refuses only on an exact registry hit that opts
+   out. Everything unresolvable (absent doc/_cls, unimported class,
+   gate error) fails OPEN: refusing on a guess could silently
+   un-index a live document.
 2. **The worker re-check is defense-in-depth, exact-lookup only.** A
    stale ``_cls`` must never resolve through the fuzzy suffix fallback
    into a same-named class and drive the stale-hash delete off a
@@ -123,7 +125,9 @@ def _doc(**extra):
 
 @pytest.fixture
 def enqueue(monkeypatch):
-    """Wire request_indexing's seams; returns (redis, taskrunner, warnings)."""
+    """Wire request_indexing's seams. Returns (redis, taskrunner,
+    warnings, events, state); ``state["doc"]`` is what the gate's
+    projected point-read finds (None = document absent)."""
     import autonomous.taskrunner.autotasks as at
 
     _WsgTaskRunner.tasks = []
@@ -133,9 +137,28 @@ def enqueue(monkeypatch):
     monkeypatch.setattr(
         db_sync, "log", lambda m, *a, **kw: warnings.append(str(m))
     )
+    events = []
+    monkeypatch.setattr(
+        db_sync, "record_embedding_sync_event", lambda ev: events.append(ev)
+    )
     redis = _WsgRedis()
     monkeypatch.setattr(db_sync, "_get_redis", lambda: redis)
-    return redis, _WsgTaskRunner, warnings
+
+    state = {"doc": None, "raise_on_find": False}
+
+    class _GateCollection:
+        def find_one(self, query, projection=None):
+            if state["raise_on_find"]:
+                raise RuntimeError("mongo hiccup in the gate")
+            assert projection == {"_cls": 1}, (
+                "the gate's read must stay a projected point-read"
+            )
+            return state["doc"]
+
+    monkeypatch.setattr(
+        db_sync, "_get_mongo_db", lambda: _WsgMongo(_GateCollection())
+    )
+    return redis, _WsgTaskRunner, warnings, events, state
 
 
 @pytest.fixture
@@ -173,47 +196,78 @@ def worker(monkeypatch):
 
 
 class TestEnqueueGate:
-    def test_fully_opted_out_collection_is_refused(self, enqueue, monkeypatch):
+    def test_opted_out_document_is_refused_logged_and_counted(
+        self, enqueue, monkeypatch
+    ):
         monkeypatch.setitem(_document_registry, "_WsgOptOutA", _WsgOptOutA)
-        redis, runner, _ = enqueue
+        redis, runner, warnings, events, state = enqueue
+        state["doc"] = {"_cls": "_WsgOptOutA"}
 
         assert db_sync.request_indexing("wsg_pk", "wsg_world") is False
         assert redis.sets == [], "no token for a request that won't enqueue"
         assert runner.tasks == []
+        assert any("vector_index: False" in w for w in warnings), (
+            "a bulk skip must be visible in the log, not just stdout"
+        )
+        assert events == ["silent_skip"], (
+            "the health hash must see the skip volume this gate absorbs"
+        )
 
-    def test_whole_subtree_opt_out_is_refused(self, enqueue, monkeypatch):
-        monkeypatch.setitem(_document_registry, "_WsgOptOutA", _WsgOptOutA)
-        monkeypatch.setitem(_document_registry, "_WsgOptOutB", _WsgOptOutB)
-        _, runner, _ = enqueue
-
-        assert db_sync.request_indexing("wsg_pk", "wsg_world") is False
-        assert runner.tasks == []
-
-    def test_mixed_subtree_proceeds(self, enqueue, monkeypatch):
-        # Base opted out, sibling/child indexed, same collection: the
-        # pk's concrete class is unknowable at enqueue — must enqueue.
-        monkeypatch.setitem(_document_registry, "_WsgOptOutA", _WsgOptOutA)
+    def test_indexed_document_proceeds(self, enqueue, monkeypatch):
         monkeypatch.setitem(_document_registry, "_WsgIndexed", _WsgIndexed)
-        redis, runner, _ = enqueue
+        redis, runner, _, _, state = enqueue
+        state["doc"] = {"_cls": "_WsgIndexed"}
 
         assert db_sync.request_indexing("wsg_pk", "wsg_world") is True
-        assert len(redis.sets) == 1
         assert len(runner.tasks) == 1
 
-    def test_unknown_collection_proceeds(self, enqueue):
-        # Nothing registered for the collection in this process — the
-        # gate must fail open to the pre-#220 behavior.
-        redis, runner, _ = enqueue
-
-        assert db_sync.request_indexing("wsg_pk", "wsg_unknown_coll") is True
-        assert len(runner.tasks) == 1
-
-    def test_resolver_directly(self, monkeypatch):
-        assert db_sync._collection_vector_indexed("wsg_never_registered") is True
+    def test_partial_registry_fails_open(self, enqueue, monkeypatch):
+        # THE review scenario: a bulk-reindex process imported only the
+        # opted-out base, but this document belongs to an indexed child
+        # that process never imported. Refusing would silently un-index
+        # live documents — the gate must enqueue.
         monkeypatch.setitem(_document_registry, "_WsgOptOutA", _WsgOptOutA)
-        assert db_sync._collection_vector_indexed("wsg_world") is False
-        monkeypatch.setitem(_document_registry, "_WsgIndexed", _WsgIndexed)
-        assert db_sync._collection_vector_indexed("wsg_world") is True
+        _, runner, _, _, state = enqueue
+        state["doc"] = {"_cls": "_WsgIndexedChildNotImported"}
+
+        assert db_sync.request_indexing("wsg_pk", "wsg_world") is True
+        assert len(runner.tasks) == 1
+
+    def test_absent_document_fails_open(self, enqueue):
+        _, runner, _, _, state = enqueue
+        state["doc"] = None  # worker's not-found branch owns cleanup
+
+        assert db_sync.request_indexing("wsg_pk", "wsg_world") is True
+        assert len(runner.tasks) == 1
+
+    def test_document_without_cls_fails_open(self, enqueue, monkeypatch):
+        # allow_inheritance: False models store no _cls; unknowable at
+        # enqueue AND in the worker — the documented sweep backstop.
+        monkeypatch.setitem(_document_registry, "_WsgOptOutA", _WsgOptOutA)
+        _, runner, _, _, state = enqueue
+        state["doc"] = {}
+
+        assert db_sync.request_indexing("wsg_pk", "wsg_world") is True
+        assert len(runner.tasks) == 1
+
+    def test_gate_error_fails_open_with_warning(self, enqueue):
+        # A gate that raises through save(sync=True) after the Mongo
+        # commit, or whose error reads as "skip", would be worse than
+        # no gate. It must enqueue and warn.
+        redis, runner, warnings, _, state = enqueue
+        state["raise_on_find"] = True
+
+        assert db_sync.request_indexing("wsg_pk", "wsg_world") is True
+        assert len(runner.tasks) == 1
+        assert any("indexing anyway" in w for w in warnings)
+
+    def test_resolver_directly(self, enqueue, monkeypatch):
+        monkeypatch.setitem(_document_registry, "_WsgOptOutA", _WsgOptOutA)
+        _, _, _, _, state = enqueue
+        state["doc"] = {"_cls": "_WsgOptOutA"}
+        assert db_sync._requested_doc_vector_indexed("wsg_pk", "wsg_world") is False
+        state["doc"] = {"_cls": "_WsgUnregistered"}
+        assert db_sync._requested_doc_vector_indexed("wsg_pk", "wsg_world") is True
 
 
 # ===========================================================================
@@ -223,7 +277,7 @@ class TestEnqueueGate:
 
 class TestRequestIndexingNeverRaises:
     def test_redis_down_returns_false_and_logs_warning(self, enqueue, monkeypatch):
-        redis, runner, warnings = enqueue
+        redis, runner, warnings, _, _ = enqueue
         redis.dead = True
 
         assert db_sync.request_indexing("wsg_pk", "wsg_unknown_coll") is False
@@ -235,7 +289,7 @@ class TestRequestIndexingNeverRaises:
     def test_failed_enqueue_removes_its_token(self, enqueue):
         # A live token with no job behind it makes an in-flight
         # predecessor job skip itself as 'superseded' (worker step 2).
-        redis, runner, _ = enqueue
+        redis, runner, _, _, _ = enqueue
         runner.raise_on_task = True
 
         assert db_sync.request_indexing("wsg_pk", "wsg_unknown_coll") is False
@@ -245,7 +299,7 @@ class TestRequestIndexingNeverRaises:
     def test_cleanup_failure_is_also_swallowed(self, enqueue, monkeypatch):
         # Token lands, enqueue fails, and by then Redis has died too:
         # the cleanup's own failure must not resurrect the raise.
-        redis, runner, _ = enqueue
+        redis, runner, _, _, _ = enqueue
         runner.raise_on_task = True
 
         original_set = redis.set
@@ -267,7 +321,7 @@ class TestRequestIndexingNeverRaises:
         class _WsgSaveProbe(am.AutoModel):
             pass
 
-        redis, _, warnings = enqueue
+        redis, _, warnings, _, _ = enqueue
         redis.dead = True
         monkeypatch.setattr(Document, "save", lambda self, *a, **kw: None)
 
