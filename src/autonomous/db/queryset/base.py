@@ -185,20 +185,24 @@ def _delete_in_chunks(queryset, write_concern, pending):
 
     A document that starts matching the filter mid-teardown is caught by
     a later refill scan; one mutated out of it stops matching and drops
-    out. Both directions converge, but three things can end the
+    out. Both directions converge, but four things can end the
     bookkeeping early — the refill cap (a writer racing inserts against
     the teardown could otherwise extend it forever), a refill scan
-    dying, and a chunk ``delete_many`` failing. All three land in the
-    same tail: one ``delete_many`` on the caller's filter finishes the
-    delete with the remainder's hashes leaked (the recoverable
-    direction). Only that final delete can raise — the same way the
-    single-pass path's one ``delete_many`` would.
+    dying, a chunk ``delete_many`` failing, and the de-index breaker
+    below. All four land in the same tail: one ``delete_many`` on the
+    caller's filter finishes the delete with the remainder's hashes
+    leaked (the recoverable direction). Only that final delete can
+    raise — the same way the single-pass path's one ``delete_many``
+    would.
 
-    De-indexing has its own across-calls breaker: ``deindex_many``
-    gives up within a call, but each per-chunk call against a downed
-    Redis still pays fresh connect timeouts, so after
-    ``_DEINDEX_DOWN_CALLS`` consecutive failing calls the rest of the
-    teardown skips Redis entirely and leaks (recoverable).
+    The de-index breaker reads ``deindex_many``'s ``gave_up`` marker —
+    its in-call consecutive-failure early return, the actual outage
+    signature — not its truthiness, so an isolated chunk blip inside an
+    otherwise-landed call never counts against Redis. Each call against
+    a genuinely downed Redis still pays fresh connect timeouts, so
+    after ``_DEINDEX_DOWN_CALLS`` consecutive give-ups the teardown
+    routes to the tail rather than keep paying scans, chunk deletes and
+    confirms whose results feed nothing.
 
     Returns the total deleted count, or ``None`` when the write concern
     is unacknowledged (mirroring the single-pass path).
@@ -226,23 +230,33 @@ def _delete_in_chunks(queryset, write_concern, pending):
                 else:
                     acknowledged = False
                 confirmed = _confirm_deleted(queryset._collection, chunk, result)
-                if confirmed and deindex_down < _DEINDEX_DOWN_CALLS:
-                    if db_sync.deindex_many(confirmed):
-                        deindex_down = 0
-                    else:
+                if confirmed:
+                    outcome = db_sync.deindex_many(confirmed)
+                    # ``gave_up`` is the outage signature — the isolated
+                    # chunk blip that also returns falsy is stepped over,
+                    # not held against Redis. A stubbed/legacy plain bool
+                    # has no attribute: falsy is then read as gave-up,
+                    # the conservative direction. On the second
+                    # consecutive give-up the whole teardown routes to
+                    # the fallback tail: continuing would pay refill
+                    # scans, chunk deletes and confirms whose results
+                    # feed nothing.
+                    if getattr(outcome, "gave_up", not outcome):
                         deindex_down += 1
                         if deindex_down >= _DEINDEX_DOWN_CALLS:
-                            log(
-                                "[WARNING] De-indexing abandoned for the "
-                                "rest of this teardown after "
-                                f"{deindex_down} consecutive failing calls"
+                            remainder_reason = (
+                                f"de-indexing gave up {deindex_down} "
+                                "consecutive times, treating Redis as down"
                             )
+                            break
+                    else:
+                        deindex_down = 0
             if remainder_reason is not None:
                 break
-            refills -= 1
             if refills <= 0:
                 remainder_reason = "the refill cap was hit"
                 break
+            refills -= 1
             try:
                 scan = queryset._collection.find(queryset._query, {"_id": 1})
                 pending = [
@@ -768,9 +782,11 @@ class BaseQuerySet:
         # the code deleting an object is rarely the code that indexed it.
         # The gate covers the class's whole subtree (see
         # ``_any_vector_indexed``), and ``AutoModel.save(sync=True)``
-        # refuses to index an opted-out model, so a stale ``False``
-        # cannot quietly accumulate hashes no delete would remove — and
-        # in no case can the flag strand a live document.
+        # refuses to index an opted-out model, so the normal write path
+        # cannot quietly accumulate hashes no delete would remove
+        # (direct ``db_sync.request_indexing`` calls still can — see
+        # MIGRATIONS) — and in no case can the flag strand a live
+        # document.
         #
         # The buffer is bounded (#215): buffering is still what lets the
         # de-index run *after* ``delete_many`` — streaming the cursor
@@ -780,18 +796,25 @@ class BaseQuerySet:
         # ``_delete_in_chunks`` (scan → delete → de-index per batch)
         # instead of holding millions of ObjectIds.
         #
-        # Only for models with NO reverse-delete rules, on two grounds.
-        # The chunked path's refill scans sweep documents that start
-        # matching mid-teardown, and the rule arms above ran exactly
-        # once, against the pre-teardown match set — chunking a ruled
-        # delete would remove a late-matched DENY-protected document
-        # with live referrers, or strand CASCADE children. And the rule
-        # arms' ``__in`` subqueries already materialize the full parent
-        # pk list, so a ruled teardown carries that memory order
-        # regardless — chunking the de-index buffer would bound nothing.
-        # Ruled models therefore keep the #207 single-pass shape below,
-        # scanning past the buffer cap unbounded.
+        # Only for models with no EFFECTIVE reverse-delete rules, on two
+        # grounds. The chunked path's refill scans sweep documents that
+        # start matching mid-teardown, and the rule arms above ran
+        # exactly once, against the pre-teardown match set — chunking a
+        # ruled delete would remove a late-matched DENY-protected
+        # document with live referrers, or strand CASCADE children. And
+        # the rule arms' ``__in`` subqueries already materialize the
+        # full parent pk list, so a ruled teardown carries that memory
+        # order regardless — chunking the de-index buffer would bound
+        # nothing. Ruled models therefore keep the #207 single-pass
+        # shape below, scanning past the buffer cap unbounded.
+        # "Effective" excludes abstract referrers: the arms above skip
+        # them, so counting them would deny the bound for rules that
+        # enforce nothing.
+        effective_rules = any(
+            not entry[0]._meta.get("abstract") for entry, _rule in delete_rules
+        )
         deindex_pks = []
+        overflowed = False
         if not _from_doc_delete and _any_vector_indexed(doc):
             try:
                 scan = queryset._collection.find(queryset._query, {"_id": 1})
@@ -800,20 +823,28 @@ class BaseQuerySet:
                     for d in itertools.islice(scan, _BULK_DEINDEX_BUFFER + 1)
                 ]
                 if len(deindex_pks) > _BULK_DEINDEX_BUFFER:
-                    if delete_rules:
+                    if effective_rules:
                         deindex_pks.extend(d["_id"] for d in scan)
                     else:
-                        return _delete_in_chunks(
-                            queryset, write_concern, deindex_pks
-                        )
+                        overflowed = True
             except Exception as e:  # noqa: BLE001
                 # The scan is the only part of this cleanup that runs
                 # BEFORE the delete, so it is the only part that could
                 # stop one. A dead cursor must cost the vector entries,
-                # never the delete the caller actually asked for. A
-                # partial buffer is kept: ``_confirm_deleted`` narrows it
-                # to what the delete really removed.
+                # never the delete the caller actually asked for. On the
+                # rule-free path the buffer assignment is atomic, so a
+                # dead cursor skips the cleanup outright; only the ruled
+                # ``extend`` above retains partial progress, which
+                # ``_confirm_deleted`` then narrows to what the delete
+                # really removed.
                 log(f"[WARNING] De-index pk scan failed, skipping cleanup: {e}")
+        # Outside the try: the chunked path's fallback tail is
+        # documented to raise the way a plain ``delete_many`` would, and
+        # catching it here would mislabel it a scan failure and re-run
+        # the delete single-pass with the chunked total discarded
+        # (#215 review, test-gate finding).
+        if overflowed:
+            return _delete_in_chunks(queryset, write_concern, deindex_pks)
 
         with set_write_concern(queryset._collection, write_concern) as collection:
             result = collection.delete_many(queryset._query)

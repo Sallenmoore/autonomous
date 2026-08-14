@@ -634,7 +634,7 @@ class TestDeindexManyKeys:
         redis = _RedisStub()
         monkeypatch.setattr(db_sync, "_get_redis", lambda: redis)
 
-        assert deindex_many(["a", "b"]) is True
+        assert deindex_many(["a", "b"])
         assert redis.delete_calls == [["lore:a", "lore:b"]]
 
     def test_objectids_match_the_writer_key(self, monkeypatch):
@@ -666,7 +666,7 @@ class TestDeindexManyKeys:
         redis = _RedisStub()
         monkeypatch.setattr(db_sync, "_get_redis", lambda: redis)
 
-        assert deindex_many(d["_id"] for d in [{"_id": "a"}, {"_id": "b"}]) is True
+        assert deindex_many(d["_id"] for d in [{"_id": "a"}, {"_id": "b"}])
         assert redis.delete_calls == [["lore:a", "lore:b"]]
 
     def test_empty_input_builds_no_client(self, monkeypatch):
@@ -677,7 +677,7 @@ class TestDeindexManyKeys:
 
         monkeypatch.setattr(db_sync, "_get_redis", _boom)
 
-        assert deindex_many([]) is True
+        assert deindex_many([])
 
 
 class TestDeindexManyChunking:
@@ -692,7 +692,7 @@ class TestDeindexManyChunking:
         monkeypatch.setattr(db_sync, "_get_redis", lambda: redis)
         pks = [f"pk{i}" for i in range(1200)]
 
-        assert deindex_many(pks) is True
+        assert deindex_many(pks)
         assert [len(c) for c in redis.delete_calls] == [500, 500, 200]
         sent = [k for chunk in redis.delete_calls for k in chunk]
         assert sent == [f"lore:{pk}" for pk in pks], (
@@ -730,7 +730,7 @@ class TestDeindexManyPerChunkIsolation:
         monkeypatch.setattr(db_sync, "log", lambda *a, **kw: None)
         pks = [f"pk{i}" for i in range(1200)]
 
-        assert deindex_many(pks) is False, "a failed chunk must report failure"
+        assert not deindex_many(pks), "a failed chunk must report failure"
         assert [len(c) for c in redis.delete_calls] == [500, 500, 200], (
             "chunk 3 must still be attempted after chunk 2 raised"
         )
@@ -741,7 +741,7 @@ class TestDeindexManyPerChunkIsolation:
         monkeypatch.setattr(db_sync, "_get_redis", lambda: redis)
         monkeypatch.setattr(db_sync, "log", lambda *a, **kw: None)
 
-        assert deindex_many([f"pk{i}" for i in range(1100)]) is False
+        assert not deindex_many([f"pk{i}" for i in range(1100)])
         assert len(redis.delete_calls) == 3
 
     def test_a_success_resets_the_failure_run(self, monkeypatch):
@@ -752,7 +752,7 @@ class TestDeindexManyPerChunkIsolation:
         monkeypatch.setattr(db_sync, "_get_redis", lambda: redis)
         monkeypatch.setattr(db_sync, "log", lambda *a, **kw: None)
 
-        assert deindex_many([f"pk{i}" for i in range(2000)]) is False
+        assert not deindex_many([f"pk{i}" for i in range(2000)])
         assert len(redis.delete_calls) == 4, (
             "failures on chunks 1 and 3 with a success between them must "
             "not trip the consecutive-failure bound"
@@ -776,7 +776,7 @@ class TestDeindexManyGivesUpOnOutage:
         monkeypatch.setattr(db_sync, "_get_redis", lambda: redis)
         monkeypatch.setattr(db_sync, "log", lambda *a, **kw: None)
 
-        assert deindex_many([f"pk{i}" for i in range(5000)]) is False
+        assert not deindex_many([f"pk{i}" for i in range(5000)])
         assert len(redis.delete_calls) == db_sync._DEINDEX_MAX_CONSECUTIVE_FAILURES, (
             "a dead Redis must not be retried once per chunk for the "
             "whole batch — the delete has already committed"
@@ -805,7 +805,7 @@ class TestDeindexManyGivesUpOnOutage:
         monkeypatch.setattr(db_sync, "_get_redis", lambda: redis)
         monkeypatch.setattr(db_sync, "log", lambda *a, **kw: None)
 
-        assert deindex_many([f"pk{i}" for i in range(600)]) is False
+        assert not deindex_many([f"pk{i}" for i in range(600)])
 
 
 class TestDeindexManyFailSoft:
@@ -823,7 +823,7 @@ class TestDeindexManyFailSoft:
             db_sync, "_get_redis", lambda: (_ for _ in ()).throw(exc)
         )
 
-        assert deindex_many(["a"]) is False
+        assert not deindex_many(["a"])
 
     def test_missing_redis_package_returns_false(self, monkeypatch):
         # redis lives in the [tasks] extra; an ORM-only consumer has none
@@ -834,7 +834,7 @@ class TestDeindexManyFailSoft:
         monkeypatch.setitem(sys.modules, "redis", None)  # `import redis` → ImportError
         monkeypatch.setattr(db_sync, "log", lambda *a, **kw: None)
 
-        assert deindex_many(["a"]) is False
+        assert not deindex_many(["a"])
 
     def test_failure_is_logged_at_warning_with_a_key(self, monkeypatch):
         # A False return leaks those hashes permanently and nothing
