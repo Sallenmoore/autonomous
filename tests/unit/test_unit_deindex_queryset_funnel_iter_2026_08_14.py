@@ -64,11 +64,30 @@ from autonomous.db.queryset.base import (
 
 
 class _DeleteResult:
-    """Stand-in for pymongo's ``DeleteResult``."""
+    """Stand-in for pymongo's ``DeleteResult``.
+
+    ``deleted_count`` raises when unacknowledged, exactly as pymongo's
+    does (``_raise_if_unacknowledged``). That fidelity is load-bearing:
+    it makes the ``result.acknowledged and result.deleted_count == ...``
+    ordering in ``_confirm_deleted`` a pinned fact rather than a
+    stylistic one. Reversed, every ``w=0`` delete would raise inside the
+    confirmation, get swallowed by its own except, and silently stop
+    de-indexing anything at all.
+    """
 
     def __init__(self, *, acknowledged=True, deleted_count=0):
         self.acknowledged = acknowledged
-        self.deleted_count = deleted_count
+        self._deleted_count = deleted_count
+
+    @property
+    def deleted_count(self):
+        if not self.acknowledged:
+            from pymongo.errors import InvalidOperation
+
+            raise InvalidOperation(
+                "Cannot read deleted_count of an unacknowledged write"
+            )
+        return self._deleted_count
 
 
 class _WriteConcernStub:
