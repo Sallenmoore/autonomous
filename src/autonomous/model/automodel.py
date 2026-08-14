@@ -460,9 +460,11 @@ class AutoModel(Document):
         # to arbitrary consumer receivers, which are free to mutate the
         # document before we get to use it.
         pk = self.pk
-        result = super().delete()
-        db_sync.deindex(pk)
-        return result
+        super().delete()
+        # A never-saved document has no pk and therefore no index entry;
+        # de-indexing it would issue a pointless ``DEL lore:None``.
+        if pk is not None:
+            db_sync.deindex(pk)
 
 
 signals.pre_init.connect(AutoModel._auto_pre_init)

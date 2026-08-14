@@ -230,11 +230,12 @@ def _get_redis():
             # Bound the blocking window. ``AutoModel.delete()`` issues a
             # DEL on every delete now, and a host that resolves but
             # blackholes (container network partition) would otherwise
-            # hang on TCP connect for the OS default — ~130s, per call.
+            # hang for minutes per call — redis-py sets no socket
+            # timeout by default and retries the attempt three times.
             # deindex's best-effort contract catches the exception but
             # cannot catch the latency; only a timeout can.
-            socket_connect_timeout=2,
-            socket_timeout=5,
+            socket_connect_timeout=env_int("REDIS_SOCKET_TIMEOUT_SECONDS", 2),
+            socket_timeout=env_int("REDIS_SOCKET_TIMEOUT_SECONDS", 2),
         )
     return _redis_client
 
@@ -795,14 +796,17 @@ def process_single_object_sync(object_id, collection_name, token):
     # side observability contract.
     if vector:
         # ponytail: a delete landing between the find_one above and this
-        # write still resurrects the vector — the doc was read before
-        # get_vector()'s multi-second HTTP call. Fixing it needs an
-        # existence re-check here, which adds a second find_one and trips
-        # the committed assertion in
+        # write still resurrects the vector permanently — the doc was
+        # read before get_vector()'s multi-second HTTP call, and nothing
+        # re-enqueues a deleted pk. Fix is an existence re-check here
+        # (#210); it adds a second find_one, which trips the committed
+        # assertion in
         # tests/unit/test_unit_db_sync_world_pk_iter_2026-06-16.py
-        # ("world_pk extraction MUST stay Mongo-light"). That test is the
-        # test agent's surface, so the fix and its lockstep test change
-        # land together in their cycle. Tracked separately.
+        # ("world_pk extraction MUST stay Mongo-light" — broader than
+        # its own stated intent, which is only about dereferencing
+        # `world`). tests/unit/ is the test agent's exclusive surface,
+        # so the guard and its lockstep assertion update land together
+        # in that cycle.
 
         # numpy is only needed when actually writing a vector — keep it
         # out of the autonomous.db import-time graph so consumers that
@@ -864,7 +868,8 @@ def deindex(object_id) -> bool:
     document, and takes the not-found branch — which deletes the key this
     function targets. A job already PAST its lookup and inside
     ``get_vector()`` will still write the hash back afterwards and
-    resurrect the vector; see the ``ponytail:`` note at that write site.
+    resurrect the vector permanently (#210); see the ``ponytail:`` note
+    at that write site.
     """
     try:
         _get_redis().delete(_index_key(object_id))
@@ -873,7 +878,10 @@ def deindex(object_id) -> bool:
         # Deliberately broad: the caller is mid-delete and any failure
         # here — RedisError, a connection timeout, redis not installed
         # (it's an optional extra) — must stay non-fatal.
-        print(f"De-index failed for {_index_key(object_id)}: {e}")
+        # ``log``, not ``print``: base installs without the [tasks]
+        # extra fail the ``import redis`` above on EVERY delete, and a
+        # print would spam stdout past LOG_LEVEL for all of them.
+        log(f"De-index failed for {_index_key(object_id)}: {e}")
         return False
 
 
