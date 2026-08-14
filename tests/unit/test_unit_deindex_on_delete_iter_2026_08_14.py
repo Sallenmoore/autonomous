@@ -47,7 +47,6 @@ numpy`` is stubbed the same way the #132 coverage does it).
 from __future__ import annotations
 
 import sys
-import types
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -260,6 +259,14 @@ class TestDeindexFailSoft:
 
         assert any("lore:abc" in m for m in logged), (
             f"de-index failure MUST log the key; got {logged!r}"
+        )
+        # Bare ``log()`` emits at DEBUG and the default LOG_LEVEL is
+        # WARNING, so without the module's ``[WARNING]`` text prefix
+        # (the same convention record_embedding_sync_event and
+        # _extract_world_pk use) the permanent-leak condition produces
+        # no operator-visible signal at all.
+        assert any("[WARNING]" in m for m in logged), (
+            f"the permanent-leak condition MUST be greppable; got {logged!r}"
         )
 
     def test_uses_log_not_print(self, monkeypatch):
@@ -475,17 +482,21 @@ class TestAutoModelDeleteDeindexes:
 
 @pytest.fixture
 def redis_ctor_kwargs(monkeypatch):
-    """Capture the kwargs ``_get_redis`` constructs its client with,
-    without importing the real redis package."""
+    """Capture the kwargs ``_get_redis`` constructs its client with.
+
+    Patches ``redis.Redis`` on the real package rather than swapping the
+    whole module out: the constructor is handed a real ``Retry`` object,
+    and asserting on a stand-in would prove nothing about the policy the
+    shipped client actually gets.
+    """
+    redis = pytest.importorskip("redis")
     captured = []
-    fake = types.ModuleType("redis")
 
     class _FakeRedis:
         def __init__(self, **kwargs):
             captured.append(kwargs)
 
-    fake.Redis = _FakeRedis
-    monkeypatch.setitem(sys.modules, "redis", fake)
+    monkeypatch.setattr(redis, "Redis", _FakeRedis)
     monkeypatch.setattr(db_sync, "_redis_client", None)
     return captured
 
@@ -515,15 +526,66 @@ class TestRedisSocketTimeouts:
     def test_unparseable_env_falls_back_to_the_default(
         self, redis_ctor_kwargs, monkeypatch
     ):
-        # Routed through ``config.env_int``, which never raises. A bare
-        # ``int(os.environ[...])`` here would take down every delete in
-        # a deployment with a typoed value.
+        # Routed through the ``config.env_*`` guard, which never raises.
+        # A bare ``float(os.environ[...])`` here would take down every
+        # delete in a deployment with a typoed value.
         monkeypatch.setenv("REDIS_SOCKET_TIMEOUT_SECONDS", "two")
         monkeypatch.setattr(db_sync, "log", lambda *a, **kw: None)
 
         db_sync._get_redis()
 
         assert redis_ctor_kwargs[0]["socket_timeout"] == 2
+
+    def test_sub_second_values_are_honored(self, redis_ctor_kwargs, monkeypatch):
+        # The natural tuning direction for a DEL on the request path is
+        # below a second; an int-only parse would silently floor 0.5 to
+        # 0, which is the non-blocking-socket footgun below.
+        monkeypatch.setenv("REDIS_SOCKET_TIMEOUT_SECONDS", "0.5")
+
+        db_sync._get_redis()
+
+        assert redis_ctor_kwargs[0]["socket_timeout"] == 0.5
+
+    @pytest.mark.parametrize("bad", ["0", "-1"])
+    def test_non_positive_values_are_refused(
+        self, redis_ctor_kwargs, monkeypatch, bad
+    ):
+        # redis-py hands the value to ``socket.settimeout``: 0 puts the
+        # socket in non-blocking mode, so every command fails, and a
+        # negative raises ValueError inside the worker. "0" is the
+        # conventional spelling for "no timeout", which makes accepting
+        # it a config trap rather than a feature.
+        logged = []
+        monkeypatch.setenv("REDIS_SOCKET_TIMEOUT_SECONDS", bad)
+        monkeypatch.setattr(db_sync, "log", lambda msg, *a, **kw: logged.append(str(msg)))
+
+        db_sync._get_redis()
+
+        assert redis_ctor_kwargs[0]["socket_timeout"] == 2.0
+        assert redis_ctor_kwargs[0]["socket_connect_timeout"] == 2.0
+        assert any("REDIS_SOCKET_TIMEOUT_SECONDS" in m and "WARNING" in m for m in logged), (
+            f"a refused timeout value MUST be logged; got {logged!r}"
+        )
+
+    def test_retry_policy_is_disabled(self, redis_ctor_kwargs, monkeypatch):
+        # The timeouts alone do NOT bound the call. redis-py's default
+        # is 3 retries with exponential-plus-jitter backoff, which
+        # multiplies the timeout by four and adds seconds of sleeping on
+        # top: measured 4.9s for one DEL against a refused Redis, versus
+        # 0.0s with the retries off. Since AutoModel.delete() now hits
+        # Redis on every call and request_indexing writes its token on
+        # the request path, the retry policy is the difference between
+        # the documented 2s bound and a ~15s worst case.
+        monkeypatch.delenv("REDIS_SOCKET_TIMEOUT_SECONDS", raising=False)
+
+        db_sync._get_redis()
+
+        retry = redis_ctor_kwargs[0]["retry"]
+        assert retry.get_retries() == 0, (
+            "redis-py's default 3-retry policy must be disabled, or the "
+            "socket timeouts do not bound the call"
+        )
+        assert retry._backoff.compute(1) == 0
 
     def test_decode_responses_still_set(self, redis_ctor_kwargs, monkeypatch):
         # The supersede guard compares a str token against r.get(); if

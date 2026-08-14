@@ -10,7 +10,7 @@ import pymongo
 import requests
 
 from autonomous import log
-from autonomous.config import env_int
+from autonomous.config import env_float, env_int
 from autonomous.http import HttpClient
 from autonomous.observability import counter
 
@@ -223,19 +223,46 @@ def _get_redis():
     global _redis_client
     if _redis_client is None:
         import redis
+        from redis.backoff import NoBackoff
+        from redis.retry import Retry
+
+        # ``env_float``, not env_int: the natural tuning direction for a
+        # DEL on the request path is sub-second. A non-positive value is
+        # refused rather than honored — redis-py hands it to
+        # ``socket.settimeout``, where 0 switches the socket to
+        # non-blocking (every command fails) and a negative raises
+        # ValueError inside the worker.
+        timeout = env_float("REDIS_SOCKET_TIMEOUT_SECONDS", 2.0)
+        if timeout <= 0:
+            log(
+                f"[WARNING] _get_redis: REDIS_SOCKET_TIMEOUT_SECONDS="
+                f"{timeout!r} must be > 0; using 2.0"
+            )
+            timeout = 2.0
         _redis_client = redis.Redis(
             host=os.getenv("REDIS_HOST", "cachedb"),
             port=int(os.getenv("REDIS_PORT", 6379)),
             decode_responses=True,
             # Bound the blocking window. ``AutoModel.delete()`` issues a
-            # DEL on every delete now, and a host that resolves but
-            # blackholes (container network partition) would otherwise
-            # hang for minutes per call — redis-py sets no socket
-            # timeout by default and retries the attempt three times.
-            # deindex's best-effort contract catches the exception but
-            # cannot catch the latency; only a timeout can.
-            socket_connect_timeout=env_int("REDIS_SOCKET_TIMEOUT_SECONDS", 2),
-            socket_timeout=env_int("REDIS_SOCKET_TIMEOUT_SECONDS", 2),
+            # DEL on every delete now, and ``request_indexing`` sets its
+            # token on the request path ("MUST BE FAST"), so a host that
+            # resolves but blackholes (container network partition)
+            # would otherwise hang for minutes per call — redis-py sets
+            # no socket timeout by default. deindex's best-effort
+            # contract catches the exception but cannot catch the
+            # latency; only a timeout can.
+            socket_connect_timeout=timeout,
+            socket_timeout=timeout,
+            # The timeouts alone do NOT bound the call: redis-py's
+            # default policy is 3 retries with exponential-plus-jitter
+            # backoff, so a refused Redis measured 4.9s per DEL and a
+            # blackholed host 4×timeout plus ~3.5s of sleeping. Disabled
+            # here so the timeout above is the bound the comment claims.
+            # Losing the retries is the right trade for these callers:
+            # the worker's failed job is re-queued by RQ, deindex is
+            # best-effort by contract, and both would rather fail in 2s
+            # than succeed in 15.
+            retry=Retry(NoBackoff(), 0),
         )
     return _redis_client
 
@@ -892,7 +919,13 @@ def deindex(object_id) -> bool:
         # ``log``, not ``print``: base installs without the [tasks]
         # extra fail the ``import redis`` above on EVERY delete, and a
         # print would spam stdout past LOG_LEVEL for all of them.
-        log(f"De-index failed for {_index_key(object_id)}: {e}")
+        # ``[WARNING]`` prefix per this module's convention (see
+        # ``record_embedding_sync_event`` / ``_extract_world_pk``):
+        # bare ``log()`` emits at DEBUG, and the default LOG_LEVEL is
+        # WARNING — without the prefix the one condition an operator
+        # must know about (this return leaks the hash permanently, with
+        # no reconciliation path) is the one that produces no signal.
+        log(f"[WARNING] De-index failed for {_index_key(object_id)}: {e}")
         return False
 
 
