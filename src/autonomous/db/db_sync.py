@@ -842,7 +842,7 @@ def deindex(object_id) -> bool:
     try:
         _get_redis().delete(_index_key(object_id))
         return True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         # Deliberately broad: the caller is mid-delete and any failure
         # here — RedisError, a connection timeout, redis not installed
         # (it's an optional extra) — must stay non-fatal.
