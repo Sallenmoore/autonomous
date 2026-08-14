@@ -644,10 +644,13 @@ class GeminiAIModel(AutoModel):
             filerefs = self._add_files(files, mime_type="image/webp")
             contents.extend(filerefs)
 
-        def _attempt():
-            # 1. Resolve Aspect Ratio AND Size
-            valid_ratio, valid_size = self._get_image_config(aspect_ratio)
+        # 1. Resolve Aspect Ratio AND Size. Deterministic, so it stays
+        # OUT of the retry loop below — re-running it per attempt would
+        # re-emit the 4K-clamp breadcrumb on every retry. It cannot
+        # raise: resolve_image_config falls back rather than rejecting.
+        valid_ratio, valid_size = self._get_image_config(aspect_ratio)
 
+        def _attempt():
             # 2. Call API with correct parameters
             response = self.client.models.generate_content(
                 model=self._image_model,
