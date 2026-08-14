@@ -436,9 +436,35 @@ class AutoModel(Document):
         sender.auto_post_save(sender, document, **kwargs)
 
     def delete(self) -> None:
-        """Delete this document from the database."""
+        """Delete this document from the database and drop its vector entry.
+
+        De-indexing is unconditional — unlike ``save(sync=True)``, there
+        is no flag to opt in with. A delete that only cleaned up when the
+        caller remembered to ask would reproduce the leak this fixes
+        (#204, #205): the code deleting an object is rarely the code that
+        indexed it. ``db_sync.deindex`` is best-effort and swallows its
+        own failures, so a missing or unreachable Redis costs one no-op
+        call and never blocks the Mongo delete.
+
+        Deliberately an override rather than a ``post_delete`` receiver
+        alongside the four signals wired at the bottom of this module:
+        ``QuerySet.delete`` checks ``has_receivers_for`` and, when a
+        delete signal is connected, degrades from a single bulk
+        ``delete_many`` to a per-document Python loop. Connecting one
+        here would silently turn every consumer's bulk delete into N
+        round-trips. The trade is that bulk/raw deletes bypass this hook
+        and must call ``deindex`` themselves — documented in MIGRATIONS.
+        """
         _ensure_connected()
-        return super().delete()
+        # Read the pk up front: ``super().delete()`` sends ``post_delete``
+        # to arbitrary consumer receivers, which are free to mutate the
+        # document before we get to use it.
+        pk = self.pk
+        super().delete()
+        # A never-saved document has no pk and therefore no index entry;
+        # de-indexing it would issue a pointless ``DEL lore:None``.
+        if pk is not None:
+            db_sync.deindex(pk)
 
 
 signals.pre_init.connect(AutoModel._auto_pre_init)

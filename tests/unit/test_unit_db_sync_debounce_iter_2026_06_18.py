@@ -178,8 +178,15 @@ class TestNotFoundCleanup:
 
         db_sync.process_single_object_sync("abc123", "lore", "tok")
 
-        # Cleanup key shape is ``f"{collection_name}:{object_id}"`` per
-        # db_sync.py:692.
+        # Cleanup key shape is ``lore:<pk>`` via ``_index_key`` — the
+        # same key the writer uses. This comment used to name
+        # ``f"{collection_name}:{object_id}"``, which is what the code
+        # actually built until #204; the two spellings collapse to the
+        # same string only because this test's collection is literally
+        # named "lore", which is why the assertion passed against the
+        # buggy code. The discriminating cases (a collection that is
+        # NOT "lore") live in
+        # tests/unit/test_unit_deindex_on_delete_iter_2026_08_14.py.
         redis_client.delete.assert_called_once_with("lore:abc123")
         # No embedding hash should be written when the source is gone.
         redis_client.hset.assert_not_called()

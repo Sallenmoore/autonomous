@@ -14,10 +14,13 @@ from pydub import AudioSegment
 from autonomous import log
 from autonomous.ai.exceptions import (
     GeminiFileUploadTimeoutError,
+    GenerateImageEmptyResponseError,
+    GenerateImageTransientEmptyError,
     GenerateJSONEmptyResponseError,
     GenerateJSONParseError,
 )
 from autonomous.ai._image_utils import resolve_image_config
+from autonomous.ai.retry import retry
 from autonomous.model.autoattr import ListAttr, StringAttr
 from autonomous.model.automodel import AutoModel
 
@@ -588,6 +591,15 @@ class GeminiAIModel(AutoModel):
         "4K":  "2K",  # was "4K" — issue #30 (flash-image-preview rejects 4K)
     }
 
+    # Bounded retry for the empty-Success image response (#203). Three
+    # attempts with 1s → 2s backoff: the observed failure clears on the
+    # immediate next call, so this rides out the blip without adding
+    # meaningful latency to a path that already takes seconds. Not
+    # env-tunable — the gemini adapter's knobs are catalogued in
+    # config.py and this one has no demand yet.
+    _IMAGE_MAX_ATTEMPTS = 3
+    _IMAGE_RETRY_SLEEP = 1.0
+
     def _get_image_config(self, aspect_ratio_input):
         """Map autonomous's aspect-ratio vocabulary to Gemini's
         ``(aspect_ratio, image_size)`` pair.
@@ -621,7 +633,6 @@ class GeminiAIModel(AutoModel):
         # negative_prompt accepted to honor the cross-provider interface
         # but ignored: gemini-3.x-flash-image-preview's ImageConfig has no
         # negative-prompt slot. Phrase the prompt positively instead.
-        image = None
         style_str_payload = ""
         if isinstance(style, dict):
             style_str_payload = json.dumps(style)
@@ -634,10 +645,13 @@ class GeminiAIModel(AutoModel):
             filerefs = self._add_files(files, mime_type="image/webp")
             contents.extend(filerefs)
 
-        try:
-            # 1. Resolve Aspect Ratio AND Size
-            valid_ratio, valid_size = self._get_image_config(aspect_ratio)
+        # 1. Resolve Aspect Ratio AND Size. Deterministic, so it stays
+        # OUT of the retry loop below — re-running it per attempt would
+        # re-emit the 4K-clamp breadcrumb on every retry. It cannot
+        # raise: resolve_image_config falls back rather than rejecting.
+        valid_ratio, valid_size = self._get_image_config(aspect_ratio)
 
+        def _attempt():
             # 2. Call API with correct parameters
             response = self.client.models.generate_content(
                 model=self._image_model,
@@ -652,22 +666,65 @@ class GeminiAIModel(AutoModel):
             )
 
             # 3. Extract Image Data
-            if response.candidates and response.candidates[0].content.parts:
-                for part in response.candidates[0].content.parts:
+            #
+            # ``.content`` is None-guarded for the same reason
+            # ``generate_json`` guards it: a safety filter can drop the
+            # candidate's content entirely, and ``None.parts`` would
+            # raise AttributeError — a type the retry catch below and
+            # the outer except both miss, so it escaped uncaught.
+            image = None
+            candidate = response.candidates[0] if response.candidates else None
+            if candidate is not None and candidate.content is not None:
+                for part in candidate.content.parts or []:
                     if part.inline_data:
                         image = part.inline_data.data
                         break
 
             if not image:
-                raise ValueError(
-                    f"API returned Success but no image data found. Response: {response}"
+                # Only finish_reason=STOP is worth retrying. A safety
+                # block is deterministic for a given prompt, so retrying
+                # it costs three billed calls and still fails. ``.name``
+                # unwraps the genai enum (FinishReason.STOP); a plain
+                # string falls through unchanged.
+                finish_reason = getattr(candidate, "finish_reason", None)
+                msg = (
+                    f"API returned Success but no image data found. "
+                    f"finish_reason={finish_reason!r}. Response: {response}"
                 )
+                if str(getattr(finish_reason, "name", finish_reason)) == "STOP":
+                    raise GenerateImageTransientEmptyError(msg)
+                raise GenerateImageEmptyResponseError(msg)
+            return image
 
+        def _on_retry(attempt: int, exc: BaseException) -> None:
+            log(
+                f"==== Gemini image empty response (attempt {attempt}/"
+                f"{self._IMAGE_MAX_ATTEMPTS}); retrying ====\n\n{exc}",
+                _print=True,
+            )
+
+        try:
+            # Retries ONLY the empty-Success case (#203): the provider
+            # intermittently answers STOP with an empty part for a prompt
+            # that succeeds on the very next call. Every other failure
+            # keeps its fail-fast behavior — an APIError is usually a
+            # permanent 4xx and burning the budget on it just delays the
+            # error, the same trade local_model's #97 narrowing made.
+            # Note the catch is the TRANSIENT subclass, not the base: a
+            # safety-blocked candidate raises the base and fails fast.
+            return retry(
+                _attempt,
+                max_attempts=self._IMAGE_MAX_ATTEMPTS,
+                sleep_seconds=self._IMAGE_RETRY_SLEEP,
+                backoff_factor=2.0,
+                catch=(GenerateImageTransientEmptyError,),
+                on_retry=_on_retry,
+            )
         except (genai.errors.APIError, ValueError, OSError) as e:
+            # GenerateImageEmptyResponseError subclasses ValueError, so an
+            # exhausted retry budget still lands here and logs as before.
             log(f"==== Error: Unable to create image ====\n\n{e}", _print=True)
             raise
-
-        return image
 
     def upscale_image(
         self, prompt, image_content=None, aspect_ratio="2KPortrait", style=None
