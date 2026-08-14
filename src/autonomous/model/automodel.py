@@ -435,7 +435,7 @@ class AutoModel(Document):
         """
         sender.auto_post_save(sender, document, **kwargs)
 
-    def delete(self) -> None:
+    def delete(self, signal_kwargs=None, **write_concern) -> None:
         """Delete this document from the database and drop its vector entry.
 
         De-indexing is unconditional — unlike ``save(sync=True)``, there
@@ -463,23 +463,21 @@ class AutoModel(Document):
         because this line already handled it. Raw pymongo deletes still
         bypass both — documented in MIGRATIONS.
 
-        Known gap, NOT fixed here: this signature is narrower than
-        ``Document.delete(signal_kwargs=None, **write_concern)``, and the
-        funnel's skip/limit/signal branch calls
-        ``doc.delete(**write_concern)``. So
-        ``objects(...).limit(2).delete(write_concern={"w": 1})`` raises
-        ``TypeError``, and a single delete silently drops any write
-        concern passed to it. Widening the signature is a one-line fix
-        but collides with a committed test that pins this parameter list
-        (``tests/unit/test_unit_deindex_on_delete_iter_2026_08_14.py``),
-        which the dev tree does not edit — tracked as #213.
+        ``signal_kwargs`` and ``write_concern`` are pass-through: the
+        signature must stay at least as wide as
+        ``Document.delete(signal_kwargs=None, **write_concern)``. 0.3.171
+        shipped this as a bare ``def delete(self)``, which narrowed the
+        base and broke callers that never named this method — the
+        funnel's skip/limit/signal branch calls ``doc.delete(**write_concern)``,
+        so ``objects(...).limit(2).delete(write_concern={"w": 1})``
+        raised ``TypeError`` from inside the ORM (#213).
         """
         _ensure_connected()
         # Read the pk up front: ``super().delete()`` sends ``post_delete``
         # to arbitrary consumer receivers, which are free to mutate the
         # document before we get to use it.
         pk = self.pk
-        super().delete()
+        super().delete(signal_kwargs=signal_kwargs, **write_concern)
         # A never-saved document has no pk and therefore no index entry;
         # de-indexing it would issue a pointless ``DEL lore:None``.
         if pk is not None:

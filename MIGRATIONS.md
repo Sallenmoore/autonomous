@@ -5,6 +5,19 @@ recent first.
 
 ## Unreleased
 
+### Fixed — `AutoModel.delete()` accepts `signal_kwargs` and write concern again (#213)
+
+**What changed.** `AutoModel.delete()` is now `delete(self, signal_kwargs=None, **write_concern)` and forwards both to `Document.delete()`. 0.3.171 (#204, #205) shipped it as a bare `def delete(self)`, which *narrowed* the base signature — see the struck-through line in that entry below.
+
+**Behavior change — externally visible.**
+
+- `obj.delete(signal_kwargs={...})` works again. Under 0.3.171 it raised `TypeError`.
+- **`Model.objects(...).skip(n)` / `.limit(n)` deletes, and any delete on a model with a connected `pre_delete`/`post_delete` receiver, work again.** These are the ones worth re-checking: `BaseQuerySet.delete()` cannot express them as a single `delete_many`, so it early-returns to `for doc in queryset: doc.delete(**write_concern)` — meaning `Model.objects(...).limit(2).delete(write_concern={"w": 1})` raised `TypeError: AutoModel.delete() got an unexpected keyword argument 'w'` from inside the ORM, at a call site the consumer never wrote.
+- **A write concern passed to a single `obj.delete(w=2)` is honored rather than silently dropped.** Under 0.3.171 the `TypeError` at least made the direct-call case loud; the pass-through is what makes it correct.
+- De-index behavior is unchanged: still unconditional, still after the Mongo delete, still reading the pk before it.
+
+**Migration.** No action required. Consumers who pinned around 0.3.171 by dropping write concerns or avoiding `skip`/`limit` deletes can undo that.
+
 ### Fixed — bulk and CASCADE deletes now de-index too; new `db_sync.deindex_many(pks)` (#207)
 
 **What changed.**
@@ -19,7 +32,7 @@ recent first.
 - **Only documents Mongo confirms it deleted get de-indexed.** The scan and the delete are separate operations, so a document concurrently mutated out of the query survives the delete — de-indexing it would leave a live document permanently unreachable by KNN with nothing to restore it. The reverse case (a document that starts matching after the scan) is deleted without being de-indexed, which leaks a hash a sweep can recover.
 - **Nothing in this cleanup can fail a delete.** Both Mongo steps and the Redis batch swallow and log their own failures, matching `deindex`'s existing contract.
 - **Cascade-deleted children stop answering KNN queries.** Previously `parent.delete()` de-indexed the parent and silently leaked every child's embedding.
-- Additive on the API surface: no existing signature, default, or return type changes.
+- Additive on the API surface: *this* change alters no existing signature, default, or return type. (The #213 entry above does widen `AutoModel.delete()` — deliberately and compatibly. Scoping the claim to one entry is the lesson from the struck-through line in the #204/#205 entry below, where the same sentence was written for a release that had in fact narrowed a signature.)
 
 **Migration.**
 
@@ -56,7 +69,7 @@ collection.delete_many({"world": world_pk})
 
 - **`AutoModel.delete()` now performs one Redis `DEL` per call.** Previously it touched Mongo only. For consumers that never index, this is a no-op `DEL` against a key that does not exist; if Redis is absent or unreachable it is caught internally and logged as `[WARNING] De-index failed for lore:<pk>: <err>`, and the delete still succeeds. The added latency is bounded by `REDIS_SOCKET_TIMEOUT_SECONDS` (default 2s) — with the retry policy disabled (above) that bound is real: a blackholed host costs one timeout, a refused connection returns immediately, and the typical cost is one local round-trip.
 - **Deleted documents stop answering KNN queries.** Previously every deleted indexed object leaked its embedding permanently, and `FT.SEARCH` kept returning hits for documents that no longer existed. Consumers that worked around this with their own sweep can drop it.
-- ~~Additive on the API surface: no existing signature, default, or return type changes.~~ **Correction (found 2026-08-14, tracked as #213):** this was wrong. `AutoModel.delete()` overrode `Document.delete(self, signal_kwargs=None, **write_concern)` with a bare `def delete(self)`, which *narrowed* an existing signature. `obj.delete(signal_kwargs=...)` became a hard break, single deletes silently dropped any write concern passed to them, and `Model.objects(...).limit(2).delete(write_concern={"w": 1})` raises `TypeError: AutoModel.delete() got an unexpected keyword argument 'w'` — the funnel's skip/limit/signal branch calls `doc.delete(**write_concern)`. See #213 for the fix.
+- ~~Additive on the API surface: no existing signature, default, or return type changes.~~ **Correction (found 2026-08-14, tracked as #213):** this was wrong. `AutoModel.delete()` overrode `Document.delete(self, signal_kwargs=None, **write_concern)` with a bare `def delete(self)`, which *narrowed* an existing signature. `obj.delete(signal_kwargs=...)` became a hard break, single deletes silently dropped any write concern passed to them, and `Model.objects(...).limit(2).delete(write_concern={"w": 1})` raised `TypeError: AutoModel.delete() got an unexpected keyword argument 'w'` — the funnel's skip/limit/signal branch calls `doc.delete(**write_concern)`. **Fixed in the #213 entry at the top of Unreleased**, which ships in the same release as this correction; 0.3.171 itself carries the narrowing.
 
 **Migration.**
 

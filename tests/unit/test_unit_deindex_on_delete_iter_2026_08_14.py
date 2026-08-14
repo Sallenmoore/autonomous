@@ -466,12 +466,36 @@ class TestAutoModelDeleteDeindexes:
         # no flag, because the code deleting an object is rarely the
         # code that indexed it. A new keyword-only ``sync=`` default
         # would silently restore the leak for every existing caller.
+        #
+        # Originally spelled ``params == ["self"]``, which pinned far
+        # more than that intent: it also froze the *narrowing* of
+        # ``Document.delete(signal_kwargs=None, **write_concern)`` that
+        # shipped alongside it, and so blocked the #213 fix. Restated as
+        # the intent itself — plus, below, the base-class compatibility
+        # the exact-list form was accidentally forbidding.
         import inspect
         from autonomous.model import automodel as am
 
         params = list(inspect.signature(am.AutoModel.delete).parameters)
-        assert params == ["self"], (
-            f"delete() must take no opt-in flag; got {params!r}"
+        assert "sync" not in params, (
+            f"delete() must take no opt-in de-index flag; got {params!r}"
+        )
+
+    def test_signature_stays_compatible_with_document_delete(self, delete_probe):
+        # An override may widen a base signature, never narrow one. The
+        # funnel's skip/limit/signal branch splats a write-concern dict
+        # into ``doc.delete(**write_concern)``, so a narrowed override
+        # raises TypeError for a caller who never named this method
+        # (#213). Binding rather than list-comparison, so the override
+        # stays free to add parameters of its own.
+        import inspect
+        from autonomous.db import Document
+        from autonomous.model import automodel as am
+
+        probe = object()
+        inspect.signature(Document.delete).bind(probe, signal_kwargs={"a": 1}, w=1)
+        inspect.signature(am.AutoModel.delete).bind(
+            probe, signal_kwargs={"a": 1}, w=1
         )
 
 
