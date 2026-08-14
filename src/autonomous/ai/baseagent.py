@@ -5,6 +5,7 @@ from autonomous.taskrunner.autotasks import AutoTasks
 
 from .models.flux import FluxAIModel
 from .models.gemini import GeminiAIModel
+from .models.litellm import LiteLLMImageModel
 from .models.local_model import LocalAIModel
 from .models.mock_model import MockAIModel
 from .models.openai_compat import OpenAIClient
@@ -20,11 +21,19 @@ class BaseAgent(AutoModel):
         "openai": OpenAIClient,
         "mock": MockAIModel,
         "flux": FluxAIModel,
+        "litellm": LiteLLMImageModel,
     }
 
     # 3. Allow client to be ANY of the supported models
     client = ReferenceAttr(
-        choices=[LocalAIModel, GeminiAIModel, OpenAIClient, MockAIModel, FluxAIModel]
+        choices=[
+            LocalAIModel,
+            GeminiAIModel,
+            OpenAIClient,
+            MockAIModel,
+            FluxAIModel,
+            LiteLLMImageModel,
+        ]
     )
 
     # 4. Add a provider field (default to local, can be overridden per agent)
