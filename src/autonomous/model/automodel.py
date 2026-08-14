@@ -445,9 +445,21 @@ class AutoModel(Document):
         indexed it. ``db_sync.deindex`` is best-effort and swallows its
         own failures, so a missing or unreachable Redis costs one no-op
         call and never blocks the Mongo delete.
+
+        Deliberately an override rather than a ``post_delete`` receiver
+        alongside the four signals wired at the bottom of this module:
+        ``QuerySet.delete`` checks ``has_receivers_for`` and, when a
+        delete signal is connected, degrades from a single bulk
+        ``delete_many`` to a per-document Python loop. Connecting one
+        here would silently turn every consumer's bulk delete into N
+        round-trips. The trade is that bulk/raw deletes bypass this hook
+        and must call ``deindex`` themselves — documented in MIGRATIONS.
         """
         _ensure_connected()
-        pk = self.pk  # captured before delete, which may clear it
+        # Read the pk up front: ``super().delete()`` sends ``post_delete``
+        # to arbitrary consumer receivers, which are free to mutate the
+        # document before we get to use it.
+        pk = self.pk
         result = super().delete()
         db_sync.deindex(pk)
         return result
