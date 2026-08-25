@@ -4,6 +4,7 @@ from autonomous import log
 from autonomous.ai import image_cache
 from autonomous.ai.baseagent import BaseAgent
 from autonomous.model.autoattr import StringAttr
+from autonomous.ai._credentials import client_key_scope
 
 
 # Sentinel object distinguishes "caller did not pass kwarg" from
@@ -189,6 +190,7 @@ class ImageAgent(BaseAgent):
         quality="standard",
         fallback_provider=_UNSET,
         route=True,
+        api_key=None,
     ):
         effective_ratio = self._resolve_aspect_ratio(aspect_ratio, quality)
         effective_provider = (
@@ -232,14 +234,21 @@ class ImageAgent(BaseAgent):
             self._estimate_cost_usd(effective_provider, size_token),
         )
 
+        # BYOK (#227): ``api_key`` overrides this provider's credential for
+        # THIS call only. It is bound against the PRIMARY client's
+        # ``API_KEY_ENV``, so the fallback leg below — a different provider —
+        # reads its own credential and uses the deployment default. A user's
+        # key is never sent to a provider it was not issued for.
         try:
-            result = self.get_client(effective_provider).generate_image(
-                prompt,
-                negative_prompt=negative_prompt,
-                aspect_ratio=effective_ratio,
-                files=files,
-                style=style,
-            )
+            client = self.get_client(effective_provider)
+            with client_key_scope(client, api_key):
+                result = client.generate_image(
+                    prompt,
+                    negative_prompt=negative_prompt,
+                    aspect_ratio=effective_ratio,
+                    files=files,
+                    style=style,
+                )
         except Exception as exc:
             if effective_fallback is None or effective_fallback == effective_provider:
                 raise
@@ -360,6 +369,7 @@ class ImageAgent(BaseAgent):
         quality="standard",
         fallback_provider=_UNSET,
         route=True,
+        api_key=None,
     ):
         effective_ratio = self._resolve_aspect_ratio(aspect_ratio, quality)
         requested = os.environ.get("IMAGE_AI_AGENT", self.provider)
@@ -393,13 +403,20 @@ class ImageAgent(BaseAgent):
             )
             return cached
 
+        # BYOK (#227): ``api_key`` overrides this provider's credential for
+        # THIS call only. It is bound against the PRIMARY client's
+        # ``API_KEY_ENV``, so the fallback leg below — a different provider —
+        # reads its own credential and uses the deployment default. A user's
+        # key is never sent to a provider it was not issued for.
         try:
-            result = self.get_client(effective_provider).upscale_image(
-                prompt,
-                image_content=image_content,
-                aspect_ratio=effective_ratio,
-                style=style,
-            )
+            client = self.get_client(effective_provider)
+            with client_key_scope(client, api_key):
+                result = client.upscale_image(
+                    prompt,
+                    image_content=image_content,
+                    aspect_ratio=effective_ratio,
+                    style=style,
+                )
         except Exception as exc:
             if effective_fallback is None or effective_fallback == effective_provider:
                 raise

@@ -41,6 +41,7 @@ from autonomous.config import settings
 from autonomous.http import HttpClient
 from autonomous.model.autoattr import StringAttr
 from autonomous.model.automodel import AutoModel
+from autonomous.ai._credentials import resolve_api_key
 
 
 # Transport tuning. The issue's config surface is exactly three fields
@@ -138,13 +139,20 @@ class LiteLLMImageModel(AutoModel):
             return f"{base}/images/generations"
         return f"{base}/v1/images/generations"
 
+    # BYOK (#227): the env var holding this provider's credential.
+    # ``BaseAgent`` binds a per-call ``api_key=`` against THIS name, so a
+    # key issued for one provider can never be sent to another on a
+    # fallback leg. An adapter that omits it silently ignores overrides.
+    API_KEY_ENV = "LITELLM_API_KEY"
+
     def _headers(self):
         h = {"Content-Type": "application/json"}
         # Only send Bearer auth when a key is configured — gateways on a
         # trusted network may not enforce it; a missing key surfaces as the
-        # gateway's own 401 rather than a client-side guess.
-        if self._api_key:
-            h["Authorization"] = f"Bearer {self._api_key}"
+        # gateway's own 401 rather than a client-side guess. A per-call
+        # BYOK override (#227) wins over the class-attr snapshot.
+        if key := resolve_api_key(self.API_KEY_ENV, self._api_key):
+            h["Authorization"] = f"Bearer {key}"
         return h
 
     @staticmethod

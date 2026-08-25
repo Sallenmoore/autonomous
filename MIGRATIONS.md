@@ -5,6 +5,24 @@ recent first.
 
 ## Unreleased
 
+### Added — per-call `api_key=` override on every agent entry point (BYOK) (#227)
+
+**What changed.**
+
+- **Every agent entry point takes an optional `api_key=None`**: `TextAgent.generate` / `summarize_text`, `JSONAgent.generate`, `AudioAgent.generate` / `transcribe` / `dramatize`, `ImageAgent.generate` / `upscale`. When supplied it overrides the provider credential **for that call only** and beats both the environment and the adapters' import-time class-attr snapshots. A multi-tenant consumer can now generate on an end user's own key without touching process-global state.
+- **The override rides a `contextvars.ContextVar`, not `os.environ`.** A ContextVar is scoped to the current thread *and* the current async task, so a key bound for one job is invisible to every other job sharing a long-lived RQ worker — the cross-user leak that made the `os.environ` workaround unusable. The binding unwinds on the way out even if the call raises, and nothing is written to the agent, so `BaseAgent.save()` cannot persist a user's secret.
+- **Overrides are keyed by credential env-var name, never bound globally.** Each adapter now declares `API_KEY_ENV` (`FAL_KEY`, `GOOGLEAI_KEY`, `HPC_API_KEY`, `LITELLM_API_KEY`, `ORIN_VOICE_TOKEN`), and `client_key_scope(client, api_key)` binds against that name. **A key issued for one provider therefore cannot reach another on a fallback leg** — `ImageAgent` may route FLUX → Gemini mid-call, and a bare scalar binding would have handed the user's `FAL_KEY` to Google. The fallback provider reads its own credential and uses the deployment default.
+- **Adapter credential reads now go through `resolve_api_key(env_var, default)`.** For `openai_compat` and `litellm` the existing class-attr snapshot is passed as the default, so the documented "tests monkeypatch the class attrs to retarget" idiom is unchanged; an override simply wins over it. `GeminiAIModel.client` builds a throwaway client for an override rather than reusing — or poisoning — the memoized platform client.
+- **Gemini's orphan-cleanup thread pool re-binds the caller's key** from a snapshot (`current_overrides()`), so cleanup deletes hit the account that owns the files. Note a single `contextvars.copy_context()` cannot be shared across a pool — one `Context` cannot be entered by several threads at once.
+
+**Behavior change — externally visible.**
+
+- Purely additive: `api_key` defaults to `None`, which is byte-for-byte the previous env-based resolution on every path. No existing call site needs to change.
+- Adapter method signatures are **unchanged** — `AIModelProtocol` is untouched, and the credential never travels as a call argument. Consumers implementing their own adapter should declare `API_KEY_ENV` and resolve through `autonomous.ai._credentials.resolve_api_key`; an adapter without `API_KEY_ENV` silently ignores overrides (correct for `mock_model`, which has no credential).
+- The supported public surface is the `api_key=` kwarg. There is deliberately no job-scoped ("run this whole flow on user X's key") binding yet — say so if you want one; it is a small addition on top of this primitive.
+
+**Migration.** No action required.
+
 ### Fixed — `DictAttr` reads no longer raise on legacy non-dict data; FLUX safety blocks re-route instead of storing a black frame (#225, #226)
 
 **What changed.**

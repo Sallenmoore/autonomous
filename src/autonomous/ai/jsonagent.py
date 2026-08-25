@@ -5,6 +5,7 @@ from autonomous.ai.baseagent import BaseAgent
 from autonomous.ai._json_utils import _schema_check, _schema_validate
 from autonomous.ai.exceptions import GenerateJSONParseError
 from autonomous.model.autoattr import StringAttr
+from autonomous.ai._credentials import client_key_scope
 
 
 class JSONAgent(BaseAgent):
@@ -30,6 +31,7 @@ class JSONAgent(BaseAgent):
         json_schema=None,
         schema_name="response",
         model=None,
+        api_key=None,
     ):
         # Validate the caller-supplied schema's STRUCTURE before any HTTP
         # work — a malformed schema raises GenerateJSONParseError here
@@ -56,16 +58,21 @@ class JSONAgent(BaseAgent):
         # and is responsible for any provider-specific shape internally.
         # `model` (#173) is uniform across adapters as well — None means
         # "use the role's env-configured default".
-        result = client.generate_json(
-            message,
-            system_prompt=system_prompt,
-            uri=uri,
-            context=context,
-            json_schema=json_schema,
-            schema_name=schema_name,
-            model=model,
-            **kwargs,
-        )
+        # BYOK (#227): ``api_key`` overrides this provider's credential
+        # for THIS call only — bound to a ContextVar, so concurrent jobs
+        # in the same worker never see each other's keys, and nothing is
+        # persisted on the agent.
+        with client_key_scope(client, api_key):
+            result = client.generate_json(
+                message,
+                system_prompt=system_prompt,
+                uri=uri,
+                context=context,
+                json_schema=json_schema,
+                schema_name=schema_name,
+                model=model,
+                **kwargs,
+            )
 
         if isinstance(result, str):
             try:

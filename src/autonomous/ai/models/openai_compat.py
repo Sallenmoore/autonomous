@@ -36,6 +36,7 @@ from autonomous.http import HttpClient, is_transport_failure as _http_is_transpo
 from autonomous.model.autoattr import ListAttr, StringAttr
 from autonomous.model.automodel import AutoModel
 from autonomous.taskrunner.autotasks import AutoTasks
+from autonomous.ai._credentials import resolve_api_key
 
 
 class HPCUnreachableError(RuntimeError):
@@ -342,8 +343,20 @@ class OpenAIClient(AutoModel):
     # #182; set both to a small value or factor 1.0 to keep retry tests
     # fast without real backoff sleeps).
 
+    # BYOK (#227): the env var holding this provider's credential.
+    # ``BaseAgent`` binds a per-call ``api_key=`` against THIS name, so a
+    # key issued for one provider can never be sent to another on a
+    # fallback leg. An adapter that omits it silently ignores overrides.
+    API_KEY_ENV = "HPC_API_KEY"
+
     def _headers(self, content_type="application/json"):
-        h = {"Authorization": f"Bearer {self._api_key}"}
+        # ``self._api_key`` (the import-time class-attr snapshot) stays
+        # the default so the documented monkeypatch-to-retarget idiom
+        # keeps working; a per-call BYOK override (#227) wins over it.
+        h = {
+            "Authorization": "Bearer "
+            f"{resolve_api_key(self.API_KEY_ENV, self._api_key)}"
+        }
         if content_type:
             h["Content-Type"] = content_type
         return h
