@@ -24,6 +24,7 @@ release or block one on a transient outage.
 import argparse
 import json
 import sys
+import time
 import urllib.request
 
 PYPI_JSON = "https://pypi.org/pypi/{package}/json"
@@ -48,14 +49,45 @@ def fetch_versions(package, *, timeout=15, opener=urllib.request.urlopen):
         return None
 
 
-def check(package, version, expect, *, fetch=fetch_versions):
-    """``"ok"`` / ``"fail"`` / ``"unknown"`` for ``expect`` in {absent, present}."""
+def _verdict(package, version, expect, fetch):
     versions = fetch(package)
     if versions is None:
         return "unknown"
     present = version in versions
     wanted = present if expect == "present" else not present
     return "ok" if wanted else "fail"
+
+
+def check(
+    package,
+    version,
+    expect,
+    *,
+    fetch=fetch_versions,
+    attempts=1,
+    delay=10,
+    sleep=time.sleep,
+):
+    """``"ok"`` / ``"fail"`` / ``"unknown"`` for ``expect`` in {absent, present}.
+
+    The ``present`` direction POLLS. PyPI's JSON index lags behind a
+    successful upload — this project has hit that as the release-smoke 404
+    flake, and again on 0.3.176, where a single immediate read called a
+    landed upload a failure. A version that is genuinely there will appear
+    within a few seconds; one that never uploaded never appears.
+
+    The ``absent`` direction does NOT poll: a version cannot vanish from
+    PyPI, so retrying would only slow the abort on a real collision.
+    """
+    if expect == "absent":
+        return _verdict(package, version, expect, fetch)
+    for attempt in range(attempts):
+        verdict = _verdict(package, version, expect, fetch)
+        if verdict == "ok":
+            return verdict
+        if attempt < attempts - 1:
+            sleep(delay)
+    return verdict
 
 
 def main(argv=None):
@@ -65,10 +97,18 @@ def main(argv=None):
     group = ap.add_mutually_exclusive_group(required=True)
     group.add_argument("--assert-absent", action="store_true")
     group.add_argument("--assert-present", action="store_true")
+    ap.add_argument(
+        "--attempts", type=int, default=1,
+        help="poll this many times (--assert-present only; index lag)",
+    )
+    ap.add_argument("--delay", type=float, default=10, help="seconds between attempts")
     args = ap.parse_args(argv)
 
     expect = "present" if args.assert_present else "absent"
-    verdict = check(args.package, args.version, expect)
+    verdict = check(
+        args.package, args.version, expect,
+        attempts=args.attempts, delay=args.delay,
+    )
 
     if verdict == "unknown":
         print(
@@ -85,8 +125,11 @@ def main(argv=None):
         )
     elif verdict == "fail":
         print(
-            f"❌ {args.package} {args.version} is NOT on PyPI after upload — "
-            "the release did not actually publish.",
+            f"❌ {args.package} {args.version} is NOT on PyPI after upload "
+            f"(polled {args.attempts}×). Either the upload did not land, or "
+            "the index is lagging further than the budget allows — check "
+            f"https://pypi.org/project/{args.package}/{args.version}/ "
+            "before assuming the release failed.",
             file=sys.stderr,
         )
     return EXIT_CODES[verdict]
