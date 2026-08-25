@@ -103,6 +103,71 @@ class TestFetchVersions:
         assert mod.fetch_versions("p", opener=lambda u, timeout=None: _Resp("<html>")) is None
 
 
+class TestPresentPolls:
+    """The post-upload check must tolerate PyPI's index lag.
+
+    Learned the hard way on 0.3.176: twine uploaded successfully at
+    11:17:37Z, the immediate single-shot check read a stale index, called it
+    a definite failure, and reverted the version bump — leaving PyPI holding
+    a version the repo denied shipping. That is the exact divergence this
+    guard exists to prevent, produced by the guard. The project already knew
+    the index lags (the release-smoke 404 flake).
+    """
+
+    def test_present_retries_until_the_index_catches_up(self, mod):
+        seen = {"n": 0}
+
+        def flaky(package):
+            seen["n"] += 1
+            return {"0.3.176"} if seen["n"] >= 3 else {"0.3.175"}
+
+        slept = []
+        assert mod.check(
+            "p", "0.3.176", "present",
+            fetch=flaky, attempts=5, delay=7, sleep=slept.append,
+        ) == "ok"
+        assert seen["n"] == 3
+        assert slept == [7, 7]  # slept between attempts, not after the last
+
+    def test_present_gives_up_after_the_budget(self, mod):
+        slept = []
+        assert mod.check(
+            "p", "0.3.176", "present",
+            fetch=_fetch(set()), attempts=3, delay=1, sleep=slept.append,
+        ) == "fail"
+        assert len(slept) == 2
+
+    def test_absent_never_polls(self, mod):
+        # A version cannot vanish from PyPI, so retrying the pre-flight would
+        # only slow down the abort on a real collision.
+        seen = {"n": 0}
+
+        def counting(package):
+            seen["n"] += 1
+            return {"0.3.175"}
+
+        slept = []
+        assert mod.check(
+            "p", "0.3.175", "absent",
+            fetch=counting, attempts=5, delay=1, sleep=slept.append,
+        ) == "fail"
+        assert seen["n"] == 1
+        assert slept == []
+
+    def test_unknown_also_retries(self, mod):
+        # A transient read error is as recoverable as a lagging index.
+        seen = {"n": 0}
+
+        def flaky(package):
+            seen["n"] += 1
+            return None if seen["n"] < 2 else {"0.3.176"}
+
+        assert mod.check(
+            "p", "0.3.176", "present",
+            fetch=flaky, attempts=4, delay=1, sleep=lambda _: None,
+        ) == "ok"
+
+
 class TestExitCodes:
     """release.sh branches on these, so they are the contract."""
 

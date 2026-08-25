@@ -136,21 +136,36 @@ if ! make package; then
   exit 1
 fi
 
-# --- 3b. Assert the artifact actually landed --------------------------------
+# --- 3b. Confirm the artifact landed (ADVISORY — never reverts) -------------
 # The whole point of the script is that a version reached PyPI, so say so out
-# loud instead of inferring it from twine's exit code. Still BEFORE the commit
-# and push, so a failure reverts exactly like a failed `make package` — the
-# only state change so far is the modified __init__.py.
+# loud instead of inferring it from twine's exit code.
+#
+# This is advisory ON PURPOSE, and the distinction is load-bearing. By this
+# point `make package` has exited 0, which means twine uploaded — the bytes
+# are on PyPI whether or not the JSON index has caught up yet. PyPI's index
+# lags a successful upload by seconds to minutes (this repo has hit it twice:
+# the release-smoke 404 flake, and 0.3.176, where the first version of THIS
+# check read a stale index, declared the release failed, and reverted the
+# bump — leaving PyPI holding a version the repo denied shipping. That is
+# precisely the divergence the gate exists to prevent, manufactured by the
+# gate). So the safe direction after a successful upload is always to RECORD
+# the version, never to revert it.
+#
+# The real protection against a silent non-release is the `--assert-absent`
+# pre-flight above, which runs before anything has changed and does abort.
 
 echo "🔎 Confirming ${NEW_VERSION} is on PyPI..."
 set +e
-python3 "${PYPI_CHECK}" "${PACKAGE_NAME}" "${NEW_VERSION}" --assert-present
+python3 "${PYPI_CHECK}" "${PACKAGE_NAME}" "${NEW_VERSION}" \
+  --assert-present --attempts 6 --delay 10
 pypi_rc=$?
 set -e
-if [[ $pypi_rc -eq 1 ]]; then
-  echo "    Reverting version bump; main is untouched." >&2
-  git checkout -- "${INIT_FILE}"
-  exit 1
+if [[ $pypi_rc -ne 0 ]]; then
+  echo "⚠️  Could not confirm ${NEW_VERSION} on PyPI within ~60s." >&2
+  echo "    twine reported a successful upload, so the version bump is being" >&2
+  echo "    committed anyway — reverting here would put the repo BEHIND what" >&2
+  echo "    is published. Verify manually:" >&2
+  echo "    https://pypi.org/project/${PACKAGE_NAME}/${NEW_VERSION}/" >&2
 fi
 
 # --- 4. Commit + push main -------------------------------------------------
