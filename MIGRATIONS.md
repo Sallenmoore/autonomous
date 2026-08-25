@@ -5,6 +5,23 @@ recent first.
 
 ## Unreleased
 
+### Added — per-call `provider=` override on the text / JSON / audio agent entry points (#239)
+
+**What changed.**
+
+- **`TextAgent.generate` / `summarize_text`, `JSONAgent.generate` and `AudioAgent.generate` / `transcribe` / `dramatize` take an optional `provider=None`.** It selects which `MODEL_REGISTRY` adapter serves *that call*, overriding the role env var (`TEXT_AI_AGENT`, `SUMMARY_AI_AGENT`, `JSON_AI_AGENT`, `TTS_AI_AGENT`, `TRANSCRIBE_AI_AGENT`) and the agent's own `provider` field. It is the sibling of #227's `api_key=`: pass both and you get *this user's provider, billed to this user's key*. `None` **or an empty string** means "no override" — the same contract `api_key` has, so a consumer forwarding an end user's unset selector needs no `"" vs None` branch. `ImageAgent` already routed per call (`route=`, `fallback_provider=`) and is unchanged.
+- **An override dispatches on a TRANSIENT client and never touches `agent.client`.** New `autonomous.ai._routing.resolve_client(agent, provider, env_var)` builds the adapter in memory — no DB reads, no writes, nothing persisted on the agent. This is deliberately *not* `get_client(provider, persist=False)`, which the issue proposed: `get_client` **assigns** `self.client`, so a per-call override would leak into the agent's next call (agent docs are shared by concurrent jobs in one RQ worker — the same hazard #227's ContextVar exists to avoid), and because the assigned client is unsaved, the agent's own next `save()` would raise on the dangling reference.
+- **An unknown provider name raises `ValueError` listing the valid keys.** Note `get_client` still does the opposite for the env-derived path — `MODEL_REGISTRY.get(name, LocalAIModel)` — so a typo'd env var silently generates on the local model as it always has. Only the new per-call kwarg validates, because that value typically comes from an end user's selection and a consumer wants to reject it at the boundary.
+- **`GeminiAIModel._add_files` now persists its `file_refs` bookkeeping only when the client already has a pk.** It ended in an unconditional `self.save()`; on a transient client that INSERTS a stray, unreferenced `GeminiAIModel` document for every call carrying `context`. Nothing reads `file_refs`, and saved clients behave exactly as before.
+
+**Behavior change — externally visible.**
+
+- Purely additive: `provider` defaults to `None`, which is byte-for-byte the previous env-derived resolution on every path. No existing call site needs to change, and adapter signatures are untouched.
+- An override skips the agent's persisted client entirely, so provider-switch side effects a caller may have relied on (the old client doc being deleted and `agent.client` repointed, per `get_client`'s documented slow path) do **not** happen. Set the agent's `provider` field, or call `get_client` directly, if you want the durable switch.
+- Consumers implementing their own adapter get nothing new to do — resolution goes through the existing `MODEL_REGISTRY`.
+
+**Migration.** No action required. To adopt: pass `provider=` alongside `api_key=` on any of the six entry points above.
+
 ### Added — per-call `api_key=` override on every agent entry point (BYOK) (#227)
 
 **What changed.**

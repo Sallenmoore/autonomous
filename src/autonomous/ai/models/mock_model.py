@@ -112,7 +112,12 @@ class MockAIModel(AutoModel):
             "segments": [],
         }
 
-    def generate_audio(self, prompt, voice=None):
+    def generate_audio(self, prompt, voice_description=None, voice_id=None):
+        # Match the signature every real adapter exposes (local_model.py,
+        # gemini.py) and that AudioAgent.generate actually calls with.
+        # The old ``voice=None`` TypeError'd the moment the mock was
+        # selected for TTS — unreachable in practice until #239 made
+        # ``provider="mock"`` a per-call option a consumer can pass.
         log(f"⚡ [MOCK] Generating Audio...", _print=True)
         return self._MOCK_AUDIO_BYTES
 
