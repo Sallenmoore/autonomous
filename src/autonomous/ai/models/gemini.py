@@ -366,7 +366,16 @@ class GeminiAIModel(AutoModel):
                 raise
 
         self.file_refs = [f.name for f in self.client.files.list()]
-        self.save()
+        # Only persist the bookkeeping for a client that already has a
+        # database identity. A per-call provider override (#239) dispatches
+        # on a TRANSIENT client with no pk, and an unconditional save()
+        # would INSERT one stray, unreferenced GeminiAIModel doc for every
+        # call carrying context. Nothing reads file_refs, so skipping the
+        # write costs nothing. ``getattr`` because ``_add_files`` is
+        # exercised unbound against duck-typed stubs that model the upload
+        # surface but not the Document surface.
+        if getattr(self, "pk", None):
+            self.save()
         return uploaded_files
 
     def generate_json(
