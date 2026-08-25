@@ -390,9 +390,14 @@ class TestSourcePins:
         import inspect
 
         src = inspect.getsource(LocalAIModel.generate_transcription)
-        assert "ORIN_VOICE_TOKEN" in src, (
-            "generate_transcription source dropped ORIN_VOICE_TOKEN env reference"
+        # Respelled by #227: the token is resolved through the BYOK
+        # resolver so a per-call override can win, instead of being read
+        # straight from the env. The pinned contract is unchanged — the
+        # Orin bearer is still what goes on the wire.
+        assert "resolve_api_key(self.API_KEY_ENV)" in src, (
+            "generate_transcription stopped resolving the Orin bearer token"
         )
+        assert LocalAIModel.API_KEY_ENV == "ORIN_VOICE_TOKEN"
         assert "headers=headers" in src or "headers = headers" in src, (
             "generate_transcription must pass headers= to _HTTP.post"
         )
@@ -401,7 +406,9 @@ class TestSourcePins:
         import inspect
 
         src = inspect.getsource(LocalAIModel.generate_audio)
-        assert "ORIN_VOICE_TOKEN" in src
+        # See the #227 note on the transcription pin above.
+        assert "resolve_api_key(self.API_KEY_ENV)" in src
+        assert LocalAIModel.API_KEY_ENV == "ORIN_VOICE_TOKEN"
         assert "Accept" in src, "generate_audio dropped Accept header"
         assert "Content-Type" in src, "generate_audio dropped Content-Type branching"
         assert "ogg" in src and "opus" in src, (

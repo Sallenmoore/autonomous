@@ -29,9 +29,10 @@ from autonomous.ai.exceptions import (
     GenerateImageEmptyResponseError,
     MalformedResponseError,
 )
+from autonomous.ai._credentials import resolve_api_key
 from autonomous.ai._image_utils import resolve_image_config
 from autonomous.ai.protocol import NotSupportedByProvider
-from autonomous.config import env_str, settings
+from autonomous.config import settings
 from autonomous.http import HttpClient
 from autonomous.model.autoattr import StringAttr
 from autonomous.model.automodel import AutoModel
@@ -167,11 +168,18 @@ class FluxAIModel(AutoModel):
         size = self._FLUX_SIZE_BY_RATIO_TIER.get((ratio, tier), "square_hd")
         return ratio, size
 
+    # BYOK (#227): the env var holding this provider's credential.
+    # ``BaseAgent`` binds a per-call ``api_key=`` against THIS name, so a
+    # key issued for one provider can never be sent to another on a
+    # fallback leg. An adapter that omits it silently ignores overrides.
+    API_KEY_ENV = "FAL_KEY"
+
     def _require_api_key(self):
-        """Read FAL_KEY at call time, not import time. Raises with a
+        """Resolve FAL_KEY at call time, not import time. A per-call
+        BYOK override (#227) wins over the environment. Raises with a
         pointer to the env var if missing — easier to debug than a 401
         from fal.ai's API."""
-        key = env_str("FAL_KEY", "").strip()
+        key = resolve_api_key(self.API_KEY_ENV).strip()
         if not key:
             raise RuntimeError(
                 "FluxAIModel: FAL_KEY environment variable is not set. "
