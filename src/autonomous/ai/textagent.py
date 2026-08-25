@@ -1,9 +1,8 @@
-import os
-
 from autonomous import log
 from autonomous.ai.baseagent import BaseAgent
 from autonomous.model.autoattr import StringAttr
 from autonomous.ai._credentials import client_key_scope
+from autonomous.ai._routing import resolve_client
 
 
 class TextAgent(BaseAgent):
@@ -18,7 +17,9 @@ class TextAgent(BaseAgent):
         default="A helpful AI assistant trained to assist with generating text according to the given requirements."
     )
 
-    def summarize_text(self, text, primer="", model=None, api_key=None):
+    def summarize_text(
+        self, text, primer="", model=None, api_key=None, provider=None
+    ):
         # `model` (#173) overrides the role-default summary model
         # (provider-specific: `_summary_model` on openai_compat/gemini,
         # `_text_model` on local). `None` keeps env behavior unchanged.
@@ -26,9 +27,10 @@ class TextAgent(BaseAgent):
         # for THIS call only — bound to a ContextVar, so concurrent jobs
         # in the same worker never see each other's keys, and nothing is
         # persisted on the agent.
-        client = self.get_client(
-            os.environ.get("SUMMARY_AI_AGENT", self.provider)
-        )
+        # #239: ``provider`` overrides the env-derived provider for THIS
+        # call only, on a transient client. Pairs with ``api_key`` —
+        # this user's provider, billed to this user's key.
+        client = resolve_client(self, provider, "SUMMARY_AI_AGENT")
         with client_key_scope(client, api_key):
             result = client.summarize_text(text, primer=primer, model=model)
         self.add_to_job_meta("Last SUMMARY", result)
@@ -44,6 +46,7 @@ class TextAgent(BaseAgent):
         system_prompt=None,
         model=None,
         api_key=None,
+        provider=None,
     ):
         # `temperature` stays conditional because adapters have heterogeneous
         # defaults (local/openai_compat=0.7; gemini/mock=None) and forwarding
@@ -57,7 +60,8 @@ class TextAgent(BaseAgent):
         # for THIS call only — bound to a ContextVar, so concurrent jobs
         # in the same worker never see each other's keys, and nothing is
         # persisted on the agent.
-        client = self.get_client(os.environ.get("TEXT_AI_AGENT", self.provider))
+        # #239: see summarize_text — per-call provider override.
+        client = resolve_client(self, provider, "TEXT_AI_AGENT")
         with client_key_scope(client, api_key):
             result = client.generate_text(
                 message,

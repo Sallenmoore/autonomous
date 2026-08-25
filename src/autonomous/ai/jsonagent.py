@@ -1,11 +1,11 @@
 import json
-import os
 
 from autonomous.ai.baseagent import BaseAgent
 from autonomous.ai._json_utils import _schema_check, _schema_validate
 from autonomous.ai.exceptions import GenerateJSONParseError
 from autonomous.model.autoattr import StringAttr
 from autonomous.ai._credentials import client_key_scope
+from autonomous.ai._routing import resolve_client
 
 
 class JSONAgent(BaseAgent):
@@ -32,6 +32,7 @@ class JSONAgent(BaseAgent):
         schema_name="response",
         model=None,
         api_key=None,
+        provider=None,
     ):
         # Validate the caller-supplied schema's STRUCTURE before any HTTP
         # work — a malformed schema raises GenerateJSONParseError here
@@ -41,8 +42,10 @@ class JSONAgent(BaseAgent):
         # #20). No-op when json_schema is None.
         _schema_check(json_schema)
 
-        provider = os.environ.get("JSON_AI_AGENT", self.provider)
-        client = self.get_client(provider)
+        # #239: ``provider`` overrides the env-derived provider for THIS
+        # call only, on a transient client. Pairs with ``api_key`` —
+        # this user's provider, billed to this user's key.
+        client = resolve_client(self, provider, "JSON_AI_AGENT")
 
         kwargs = {}
         if temperature is not None:

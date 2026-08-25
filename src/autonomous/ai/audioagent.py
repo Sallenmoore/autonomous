@@ -1,9 +1,8 @@
-import os
-
 from autonomous import log
 from autonomous.ai.baseagent import BaseAgent
 from autonomous.model.autoattr import StringAttr
 from autonomous.ai._credentials import client_key_scope
+from autonomous.ai._routing import resolve_client
 
 
 # LLM dramatize prompt — applied once over the COMPLETE transcript, not
@@ -46,13 +45,20 @@ class AudioAgent(BaseAgent):
     )
 
     def generate(
-        self, prompt, voice_description=None, voice_id=None, api_key=None
+        self,
+        prompt,
+        voice_description=None,
+        voice_id=None,
+        api_key=None,
+        provider=None,
     ):
         # BYOK (#227): ``api_key`` overrides this provider's credential
         # for THIS call only — bound to a ContextVar, so concurrent jobs
         # in the same worker never see each other's keys, and nothing is
         # persisted on the agent.
-        client = self.get_client(os.environ.get("TTS_AI_AGENT", self.provider))
+        # #239: ``provider`` overrides the env-derived provider for THIS
+        # call only, on a transient client.
+        client = resolve_client(self, provider, "TTS_AI_AGENT")
         with client_key_scope(client, api_key):
             return client.generate_audio(
                 prompt,
@@ -60,7 +66,7 @@ class AudioAgent(BaseAgent):
                 voice_id=voice_id,
             )
 
-    def transcribe(self, audio_bytes, api_key=None):
+    def transcribe(self, audio_bytes, api_key=None, provider=None):
         """Whisper-only transcription. Returns the verbose-json dict
         ``{"text": str, "segments": [...]}`` from
         ``OpenAIClient.generate_transcription`` (or the equivalent shape
@@ -71,9 +77,8 @@ class AudioAgent(BaseAgent):
         running ``dramatize()`` separately when a screenplay-formatted
         version is wanted.
         """
-        client = self.get_client(
-            os.environ.get("TRANSCRIBE_AI_AGENT", self.provider)
-        )
+        # #239: per-call provider override (transient client).
+        client = resolve_client(self, provider, "TRANSCRIBE_AI_AGENT")
         log("AudioAgent.transcribe: sending to Whisper...", _print=True)
         # BYOK (#227): ``api_key`` overrides this provider's credential
         # for THIS call only — bound to a ContextVar, so concurrent jobs
@@ -82,7 +87,9 @@ class AudioAgent(BaseAgent):
         with client_key_scope(client, api_key):
             return client.generate_transcription(audio_bytes)
 
-    def dramatize(self, transcript, world_context=None, api_key=None):
+    def dramatize(
+        self, transcript, world_context=None, api_key=None, provider=None
+    ):
         """Format a complete raw transcript as a TTRPG screenplay.
 
         Takes the entire transcription text plus a ``world_context`` dict
@@ -95,9 +102,8 @@ class AudioAgent(BaseAgent):
         """
         if not transcript:
             return ""
-        client = self.get_client(
-            os.environ.get("TEXT_AI_AGENT", self.provider)
-        )
+        # #239: per-call provider override (transient client).
+        client = resolve_client(self, provider, "TEXT_AI_AGENT")
         log(
             f"AudioAgent.dramatize: formatting {len(transcript)}-char transcript "
             f"with {len(world_context or {})} context keys",
