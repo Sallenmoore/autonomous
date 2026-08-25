@@ -5,6 +5,23 @@ recent first.
 
 ## Unreleased
 
+### Fixed — `DictAttr` reads no longer raise on legacy non-dict data; FLUX safety blocks re-route instead of storing a black frame (#225, #226)
+
+**What changed.**
+
+- **`DictAttr.__get__` degrades instead of raising when the stored value is not a dict.** A field that *became* a `DictAttr` in a schema change leaves every pre-change row holding the old shape (usually a list), and the getter walked straight into `.items()` — so simply *reading* the attribute raised `AttributeError: 'BaseList' object has no attribute 'items'` and every request touching it 500'd before any consumer code could normalize the value. It now returns the field's declared default and logs one `[WARNING]` naming model, field, and pk. Note the old behavior only bit on a **non-empty** non-dict: a stored `[]` is falsy and was already coerced to `{}` by the existing `or {}`.
+- **The legacy stored value is left in `_data` untouched** — deliberately asymmetric with `ListAttr`, which self-heals by rewriting the stored value to `[]`. Rewriting here would destroy exactly the bytes a consumer needs to migrate from, and the next `save()` would persist that loss silently. Consumers can keep reading `obj._data[field]` to drive a lazy migration.
+- **Class-level access (`Model.some_dict_field`) works again.** It previously raised the same `AttributeError`, because the base descriptor returns the *field object* when `instance is None` and the walk did not special-case it. Any code path introspecting a `DictAttr` off the class (including mongoengine's own query machinery) was affected.
+- **New `log.warning(...)`** on the shared logger. Bare `log(...)` emits at DEBUG by design (developer content dumps), which makes it invisible under the default `LOG_LEVEL=WARNING`; degraded-but-recovered paths need the opposite. Same formatting and file-archive behavior as `log(...)`.
+- **`FluxAIModel.generate_image` raises `GenerateImageEmptyResponseError` when fal.ai flags the result.** fal.ai runs its safety checker regardless of the `enable_safety_checker: False` the adapter already sends, and reports a trip as an HTTP 200 whose image URL points at a solid-black frame, flagged by `has_nsfw_concepts` (some model families spell it `nsfw_content_detected`; both are honored). Those bytes were returned as a normal success — so the black square got stored as the caller's image and `ImageAgent`'s `fallback_provider` never fired, because nothing raised. The flagged frame is no longer even fetched from the CDN.
+
+**Behavior change — externally visible.**
+
+- Reading a `DictAttr` whose stored value is a non-empty non-dict returns the default instead of raising. Consumers that wrapped the read in `try/except AttributeError` (the storyteller#2358 workaround) can drop the wrapper; the fallback branch is now dead code. Consumers that *relied* on the raise to detect legacy rows should watch the `[WARNING] ... legacy ... not a dict` log line, or read `_data` directly.
+- `FluxAIModel.generate_image` now raises on safety-flagged prompts where it previously returned image bytes. Callers using `ImageAgent.generate` with a `fallback_provider` get the re-route they already opted into and see no error. Callers invoking the adapter **directly** must catch `GenerateImageEmptyResponseError` (it subclasses `ValueError`, so an existing `except ValueError` already covers it). This is the same class the Gemini adapter raises for a `SAFETY` / `PROHIBITED_CONTENT` finish reason — one `except` now covers a content refusal from either provider. It is the deterministic (non-retried) form: the same prompt is blocked again, so re-route rather than retry.
+
+**Migration.** No action required. Consumers holding legacy list-shaped rows in a `DictAttr` field should still migrate them — the warning names each offending model/field/pk — since the field now reads as its default rather than as the legacy content.
+
 ### Fixed — the `vector_index` opt-out is enforced on the write side; `save(sync=True)` no longer raises on a downed Redis (#220)
 
 **What changed.**

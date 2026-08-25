@@ -407,6 +407,19 @@ logged and the placeholder is left in place rather than pruned
 meaningful, so we preserve the key even when the value can't be
 resolved).
 
+- Returns the declared default (copied, never the shared literal)
+  and logs at `WARNING` if the stored value is not a dict —
+  a field that became a `DictAttr` in a schema change leaves
+  pre-change rows holding the old shape, and the `.items()` walk
+  used to raise out of the getter so the *read* failed before a
+  consumer could normalize (#225).
+- **`_data` is deliberately left untouched** on that path —
+  asymmetric with `ListAttr`, which self-heals by rewriting the
+  stored value. Rewriting here would destroy the bytes a consumer
+  needs for its own lazy migration, and the next `save()` would
+  persist the loss. The trade is the mirror of `ListAttr`'s:
+  `DictAttr` prefers a recoverable read over a healed row.
+
 ### `IntAttr` — string coercion
 (`autoattr.py:38`)
 

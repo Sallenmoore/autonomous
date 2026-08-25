@@ -228,6 +228,93 @@ class TestGenerateImage:
             flux_mod.FluxAIModel.generate_image(_flux(), "prompt")
 
 
+    def test_nsfw_flagged_response_raises_and_skips_cdn_fetch(self, monkeypatch):
+        # Issue #226: fal.ai runs its safety checker even though the
+        # request body sets ``enable_safety_checker: False``, and answers
+        # HTTP 200 carrying a solid-black frame with
+        # ``has_nsfw_concepts: [true]``. Returning those bytes as a
+        # success stored a black square as the entity image and stopped
+        # ImageAgent's ``fallback_provider`` from ever firing. Raising
+        # the deterministic empty-image error is what re-routes to Gemini.
+        from autonomous.ai.exceptions import GenerateImageEmptyResponseError
+        monkeypatch.setenv("FAL_KEY", "fal-test-key")
+        calls = {"get": 0}
+
+        def fake_post(url, headers=None, json=None, timeout=None):
+            return _FakeResponse(
+                json_data={
+                    "images": [{"url": "https://cdn/black.png"}],
+                    "has_nsfw_concepts": [True],
+                }
+            )
+
+        def fake_get(url, timeout=None, **kwargs):
+            calls["get"] += 1
+            return _FakeResponse(content=b"\x00" * 16)
+
+        from autonomous.ai.models import flux as flux_mod
+        monkeypatch.setattr(flux_mod._HTTP, "post", fake_post)
+        monkeypatch.setattr(flux_mod._HTTP, "get", fake_get)
+
+        with pytest.raises(GenerateImageEmptyResponseError, match="safety"):
+            flux_mod.FluxAIModel.generate_image(_flux(), "a mix of two actors")
+
+        # The flagged frame must never be downloaded — paying for the CDN
+        # round trip to fetch a black square is pure waste.
+        assert calls["get"] == 0
+
+    def test_nsfw_flag_all_false_is_a_normal_success(self, monkeypatch):
+        # The common shape: fal.ai returns ``has_nsfw_concepts: [false]``
+        # on every clean generation. The guard must not treat that as a
+        # block, or FLUX would fall back to Gemini on every single call.
+        monkeypatch.setenv("FAL_KEY", "fal-test-key")
+
+        def fake_post(url, headers=None, json=None, timeout=None):
+            return _FakeResponse(
+                json_data={
+                    "images": [{"url": "https://cdn/ok.webp"}],
+                    "has_nsfw_concepts": [False],
+                }
+            )
+
+        def fake_get(url, timeout=None, **kwargs):
+            return _FakeResponse(content=b"\x89PNG-clean")
+
+        from autonomous.ai.models import flux as flux_mod
+        monkeypatch.setattr(flux_mod._HTTP, "post", fake_post)
+        monkeypatch.setattr(flux_mod._HTTP, "get", fake_get)
+
+        assert flux_mod.FluxAIModel.generate_image(
+            _flux(), "a dragon"
+        ) == b"\x89PNG-clean"
+
+    def test_nsfw_content_detected_alias_also_raises(self, monkeypatch):
+        # fal.ai is not consistent across model families: some endpoints
+        # report the block as ``nsfw_content_detected`` instead of
+        # ``has_nsfw_concepts`` (#226 names both). Honour either spelling
+        # so a model swap can't silently reopen the black-frame hole.
+        from autonomous.ai.exceptions import GenerateImageEmptyResponseError
+        monkeypatch.setenv("FAL_KEY", "fal-test-key")
+
+        def fake_post(url, headers=None, json=None, timeout=None):
+            return _FakeResponse(
+                json_data={
+                    "images": [{"url": "https://cdn/black.png"}],
+                    "nsfw_content_detected": [True],
+                }
+            )
+
+        def fake_get(url, timeout=None, **kwargs):  # pragma: no cover
+            raise AssertionError(f"flagged frame must not be fetched: {url}")
+
+        from autonomous.ai.models import flux as flux_mod
+        monkeypatch.setattr(flux_mod._HTTP, "post", fake_post)
+        monkeypatch.setattr(flux_mod._HTTP, "get", fake_get)
+
+        with pytest.raises(GenerateImageEmptyResponseError, match="safety"):
+            flux_mod.FluxAIModel.generate_image(_flux(), "prompt")
+
+
 class TestUpscaleImage:
     def test_upscale_returns_input_unchanged(self):
         from autonomous.ai.models.flux import FluxAIModel
