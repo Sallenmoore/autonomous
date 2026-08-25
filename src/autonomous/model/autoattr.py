@@ -168,6 +168,30 @@ class DictAttr(DictField):
 
     def __get__(self, instance, owner):
         results = super().__get__(instance, owner) or {}
+        if instance is None:
+            # Class-level access (``Model.field``) — the base descriptor
+            # hands back the field itself and mongoengine's query builder
+            # depends on that. It is not stored data; do not inspect it.
+            return results
+        if not isinstance(results, dict):
+            # Issue #225: a field that BECAME a DictAttr in a schema change
+            # leaves every pre-change row holding the old shape (usually a
+            # list). Walking ``.items()`` on it raised out of the getter, so
+            # the read itself 500'd before any consumer could normalize —
+            # one legacy row was enough to take down a whole page.
+            #
+            # Degrade to the declared default and warn instead. The stored
+            # value is deliberately LEFT ALONE — unlike ``ListAttr``, which
+            # self-heals by rewriting ``_data``. Rewriting here would
+            # destroy the very bytes a consumer needs to migrate from, and
+            # the next ``save()`` would persist that loss silently.
+            log.warning(
+                f"{owner.__name__}.{self.name}: stored value is a legacy "
+                f"{type(results).__name__}, not a dict "
+                f"(pk={getattr(instance, 'pk', None)}). Returning the field "
+                "default; migrate the stored value to a dict."
+            )
+            return self._legacy_default()
         for key, lazy_obj in results.items():
             try:
                 if hasattr(lazy_obj, "fetch"):
@@ -181,6 +205,19 @@ class DictAttr(DictField):
 
     def __set__(self, instance, value):
         super().__set__(instance, value)
+
+    def _legacy_default(self):
+        """A fresh dict for the legacy-shape read path.
+
+        ``self.default`` may be a callable (``default=dict``) or a literal
+        (``default={"tier": "base"}``). A literal is shared mutable state
+        on the field, so it is copied — handing out the same object would
+        let one caller's mutation leak into every other legacy row's read.
+        A non-dict default (or none at all) degrades to ``{}``, since the
+        caller is about to treat this as a dict either way.
+        """
+        default = self.default() if callable(self.default) else self.default
+        return dict(default) if isinstance(default, dict) else {}
 
 
 class EnumAttr(EnumField):
