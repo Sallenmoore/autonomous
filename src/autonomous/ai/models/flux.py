@@ -25,7 +25,10 @@ import requests
 
 from autonomous import log
 from autonomous.ai._extract import extract_or_malformed
-from autonomous.ai.exceptions import MalformedResponseError
+from autonomous.ai.exceptions import (
+    GenerateImageEmptyResponseError,
+    MalformedResponseError,
+)
 from autonomous.ai._image_utils import resolve_image_config
 from autonomous.ai.protocol import NotSupportedByProvider
 from autonomous.config import env_str, settings
@@ -236,6 +239,38 @@ class FluxAIModel(AutoModel):
             resp = _HTTP.post(
                 url, headers=headers, json=body, timeout=self._media_timeout
             )
+
+            # Issue #226: fal.ai runs its safety checker regardless of
+            # the ``enable_safety_checker: False`` we send above, and a
+            # trip is reported as HTTP 200 whose ``images[0].url`` points
+            # at a solid-black frame, flagged by ``has_nsfw_concepts``
+            # (some model families spell it ``nsfw_content_detected``).
+            # Returning those bytes as a success stored a black square as
+            # the caller's image AND kept ImageAgent's fallback_provider
+            # from ever firing, because nothing raised. This is the same
+            # event Gemini reports as a SAFETY finish_reason, so it raises
+            # the same deterministic error: re-asking with the same prompt
+            # is blocked again, so the caller should re-route, not retry.
+            # Checked here rather than inside the extractor below because
+            # ``GenerateImageEmptyResponseError`` subclasses ``ValueError``
+            # and ``extract_or_malformed`` would rewrite it into a
+            # ``MalformedResponseError`` — the body is well-formed; it is
+            # the *content* that was refused.
+            try:
+                flags = resp.json()
+            except ValueError:
+                # Non-JSON 2xx: leave it to the extractor below, which
+                # translates it to MalformedResponseError with an excerpt.
+                flags = {}
+            if any(flags.get("has_nsfw_concepts") or ()) or any(
+                flags.get("nsfw_content_detected") or ()
+            ):
+                raise GenerateImageEmptyResponseError(
+                    "fal.ai safety checker flagged the prompt; the response "
+                    "carries a blank frame instead of an image. Re-route to "
+                    "another provider (ImageAgent fallback_provider) — "
+                    "retrying the same prompt returns the same block."
+                )
 
             # Issue #142: shared malformed-2xx translation. The walk
             # (``payload["images"][0]["url"]`` with explicit empty/missing

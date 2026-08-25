@@ -101,6 +101,21 @@ class Logger:
         if is_printed:
             print(msg)
 
+    def warning(self, *args, **kwargs) -> None:
+        """Emit at WARNING — for conditions an operator must actually see.
+
+        ``__call__`` deliberately emits at DEBUG (developer content dumps),
+        which means a bare ``log(...)`` is invisible under the default
+        ``LOG_LEVEL=WARNING``. Degraded-but-recovered paths (e.g. a legacy
+        stored value that the ORM coerced instead of raising, #225) need
+        the opposite: they must surface in prod logs so the underlying
+        data can be migrated, without being an error the caller handles.
+        """
+        if not self.enabled:
+            return
+        kwargs.pop("_print", False)
+        self.logger.warning(f"{self._format(*args, **kwargs)}\n")
+
 
 _default_logger: Logger | None = None
 
