@@ -19,7 +19,8 @@
 # Behavior:
 #   - Without SMOKE_CONTAINER: creates an isolated host venv, pip-installs
 #     autonomous-app at the resolved version with retries (PyPI propagation
-#     lag), and imports the public top-level symbols.
+#     lag), and imports the public top-level symbols. The install is always
+#     --no-cache-dir: see the retry loop's comment (#244).
 #   - With SMOKE_CONTAINER: same flow inside an ephemeral container; bypasses
 #     host Python entirely.
 #
@@ -94,7 +95,7 @@ PYSCRIPT
          "${SMOKE_CONTAINER}" sh -c "
            set -e
            pip install --quiet --upgrade pip
-           pip install --quiet 'autonomous-app[all]==${VERSION}'
+           pip install --quiet --no-cache-dir 'autonomous-app[all]==${VERSION}'
            printf '__INSTALL_OK__\n' >&2
            exec python /tmp/smoke_import.py
          " 2> "${SMOKE_ERR}"; then
@@ -161,8 +162,18 @@ INSTALL_OK=0
 # core requirements.txt (e.g. transitive numpy needs), but those are
 # separate library bugs to file via the normal issue flow, not smoke
 # concerns.
+#
+# --no-cache-dir is load-bearing, not hygiene (#244). pip caches the SIMPLE
+# INDEX PAGE, and smoke runs seconds after `twine upload` returns — so an
+# attempt that races the index caches a listing without the new version,
+# and every later attempt reads that cache and fails identically. The
+# retry loop below is then structurally unable to recover: it re-asks a
+# cache, not PyPI. That turned a seconds-long race into a persistent
+# "released and immediately broken" false alarm (halt-trigger #5) on
+# 0.3.177, where the package was live and indexed the whole time. A smoke
+# test wants a cold resolve by definition; the venv is throwaway anyway.
 for attempt in 1 2 3 4 5; do
-  if pip install --quiet "autonomous-app[all]==${VERSION}" 2> "${INSTALL_ERR}"; then
+  if pip install --quiet --no-cache-dir "autonomous-app[all]==${VERSION}" 2> "${INSTALL_ERR}"; then
     INSTALL_OK=1
     break
   fi
