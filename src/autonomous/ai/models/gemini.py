@@ -23,6 +23,11 @@ from autonomous.ai._image_utils import resolve_image_config
 from autonomous.ai.retry import retry
 from autonomous.model.autoattr import ListAttr, StringAttr
 from autonomous.model.automodel import AutoModel
+from autonomous.ai._credentials import (
+    api_key_override,
+    current_overrides,
+    override_for,
+)
 
 
 class GeminiAIModel(AutoModel):
@@ -112,8 +117,21 @@ class GeminiAIModel(AutoModel):
         "Sulafar": ["female"],
     }
 
+    # BYOK (#227): the env var holding this provider's credential.
+    # ``BaseAgent`` binds a per-call ``api_key=`` against THIS name, so a
+    # key issued for one provider can never be sent to another on a
+    # fallback leg. An adapter that omits it silently ignores overrides.
+    API_KEY_ENV = "GOOGLEAI_KEY"
+
     @property
     def client(self):
+        # A per-call BYOK override (#227) gets its OWN client, built
+        # fresh and never memoized: ``self._client`` holds the
+        # deployment's key and must survive the call, and caching a
+        # user's key on a persisted Document is exactly the leak this
+        # design exists to prevent.
+        if override := override_for(self.API_KEY_ENV):
+            return genai.Client(api_key=override)
         if not self._client:
             self._client = genai.Client(api_key=os.environ.get("GOOGLEAI_KEY"))
         return self._client
@@ -330,8 +348,21 @@ class GeminiAIModel(AutoModel):
                 # finish (and log) before ``raise`` propagates;
                 # ``_delete_orphan`` swallows its own errors so ``map``
                 # never raises.
+                # BYOK (#227): a ContextVar binding does NOT cross into a
+                # worker thread, so without re-binding these cleanup deletes
+                # would authenticate with the deployment key while the
+                # upload that created the files used the caller's — leaving
+                # orphans in the caller's account. Re-bound from a snapshot
+                # rather than a shared ``copy_context()``: a single Context
+                # cannot be entered by four threads at once.
+                overrides = current_overrides()
+
+                def _delete_orphan_in_thread(f):
+                    with api_key_override(overrides):
+                        return _delete_orphan(f)
+
                 with ThreadPoolExecutor(max_workers=4) as executor:
-                    list(executor.map(_delete_orphan, uploaded_files))
+                    list(executor.map(_delete_orphan_in_thread, uploaded_files))
                 raise
 
         self.file_refs = [f.name for f in self.client.files.list()]

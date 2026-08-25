@@ -3,6 +3,7 @@ import os
 from autonomous import log
 from autonomous.ai.baseagent import BaseAgent
 from autonomous.model.autoattr import StringAttr
+from autonomous.ai._credentials import client_key_scope
 
 
 class TextAgent(BaseAgent):
@@ -17,13 +18,19 @@ class TextAgent(BaseAgent):
         default="A helpful AI assistant trained to assist with generating text according to the given requirements."
     )
 
-    def summarize_text(self, text, primer="", model=None):
+    def summarize_text(self, text, primer="", model=None, api_key=None):
         # `model` (#173) overrides the role-default summary model
         # (provider-specific: `_summary_model` on openai_compat/gemini,
         # `_text_model` on local). `None` keeps env behavior unchanged.
-        result = self.get_client(
+        # BYOK (#227): ``api_key`` overrides this provider's credential
+        # for THIS call only — bound to a ContextVar, so concurrent jobs
+        # in the same worker never see each other's keys, and nothing is
+        # persisted on the agent.
+        client = self.get_client(
             os.environ.get("SUMMARY_AI_AGENT", self.provider)
-        ).summarize_text(text, primer=primer, model=model)
+        )
+        with client_key_scope(client, api_key):
+            result = client.summarize_text(text, primer=primer, model=model)
         self.add_to_job_meta("Last SUMMARY", result)
         return result
 
@@ -36,6 +43,7 @@ class TextAgent(BaseAgent):
         temperature=None,
         system_prompt=None,
         model=None,
+        api_key=None,
     ):
         # `temperature` stays conditional because adapters have heterogeneous
         # defaults (local/openai_compat=0.7; gemini/mock=None) and forwarding
@@ -45,16 +53,20 @@ class TextAgent(BaseAgent):
         kwargs = {}
         if temperature is not None:
             kwargs["temperature"] = temperature
-        result = self.get_client(
-            os.environ.get("TEXT_AI_AGENT", self.provider)
-        ).generate_text(
-            message,
-            additional_instructions,
-            uri=uri,
-            context=context,
-            system_prompt=system_prompt,
-            model=model,
-            **kwargs,
-        )
+        # BYOK (#227): ``api_key`` overrides this provider's credential
+        # for THIS call only — bound to a ContextVar, so concurrent jobs
+        # in the same worker never see each other's keys, and nothing is
+        # persisted on the agent.
+        client = self.get_client(os.environ.get("TEXT_AI_AGENT", self.provider))
+        with client_key_scope(client, api_key):
+            result = client.generate_text(
+                message,
+                additional_instructions,
+                uri=uri,
+                context=context,
+                system_prompt=system_prompt,
+                model=model,
+                **kwargs,
+            )
         self.add_to_job_meta("Last TEXT", result)
         return result

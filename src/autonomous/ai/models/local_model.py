@@ -26,6 +26,7 @@ from autonomous.http import HttpClient
 from autonomous.model.autoattr import ListAttr, StringAttr
 from autonomous.model.automodel import AutoModel
 from autonomous.taskrunner.autotasks import AutoTasks
+from autonomous.ai._credentials import resolve_api_key
 
 # Module-level HTTP client for Ollama + media_ai calls (#50 slice C, README #16).
 # Pre-migration this was a bare ``_SESSION = requests.Session()`` with each
@@ -90,6 +91,12 @@ _STRUCTURED_OUTPUTS_LOGGED: set[tuple[str, str]] = set()
 
 
 class LocalAIModel(AutoModel):
+
+    # BYOK (#227): the env var holding this provider's credential.
+    # ``BaseAgent`` binds a per-call ``api_key=`` against THIS name, so a
+    # key issued for one provider can never be sent to another on a
+    # fallback leg. An adapter that omits it silently ignores overrides.
+    API_KEY_ENV = "ORIN_VOICE_TOKEN"
     messages = ListAttr(StringAttr(default=[]))
     name = StringAttr(default="agent")
     instructions = StringAttr(default="You are a helpful AI.")
@@ -504,7 +511,9 @@ class LocalAIModel(AutoModel):
         # orin-voice gates /transcribe behind a shared bearer token sourced from
         # ORIN_VOICE_TOKEN. Empty value → server rejects with 401; no special-
         # casing here so the misconfig surfaces loud rather than silent.
-        headers = {"Authorization": f"Bearer {env_str('ORIN_VOICE_TOKEN', '')}"}
+        headers = {
+            "Authorization": f"Bearer {resolve_api_key(self.API_KEY_ENV)}"
+        }
         try:
             if current_job := AutoTasks().get_current_task():
                 current_job.meta(data=data)
@@ -552,8 +561,10 @@ class LocalAIModel(AutoModel):
             # the legacy fallback so wav-only servers behind
             # ``MEDIA_AUDIO_API_BASE_URL`` still work. The branch below keys on
             # the actual response Content-Type, not the request preference.
+            # Bearer is the ORIN_VOICE_TOKEN shared secret (``API_KEY_ENV``),
+            # resolved at call time so a per-call BYOK override wins (#227).
             headers = {
-                "Authorization": f"Bearer {env_str('ORIN_VOICE_TOKEN', '')}",
+                "Authorization": f"Bearer {resolve_api_key(self.API_KEY_ENV)}",
                 "Accept": "audio/ogg, audio/wav;q=0.5",
             }
             if current_job := AutoTasks().get_current_task():
