@@ -30,6 +30,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 INIT_FILE="${ROOT}/src/autonomous/__init__.py"
+# The name on PyPI, which is NOT the import name (`autonomous`).
+PACKAGE_NAME="autonomous-app"
 
 cd "$ROOT"
 
@@ -85,6 +87,26 @@ PY
 
 echo "📈 Bumping autonomous to ${NEW_VERSION}"
 
+# --- 1b. Refuse a version PyPI already has ---------------------------------
+# `make package` uploads with `twine upload --skip-existing`, which turns a
+# collision into a SILENT no-op: twine exits 0, this script commits, pushes
+# and prints ✅, and PyPI never got the artifact. Checked here, before any
+# state change, per this script's abort-early design. A `2` means PyPI
+# could not be read at all — warn and continue rather than block a release
+# on a transient index outage; the post-upload gate is the real assertion.
+
+PYPI_CHECK="${ROOT}/scripts/pypi_release_check.py"
+
+echo "🔎 Checking PyPI does not already have ${NEW_VERSION}..."
+set +e
+python3 "${PYPI_CHECK}" "${PACKAGE_NAME}" "${NEW_VERSION}" --assert-absent
+pypi_rc=$?
+set -e
+if [[ $pypi_rc -eq 1 ]]; then
+  echo "    Nothing has changed yet. Pick an unused version and re-run." >&2
+  exit 1
+fi
+
 # --- 2. Write the version bump ---------------------------------------------
 
 python3 - <<PY
@@ -110,6 +132,23 @@ PY
 echo "📦 Running 'make package'..."
 if ! make package; then
   echo "❌ 'make package' failed. Reverting version bump and aborting." >&2
+  git checkout -- "${INIT_FILE}"
+  exit 1
+fi
+
+# --- 3b. Assert the artifact actually landed --------------------------------
+# The whole point of the script is that a version reached PyPI, so say so out
+# loud instead of inferring it from twine's exit code. Still BEFORE the commit
+# and push, so a failure reverts exactly like a failed `make package` — the
+# only state change so far is the modified __init__.py.
+
+echo "🔎 Confirming ${NEW_VERSION} is on PyPI..."
+set +e
+python3 "${PYPI_CHECK}" "${PACKAGE_NAME}" "${NEW_VERSION}" --assert-present
+pypi_rc=$?
+set -e
+if [[ $pypi_rc -eq 1 ]]; then
+  echo "    Reverting version bump; main is untouched." >&2
   git checkout -- "${INIT_FILE}"
   exit 1
 fi
