@@ -22,17 +22,13 @@ class GHRemoteCallbacks(pygit2.RemoteCallbacks):
                 _type_: _description_
             """
             return pygit2.UserPass(self.user,self.token)
-        
-        def certificate_check(self, certificate, valid, host):
-            """
-            _summary_
 
-            Args:
-                certificate (_type_): _description_
-                valid (_type_): _description_
-                host (_type_): _description_
-
-            Returns:
-                _type_: _description_
-            """
-            return True
+        # NOTE (#256): do NOT add a ``certificate_check`` override here.
+        # This class previously defined one that returned a bare ``True``,
+        # which tells libgit2 to accept ANY certificate from ANY host — on
+        # the same object whose ``credentials()`` above hands a GITHUB_PAT
+        # to that peer. Inheriting ``pygit2.RemoteCallbacks``'s version
+        # (it raises ``Passthrough``) defers to libgit2's own validation,
+        # which GitHub's real certificates satisfy. If a self-signed
+        # remote ever genuinely needs a bypass, make it an explicit,
+        # loudly-logged opt-in — never the default, and never unconditional.

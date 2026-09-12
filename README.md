@@ -172,10 +172,11 @@ A separate batch of refactor/test/perf items surfaced by the
 2026-06-18 multi-agent audit is tracked as GitHub issues **#141 –
 #154** rather than inlined here; see the issue tracker for that set.
 
-1. **[security]** `apis/version_control/GHCallbacks.py:38` —
-   `certificate_check` returns `True` unconditionally, disabling TLS
-   verification for every git operation. Enable verification or make
-   the bypass an explicit, logged opt-in.
+1. **[security]** ~~`certificate_check` returns `True` unconditionally,
+   disabling TLS verification for every git operation.~~ **CLOSED** by
+   issue #256 — the override is gone, so `pygit2.RemoteCallbacks`'
+   `Passthrough` defers to libgit2's own validation on every clone /
+   fetch / push. No opt-in bypass was added.
 
 2. **[stability]** ~~AI backend signatures drift across providers.~~
    **CLOSED** by issue #47 / cycles 124/125 — every adapter now
