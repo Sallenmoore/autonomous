@@ -327,6 +327,25 @@ kwargs always win. Already covered in §"`auto_pre_init`
 side-load" above, but bears repeating here as part of the
 "model finding" surface alongside `load_model` and `get_model`.
 
+- **`created=False` skip + `from_json` carve-out (#250).** The hook
+  returns early for documents built from a stored SON (the Layer-1
+  `created=` payload above). `AutoModel.from_json` is the one
+  from-store path that still side-loads — a `to_json` blob omits
+  None-valued fields, so it can be partial — and it opts back in
+  through the module-level `_FROM_JSON_SIDELOAD` ContextVar while
+  still constructing with `created=False`, because `created=True`
+  would switch on `BaseDocument`'s undefined-field check that
+  `strict=False` models rely on tolerating (a stale key in a session
+  blob). It also delegates the decode to the base `from_json`, so an
+  omitted `json_options` keeps the `LEGACY_JSON_OPTIONS` default
+  `to_json` writes with.
+- **Sender-unfiltered receivers are guarded.** `_auto_pre_init` /
+  `_auto_post_init` / `_auto_pre_save` / `_auto_post_save` are
+  connected without a `sender=`, so plain vendored `Document` /
+  `EmbeddedDocument` classes fire them too; each delegator `getattr`s
+  the hook and skips senders that lack one instead of raising
+  `AttributeError` out of `__init__` / `save()`.
+
 ### `AutoModel.model_name()` — name discriminator override
 (`automodel.py:181`)
 
@@ -425,6 +444,16 @@ resolved).
   needs for its own lazy migration, and the next `save()` would
   persist the loss. The trade is the mirror of `ListAttr`'s:
   `DictAttr` prefers a recoverable read over a healed row.
+- **Empty and `None` reads stay bound (#249).** `__get__` no longer
+  does `or {}` — an empty `BaseDict` is falsy and the `or` swapped it
+  for a detached plain dict, so in-place writes were never tracked. A
+  stored `None` (`null=True` fields) is substituted with a bound empty
+  dict written straight into `_data`, *not* assigned through the
+  descriptor: the read marks nothing, so an unrelated `save()` never
+  persists `{}` over a stored null — the same recoverable-read rule as
+  the legacy-shape path above. An in-place write on it then marks
+  `foo.k`; on a row whose stored value really is null Mongo rejects
+  that `$set` (`OperationError`), so reassign the whole dict there.
 
 ### `IntAttr` — string coercion
 (`autoattr.py:38`)
