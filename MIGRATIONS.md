@@ -5,6 +5,26 @@ recent first.
 
 ## Unreleased
 
+### Added — per-call sampling knobs `frequency_penalty` / `presence_penalty` / `top_p` / `seed` on the text and JSON entry points (#248)
+
+**What changed.**
+
+- **`TextAgent.generate` and `JSONAgent.generate` take optional `frequency_penalty=None`, `presence_penalty=None`, `top_p=None`, `seed=None`** (the OpenAI names). They forward to the adapter only when set — the same only-when-set rule `temperature` already follows — so `None` is "no override", never a value sent upstream.
+- **Every adapter's `generate_json` accepts all four** (they are now declared on `AIModelProtocol.generate_json`), and so does every adapter that implements `generate_text` (`openai_compat`, `gemini`, `local`, `mock`; `flux` and `litellm` are image-only and never had one). A per-call `provider=` switch therefore cannot `TypeError` on a knob.
+- What each provider does with them:
+  - **`openai_compat`** puts all four in the chat-completions payload, on every leg including the strict→loose `response_format` fallbacks.
+  - **`gemini`** honors `top_p` and `seed` via `GenerateContentConfig`. The two penalties are **dropped with a log line**: the 2.5 models reject them server-side (`400 INVALID_ARGUMENT "Penalty is not enabled"`), and forwarding them would surface that as a raw `ClientError`.
+  - **`local`** merges all four into Ollama's native `options`; a caller-set `top_p` overrides the hardcoded `0.95`, unset knobs leave the defaults alone. Two things to know: `local` also applies Ollama's `repeat_penalty: 1.1` (pre-existing, not overridable), so the same penalty values bite harder there than on `openai_compat` pointed at the same Ollama; and because a fixed `seed` would make the JSON parse-failure retry byte-identical, `local` steps the seed by one per retry attempt (still reproducible: `seed`, `seed+1`, `seed+2`).
+  - **`mock`**, **`flux`** and **`litellm`** accept and ignore them.
+- Motivation: repeated generations on the OpenAI-compatible (Ollama / HPC) backend cluster tightly. A consumer can now pass `frequency_penalty≈0.3–0.6` plus a fresh random `seed` per call — a token-free anti-repetition lever the transport previously made unreachable.
+
+**Behavior change — externally visible.**
+
+- Purely additive: every new kwarg defaults to `None`, which is byte-for-byte the previous payload on every provider. No existing call site needs to change.
+- **Consumers implementing their own adapter** must accept the four kwargs on `generate_json` (named, or via `**kwargs`) — the protocol-conformance test now requires them — and should do the same on `generate_text`, which the agents call with the same kwargs.
+
+**Migration.** No action required. To adopt: pass any subset of the four on `TextAgent.generate` / `JSONAgent.generate`.
+
 ### Added — per-call `provider=` override on the text / JSON / audio agent entry points (#239)
 
 **What changed.**

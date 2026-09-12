@@ -89,6 +89,7 @@ class MockAIModel(AutoModel):
         temperature=None,
         system_prompt=None,
         model=None,
+        **_kwargs,  # #248 sampling knobs: accepted, ignored
     ):
         log(f"⚡ [MOCK] Generating Text...", _print=True)
         return (

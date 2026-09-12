@@ -3,6 +3,7 @@ from autonomous.ai.baseagent import BaseAgent
 from autonomous.model.autoattr import StringAttr
 from autonomous.ai._credentials import client_key_scope
 from autonomous.ai._routing import resolve_client
+from autonomous.ai.protocol import sampling_overrides
 
 
 class TextAgent(BaseAgent):
@@ -47,6 +48,10 @@ class TextAgent(BaseAgent):
         model=None,
         api_key=None,
         provider=None,
+        frequency_penalty=None,
+        presence_penalty=None,
+        top_p=None,
+        seed=None,
     ):
         # `temperature` stays conditional because adapters have heterogeneous
         # defaults (local/openai_compat=0.7; gemini/mock=None) and forwarding
@@ -56,6 +61,8 @@ class TextAgent(BaseAgent):
         kwargs = {}
         if temperature is not None:
             kwargs["temperature"] = temperature
+        # #248: same only-when-set rule as temperature.
+        kwargs.update(sampling_overrides(frequency_penalty, presence_penalty, top_p, seed))
         # BYOK (#227): ``api_key`` overrides this provider's credential
         # for THIS call only — bound to a ContextVar, so concurrent jobs
         # in the same worker never see each other's keys, and nothing is
