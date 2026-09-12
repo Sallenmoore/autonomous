@@ -145,12 +145,20 @@ class AutoModel(Document):
         Bypass entirely by setting ``cls.auto_load_on_init = False``.
 
         Failure modes that are *not* errors:
+          - ``created=False`` — the document is being built FROM the
+            store (``_from_son`` on the query path, ``reload``, dereference,
+            unpickle): ``values`` already *is* the stored document, so the
+            fetch re-read it and merged nothing — an N+1 on every query
+            materialization (#250). ``from_json`` is the one from-store
+            path that still hydrates; see its override below.
           - ``values`` kwarg missing — nothing to merge into; return
           - ``pk`` malformed (not a valid ObjectId) — return
           - document not found in DB — return
           - DB unavailable — return (logged elsewhere)
         """
-        if not getattr(sender, "auto_load_on_init", True):
+        if not getattr(sender, "auto_load_on_init", True) or not kwargs.get(
+            "created", True
+        ):
             return
         values = kwargs.get("values")
         if not values:
@@ -182,7 +190,27 @@ class AutoModel(Document):
 
     @classmethod
     def _auto_pre_init(cls, sender, document, **kwargs):
-        sender.auto_pre_init(sender, document, **kwargs)
+        # The receiver is connected sender-unfiltered, so plain vendored
+        # Document / EmbeddedDocument classes fire it too — and have no hook.
+        hook = getattr(sender, "auto_pre_init", None)
+        if hook:
+            hook(sender, document, **kwargs)
+
+    @classmethod
+    def from_json(cls, json_data, created=False, **kwargs):
+        """Deserialize a ``to_json`` blob — and still side-load its gaps.
+
+        ``auto_pre_init`` skips documents built from the store
+        (``created=False``), but a ``to_json`` blob is NOT a full stored
+        document: ``to_mongo`` omits None-valued fields, so the round trip
+        can be partial. The session-restore path (``AutoAuth.current_user``)
+        relies on the pk side-load filling those gaps, so construct as
+        "new" (hook runs; blob values win, the store fills the rest) and
+        then restore the caller's persisted-ness flag (#250).
+        """
+        doc = cls._from_son(bson.json_util.loads(json_data, **kwargs), created=True)
+        doc._created = created
+        return doc
 
     @classmethod
     def auto_post_init(cls, sender, document, **kwargs):
@@ -190,7 +218,9 @@ class AutoModel(Document):
 
     @classmethod
     def _auto_post_init(cls, sender, document, **kwargs):
-        sender.auto_post_init(sender, document, **kwargs)
+        hook = getattr(sender, "auto_post_init", None)  # same guard as pre_init
+        if hook:
+            hook(sender, document, **kwargs)
 
     @property
     def path(self) -> str:

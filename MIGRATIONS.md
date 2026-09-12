@@ -5,6 +5,22 @@ recent first.
 
 ## Unreleased
 
+### Fixed — query materialization no longer refetches every document (`auto_pre_init` N+1) (#250)
+
+**What changed.**
+
+- **`AutoModel.auto_pre_init` skips the side-load for documents built FROM the store.** mongoengine fires `pre_init` for every construction, including `_from_son` on the query path — where `values` already *is* the stored document. The hook still ran `find_one({_id})` per doc and merged nothing: materializing N documents cost N+1 queries (measured downstream: 140 queries for 138 docs, ~85% of a dense page's traffic). The vendored `BaseDocument.__init__` now passes `created=` in the `pre_init` payload (it already popped it from `values`), and the hook returns early when `created` is `False` — i.e. for query results, `reload()`, reference dereference and unpickling.
+- **`Model(pk=x)` / `Model(pk=x, name="new")` hydration is unchanged** (`created` defaults to `True` on user construction, and to `True` when the kwarg is absent, so a consumer calling the hook directly sees no change). `auto_load_on_init = False` still opts a model out entirely.
+
+**Behavior change — externally visible.**
+
+- Fewer queries, same rows: `list(Model.objects(...))` is one `find`; `Model.get(pk)` is one query instead of two. Consumers that set `auto_load_on_init = False` on hot models purely to dodge this can remove the opt-out.
+- **Projections are now respected.** With `.only(...)` / `.exclude(...)` the side-load used to re-read the *whole* document behind the projection, so projected documents silently arrived fully hydrated. They now carry only the projected fields, as mongoengine documents.
+- `Model.from_json(blob)` **still side-loads.** A `to_json` blob omits None-valued fields, so unlike a query SON it can be partial; `AutoModel.from_json` constructs through the hook and then restores `created=False`, so the session-restore path in `AutoAuth.current_user` behaves exactly as before (blob values win, the store fills the gaps, one query).
+- Consumers overriding `auto_pre_init(cls, sender, document, **kwargs)` receive a new `created` kwarg; the documented `**kwargs` signature absorbs it. An override with a fixed signature must add it. The same goes for anything connected directly to `autonomous.db.signals.pre_init`: blinker fans every payload kwarg to every receiver, so a receiver declared as `fn(sender, document, values)` must grow `**kwargs` (or `created=None`) or it raises `TypeError` on the first construction after upgrade. No such receiver exists in this repo.
+- Pre-existing bug fixed alongside: the `pre_init` receiver is connected sender-unfiltered, so once `autonomous.model.automodel` was imported, constructing any plain vendored `Document` / `EmbeddedDocument` (no `auto_pre_init` hook) raised `AttributeError` inside `__init__`. It is now guarded.
+
+**Migration.** No action required unless an override declares a fixed kwarg list.
 ### Added — per-call sampling knobs `frequency_penalty` / `presence_penalty` / `top_p` / `seed` on the text and JSON entry points (#248)
 
 **What changed.**
