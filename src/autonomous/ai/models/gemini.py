@@ -20,6 +20,7 @@ from autonomous.ai.exceptions import (
     GenerateJSONParseError,
 )
 from autonomous.ai._image_utils import resolve_image_config
+from autonomous.ai.protocol import sampling_overrides
 from autonomous.ai.retry import retry
 from autonomous.model.autoattr import ListAttr, StringAttr
 from autonomous.model.automodel import AutoModel
@@ -28,6 +29,30 @@ from autonomous.ai._credentials import (
     current_overrides,
     override_for,
 )
+
+
+_DROPPED_KNOBS_WARNED: set[tuple[str, ...]] = set()
+
+
+def _sampling_config(frequency_penalty, presence_penalty, top_p, seed):
+    # #248: ``GenerateContentConfig`` declares all four, but the 2.5 models
+    # reject the penalties server-side (400 INVALID_ARGUMENT "Penalty is not
+    # enabled for models/gemini-2.5-*"), and that ``ClientError`` would
+    # escape ``generate_content`` raw. Honor top_p / seed; drop the
+    # penalties — warning once per distinct dropped set — so a per-call
+    # provider switch never 400s and a hot loop never floods the log.
+    # Module-level (not a method): committed tests graft ``generate_json``
+    # onto minimal stubs, so nothing new may be looked up through ``self``.
+    knobs = sampling_overrides(frequency_penalty, presence_penalty, top_p, seed)
+    dropped = tuple(
+        k
+        for k in ("frequency_penalty", "presence_penalty")
+        if knobs.pop(k, None) is not None
+    )
+    if dropped and dropped not in _DROPPED_KNOBS_WARNED:
+        _DROPPED_KNOBS_WARNED.add(dropped)
+        log(f"[gemini] ignoring sampling knobs Gemini rejects: {list(dropped)}")
+    return knobs
 
 
 class GeminiAIModel(AutoModel):
@@ -388,6 +413,10 @@ class GeminiAIModel(AutoModel):
         context=None,
         temperature=None,
         model=None,
+        frequency_penalty=None,
+        presence_penalty=None,
+        top_p=None,
+        seed=None,
     ):
         # Canonical AIModelProtocol signature (#47 slice 3). Translation
         # to gemini's native ``function=`` dict happens inline here —
@@ -434,6 +463,9 @@ class GeminiAIModel(AutoModel):
         }
         if temperature is not None:
             config_kwargs["temperature"] = temperature
+        config_kwargs.update(  # #248
+            _sampling_config(frequency_penalty, presence_penalty, top_p, seed)
+        )
 
         response = self.client.models.generate_content(
             model=model or self._json_model,
@@ -499,6 +531,10 @@ class GeminiAIModel(AutoModel):
         temperature=None,
         system_prompt=None,
         model=None,
+        frequency_penalty=None,
+        presence_penalty=None,
+        top_p=None,
+        seed=None,
     ):
         context = context or {}
         contents = [message]
@@ -519,6 +555,9 @@ class GeminiAIModel(AutoModel):
         }
         if temperature is not None:
             config_kwargs["temperature"] = temperature
+        config_kwargs.update(  # #248
+            _sampling_config(frequency_penalty, presence_penalty, top_p, seed)
+        )
 
         response = self.client.models.generate_content(
             model=model or self._text_model,

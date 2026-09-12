@@ -6,6 +6,7 @@ from autonomous.ai.exceptions import GenerateJSONParseError
 from autonomous.model.autoattr import StringAttr
 from autonomous.ai._credentials import client_key_scope
 from autonomous.ai._routing import resolve_client
+from autonomous.ai.protocol import sampling_overrides
 
 
 class JSONAgent(BaseAgent):
@@ -33,6 +34,10 @@ class JSONAgent(BaseAgent):
         model=None,
         api_key=None,
         provider=None,
+        frequency_penalty=None,
+        presence_penalty=None,
+        top_p=None,
+        seed=None,
     ):
         # Validate the caller-supplied schema's STRUCTURE before any HTTP
         # work — a malformed schema raises GenerateJSONParseError here
@@ -50,6 +55,10 @@ class JSONAgent(BaseAgent):
         kwargs = {}
         if temperature is not None:
             kwargs["temperature"] = temperature
+        # #248: sampling knobs forward only when set, like temperature —
+        # every registry adapter accepts them (openai_compat / gemini /
+        # local honor them; mock ignores).
+        kwargs.update(sampling_overrides(frequency_penalty, presence_penalty, top_p, seed))
 
         # Uniform dispatch across every provider in MODEL_REGISTRY (#47
         # slice 3). Pre-slice-3 there was an ``if provider == "gemini":``

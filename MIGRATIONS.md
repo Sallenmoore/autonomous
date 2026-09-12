@@ -5,6 +5,55 @@ recent first.
 
 ## Unreleased
 
+### Fixed — query materialization no longer refetches every document (`auto_pre_init` N+1) (#250)
+
+**What changed.**
+
+- **`AutoModel.auto_pre_init` skips the side-load for documents built FROM the store.** mongoengine fires `pre_init` for every construction, including `_from_son` on the query path — where `values` already *is* the stored document. The hook still ran `find_one({_id})` per doc and merged nothing: materializing N documents cost N+1 queries (measured downstream: 140 queries for 138 docs, ~85% of a dense page's traffic). The vendored `BaseDocument.__init__` now passes `created=` in the `pre_init` payload (it already popped it from `values`), and the hook returns early when `created` is `False` — i.e. for query results, `reload()`, reference dereference and unpickling.
+- **`Model(pk=x)` / `Model(pk=x, name="new")` hydration is unchanged** (`created` defaults to `True` on user construction, and to `True` when the kwarg is absent, so a consumer calling the hook directly sees no change). `auto_load_on_init = False` still opts a model out entirely.
+
+**Behavior change — externally visible.**
+
+- Fewer queries, same rows: `list(Model.objects(...))` is one `find`; `Model.get(pk)` is one query instead of two. Consumers that set `auto_load_on_init = False` on hot models purely to dodge this can remove the opt-out.
+- **Projections are now respected.** With `.only(...)` / `.exclude(...)` the side-load used to re-read the *whole* document behind the projection, so projected documents silently arrived fully hydrated. They now carry only the projected fields, as mongoengine documents.
+- `Model.from_json(blob)` **still side-loads.** A `to_json` blob omits None-valued fields, so unlike a query SON it can be partial; `AutoModel.from_json` constructs through the hook and then restores `created=False`, so the session-restore path in `AutoAuth.current_user` behaves exactly as before (blob values win, the store fills the gaps, one query).
+- Consumers overriding `auto_pre_init(cls, sender, document, **kwargs)` receive a new `created` kwarg; the documented `**kwargs` signature absorbs it. An override with a fixed signature must add it. The same goes for anything connected directly to `autonomous.db.signals.pre_init`: blinker fans every payload kwarg to every receiver, so a receiver declared as `fn(sender, document, values)` must grow `**kwargs` (or `created=None`) or it raises `TypeError` on the first construction after upgrade. No such receiver exists in this repo.
+- Pre-existing bug fixed alongside: the `pre_init` receiver is connected sender-unfiltered, so once `autonomous.model.automodel` was imported, constructing any plain vendored `Document` / `EmbeddedDocument` (no `auto_pre_init` hook) raised `AttributeError` inside `__init__`. It is now guarded.
+
+**Migration.** No action required unless an override declares a fixed kwarg list.
+### Added — per-call sampling knobs `frequency_penalty` / `presence_penalty` / `top_p` / `seed` on the text and JSON entry points (#248)
+
+**What changed.**
+
+- **`TextAgent.generate` and `JSONAgent.generate` take optional `frequency_penalty=None`, `presence_penalty=None`, `top_p=None`, `seed=None`** (the OpenAI names). They forward to the adapter only when set — the same only-when-set rule `temperature` already follows — so `None` is "no override", never a value sent upstream.
+- **Every adapter's `generate_json` accepts all four** (they are now declared on `AIModelProtocol.generate_json`), and so does every adapter that implements `generate_text` (`openai_compat`, `gemini`, `local`, `mock`; `flux` and `litellm` are image-only and never had one). A per-call `provider=` switch therefore cannot `TypeError` on a knob.
+- What each provider does with them:
+  - **`openai_compat`** puts all four in the chat-completions payload, on every leg including the strict→loose `response_format` fallbacks.
+  - **`gemini`** honors `top_p` and `seed` via `GenerateContentConfig`. The two penalties are **dropped with a log line**: the 2.5 models reject them server-side (`400 INVALID_ARGUMENT "Penalty is not enabled"`), and forwarding them would surface that as a raw `ClientError`.
+  - **`local`** merges all four into Ollama's native `options`; a caller-set `top_p` overrides the hardcoded `0.95`, unset knobs leave the defaults alone. Two things to know: `local` also applies Ollama's `repeat_penalty: 1.1` (pre-existing, not overridable), so the same penalty values bite harder there than on `openai_compat` pointed at the same Ollama; and because a fixed `seed` would make the JSON parse-failure retry byte-identical, `local` steps the seed by one per retry attempt (still reproducible: `seed`, `seed+1`, `seed+2`).
+  - **`mock`**, **`flux`** and **`litellm`** accept and ignore them.
+- Motivation: repeated generations on the OpenAI-compatible (Ollama / HPC) backend cluster tightly. A consumer can now pass `frequency_penalty≈0.3–0.6` plus a fresh random `seed` per call — a token-free anti-repetition lever the transport previously made unreachable.
+
+**Behavior change — externally visible.**
+
+- Purely additive: every new kwarg defaults to `None`, which is byte-for-byte the previous payload on every provider. No existing call site needs to change.
+- **Consumers implementing their own adapter** must accept the four kwargs on `generate_json` (named, or via `**kwargs`) — the protocol-conformance test now requires them — and should do the same on `generate_text`, which the agents call with the same kwargs.
+
+**Migration.** No action required. To adopt: pass any subset of the four on `TextAgent.generate` / `JSONAgent.generate`.
+### Fixed — in-place mutation of an EMPTY `DictAttr` now persists on `save()` (#249)
+
+**What changed.**
+
+- **`DictAttr.__get__` no longer does `super().__get__(...) or {}`.** mongoengine hands back a *bound* `BaseDict` whose `__setitem__` marks the field changed — but an **empty** `BaseDict` is falsy, so `or {}` swapped it for a fresh, detached plain `{}`. Any in-place write on that (`obj.foo[k] = v`) was invisible to change tracking, so `obj.save()` persisted nothing, and every subsequent read re-detached, so the loss was permanent until the caller reassigned the whole dict (`obj.foo = {**obj.foo, k: v}`). A stored `None` (only reachable with `null=True` or a direct `_data` write) now reads as a **bound, unmarked** empty dict: the substitute is written straight into `_data` rather than assigned through the descriptor, so the read itself is side-effect-free — an unrelated `save()` never persists `{}` over a stored null, and `null=True` can still surface a null. `ListAttr` never had the `or []` and was unaffected.
+
+**Behavior change — externally visible.**
+
+- In-place writes on an empty `DictAttr` are now tracked exactly like writes on a non-empty one: `obj.foo["k"] = "v"; obj.save()` persists `{"k": "v"}`. Reassigning the whole dict keeps working, so a consumer that already hardened its call sites to reassign-before-save needs no change — the reassignment workaround is simply no longer required.
+- **Rows whose stored value is actually `null` fail loudly on an in-place write.** A stored `null` only arises from an explicit `obj.foo = None; obj.save()` or an external writer — constructing a document reads every field through its descriptor, so even `DictAttr(default=None, null=True)` lands as `{}` on the first save (unchanged). Where a `null` does exist, after the read heals it to a bound `{}`, `obj.foo["k"] = "v"; obj.save()` emits `$set foo.k`, which Mongo rejects on a null parent — `save()` raises `OperationError` (wrapping the `WriteError`) where the old code dropped the write silently. Reassign the whole dict on such rows (`obj.foo = {**obj.foo, "k": "v"}`), which writes `{foo: {...}}`. The default `DictAttr()` already replaces a stored `null` with the field default at load time (`BaseField.__get__` / `__set__`), so a legacy-null row there gets the same `OperationError` on an in-place write — reassign there too.
+- The empty read returns the bound `BaseDict` (a `dict` subclass), not a plain `dict`; `isinstance(x, dict)`, equality and iteration are unchanged. Code that relied on the read being detached — mutating the returned dict as scratch space and expecting the model NOT to notice — will now see those mutations tracked and saved. That was the bug, but audit for it.
+
+**Migration.** No action required.
+
 ### Added — per-call `provider=` override on the text / JSON / audio agent entry points (#239)
 
 **What changed.**

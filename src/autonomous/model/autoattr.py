@@ -167,7 +167,27 @@ class DictAttr(DictField):
     """
 
     def __get__(self, instance, owner):
-        results = super().__get__(instance, owner) or {}
+        results = super().__get__(instance, owner)
+        # Issue #249: NOT ``or {}``. mongoengine hands back a *bound*
+        # ``BaseDict`` whose ``__setitem__`` marks the field changed, and an
+        # EMPTY one is falsy — ``or {}`` swapped it for a detached plain
+        # dict, so ``obj.foo[k] = v; obj.save()`` persisted nothing until
+        # the caller reassigned the whole dict. A stored ``None`` (only
+        # reachable with ``null=True`` or a direct ``_data`` write) has no
+        # ``.items()``; substitute a BOUND empty dict, written straight
+        # into ``_data`` rather than assigned through ``__set__``, so the
+        # read itself marks nothing — an unrelated ``save()`` never
+        # persists ``{}`` over a stored null, and ``null=True`` can still
+        # surface a null (the same "recoverable read over a healed row"
+        # rule as the legacy-shape path below). An in-place write on it
+        # then marks ``foo.k`` as usual; on a row whose stored value really
+        # is null Mongo rejects that ``$set`` loudly — reassign the whole
+        # dict there. The default ``DictAttr()`` already replaces a stored
+        # null with the field default at load time, so a legacy-null row
+        # gets the same loud rejection on an in-place write.
+        if results is None and instance is not None:
+            instance._data[self.name] = {}
+            results = super().__get__(instance, owner)
         if instance is None:
             # Class-level access (``Model.field``) — the base descriptor
             # hands back the field itself and mongoengine's query builder
