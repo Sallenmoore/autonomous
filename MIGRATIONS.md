@@ -5,6 +5,19 @@ recent first.
 
 ## Unreleased
 
+### Fixed — in-place mutation of an EMPTY `DictAttr` now persists on `save()` (#249)
+
+**What changed.**
+
+- **`DictAttr.__get__` no longer does `super().__get__(...) or {}`.** mongoengine hands back a *bound* `BaseDict` whose `__setitem__` marks the field changed — but an **empty** `BaseDict` is falsy, so `or {}` swapped it for a fresh, detached plain `{}`. Any in-place write on that (`obj.foo[k] = v`) was invisible to change tracking, so `obj.save()` persisted nothing, and every subsequent read re-detached, so the loss was permanent until the caller reassigned the whole dict (`obj.foo = {**obj.foo, k: v}`). A stored `None` (only reachable with `null=True` or a direct `_data` write) now self-heals the way `ListAttr` already does: it is assigned through the descriptor, so the substitute is the bound container and the whole field is marked changed — `save()` then writes `{foo: {...}}` rather than `$set foo.k` onto a null parent. `ListAttr` never had the `or []` and was unaffected.
+
+**Behavior change — externally visible.**
+
+- In-place writes on an empty `DictAttr` are now tracked exactly like writes on a non-empty one: `obj.foo["k"] = "v"; obj.save()` persists `{"k": "v"}`. Reassigning the whole dict keeps working, so a consumer that already hardened its call sites to reassign-before-save needs no change — the reassignment workaround is simply no longer required.
+- The empty read returns the bound `BaseDict` (a `dict` subclass), not a plain `dict`; `isinstance(x, dict)`, equality and iteration are unchanged. Code that relied on the read being detached — mutating the returned dict as scratch space and expecting the model NOT to notice — will now see those mutations tracked and saved. That was the bug, but audit for it.
+
+**Migration.** No action required.
+
 ### Added — per-call `provider=` override on the text / JSON / audio agent entry points (#239)
 
 **What changed.**
