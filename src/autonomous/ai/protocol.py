@@ -38,6 +38,23 @@ from __future__ import annotations
 from typing import Any, Protocol, runtime_checkable
 
 
+def sampling_overrides(frequency_penalty=None, presence_penalty=None, top_p=None, seed=None):
+    """The caller-set per-call sampling knobs (#248) as a dict, ``None``s dropped.
+
+    Every ``generate_text`` / ``generate_json`` adapter accepts all four
+    (so a per-call ``provider=`` switch can never TypeError on one) and
+    forwards only the ones the caller SET — ``None`` is "no override",
+    never a value sent upstream.
+    """
+    knobs = {
+        "frequency_penalty": frequency_penalty,
+        "presence_penalty": presence_penalty,
+        "top_p": top_p,
+        "seed": seed,
+    }
+    return {k: v for k, v in knobs.items() if v is not None}
+
+
 class NotSupportedByProvider(NotImplementedError):
     """An adapter declared a method but does not implement it for this
     (provider, method) combination.
@@ -99,6 +116,10 @@ class AIModelProtocol(Protocol):
         context: dict | None = None,
         temperature: float | None = None,
         model: str | None = None,
+        frequency_penalty: float | None = None,
+        presence_penalty: float | None = None,
+        top_p: float | None = None,
+        seed: int | None = None,
     ) -> dict: ...
 
     def generate_transcription(
