@@ -167,7 +167,20 @@ class DictAttr(DictField):
     """
 
     def __get__(self, instance, owner):
-        results = super().__get__(instance, owner) or {}
+        results = super().__get__(instance, owner)
+        # Issue #249: NOT ``or {}``. mongoengine hands back a *bound*
+        # ``BaseDict`` whose ``__setitem__`` marks the field changed, and an
+        # EMPTY one is falsy — ``or {}`` swapped it for a detached plain
+        # dict, so ``obj.foo[k] = v; obj.save()`` persisted nothing until
+        # the caller reassigned the whole dict. A stored ``None`` (only
+        # reachable with ``null=True`` or a direct ``_data`` write) has no
+        # ``.items()``; self-heal it the way ``ListAttr`` does — assign
+        # through the descriptor so the substitute is the BOUND container
+        # and the whole field is marked, which keeps ``save()`` writing
+        # ``{foo: {...}}`` rather than ``$set foo.k`` onto a null parent.
+        if results is None and instance is not None:
+            super().__set__(instance, {})
+            results = super().__get__(instance, owner)
         if instance is None:
             # Class-level access (``Model.field``) — the base descriptor
             # hands back the field itself and mongoengine's query builder
