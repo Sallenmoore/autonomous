@@ -48,6 +48,12 @@ Differences from upstream:
   just skipped.
 - DB outages (`OperationFailure`, `ConnectionFailure`) are logged and
   skipped; instantiation continues with caller-supplied values only.
+- **Layer-1 signal payload (#250):** `BaseDocument.__init__` sends
+  `pre_init` with an extra `created=` kwarg (the `_created` it already
+  pops from `values`). The hook returns early for `created=False` —
+  documents built from a stored SON (`_from_son` on the query path,
+  `reload`, dereference, unpickle) — because `values` already IS the
+  stored document; refetching it was an N+1 on every materialization.
 
 ### Narrowed exception handling (2026 cleanup, item 22)
 
