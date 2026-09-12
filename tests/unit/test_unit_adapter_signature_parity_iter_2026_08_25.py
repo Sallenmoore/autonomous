@@ -42,6 +42,13 @@ AGENT_CALL_KWARGS = {
         "system_prompt",
         "model",
         "temperature",
+        # #248 sampling knobs — generate_text is outside AIModelProtocol,
+        # so this list is the only committed guard against an adapter
+        # dropping one of them.
+        "frequency_penalty",
+        "presence_penalty",
+        "top_p",
+        "seed",
     ],
     "summarize_text": ["primer", "model"],
     "generate_json": [
@@ -52,6 +59,10 @@ AGENT_CALL_KWARGS = {
         "schema_name",
         "model",
         "temperature",
+        "frequency_penalty",  # #248
+        "presence_penalty",
+        "top_p",
+        "seed",
     ],
     "generate_audio": ["voice_description", "voice_id"],
     "generate_image": ["negative_prompt", "aspect_ratio", "files", "style"],

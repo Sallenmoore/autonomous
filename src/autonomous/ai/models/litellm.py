@@ -268,6 +268,7 @@ class LiteLLMImageModel(AutoModel):
         context=None,
         temperature=None,
         model=None,
+        **_kwargs,  # #248 sampling knobs: accepted, ignored
     ):
         raise NotSupportedByProvider(
             method="generate_json",

@@ -18,7 +18,7 @@ import json
 import requests
 
 from autonomous import log
-from autonomous.ai.protocol import NotSupportedByProvider
+from autonomous.ai.protocol import NotSupportedByProvider, sampling_overrides
 from autonomous.ai._json_messages import (
     STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER as _STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER,
     build_chat_json_messages,
@@ -402,7 +402,9 @@ class OpenAIClient(AutoModel):
 
     # ---------------- chat completions ----------------
 
-    def _chat(self, model, system, user, response_format=None, temperature=0.7):
+    def _chat(
+        self, model, system, user, response_format=None, temperature=0.7, **sampling
+    ):
         payload = {
             "model": model,
             "messages": [
@@ -412,6 +414,10 @@ class OpenAIClient(AutoModel):
             "temperature": temperature,
             "stream": False,
         }
+        # #248: frequency_penalty / presence_penalty / top_p / seed — only
+        # the ones the caller set (``sampling_overrides`` already dropped
+        # the Nones), so an unset knob never reaches the server as null.
+        payload.update(sampling)
         if response_format is not None:
             payload["response_format"] = response_format
         if current_job := AutoTasks().get_current_task():
@@ -446,6 +452,10 @@ class OpenAIClient(AutoModel):
         evaluation=False,
         system_prompt=None,
         model=None,
+        frequency_penalty=None,
+        presence_penalty=None,
+        top_p=None,
+        seed=None,
     ):
         # system_prompt replaces the persisted persona for this call —
         # mirrors generate_json's `system_prompt or self.instructions`
@@ -466,7 +476,10 @@ class OpenAIClient(AutoModel):
             )
         if uri:
             user += f"\nUse the following URI for reference: {uri}"
-        return self._chat(model or self._text_model, system, user, temperature=temperature)
+        sampling = sampling_overrides(frequency_penalty, presence_penalty, top_p, seed)
+        return self._chat(
+            model or self._text_model, system, user, temperature=temperature, **sampling
+        )
 
     def _emit_strict_unavailable(self, *, status, body_excerpt, detection, model=None):
         """Private helper for the two ``structured_outputs_unavailable``
@@ -514,6 +527,10 @@ class OpenAIClient(AutoModel):
         json_schema=None,
         schema_name="response",
         model=None,
+        frequency_penalty=None,
+        presence_penalty=None,
+        top_p=None,
+        seed=None,
     ):
         # Message construction consolidated to ``_json_messages`` (#146) —
         # this adapter passes ``api_enforces_json=True`` because the
@@ -535,6 +552,10 @@ class OpenAIClient(AutoModel):
         # probe failure for an explicit per-call model does not poison
         # the entry for the env-configured default (and vice versa).
         effective_model = model or self._json_model
+        # #248: sampling knobs ride every ``_chat`` leg below, including
+        # the strict→loose fallbacks — a fallback must not silently drop
+        # the caller's anti-repetition settings.
+        sampling = sampling_overrides(frequency_penalty, presence_penalty, top_p, seed)
 
         # Build the response_format payload. Strict mode when:
         #   - caller passed a schema
@@ -570,6 +591,7 @@ class OpenAIClient(AutoModel):
                 user,
                 response_format=response_format,
                 temperature=temperature,
+                **sampling,
             )
         except requests.HTTPError as exc:
             # Detect "this endpoint doesn't support strict mode" specifically
@@ -609,6 +631,7 @@ class OpenAIClient(AutoModel):
                     user,
                     response_format={"type": "json_object"},
                     temperature=temperature,
+                    **sampling,
                 )
             except (MalformedResponseError, requests.HTTPError) as inner_exc:
                 # MalformedResponseError = _chat's #76 translation of the
@@ -664,6 +687,7 @@ class OpenAIClient(AutoModel):
                             user,
                             response_format={"type": "json_object"},
                             temperature=temperature,
+                            **sampling,
                         )
                     except (MalformedResponseError, requests.HTTPError) as inner_exc:
                         raise GenerateJSONEmptyResponseError(

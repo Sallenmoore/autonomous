@@ -20,6 +20,7 @@ from autonomous.ai.exceptions import (
     GenerateJSONParseError,
     MalformedResponseError,
 )
+from autonomous.ai.protocol import sampling_overrides
 from autonomous.ai.retry import retry
 from autonomous.config import env_str, settings
 from autonomous.http import HttpClient
@@ -176,6 +177,10 @@ class LocalAIModel(AutoModel):
         json_schema=None,
         schema_name="response",
         model=None,
+        frequency_penalty=None,
+        presence_penalty=None,
+        top_p=None,
+        seed=None,
     ):
         # `model` (#173) is a per-call override of the default
         # `self._text_model` (Ollama uses the text model for JSON too —
@@ -258,6 +263,9 @@ class LocalAIModel(AutoModel):
                 "repeat_penalty": 1.1,
             },
         }
+        # #248: Ollama's options use the OpenAI names; a caller-set top_p
+        # overrides the 0.95 default above, unset knobs leave it alone.
+        payload["options"].update(sampling_overrides(frequency_penalty, presence_penalty, top_p, seed))
 
         log(
             "==== LocalAI JSON Payload ====", json.dumps(payload, indent=2), _print=True
@@ -314,6 +322,17 @@ class LocalAIModel(AutoModel):
             # Flush for the EFFECTIVE model (#173) — per-call overrides
             # should clear their own KV cache, not the class default's.
             self.flush_memory(effective_model)
+            # #248: with a caller-set seed the re-POST would be byte-identical
+            # and reproduce the same unparseable output; step the seed so the
+            # retry actually re-samples (still reproducible: seed, seed+1, ...).
+            # Only after a real sample: a transport failure sampled nothing,
+            # so the same seed IS the reproducible retry there. Non-int
+            # seeds are left alone rather than TypeError-ing inside the hook.
+            seed = payload["options"].get("seed")
+            if isinstance(seed, int) and not isinstance(
+                exc, (requests.ConnectionError, requests.Timeout)
+            ):
+                payload["options"]["seed"] = seed + 1
 
         try:
             # ``catch`` lists ONLY concrete transient classes plus the
@@ -384,6 +403,10 @@ class LocalAIModel(AutoModel):
         evaluation=False,
         system_prompt=None,
         model=None,
+        frequency_penalty=None,
+        presence_penalty=None,
+        top_p=None,
+        seed=None,
     ):
         # `model` (#173) overrides the default `self._text_model`;
         # `None` keeps env behavior unchanged for existing callers.
@@ -431,6 +454,8 @@ class LocalAIModel(AutoModel):
                 "repeat_penalty": 1.1,
             },
         }
+        # #248
+        payload["options"].update(sampling_overrides(frequency_penalty, presence_penalty, top_p, seed))
         result = "Error generating text."
         try:
             if current_job := AutoTasks().get_current_task():

@@ -113,7 +113,13 @@ class BaseDocument:
 
         _created = values.pop("_created", True)
 
-        signals.pre_init.send(self.__class__, document=self, values=values)
+        # Divergence (#250): the payload also carries ``created`` — popped
+        # from ``values`` just above — so a pre-init receiver can tell a
+        # user construction (``Model(pk=x)``) from a document being built
+        # FROM the store (``_from_son`` on the query path, ``created=False``).
+        signals.pre_init.send(
+            self.__class__, document=self, values=values, created=_created
+        )
 
         # Check if there are undefined fields supplied to the constructor,
         # if so raise an Exception.
