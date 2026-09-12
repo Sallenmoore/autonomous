@@ -174,12 +174,19 @@ class DictAttr(DictField):
         # dict, so ``obj.foo[k] = v; obj.save()`` persisted nothing until
         # the caller reassigned the whole dict. A stored ``None`` (only
         # reachable with ``null=True`` or a direct ``_data`` write) has no
-        # ``.items()``; self-heal it the way ``ListAttr`` does — assign
-        # through the descriptor so the substitute is the BOUND container
-        # and the whole field is marked, which keeps ``save()`` writing
-        # ``{foo: {...}}`` rather than ``$set foo.k`` onto a null parent.
+        # ``.items()``; substitute a BOUND empty dict, written straight
+        # into ``_data`` rather than assigned through ``__set__``, so the
+        # read itself marks nothing — an unrelated ``save()`` never
+        # persists ``{}`` over a stored null, and ``null=True`` can still
+        # surface a null (the same "recoverable read over a healed row"
+        # rule as the legacy-shape path below). An in-place write on it
+        # then marks ``foo.k`` as usual; on a row whose stored value really
+        # is null Mongo rejects that ``$set`` loudly — reassign the whole
+        # dict there. The default ``DictAttr()`` already replaces a stored
+        # null with the field default at load time, so a legacy-null row
+        # gets the same loud rejection on an in-place write.
         if results is None and instance is not None:
-            super().__set__(instance, {})
+            instance._data[self.name] = {}
             results = super().__get__(instance, owner)
         if instance is None:
             # Class-level access (``Model.field``) — the base descriptor

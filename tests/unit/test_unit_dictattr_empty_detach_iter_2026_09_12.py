@@ -6,19 +6,22 @@ Written from the PR diff alone (two-perspective rule).
 The defect: ``super().__get__(...) or {}`` swapped an empty — and
 therefore falsy — bound ``BaseDict`` for a fresh, detached plain dict, so
 ``obj.foo[k] = v; obj.save()`` persisted nothing and every re-read
-re-detached. The fix returns the bound container and self-heals a stored
-``None`` (``null=True`` fields) by assigning through the descriptor, so
-the substitute is bound AND the whole field is marked changed.
+re-detached. The fix returns the bound container and substitutes a
+stored ``None`` (``null=True`` fields) with a bound empty dict written
+straight into ``_data`` — NOT through the descriptor — so the read itself
+marks nothing and an unrelated ``save()`` never persists ``{}`` over a
+stored null.
 
 Pinned at two altitudes:
 
 - **Descriptor level** (stub document, no ORM): an empty read is the very
-  object stored in ``_data``; a stored ``None`` leaves the field name in
-  ``_changed_fields`` after a bare read.
+  object stored in ``_data``; a stored ``None`` reads as a bound ``{}``
+  and leaves ``_changed_fields`` untouched.
 - **Model level** (hermetic ``AutoModel`` subclass built through
   ``_from_son`` — the query path, where the loss was silent): in-place
-  writes on an empty dict are change-tracked; the nullable case is
-  whole-field-marked; ``ListAttr`` is the unaffected control.
+  writes on an empty dict are change-tracked; the nullable read is
+  side-effect-free and a write on it marks the dotted key; ``ListAttr``
+  is the unaffected control.
 
 The save → reload round trip lives in
 ``tests/integration/test_int_dictattr_empty_roundtrip_iter_2026_09_12.py``.
@@ -95,14 +98,16 @@ class TestDescriptorLevel:
         doc = _stub_doc({}, field)
         assert field.__get__(doc, type(doc)) is field.__get__(doc, type(doc))
 
-    def test_stored_none_reads_as_bound_empty_dict_and_marks_the_field(self):
+    def test_stored_none_reads_as_bound_empty_dict_without_marking(self):
         field = _field(default=None, null=True)
         doc = _stub_doc(None, field)
         read = field.__get__(doc, type(doc))
         assert read == {}
         assert isinstance(read, BaseDict)
         assert read is doc._data["props"]
-        assert "props" in doc._changed_fields
+        # Side-effect-free read: an unrelated save() must not persist {}
+        # over the stored null.
+        assert not doc._changed_fields
 
     def test_class_level_access_still_returns_the_field(self):
         field = _field(default=None, null=True)
@@ -117,7 +122,7 @@ class TestDescriptorLevel:
 class TestModelLevel:
     def test_in_place_write_on_empty_dict_is_change_tracked(self):
         doc = _loaded(props={})
-        assert doc._changed_fields == []
+        assert not doc._changed_fields
         doc.props["k"] = "v"
         assert doc._data["props"] == {"k": "v"}
         assert "props.k" in doc._changed_fields
@@ -135,18 +140,17 @@ class TestModelLevel:
         assert doc._data["props"] == {"a": 1, "b": 2}
         assert "props.b" in doc._changed_fields
 
-    def test_stored_none_self_heals_bound_and_whole_field_marked(self):
+    def test_stored_none_reads_bound_and_unmarked_then_a_write_marks_the_key(self):
         doc = _loaded(nullable=None)
         assert doc._data["nullable"] is None
         read = doc.nullable
         assert read == {}
         assert isinstance(read, BaseDict)
         assert read is doc._data["nullable"]
-        # Whole-field mark: save() must write ``{nullable: {...}}``, never
-        # ``$set nullable.k`` onto a null parent.
-        assert "nullable" in doc._changed_fields
+        assert not doc._changed_fields
         doc.nullable["k"] = "v"
         assert doc._data["nullable"] == {"k": "v"}
+        assert "nullable.k" in doc._changed_fields
 
     def test_fresh_document_empty_dict_is_bound_too(self):
         doc = _Bag()
