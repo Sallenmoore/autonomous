@@ -31,18 +31,28 @@ from autonomous.ai._credentials import (
 )
 
 
+_DROPPED_KNOBS_WARNED: set[tuple[str, ...]] = set()
+
+
 def _sampling_config(frequency_penalty, presence_penalty, top_p, seed):
     # #248: ``GenerateContentConfig`` declares all four, but the 2.5 models
     # reject the penalties server-side (400 INVALID_ARGUMENT "Penalty is not
     # enabled for models/gemini-2.5-*"), and that ``ClientError`` would
     # escape ``generate_content`` raw. Honor top_p / seed; drop the
-    # penalties with a warning so a per-call provider switch never 400s.
+    # penalties — warning once per distinct dropped set — so a per-call
+    # provider switch never 400s and a hot loop never floods the log.
     # Module-level (not a method): committed tests graft ``generate_json``
     # onto minimal stubs, so nothing new may be looked up through ``self``.
-    dropped = sampling_overrides(frequency_penalty, presence_penalty)
-    if dropped:
-        log(f"[gemini] ignoring sampling knobs Gemini rejects: {sorted(dropped)}")
-    return sampling_overrides(top_p=top_p, seed=seed)
+    knobs = sampling_overrides(frequency_penalty, presence_penalty, top_p, seed)
+    dropped = tuple(
+        k
+        for k in ("frequency_penalty", "presence_penalty")
+        if knobs.pop(k, None) is not None
+    )
+    if dropped and dropped not in _DROPPED_KNOBS_WARNED:
+        _DROPPED_KNOBS_WARNED.add(dropped)
+        log(f"[gemini] ignoring sampling knobs Gemini rejects: {list(dropped)}")
+    return knobs
 
 
 class GeminiAIModel(AutoModel):

@@ -325,8 +325,14 @@ class LocalAIModel(AutoModel):
             # #248: with a caller-set seed the re-POST would be byte-identical
             # and reproduce the same unparseable output; step the seed so the
             # retry actually re-samples (still reproducible: seed, seed+1, ...).
-            if "seed" in payload["options"]:
-                payload["options"]["seed"] += 1
+            # Only after a real sample: a transport failure sampled nothing,
+            # so the same seed IS the reproducible retry there. Non-int
+            # seeds are left alone rather than TypeError-ing inside the hook.
+            seed = payload["options"].get("seed")
+            if isinstance(seed, int) and not isinstance(
+                exc, (requests.ConnectionError, requests.Timeout)
+            ):
+                payload["options"]["seed"] = seed + 1
 
         try:
             # ``catch`` lists ONLY concrete transient classes plus the

@@ -12,10 +12,12 @@ Pinned, and why each matters:
   on both strict→loose fallback legs (HTTP-4xx and parse-failure-200);
   unset knobs never reach the payload.
 - **``gemini``** honors ``top_p`` / ``seed`` and DROPS the penalties with
-  a log line (the 2.5 models 400 on them).
+  a log line, once per distinct dropped set (the 2.5 models 400 on them).
 - **``local``** merges into Ollama ``options``; a set ``top_p`` overrides
   the hardcoded 0.95; a set ``seed`` steps 42 → 43 → 44 across the JSON
-  parse-failure retries; an unset seed is never sent and never stepped.
+  parse-failure retries but NOT across a transport failure (nothing was
+  sampled); a non-int seed is left alone; an unset seed is never sent
+  and never stepped.
 - **Every registry adapter binds all four** on ``generate_text`` /
   ``generate_json`` (a per-call ``provider=`` switch can't TypeError), and
   the image-only adapters still raise the typed ``NotSupportedByProvider``.
@@ -35,6 +37,7 @@ import requests
 
 from autonomous.ai.baseagent import BaseAgent
 from autonomous.ai.jsonagent import JSONAgent
+from autonomous.ai.models import gemini as gemini_module
 from autonomous.ai.models.gemini import GeminiAIModel
 from autonomous.ai.models.local_model import LocalAIModel
 from autonomous.ai.models.mock_model import MockAIModel
@@ -249,6 +252,13 @@ def _gemini():
 
 
 class TestGeminiConfig:
+    @pytest.fixture(autouse=True)
+    def _fresh_warned_set(self):
+        # The drop warning fires once per distinct set per process; start
+        # each test from a clean slate so ordering can't hide it.
+        with patch.object(gemini_module, "_DROPPED_KNOBS_WARNED", set()):
+            yield
+
     def _text_config(self, **kwargs):
         model = _gemini()
         response = MagicMock()
@@ -277,6 +287,20 @@ class TestGeminiConfig:
     def test_no_drop_log_when_penalties_unset(self):
         _, log = self._text_config(top_p=0.5)
         assert not any("ignoring" in str(call) for call in log.call_args_list)
+
+    def test_drop_log_fires_once_per_distinct_dropped_set(self):
+        model = _gemini()
+        response = MagicMock()
+        response.text = "hello"
+        model._client.models.generate_content.return_value = response
+        with patch("autonomous.ai.models.gemini.log") as log:
+            model.generate_text("hi", **KNOBS)
+            model.generate_text("hi", **KNOBS)
+            model.generate_text("hi", frequency_penalty=0.5)
+        drops = [c for c in log.call_args_list if "ignoring" in str(c)]
+        assert len(drops) == 2
+        assert "presence_penalty" in str(drops[0])
+        assert "presence_penalty" not in str(drops[1])
 
     def test_unset_knobs_leave_the_config_defaults(self):
         config, _ = self._text_config()
@@ -366,14 +390,18 @@ class TestLocalOptions:
         assert _knobs_in(options) == {"top_p": pytest.approx(0.95)}
 
     @staticmethod
-    def _retrying_post(seeds):
+    def _retrying_post(seeds, outcomes=("not json", "still not json", '{"ok": 1}')):
         # The adapter mutates ONE payload dict across retries, so snapshot
         # the seed at call time rather than reading call_args afterwards.
-        bodies = iter(["not json", "still not json", '{"ok": 1}'])
+        # An outcome that is an exception is raised in place of a response.
+        outcomes = iter(outcomes)
 
         def post(_url, json=None, **_):
             seeds.append(json["options"].get("seed"))
-            return _ollama_ok(next(bodies))
+            outcome = next(outcomes)
+            if isinstance(outcome, BaseException):
+                raise outcome
+            return _ollama_ok(outcome)
 
         return post
 
@@ -388,6 +416,21 @@ class TestLocalOptions:
         with patch(_LOCAL_POST, side_effect=self._retrying_post(seeds)):
             assert _local().generate_json("x") == {"ok": 1}
         assert seeds == [None, None, None]
+
+    def test_transport_failure_does_not_step_the_seed(self):
+        # Nothing was sampled on a connection error, so the SAME seed is
+        # the reproducible retry; only a real parse failure steps it.
+        seeds = []
+        outcomes = (requests.ConnectionError("blip"), "not json", '{"ok": 1}')
+        with patch(_LOCAL_POST, side_effect=self._retrying_post(seeds, outcomes)):
+            assert _local().generate_json("x", seed=42) == {"ok": 1}
+        assert seeds == [42, 42, 43]
+
+    def test_non_int_seed_is_left_alone(self):
+        seeds = []
+        with patch(_LOCAL_POST, side_effect=self._retrying_post(seeds)):
+            assert _local().generate_json("x", seed=4.5) == {"ok": 1}
+        assert seeds == [4.5, 4.5, 4.5]
 
 
 # ---------------------------------------------------------------------------
