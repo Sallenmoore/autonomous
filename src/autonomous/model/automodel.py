@@ -207,8 +207,12 @@ class AutoModel(Document):
         relies on the pk side-load filling those gaps, so construct as
         "new" (hook runs; blob values win, the store fills the rest) and
         then restore the caller's persisted-ness flag (#250).
+
+        Delegates the decode to the base ``from_json`` so an omitted
+        ``json_options`` gets the same ``LEGACY_JSON_OPTIONS`` default
+        ``to_json`` writes with — the round trip stays symmetric.
         """
-        doc = cls._from_son(bson.json_util.loads(json_data, **kwargs), created=True)
+        doc = super().from_json(json_data, created=True, **kwargs)
         doc._created = created
         return doc
 
