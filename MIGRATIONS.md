@@ -5,6 +5,20 @@ recent first.
 
 ## Unreleased
 
+### Security — TLS certificate verification restored for git clone / fetch / push (#256)
+
+**What changed.**
+
+- **`GHRemoteCallbacks` (`autonomous.apis.version_control`) no longer overrides `certificate_check`.** It returned a bare `True`, which tells libgit2 to accept **any** certificate from **any** host. The same callbacks object supplies a `GITHUB_PAT` via `credentials()`, so the token was transmitted over a connection whose peer had never been authenticated. Removing the override restores `pygit2.RemoteCallbacks.certificate_check`, which raises `Passthrough` and defers to libgit2's own validation. Affects `GHRepo`'s clone (`:20`), fetch (`:57`) and push (`:114`).
+- No escape hatch was added. If a self-hosted remote with a self-signed certificate ever needs one, it must be an explicit, loudly-logged opt-in — never the default.
+
+**Behavior change — externally visible.**
+
+- **Consumers of the `autonomous-app[github]` extra should rotate any `GITHUB_PAT` that was used with a prior release over an untrusted network**, since those connections were unauthenticated.
+- Git operations against a remote whose certificate does not validate now **fail** instead of silently proceeding. Against github.com (or any remote with a publicly-trusted certificate) nothing changes. A corporate MITM proxy or a self-signed internal remote that previously "worked" will now raise — install the proxy/internal CA in the system trust store, which is the supported fix.
+
+**Migration.** No code change required. Rotate exposed tokens; add any internal CA to the system trust store.
+
 ### Fixed — query materialization no longer refetches every document (`auto_pre_init` N+1) (#250)
 
 **What changed.**
