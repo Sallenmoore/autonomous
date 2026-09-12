@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextvars
 import os
 import urllib.parse
 from datetime import datetime
@@ -28,6 +29,17 @@ _connected: bool = False
 # may be imported later. Tests that want to reset the cache between
 # runs should call AutoModel._invalidate_load_model_cache().
 _LOAD_MODEL_CACHE: dict[str, type["AutoModel"]] = {}
+
+# ``from_json`` carve-out (#250). ``auto_pre_init`` skips documents built
+# from the store (``created=False``), but a ``to_json`` blob can be partial,
+# so ``from_json`` needs the side-load while still constructing with
+# ``created=False`` — ``created=True`` would switch on ``BaseDocument``'s
+# undefined-field check, which ``strict=False`` models rely on tolerating
+# (a stale key in a session blob raised ``FieldDoesNotExist``). A
+# ContextVar keeps the opt-in scoped to the one call, per task/thread.
+_FROM_JSON_SIDELOAD: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "autonomous_from_json_sideload", default=False
+)
 
 
 def connect_from_env(**overrides) -> str:
@@ -150,14 +162,15 @@ class AutoModel(Document):
             unpickle): ``values`` already *is* the stored document, so the
             fetch re-read it and merged nothing — an N+1 on every query
             materialization (#250). ``from_json`` is the one from-store
-            path that still hydrates; see its override below.
+            path that still hydrates: it opts back in through
+            ``_FROM_JSON_SIDELOAD`` (see its override below).
           - ``values`` kwarg missing — nothing to merge into; return
           - ``pk`` malformed (not a valid ObjectId) — return
           - document not found in DB — return
           - DB unavailable — return (logged elsewhere)
         """
-        if not getattr(sender, "auto_load_on_init", True) or not kwargs.get(
-            "created", True
+        if not getattr(sender, "auto_load_on_init", True) or (
+            not kwargs.get("created", True) and not _FROM_JSON_SIDELOAD.get()
         ):
             return
         values = kwargs.get("values")
@@ -204,17 +217,24 @@ class AutoModel(Document):
         (``created=False``), but a ``to_json`` blob is NOT a full stored
         document: ``to_mongo`` omits None-valued fields, so the round trip
         can be partial. The session-restore path (``AutoAuth.current_user``)
-        relies on the pk side-load filling those gaps, so construct as
-        "new" (hook runs; blob values win, the store fills the rest) and
-        then restore the caller's persisted-ness flag (#250).
+        relies on the pk side-load filling those gaps, so this call opts
+        back INTO the side-load via ``_FROM_JSON_SIDELOAD`` while keeping
+        ``created`` exactly as the caller passed it (#250): blob values
+        win, the store fills the rest, one query. Constructing with
+        ``created=True`` instead would switch on ``BaseDocument``'s
+        undefined-field check, which ``strict=False`` models rely on
+        tolerating — a stale key in a session blob raised
+        ``FieldDoesNotExist`` on every ``current_user`` call.
 
         Delegates the decode to the base ``from_json`` so an omitted
         ``json_options`` gets the same ``LEGACY_JSON_OPTIONS`` default
         ``to_json`` writes with — the round trip stays symmetric.
         """
-        doc = super().from_json(json_data, created=True, **kwargs)
-        doc._created = created
-        return doc
+        token = _FROM_JSON_SIDELOAD.set(True)
+        try:
+            return super().from_json(json_data, created=created, **kwargs)
+        finally:
+            _FROM_JSON_SIDELOAD.reset(token)
 
     @classmethod
     def auto_post_init(cls, sender, document, **kwargs):
@@ -435,9 +455,13 @@ class AutoModel(Document):
     @classmethod
     def _auto_pre_save(cls, sender, document, **kwargs):
         """
-        Post-save hook for this model.
+        Pre-save hook delegator. Connected sender-unfiltered, so plain
+        vendored Documents fire it too and have no hook — same guard as
+        ``_auto_pre_init``.
         """
-        sender.auto_pre_save(sender, document, **kwargs)
+        hook = getattr(sender, "auto_pre_save", None)
+        if hook:
+            hook(sender, document, **kwargs)
 
     def save(self, sync: bool = False) -> Any:
         """Persist this document and return its primary key.
@@ -481,9 +505,11 @@ class AutoModel(Document):
     @classmethod
     def _auto_post_save(cls, sender, document, **kwargs):
         """
-        Post-save hook for this model.
+        Post-save hook delegator — same sender-unfiltered guard as above.
         """
-        sender.auto_post_save(sender, document, **kwargs)
+        hook = getattr(sender, "auto_post_save", None)
+        if hook:
+            hook(sender, document, **kwargs)
 
     def delete(self, signal_kwargs=None, **write_concern) -> None:
         """Delete this document from the database and drop its vector entry.

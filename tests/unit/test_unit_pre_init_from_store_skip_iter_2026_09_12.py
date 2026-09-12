@@ -11,12 +11,15 @@ Pinned:
 - ``Model(pk=x)`` still calls ``find_one`` exactly once and caller kwargs
   still win;
 - ``Model.from_json(blob)`` still side-loads (blob wins, store fills the
-  gaps, one query) and yields ``_created is False``;
+  gaps, one query), yields ``_created is False``, tolerates a stale key on
+  a ``strict=False`` model, and its side-load opt-in does not leak past
+  the call;
 - the hook called directly WITHOUT ``created`` still hydrates, and with
   ``created=False`` does nothing;
 - a plain vendored ``Document`` / ``EmbeddedDocument`` constructs with
-  ``autonomous.model.automodel`` imported (the sender-unfiltered receivers
-  used to raise ``AttributeError`` from ``__init__``);
+  ``autonomous.model.automodel`` imported, and the pre/post-save signals
+  fire for it without raising (the sender-unfiltered receivers used to
+  raise ``AttributeError``);
 - ``auto_load_on_init = False`` still opts out entirely.
 
 The live N-docs-zero-refetch measurement lives in
@@ -106,6 +109,25 @@ class TestConstructionPaths:
         assert doc.note == "gap"
         assert doc._created is False
 
+    def test_from_json_tolerates_a_stale_key_on_strict_false_models(self, collection):
+        # Constructing with created=True would switch on BaseDocument's
+        # undefined-field check; a session blob carrying a field that was
+        # since removed from the model then raised FieldDoesNotExist on
+        # every current_user() call.
+        assert _Thing._meta.get("strict") is False
+        doc = _Thing.from_json(
+            bson.json_util.dumps({"_id": _OID, "name": "blob", "stale": 1})
+        )
+        assert collection.find_one.call_count == 1
+        assert doc.name == "blob"
+        assert doc.note == "gap"
+        assert doc._created is False
+
+    def test_from_json_side_load_opt_in_does_not_leak_past_the_call(self, collection):
+        _Thing.from_json(bson.json_util.dumps({"_id": _OID, "name": "blob"}))
+        _Thing._from_son({"_id": _OID, "name": "stored"})
+        assert collection.find_one.call_count == 1
+
     @pytest.mark.usefixtures("collection")
     def test_from_json_created_kwarg_is_honoured(self):
         doc = _Thing.from_json(
@@ -177,6 +199,16 @@ class TestSenderUnfilteredReceiversAreGuarded:
             name = StringField()
 
         assert _Plain(name="y").name == "y"
+
+    def test_plain_document_save_signals_do_not_raise(self):
+        # save() fires pre_save / post_save through the same unfiltered
+        # receivers; send them directly so no connection is needed.
+        class _PlainSaved(Document):
+            name = StringField()
+
+        doc = _PlainSaved(name="y")
+        signals.pre_save.send(_PlainSaved, document=doc)
+        signals.post_save.send(_PlainSaved, document=doc, created=True)
 
     def test_delegators_tolerate_a_sender_without_hooks(self):
         class _NoHooks:
