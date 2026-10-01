@@ -1,4 +1,15 @@
-"""LiteLLMImageModel — OpenAI-compatible image-generation adapter.
+"""LiteLLMImageModel — OpenAI-compatible LiteLLM gateway adapter.
+
+Text / JSON / summary (#264): delegated to an ``OpenAIClient`` retargeted at
+``LITELLM_API_BASE_URL`` with the ``LITELLM_*`` models and key, so
+``TEXT_AI_AGENT=litellm`` / ``JSON_AI_AGENT=litellm`` / per-call
+``provider="litellm"`` route off the single ``HPC_*`` slot while HPC stays
+usable side-by-side. Composition, not inheritance: subclassing the
+``OpenAIClient`` Document would move this adapter's persisted docs into
+OpenAIClient's collection under a new ``_cls`` and orphan existing
+references. (The class keeps its historical name for the same reason.)
+
+Images:
 
 Targets an arbitrary OpenAI-compatible image endpoint (a LiteLLM gateway
 serving ``POST /v1/images/generations``) so a consumer can set
@@ -35,6 +46,7 @@ import requests
 from autonomous import log
 from autonomous.ai._extract import extract_or_malformed
 from autonomous.ai._image_utils import resolve_image_config
+from autonomous.ai.models.openai_compat import HPCUnreachableError, OpenAIClient
 from autonomous.ai.exceptions import MalformedResponseError
 from autonomous.ai.protocol import NotSupportedByProvider
 from autonomous.config import settings
@@ -91,7 +103,7 @@ class LiteLLMImageModel(AutoModel):
         "OpenAI-compatible (LiteLLM) gateway."
     )
     description = StringAttr(
-        default="OpenAI-compatible image generation adapter (LiteLLM gateway)."
+        default="OpenAI-compatible LiteLLM gateway adapter (images + text)."
     )
 
     # Config snapshot from the central typed catalog (autonomous.config),
@@ -101,6 +113,10 @@ class LiteLLMImageModel(AutoModel):
     _api_key = settings.litellm_api_key
     _image_model = settings.litellm_image_model
     _media_timeout = _TIMEOUT_S
+    _text_base_url = settings.litellm_api_base_url.rstrip("/")
+    _text_model = settings.litellm_text_model
+    _json_model = settings.litellm_json_model
+    _summary_model = settings.litellm_summary_model
 
     # OpenAI images/generations accepts a fixed ``size`` enum, not an
     # arbitrary resolution — so we map by aspect-ratio orientation only
@@ -253,38 +269,57 @@ class LiteLLMImageModel(AutoModel):
         )
         return image_content
 
-    # --- AIModelProtocol conformance (#47 slice 2) -----------------
-    # Image-only. The Protocol still requires every adapter to declare every
-    # method so dispatch layers introspect via NotSupportedByProvider instead
-    # of catching the broader AttributeError that "method missing" raises.
+    # --- Text / JSON / summary (#264) ----------------------------------
 
-    def generate_json(
-        self,
-        message,
-        system_prompt=None,
-        json_schema=None,
-        schema_name="response",
-        uri="",
-        context=None,
-        temperature=None,
-        model=None,
-        **_kwargs,  # #248 sampling knobs: accepted, ignored
-    ):
-        raise NotSupportedByProvider(
-            method="generate_json",
-            provider="litellm",
-            message=(
-                "LiteLLMImageModel is image-only; use provider='local' or "
-                "'openai' for JSON generation."
-            ),
+    def _text_client(self):
+        """A transient ``OpenAIClient`` pointed at the gateway. Built per
+        call (never saved) so class-attr monkeypatches retarget it and the
+        strict-mode negative cache keys on the gateway URL, not HPC's."""
+        base = self._text_base_url.rstrip("/")
+        if not base:
+            # Same exception the HPC slot raises when unconfigured, so
+            # callers' existing handlers cover both providers.
+            raise HPCUnreachableError(
+                "LITELLM_API_BASE_URL is not configured; cannot reach the "
+                "LiteLLM gateway for text/JSON generation."
+            )
+        if not base.endswith("/v1"):
+            base += "/v1"
+        client = OpenAIClient(
+            name=self.name,
+            instructions=self.instructions,
+            description=self.description,
         )
+        client._base_url = base
+        client._api_key = self._api_key
+        client._text_model = self._text_model
+        client._json_model = self._json_model
+        client._summary_model = self._summary_model
+        # BYOK (#227): resolve the per-call key under LiteLLM's env var, so
+        # an HPC key bound for another leg never reaches the gateway.
+        client.API_KEY_ENV = self.API_KEY_ENV
+        return client
+
+    def generate_text(self, message, *args, **kwargs):
+        return self._text_client().generate_text(message, *args, **kwargs)
+
+    def generate_json(self, message, *args, **kwargs):
+        return self._text_client().generate_json(message, *args, **kwargs)
+
+    def summarize_text(self, text, primer="", model=None):
+        return self._text_client().summarize_text(text, primer=primer, model=model)
+
+    # --- AIModelProtocol conformance (#47 slice 2) -----------------
+    # The Protocol requires every adapter to declare every method so
+    # dispatch layers introspect via NotSupportedByProvider instead of
+    # catching the broader AttributeError that "method missing" raises.
 
     def generate_transcription(self, audio_file, prompt=""):
         raise NotSupportedByProvider(
             method="generate_transcription",
             provider="litellm",
             message=(
-                "LiteLLMImageModel is image-only; use provider='local' or "
-                "'openai' for audio transcription."
+                "LiteLLMImageModel does not wire transcription; use "
+                "provider='local' or 'openai' for audio transcription."
             ),
         )
