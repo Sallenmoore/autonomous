@@ -5,6 +5,26 @@ recent first.
 
 ## Unreleased
 
+### Added — text / JSON / summary on the `litellm` provider (#264)
+
+**What changed.**
+
+- **`provider="litellm"` now serves `generate_text`, `generate_json` and `summarize_text`**, not just images. Previously the only OpenAI-compatible text slot was `HPC_*` (`provider="openai"`), so a deployment could not keep some roles on the HPC while routing others through a LiteLLM gateway; `generate_json` on `litellm` raised `NotSupportedByProvider`.
+- The calls are delegated to a transient `OpenAIClient` retargeted at the gateway, so strict-`json_schema` handling, the strict→`json_object` fallback, sampling knobs (#248), per-call `model=` (#173) and BYOK (#227, bound under `LITELLM_API_KEY`) behave exactly as on the HPC slot. Transport failures still raise `HPCUnreachableError` (the name is historical).
+- New env vars (config group `ai_litellm`): `LITELLM_API_BASE_URL` (gateway base for chat; a trailing `/v1` is tolerated), `LITELLM_TEXT_MODEL`, `LITELLM_JSON_MODEL` and `LITELLM_SUMMARY_MODEL` (the last two default to the text model). `LITELLM_API_KEY` is shared with the image path. Image routing still reads `LITELLM_IMAGE_API_BASE_URL`.
+- Transcription and embeddings remain unsupported on `litellm`. Timeouts and retry use the `HPC_*` timeout/retry settings.
+
+**Behavior change.** `generate_json` on a `litellm` client no longer raises `NotSupportedByProvider`; it calls the gateway. An unset `LITELLM_API_BASE_URL` raises `HPCUnreachableError` naming the variable.
+
+**Migration.** No action required. To route a role through the gateway alongside HPC:
+
+```bash
+LITELLM_API_BASE_URL=http://litellm:4000/v1
+LITELLM_API_KEY=sk-...
+LITELLM_TEXT_MODEL=gpt-oss-32k
+TEXT_AI_AGENT=litellm      # or JSON_AI_AGENT / SUMMARY_AI_AGENT, or per-call provider="litellm"
+```
+
 ### Security — TLS certificate verification restored for git clone / fetch / push (#256)
 
 **What changed.**
