@@ -406,13 +406,7 @@ class TestUpscaleImage:
 # ---------------------------------------------------------------------------
 
 class TestProtocolConformance:
-    def test_generate_json_not_supported(self):
-        with pytest.raises(NotSupportedByProvider) as exc_info:
-            _litellm().generate_json("msg")
-        assert exc_info.value.provider == "litellm"
-        assert exc_info.value.method == "generate_json"
-        # Subclasses NotImplementedError so `except NotImplementedError` works.
-        assert isinstance(exc_info.value, NotImplementedError)
+    # generate_json is supported since #264 (delegates to the gateway).
 
     def test_generate_transcription_not_supported(self):
         with pytest.raises(NotSupportedByProvider) as exc_info:

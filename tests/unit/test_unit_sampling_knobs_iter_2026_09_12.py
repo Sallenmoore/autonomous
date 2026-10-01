@@ -453,7 +453,8 @@ class TestEveryAdapterAcceptsTheKnobs:
         assert isinstance(model.generate_text("p", **KNOBS), str)
         assert isinstance(model.generate_json("p", **KNOBS), dict)
 
-    @pytest.mark.parametrize("provider", ["flux", "litellm"])
+    # litellm gained text/JSON in #264.
+    @pytest.mark.parametrize("provider", ["flux"])
     def test_image_only_adapters_still_raise_the_typed_error(self, provider):
         cls = BaseAgent.MODEL_REGISTRY[provider]
         with pytest.raises(NotSupportedByProvider):

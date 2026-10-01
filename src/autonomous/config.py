@@ -269,6 +269,16 @@ _SPEC: tuple[Field, ...] = (
           "LiteLLM gateway API key (Bearer); header omitted when unset", secret=True),
     Field("litellm_image_model", "LITELLM_IMAGE_MODEL", "str", "image-flux", "ai_litellm",
           "Gateway image model/alias (default leans on the gateway's own fallback chain)"),
+    # Text/JSON/summary via the same gateway (#264) — lets TEXT_AI_AGENT /
+    # JSON_AI_AGENT / per-call provider="litellm" route off the HPC slot.
+    Field("litellm_api_base_url", "LITELLM_API_BASE_URL", "str", "", "ai_litellm",
+          "Gateway base URL for text/JSON/summary (POST {base}/v1/chat/completions; a "
+          "trailing /v1 in the base is tolerated)"),
+    Field("litellm_text_model", "LITELLM_TEXT_MODEL", "str", "", "ai_litellm", "Gateway text model/alias"),
+    # litellm_json_model / litellm_summary_model default to the text model — resolved in __init__.
+    Field("litellm_json_model", "LITELLM_JSON_MODEL", "str", "", "ai_litellm", "JSON model (defaults to text model)"),
+    Field("litellm_summary_model", "LITELLM_SUMMARY_MODEL", "str", "", "ai_litellm",
+          "Summary model (defaults to text model)"),
 
     # --- AI: Gemini adapter (ai.models.gemini) — catalogued, not yet migrated
     Field("gemini_text_model", "GEMINI_TEXT_MODEL", "str", "gemini-2.5-pro", "ai_gemini", "Gemini text model", migrated=False),
@@ -328,6 +338,8 @@ class Settings:
         # ``os.environ.get("HPC_JSON_MODEL", _text_model)`` (an explicitly
         # empty value is preserved, only a missing key falls back).
         self.hpc_json_model = env_str("HPC_JSON_MODEL", self.hpc_text_model)
+        self.litellm_json_model = env_str("LITELLM_JSON_MODEL", self.litellm_text_model)
+        self.litellm_summary_model = env_str("LITELLM_SUMMARY_MODEL", self.litellm_text_model)
         # Derived default: HPC_READ_TIMEOUT inherits HPC_REQUEST_TIMEOUT
         # when the new split-timeout knob is absent OR empty (#177).
         # Matches the env_str precedent immediately above; env_int's
