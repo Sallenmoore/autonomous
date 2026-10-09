@@ -14,6 +14,7 @@ the user instead of degrading silently.
 
 import io
 import json
+import time
 
 import requests
 
@@ -177,12 +178,17 @@ _HTTP = HttpClient(
 )
 
 # Module-level negative cache: (model, base_url) tuples known to NOT
-# support strict-mode response_format. Populated on first conservative
-# 400 detection. Cleared by _reset_unsupported_cache() (tests + manual
-# operator override). Process-lifetime granularity is appropriate —
-# servers gain strict-mode support via deploys, deploys typically
-# accompany worker restarts.
+# support strict-mode response_format. Populated only on a conservative
+# strict-mode 4xx (a capability signal), never on a single unparseable
+# 200 (#268). Entries are time-boxed: the deadline lives in
+# _STRICT_MODE_CACHE_EXPIRY and an expired key is dropped on lookup, so
+# a long-lived worker re-probes strict mode instead of pinning loose
+# mode for days. A key with no deadline never expires (tests seed the
+# set directly). Cleared by _reset_unsupported_cache() (tests + manual
+# operator override).
 _UNSUPPORTED_STRICT_MODE: set[tuple[str, str]] = set()
+_STRICT_MODE_CACHE_EXPIRY: dict[tuple[str, str], float] = {}
+_STRICT_MODE_CACHE_TTL_SECONDS = 15 * 60
 
 # Substrings that indicate a 4xx response was specifically about
 # strict-mode unsupported-ness (rather than a real client bug like
@@ -221,6 +227,24 @@ def _reset_unsupported_cache() -> None:
     use it after deploying a server-side fix to re-probe strict-mode
     support without restarting the worker."""
     _UNSUPPORTED_STRICT_MODE.clear()
+    _STRICT_MODE_CACHE_EXPIRY.clear()
+
+
+def _cache_strict_unsupported(key) -> None:
+    _UNSUPPORTED_STRICT_MODE.add(key)
+    _STRICT_MODE_CACHE_EXPIRY[key] = time.monotonic() + _STRICT_MODE_CACHE_TTL_SECONDS
+
+
+def _strict_unsupported(key) -> bool:
+    """Negative-cache lookup that expires stale entries (#268)."""
+    if key not in _UNSUPPORTED_STRICT_MODE:
+        return False
+    expiry = _STRICT_MODE_CACHE_EXPIRY.get(key)
+    if expiry is not None and time.monotonic() >= expiry:
+        _UNSUPPORTED_STRICT_MODE.discard(key)
+        del _STRICT_MODE_CACHE_EXPIRY[key]
+        return False
+    return True
 
 
 def _looks_like_unsupported_strict_mode(status: int, body_text: str) -> bool:
@@ -481,7 +505,9 @@ class OpenAIClient(AutoModel):
             model or self._text_model, system, user, temperature=temperature, **sampling
         )
 
-    def _emit_strict_unavailable(self, *, status, body_excerpt, detection, model=None):
+    def _emit_strict_unavailable(
+        self, *, status, body_excerpt, detection, model=None, cache_ttl_s=_STRICT_MODE_CACHE_TTL_SECONDS
+    ):
         """Private helper for the two ``structured_outputs_unavailable``
         emission sites in ``generate_json``. Lives in this module (not
         ``_json_messages``) so the existing test patch target
@@ -494,6 +520,11 @@ class OpenAIClient(AutoModel):
         ``model`` is the effective per-call model (#173). When omitted,
         falls back to ``self._json_model`` so existing callers stay
         attribution-correct against the configured default.
+
+        ``cache_ttl_s`` is how long the endpoint stays in the negative
+        cache, or ``None`` when this detection was not cached (#268:
+        ``parse_failure_200`` loosens one call only). ``cached_for_process``
+        is kept for existing log scrapers and means "was cached".
         """
         event(
             "structured_outputs_unavailable",
@@ -506,7 +537,8 @@ class OpenAIClient(AutoModel):
             status=status,
             body_excerpt=body_excerpt,
             detection=detection,
-            cached_for_process=True,
+            cached_for_process=cache_ttl_s is not None,
+            cache_ttl_s=cache_ttl_s,
         )
         try:
             _STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER.inc(provider="openai_compat")
@@ -564,7 +596,7 @@ class OpenAIClient(AutoModel):
         endpoint_key = (effective_model, self._base_url)
         use_strict = (
             json_schema is not None
-            and endpoint_key not in _UNSUPPORTED_STRICT_MODE
+            and not _strict_unsupported(endpoint_key)
         )
         if use_strict:
             response_format = {
@@ -607,9 +639,10 @@ class OpenAIClient(AutoModel):
             # Cache before retry: even if loose-mode also fails, the
             # strict-mode-unsupported signal is still valid — a future
             # call to the same (model, endpoint) should go straight to
-            # loose without re-probing. Do NOT move this .add() below
-            # the retry branch; that would cause repeated probe failures.
-            _UNSUPPORTED_STRICT_MODE.add(endpoint_key)
+            # loose without re-probing (until the TTL lapses, #268). Do
+            # NOT move this below the retry branch; that would cause
+            # repeated probe failures.
+            _cache_strict_unsupported(endpoint_key)
             # Intra-module helper resolves ``event`` through
             # openai_compat's namespace so ``patch.object(openai_compat,
             # 'event')`` continues to intercept (a cross-module helper
@@ -669,16 +702,17 @@ class OpenAIClient(AutoModel):
                 # constraint (Open WebUI + Ollama on large schemas was
                 # the in-prod trigger). The reliable recovery is loose
                 # ``json_object`` mode, which is already known to work
-                # on this backend. Cache before retry — even if the loose
-                # retry also fails, the strict-mode-unsupported signal
-                # is still valid for subsequent calls.
+                # on this backend. NOT cached (#268): one bad body is not
+                # evidence the backend lacks strict mode (a truncated or
+                # wedged response looks the same), so only this call is
+                # loosened and the next call re-probes strict.
                 if use_strict:
-                    _UNSUPPORTED_STRICT_MODE.add(endpoint_key)
                     self._emit_strict_unavailable(
                         status=200,
                         body_excerpt=raw[:200],
                         detection="parse_failure_200",
                         model=effective_model,
+                        cache_ttl_s=None,
                     )
                     try:
                         loose_raw = self._chat(
