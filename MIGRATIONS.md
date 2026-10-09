@@ -5,6 +5,18 @@ recent first.
 
 ## Unreleased
 
+### Changed — lore index text is digest-first, HTML-stripped, with resolved `Related:` names (#269)
+
+**What changed.** `db_sync.process_single_object_sync` now writes the hash `content` (and embeds) as `"{name}: {digest}\nRelated: {names}\n{history}"`, where `digest` is `desc_summary` (else `desc`/`description` truncated to 400 chars) plus `backstory_summary`. All parts are HTML-stripped with the stdlib parser. `Related:` lists the associated entities' **names** (one `{"name": 1}` `$in` find per referenced collection, first 20 associations, `None`/dangling refs skipped) instead of raw DBRef reprs. The `MIN_CONTENT_CHARS` gate now counts name + digest + history + resolved names. Same embedder, same dimension, same hash fields. No GM-only fields are read.
+
+**Migration.** Re-run your reindex (no `--reset` needed; there's no dimension change) to rewrite existing hashes with the new text.
+
+### Changed — strict-mode negative cache is time-boxed; a bad 200 no longer disables `json_schema` (#268)
+
+**What changed.** In `openai_compat.generate_json`, a strict-mode capability 4xx now caches the `(model, base_url)` as strict-unsupported for 15 minutes (`_STRICT_MODE_CACHE_TTL_SECONDS`) instead of for the process lifetime; after that, strict mode is re-probed. A strict-mode 200 whose body doesn't parse (`detection="parse_failure_200"`) still retries that one call in loose `json_object` mode, but is **no longer cached**, so one truncated body can't turn off schema enforcement for the rest of a worker's life. The `[STRUCTURED-OUTPUTS-UNAVAILABLE]` event gains `cache_ttl_s` (seconds, or `None` when not cached); `cached_for_process` is kept for existing scrapers and is now `False` on the `parse_failure_200` path.
+
+**Migration.** No action required.
+
 ### Added — text / JSON / summary on the `litellm` provider (#264)
 
 **What changed.**
