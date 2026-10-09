@@ -12,6 +12,8 @@ from rq.command import send_stop_job_command
 from rq.exceptions import NoSuchJobError
 from rq.job import Job
 
+from autonomous.config import settings
+
 
 # 1. Define Priorities clearly
 class TaskPriority(Enum):
@@ -235,11 +237,12 @@ class AutoTasks:
 
         Recognized kwargs:
           - ``priority`` (``TaskPriority`` or str): queue selector
-          - ``_task_job_timeout`` (int seconds, default 7200)
+          - ``_task_job_timeout`` (int seconds, default
+            ``settings.task_job_timeout``: ``TASK_JOB_TIMEOUT``, 7200)
 
         All other args/kwargs forward to ``func``.
         """
-        job_timeout = kwargs.pop("_task_job_timeout", 7200)
+        job_timeout = kwargs.pop("_task_job_timeout", settings.task_job_timeout)
 
         priority = kwargs.pop("priority", TaskPriority.DEFAULT)
         queue_name = priority.value if isinstance(priority, TaskPriority) else priority

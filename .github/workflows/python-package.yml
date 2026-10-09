@@ -39,7 +39,7 @@ jobs:
         # code paths (PIL for image_cache, google-genai for gemini, redis/rq
         # for taskrunner). The unit suite imports them at collect time, so
         # CI must install all extras to match what `make inittests` provides.
-        for extras in requirements-images.txt requirements-ai.txt requirements-tasks.txt requirements-server.txt requirements-github.txt; do
+        for extras in requirements-images.txt requirements-ai.txt requirements-tasks.txt requirements-server.txt; do
           if [ -f "$extras" ]; then pip install -r "$extras"; fi
         done
     - name: Lint with flake8

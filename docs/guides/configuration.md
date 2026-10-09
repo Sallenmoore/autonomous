@@ -95,6 +95,7 @@ forms co-exist during the transition, so existing deployments are unaffected. Th
 | `REDIS_DB` | int | `0` | `redis_db` | — | Redis logical DB index |
 | `REDIS_USERNAME` | str | _(secret)_ | `redis_username` | — | Redis username |
 | `REDIS_PASSWORD` | str | _(secret)_ | `redis_password` | — | Redis password |
+| `TASK_JOB_TIMEOUT` | int | `7200` | `task_job_timeout` | ✅ | Default RQ job timeout (s) for AutoTasks.task |
 
 ### AI — HPC / OpenAI-compatible adapter
 
@@ -169,16 +170,11 @@ forms co-exist during the transition, so existing deployments are unaffected. Th
 | `STORAGE_PATH` | str | `static` | `storage_path` | — | Base storage directory |
 | `STORAGE_IMAGE_PATH` | str | _(empty)_ | `storage_image_path` | — | Image storage override path |
 | `APP_BASE_URL` | str | _(empty)_ | `app_base_url` | — | Public base URL for asset links |
-
-### GitHub API wrappers
-
-| Env var | Type | Default | `settings` attr | Migrated | Description |
-|---|---|---|---|:--:|---|
-| `GITHUB_PAT` | str | _(secret)_ | `github_pat` | — | GitHub personal access token |
-| `GITHUB_USERNAME` | str | _(empty)_ | `github_username` | — | GitHub username |
-| `GITHUB_ORG` | str | _(empty)_ | `github_org` | — | GitHub organization |
-| `GITHUB_EMAIL` | str | _(empty)_ | `github_email` | — | GitHub commit email |
-| `GITHUB_COMMIT_NAME` | str | _(empty)_ | `github_commit_name` | — | GitHub commit author name |
+| `IMAGE_THUMBNAIL_SIZE` | int | `100` | `image_thumbnail_size` | ✅ | Thumbnail variant max edge (px) |
+| `IMAGE_SMALL_SIZE` | int | `300` | `image_small_size` | ✅ | Small variant max edge (px) |
+| `IMAGE_MEDIUM_SIZE` | int | `600` | `image_medium_size` | ✅ | Medium variant max edge (px) |
+| `IMAGE_LARGE_SIZE` | int | `1000` | `image_large_size` | ✅ | Large variant max edge (px) |
+| `IMAGE_MAX_SIZE` | int | `1024` | `image_max_size` | ✅ | Default resize max edge (px) |
 
 ### Logging
 

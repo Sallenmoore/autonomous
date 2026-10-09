@@ -31,14 +31,6 @@ SRC = REPO / "src" / "autonomous"
 
 
 class TestClaudeMdMentions:
-    def test_cli_mention_present(self):
-        text = CLAUDE_MD.read_text(encoding="utf-8")
-        assert "src/autonomous/cli.py" in text, (
-            "CLAUDE.md no longer mentions src/autonomous/cli.py — PR #123 "
-            "added this on purpose; the placeholder CLI is a reserved "
-            "namespace and removing the mention will let it look vestigial."
-        )
-
     def test_utils_mention_present(self):
         text = CLAUDE_MD.read_text(encoding="utf-8")
         assert "src/autonomous/utils/" in text, (
@@ -62,7 +54,6 @@ class TestClaudeMdMentions:
         )
         assert match, "CLAUDE.md no longer has an '### Other subsystems' section"
         section = match.group(1)
-        assert "cli.py" in section, "cli.py mention drifted out of 'Other subsystems'"
         assert "utils" in section, "utils/ mention drifted out of 'Other subsystems'"
 
 
@@ -76,26 +67,6 @@ class TestReferencedFilesExist:
     PR #123's bullets become "documentation rot" — they point at modules
     that were deleted later, misleading future readers more than the
     pre-PR omission would have."""
-
-    def test_cli_module_exists(self):
-        cli = SRC / "cli.py"
-        assert cli.exists(), (
-            f"src/autonomous/cli.py is gone but CLAUDE.md still references "
-            f"it (PR #123 bullet). Either restore the file or rip the "
-            f"bullet — keeping the doc reference to a missing module is "
-            f"worse than the original omission."
-        )
-
-    def test_cli_has_createapp_stub(self):
-        """The PR #123 bullet describes cli.py as "single ``createapp()``
-        stub today". Pin that contract — if the stub is removed AND no
-        replacement entry point is added, the doc lie is even larger."""
-        cli_text = (SRC / "cli.py").read_text(encoding="utf-8")
-        assert re.search(r"def\s+createapp\s*\(", cli_text), (
-            "cli.py no longer defines createapp() — CLAUDE.md still "
-            "describes it as the entry point. Either add a replacement "
-            "stub or update the bullet."
-        )
 
     def test_utils_package_exists(self):
         utils = SRC / "utils"

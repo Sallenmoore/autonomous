@@ -36,7 +36,7 @@ Design notes
 This is the first slice of issue #49: the catalog plus migration of the
 fragile numeric reads in the AI model adapters and ``db_sync``'s throttle
 parser. The remaining subpackages (auth, storage, taskrunner, the DB
-connection helpers, the GitHub API wrappers) still read ``os.environ``
+connection helpers) still read ``os.environ``
 directly and are documented here for a follow-up per-subpackage migration —
 old reads co-exist with the catalog during the transition.
 """
@@ -202,6 +202,7 @@ _SPEC: tuple[Field, ...] = (
     Field("redis_db", "REDIS_DB", "int", 0, "redis", "Redis logical DB index", migrated=False),
     Field("redis_username", "REDIS_USERNAME", "str", "", "redis", "Redis username", secret=True, migrated=False),
     Field("redis_password", "REDIS_PASSWORD", "str", "", "redis", "Redis password", secret=True, migrated=False),
+    Field("task_job_timeout", "TASK_JOB_TIMEOUT", "int", 7200, "redis", "Default RQ job timeout (s) for AutoTasks.task"),
     Field("sync_token_ttl_seconds", "SYNC_TOKEN_TTL_SECONDS", "int", 300, "redis",
           "TTL (s) of an embedding-sync supersede token (db.db_sync). Governs the "
           "real-time re-save dedup window only; an expired token no longer skips "
@@ -301,13 +302,11 @@ _SPEC: tuple[Field, ...] = (
     Field("storage_path", "STORAGE_PATH", "str", "static", "storage", "Base storage directory", migrated=False),
     Field("storage_image_path", "STORAGE_IMAGE_PATH", "str", "", "storage", "Image storage override path", migrated=False),
     Field("app_base_url", "APP_BASE_URL", "str", "", "storage", "Public base URL for asset links", migrated=False),
-
-    # --- GitHub API wrappers (apis.version_control) -------------------------
-    Field("github_pat", "GITHUB_PAT", "str", "", "github", "GitHub personal access token", secret=True, migrated=False),
-    Field("github_username", "GITHUB_USERNAME", "str", "", "github", "GitHub username", migrated=False),
-    Field("github_org", "GITHUB_ORG", "str", "", "github", "GitHub organization", migrated=False),
-    Field("github_email", "GITHUB_EMAIL", "str", "", "github", "GitHub commit email", migrated=False),
-    Field("github_commit_name", "GITHUB_COMMIT_NAME", "str", "", "github", "GitHub commit author name", migrated=False),
+    Field("image_thumbnail_size", "IMAGE_THUMBNAIL_SIZE", "int", 100, "storage", "Thumbnail variant max edge (px)"),
+    Field("image_small_size", "IMAGE_SMALL_SIZE", "int", 300, "storage", "Small variant max edge (px)"),
+    Field("image_medium_size", "IMAGE_MEDIUM_SIZE", "int", 600, "storage", "Medium variant max edge (px)"),
+    Field("image_large_size", "IMAGE_LARGE_SIZE", "int", 1000, "storage", "Large variant max edge (px)"),
+    Field("image_max_size", "IMAGE_MAX_SIZE", "int", 1024, "storage", "Default resize max edge (px)"),
 
     # --- Logging (logger) ---------------------------------------------------
     Field("log_level", "LOG_LEVEL", "str", "", "logging", "Log threshold (DEBUG..CRITICAL)", migrated=False),
