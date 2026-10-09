@@ -5,6 +5,46 @@ recent first.
 
 ## Unreleased
 
+### Removed — `autonomous.apis.version_control`, `autonomous.cli`, and the `[github]` extra (#282)
+
+**What changed.**
+
+- **`autonomous.apis.version_control` is gone** (`GHRepo`, `GHOrganization`, `GHVersionControl`, `GHRemoteCallbacks`), along with the `[github]` extra (`requirements-github.txt`: PyGithub, pygit2) and the `GITHUB_PAT` / `GITHUB_USERNAME` / `GITHUB_ORG` / `GITHUB_EMAIL` / `GITHUB_COMMIT_NAME` settings fields. No known consumer used it. `[all]` no longer installs PyGithub or pygit2.
+- **`autonomous.cli` is gone.** `createapp()` only printed "app created", and no console-script entry point pointed at it.
+- GitHub **OAuth** (`autonomous.auth.github.GithubAuth`) is unaffected.
+
+**Migration.** If you import either module or install `autonomous-app[github]`, pin `autonomous-app<=0.3.181`, or vendor the wrappers from that release.
+
+### Changed — `LocalAIModel.summarize_text` raises instead of returning a partial summary (#275)
+
+**What changed.** When a chunk failed, `summarize_text` used to stop and return the chunks summarized so far, with no sign it was incomplete. Each chunk now gets the transient-failure retry below; a chunk that still fails (transport error, HTTP error, or unparseable body) **raises** that exception (`requests.RequestException` / `ValueError`).
+
+**Migration.** Callers that relied on a best-effort string should catch `requests.RequestException` and `ValueError` around `summarize_text`.
+
+### Changed — `LocalAIModel.generate_text` / `generate_audio` retry transient failures (#278)
+
+**What changed.** Each Ollama / TTS POST is now retried up to 3 times on `ConnectionError` / `Timeout`, sleeping `OLLAMA_RETRY_SLEEP` between attempts (the policy `generate_json` already had). HTTP error answers (4xx/5xx) are not retried. The degrade-on-failure return values (`"Error generating text."`, `None`) are unchanged.
+
+**Migration.** No action required. A dead backend now takes up to 3 attempts to fail, not 1.
+
+### Added — env overrides for image sizes, resize default, and task job timeout (#279)
+
+**What changed.** New `settings` fields, defaults unchanged: `IMAGE_THUMBNAIL_SIZE` (100), `IMAGE_SMALL_SIZE` (300), `IMAGE_MEDIUM_SIZE` (600), `IMAGE_LARGE_SIZE` (1000), `IMAGE_MAX_SIZE` (1024, `ImageStorage._resize_image` default) and `TASK_JOB_TIMEOUT` (7200 s, `AutoTasks.task` default `job_timeout`). Read once at import, like the other catalog fields.
+
+**Migration.** No action required.
+
+### Fixed — `ImageStorage.flip` / `rotate` / `clear_cached` (#271)
+
+**What changed.** `flip()` with both flags (the default) applied only the vertical flip; it now chains both. With both flags `False` it raised `UnboundLocalError`; it is now a no-op. `rotate()` and `flip()` return `True` on success (they always returned `False`). `clear_cached()` returns `True` when the asset directory exists, `False` otherwise.
+
+**Migration.** Callers that treated the old `False` as failure will now see `True`.
+
+### Changed — Google OAuth discovery fetch is bounded and status-checked (#272)
+
+**What changed.** `GoogleAuth()` fetches `GOOGLE_DISCOVERY_URL` with a 30 s timeout and raises `requests.HTTPError` on a non-2xx answer, instead of hanging or parsing an error page.
+
+**Migration.** No action required.
+
 ### Changed — lore index text is digest-first, HTML-stripped, with resolved `Related:` names (#269)
 
 **What changed.** `db_sync.process_single_object_sync` now writes the hash `content` (and embeds) as `"{name}: {digest}\nRelated: {names}\n{history}"`, where `digest` is `desc_summary` (else `desc`/`description` truncated to 400 chars) plus `backstory_summary`. All parts are HTML-stripped with the stdlib parser. `Related:` lists the associated entities' **names** (one `{"name": 1}` `$in` find per referenced collection, first 20 associations, `None`/dangling refs skipped) instead of raw DBRef reprs. The `MIN_CONTENT_CHARS` gate now counts name + digest + history + resolved names. Same embedder, same dimension, same hash fields. No GM-only fields are read.

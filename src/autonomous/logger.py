@@ -2,6 +2,7 @@ import datetime
 import inspect
 import logging
 import os
+import threading
 
 log_levels = {
     "DEBUG": logging.DEBUG,
@@ -40,6 +41,9 @@ class Logger:
         self._logfile: str | None = None
         self._logarchive: str | None = None
         self._initialized_paths = False
+        # Serializes the two file writes in ``__call__`` (#274) so
+        # concurrent gunicorn threads can't interleave or clobber them.
+        self._file_lock = threading.Lock()
 
     def _ensure_paths(self) -> None:
         """Create the log directory and resolve file paths on first call."""
@@ -89,15 +93,16 @@ class Logger:
         # the threshold was set to (often ERROR in prod).
         self.logger.log(logging.DEBUG, f"{msg}\n")
         if self._file_logging:
-            self._ensure_paths()
-            try:
-                with open(self._logfile, "w") as current:
-                    current.write(f"{msg}\n")
-                with open(self._logarchive, "a") as archive:
-                    archive.write(f"{msg}\n")
-            except OSError:
-                # A failing disk must not take down the caller.
-                pass
+            with self._file_lock:
+                self._ensure_paths()
+                try:
+                    with open(self._logfile, "w") as current:
+                        current.write(f"{msg}\n")
+                    with open(self._logarchive, "a") as archive:
+                        archive.write(f"{msg}\n")
+                except OSError:
+                    # A failing disk must not take down the caller.
+                    pass
         if is_printed:
             print(msg)
 
