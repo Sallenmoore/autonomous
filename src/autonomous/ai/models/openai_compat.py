@@ -178,9 +178,9 @@ _HTTP = HttpClient(
 )
 
 # Module-level negative cache: (model, base_url) tuples known to NOT
-# support strict-mode response_format. Populated only on a conservative
-# strict-mode 4xx (a capability signal), never on a single unparseable
-# 200 (#268). Entries are time-boxed: the deadline lives in
+# support strict-mode response_format. Populated on a conservative
+# strict-mode 4xx or a strict-mode 200 whose body doesn't parse (#124).
+# Entries are time-boxed (#268): the deadline lives in
 # _STRICT_MODE_CACHE_EXPIRY and an expired key is dropped on lookup, so
 # a long-lived worker re-probes strict mode instead of pinning loose
 # mode for days. A key with no deadline never expires (tests seed the
@@ -505,9 +505,7 @@ class OpenAIClient(AutoModel):
             model or self._text_model, system, user, temperature=temperature, **sampling
         )
 
-    def _emit_strict_unavailable(
-        self, *, status, body_excerpt, detection, model=None, cache_ttl_s=_STRICT_MODE_CACHE_TTL_SECONDS
-    ):
+    def _emit_strict_unavailable(self, *, status, body_excerpt, detection, model=None):
         """Private helper for the two ``structured_outputs_unavailable``
         emission sites in ``generate_json``. Lives in this module (not
         ``_json_messages``) so the existing test patch target
@@ -522,9 +520,8 @@ class OpenAIClient(AutoModel):
         attribution-correct against the configured default.
 
         ``cache_ttl_s`` is how long the endpoint stays in the negative
-        cache, or ``None`` when this detection was not cached (#268:
-        ``parse_failure_200`` loosens one call only). ``cached_for_process``
-        is kept for existing log scrapers and means "was cached".
+        cache (#268); ``cached_for_process`` is kept for existing log
+        scrapers.
         """
         event(
             "structured_outputs_unavailable",
@@ -537,8 +534,8 @@ class OpenAIClient(AutoModel):
             status=status,
             body_excerpt=body_excerpt,
             detection=detection,
-            cached_for_process=cache_ttl_s is not None,
-            cache_ttl_s=cache_ttl_s,
+            cached_for_process=True,
+            cache_ttl_s=_STRICT_MODE_CACHE_TTL_SECONDS,
         )
         try:
             _STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER.inc(provider="openai_compat")
@@ -702,17 +699,17 @@ class OpenAIClient(AutoModel):
                 # constraint (Open WebUI + Ollama on large schemas was
                 # the in-prod trigger). The reliable recovery is loose
                 # ``json_object`` mode, which is already known to work
-                # on this backend. NOT cached (#268): one bad body is not
-                # evidence the backend lacks strict mode (a truncated or
-                # wedged response looks the same), so only this call is
-                # loosened and the next call re-probes strict.
+                # on this backend. Cache before retry — even if the loose
+                # retry also fails, the strict-mode-unsupported signal
+                # is still valid for subsequent calls (until the TTL
+                # lapses, #268, so a transient bad body re-probes).
                 if use_strict:
+                    _cache_strict_unsupported(endpoint_key)
                     self._emit_strict_unavailable(
                         status=200,
                         body_excerpt=raw[:200],
                         detection="parse_failure_200",
                         model=effective_model,
-                        cache_ttl_s=None,
                     )
                     try:
                         loose_raw = self._chat(

@@ -11,9 +11,9 @@ recent first.
 
 **Migration.** Re-run your reindex (no `--reset` needed; there's no dimension change) to rewrite existing hashes with the new text.
 
-### Changed — strict-mode negative cache is time-boxed; a bad 200 no longer disables `json_schema` (#268)
+### Changed — strict-mode negative cache is time-boxed (#268)
 
-**What changed.** In `openai_compat.generate_json`, a strict-mode capability 4xx now caches the `(model, base_url)` as strict-unsupported for 15 minutes (`_STRICT_MODE_CACHE_TTL_SECONDS`) instead of for the process lifetime; after that, strict mode is re-probed. A strict-mode 200 whose body doesn't parse (`detection="parse_failure_200"`) still retries that one call in loose `json_object` mode, but is **no longer cached**, so one truncated body can't turn off schema enforcement for the rest of a worker's life. The `[STRUCTURED-OUTPUTS-UNAVAILABLE]` event gains `cache_ttl_s` (seconds, or `None` when not cached); `cached_for_process` is kept for existing scrapers and is now `False` on the `parse_failure_200` path.
+**What changed.** In `openai_compat.generate_json`, both strict-mode-unavailable signals (a capability 4xx, `detection="first"`, and a strict 200 whose body doesn't parse, `detection="parse_failure_200"`) now cache the `(model, base_url)` as strict-unsupported for 15 minutes (`_STRICT_MODE_CACHE_TTL_SECONDS`) instead of for the process lifetime; after that, strict mode is re-probed. One truncated body can no longer turn off schema enforcement for the rest of a worker's life. The `[STRUCTURED-OUTPUTS-UNAVAILABLE]` event gains `cache_ttl_s`; `cached_for_process` is kept for existing scrapers.
 
 **Migration.** No action required.
 
