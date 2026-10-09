@@ -36,7 +36,7 @@ Design notes
 This is the first slice of issue #49: the catalog plus migration of the
 fragile numeric reads in the AI model adapters and ``db_sync``'s throttle
 parser. The remaining subpackages (auth, storage, taskrunner, the DB
-connection helpers, the GitHub API wrappers) still read ``os.environ``
+connection helpers) still read ``os.environ``
 directly and are documented here for a follow-up per-subpackage migration —
 old reads co-exist with the catalog during the transition.
 """
@@ -307,13 +307,6 @@ _SPEC: tuple[Field, ...] = (
     Field("image_medium_size", "IMAGE_MEDIUM_SIZE", "int", 600, "storage", "Medium variant max edge (px)"),
     Field("image_large_size", "IMAGE_LARGE_SIZE", "int", 1000, "storage", "Large variant max edge (px)"),
     Field("image_max_size", "IMAGE_MAX_SIZE", "int", 1024, "storage", "Default resize max edge (px)"),
-
-    # --- GitHub API wrappers (apis.version_control) -------------------------
-    Field("github_pat", "GITHUB_PAT", "str", "", "github", "GitHub personal access token", secret=True, migrated=False),
-    Field("github_username", "GITHUB_USERNAME", "str", "", "github", "GitHub username", migrated=False),
-    Field("github_org", "GITHUB_ORG", "str", "", "github", "GitHub organization", migrated=False),
-    Field("github_email", "GITHUB_EMAIL", "str", "", "github", "GitHub commit email", migrated=False),
-    Field("github_commit_name", "GITHUB_COMMIT_NAME", "str", "", "github", "GitHub commit author name", migrated=False),
 
     # --- Logging (logger) ---------------------------------------------------
     Field("log_level", "LOG_LEVEL", "str", "", "logging", "Log threshold (DEBUG..CRITICAL)", migrated=False),

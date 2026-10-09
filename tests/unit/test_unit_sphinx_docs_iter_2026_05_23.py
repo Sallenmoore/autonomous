@@ -124,7 +124,7 @@ class TestSphinxConfig:
 
     @pytest.mark.parametrize(
         "mod",
-        ["google", "pydub", "PIL", "pygit2", "github", "rq"],
+        ["google", "pydub", "PIL", "rq"],
     )
     def test_mock_import_present(self, conf_module, mod):
         """Removing a mock here will fail the RTD build on any system

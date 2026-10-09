@@ -66,7 +66,7 @@ The test layout was split into hermetic unit / live-stack integration / opt-in p
 
 Pytest config in `[tool.pytest.ini_options]`: `addopts = "--cov=autonomous -rx -l -x -s --log-level=INFO --ignore=src --no-cov-on-fail -v --pdb --cov-reset"` and loads `tests/.testenv`. Tests stop on first failure (`-x`) and drop into pdb (`--pdb`) — be aware when running non-interactively (CI passes `--pdbcls` overrides). Markers: `integration` (live services) and `perf` (benchmarks).
 
-The package ships per-feature extras defined in [pyproject.toml](pyproject.toml) (MIGRATIONS.md Item 9): `[tasks]`, `[images]`, `[ai]`, `[github]`, `[server]`, `[dev]`, `[all]`. Install only what the consumer uses, e.g. `pip install autonomous-app[ai,tasks]`. The smoke test (`scripts/smoke_test.sh`) installs `[all]` and imports every subpackage.
+The package ships per-feature extras defined in [pyproject.toml](pyproject.toml) (MIGRATIONS.md Item 9): `[tasks]`, `[images]`, `[ai]`, `[server]`, `[dev]`, `[all]`. Install only what the consumer uses, e.g. `pip install autonomous-app[ai,tasks]`. The smoke test (`scripts/smoke_test.sh`) installs `[all]` and imports every subpackage.
 
 Consumer-visible changes ship in [MIGRATIONS.md](MIGRATIONS.md) (most-recent-first, with replacement recipes for removed symbols). Update it for any change that breaks or alters the public API of a subpackage that downstream projects import.
 
@@ -98,9 +98,7 @@ The library is a set of loosely-coupled service wrappers glued together by the `
 
 ### Other subsystems
 - [src/autonomous/storage/](src/autonomous/storage/) — `ImageStorage` (Pillow, writes WebP + thumbnail/small/medium/large variants under `static/images/`) and `LocalStorage`.
-- [src/autonomous/apis/version_control/](src/autonomous/apis/version_control/) — PyGithub wrappers (`GHRepo`, `GHOrganization`, `GHCallbacks`).
 - [src/autonomous/logger.py](src/autonomous/logger.py) — `log` is a callable singleton that writes to `logs/current_run_error_log.log` + a dated archive; pass `_print=True` to also echo to stdout. Level controlled by `LOG_LEVEL` env var.
-- [src/autonomous/cli.py](src/autonomous/cli.py) — placeholder CLI entrypoint (single `createapp()` stub today). Treat as reserved namespace; ask before expanding.
 - [src/autonomous/utils/](src/autonomous/utils/) — small shared helpers (currently just `markdown.py`); home for cross-subpackage utilities that don't belong in a specific subsystem.
 
 ## Three-Agent Pipeline
@@ -224,6 +222,6 @@ After the test→main merge, the autonomous-prod agent runs `release.sh` automat
 - **Never import from db submodules directly** — go through `autonomous.db`, which re-exports the intended public names.
 - **MongoDB is required at import time** for anything under `autonomous.model` or `autonomous.ai`; unit tests that touch these need the Compose stack up.
 - **Models must be imported before `AutoModel.load_model("Name")` will resolve them**, because resolution walks `__subclasses__()`.
-- **Use [`autonomous.ai.retry.retry`](src/autonomous/ai/retry.py) for bounded HTTP retry** rather than ad-hoc `try/except` loops; backlog items in README #5, #6, #16, #21 all exist because callers bypass it.
-- **Existing backlog lives in [README.md](README.md) "Task List"** — 28 items with file:line anchors and impact axes (security/stability/functionality/efficiency/usability). Before accepting a new issue, check whether it duplicates a backlog item; close as duplicate or merge scope when it does.
+- **Use [`autonomous.ai.retry.retry`](src/autonomous/ai/retry.py) for bounded HTTP retry** rather than ad-hoc `try/except` loops; callers that bypassed it were a recurring source of hang and retry bugs.
+- **GitHub issues are the only backlog** (the README Task List was retired in #282). Before accepting a new issue, check whether it duplicates an open one; close as duplicate or merge scope when it does.
 - **CI fires on `dev`, `test`, and `main` branches.** Feature PRs target `test` (not `dev` directly and not `main`); see "Three-Agent Pipeline" above for the dev → test → main → `/prod-agent` flow and the `auto-release` label gate.
