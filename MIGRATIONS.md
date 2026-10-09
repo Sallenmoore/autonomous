@@ -5,6 +5,12 @@ recent first.
 
 ## Unreleased
 
+### Added — `request_indexing(..., debounce=False)` for bulk reindex (#281)
+
+**What changed.** `db_sync.request_indexing` and `process_single_object_sync` take an optional `debounce` keyword (default `True`, behavior unchanged). With `debounce=False` the worker skips its 5 s coalescing wait before embedding; the sync-token supersede check still runs, so a real save landing during a reindex still wins. The default enqueue payload is unchanged (the kwarg is only sent when `False`).
+
+**Migration.** Bulk reindex callers can pass `request_indexing(pk, collection_name=..., debounce=False)`. Upgrade RQ workers before enqueueing `debounce=False` jobs: an older worker rejects the unknown kwarg.
+
 ### Removed — `autonomous.apis.version_control`, `autonomous.cli`, and the `[github]` extra (#282)
 
 **What changed.**
