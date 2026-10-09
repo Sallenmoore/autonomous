@@ -96,7 +96,6 @@ class TestExtras:
             ("tasks", "requirements-tasks.txt"),
             ("images", "requirements-images.txt"),
             ("ai", "requirements-ai.txt"),
-            ("github", "requirements-github.txt"),
             ("server", "requirements-server.txt"),
         ],
     )
@@ -108,7 +107,7 @@ class TestExtras:
         opt_deps = pyproject["tool"]["setuptools"]["dynamic"][
             "optional-dependencies"
         ]
-        for extra in ("tasks", "images", "ai", "github", "server", "all"):
+        for extra in ("tasks", "images", "ai", "server", "all"):
             assert extra in opt_deps, f"Missing extra: {extra}"
             files = opt_deps[extra]["file"]
             for f in files:
@@ -119,7 +118,7 @@ class TestExtras:
             "optional-dependencies"
         ]
         all_files = set(opt_deps["all"]["file"])
-        for extra in ("tasks", "images", "ai", "github", "server"):
+        for extra in ("tasks", "images", "ai", "server"):
             single = opt_deps[extra]["file"][0]
             assert single in all_files, (
                 f"[all] extra is missing {single} from [{extra}]"
@@ -136,7 +135,3 @@ class TestExtras:
     def test_ai_extra_contains_gemini_deps(self):
         deps = set(_read_extras_file("requirements-ai.txt"))
         assert {"google-genai", "pydub"} <= deps
-
-    def test_github_extra_contains_pygithub_and_pygit2(self):
-        deps = set(_read_extras_file("requirements-github.txt"))
-        assert {"PyGithub", "pygit2"} <= deps

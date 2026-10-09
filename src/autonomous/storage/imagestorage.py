@@ -11,6 +11,7 @@ from typing import Iterator
 from PIL import Image, UnidentifiedImageError
 
 from autonomous import log
+from autonomous.config import settings
 from autonomous.storage.localstorage import (
     _default_storage_path,
     _sanitize_relative,
@@ -27,7 +28,12 @@ def _default_image_path() -> str:
 
 
 class ImageStorage:
-    _sizes = {"thumbnail": 100, "small": 300, "medium": 600, "large": 1000}
+    _sizes = {
+        "thumbnail": settings.image_thumbnail_size,
+        "small": settings.image_small_size,
+        "medium": settings.image_medium_size,
+        "large": settings.image_large_size,
+    }
 
     def __init__(self, path: str | None = None):
         self.base_path = path if path is not None else _default_image_path()
@@ -58,7 +64,7 @@ class ImageStorage:
             folder = f"{folder}/"
         return f"{folder.replace('/', '.')}{pkey or uuid.uuid4()}"
 
-    def _resize_image(self, asset_id, max_size=1024):
+    def _resize_image(self, asset_id, max_size=settings.image_max_size):
         file_path = f"{self.get_path(asset_id)}/orig.webp"
         try:
             with Image.open(file_path) as img:
@@ -229,29 +235,40 @@ class ImageStorage:
         return False
 
     def clear_cached(self, asset_id: str) -> bool:
-        """Delete every cached variant for ``asset_id``, leaving ``orig.webp``."""
-        file_path = self.get_path(asset_id)
-        if os.path.isdir(file_path):
-            for file in glob.glob(os.path.join(file_path, "*")):
-                if os.path.basename(file) != "orig.webp":
-                    os.remove(file)
-        return False
+        """Delete every cached variant for ``asset_id``, leaving ``orig.webp``.
 
-    def rotate(self, asset_id, amount=-90):
+        Returns ``True`` if the asset directory existed, ``False`` otherwise.
+        """
+        file_path = self.get_path(asset_id)
+        if not os.path.isdir(file_path):
+            return False
+        for file in glob.glob(os.path.join(file_path, "*")):
+            if os.path.basename(file) != "orig.webp":
+                os.remove(file)
+        return True
+
+    def rotate(self, asset_id, amount=-90) -> bool:
         file_path = self.get_path(asset_id)
         with Image.open(f"{file_path}/orig.webp") as img:
             rotated_img = img.rotate(amount, expand=True)
             self.clear_cached(asset_id)
             rotated_img.save(f"{file_path}/orig.webp", format="WEBP")
-        return False
+        return True
 
-    def flip(self, asset_id, flipx=True, flipy=True):
+    def flip(self, asset_id, flipx=True, flipy=True) -> bool:
+        """Mirror ``orig.webp`` horizontally and/or vertically (#271).
+
+        Both flips chain; with both flags off it is a no-op.
+        """
+        if not (flipx or flipy):
+            return True
         file_path = self.get_path(asset_id)
         with Image.open(f"{file_path}/orig.webp") as img:
+            flipped = img
             if flipx:
-                rotated_img = img.transpose(Image.FLIP_LEFT_RIGHT)
+                flipped = flipped.transpose(Image.FLIP_LEFT_RIGHT)
             if flipy:
-                rotated_img = img.transpose(Image.FLIP_TOP_BOTTOM)
-            rotated_img.save(f"{file_path}/orig.webp", format="WEBP")
+                flipped = flipped.transpose(Image.FLIP_TOP_BOTTOM)
+            flipped.save(f"{file_path}/orig.webp", format="WEBP")
             self.clear_cached(asset_id)
-        return False
+        return True

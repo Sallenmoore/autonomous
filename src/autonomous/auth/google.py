@@ -32,7 +32,13 @@ class GoogleAuth(AutoAuth):
             scope = scope.split(",")
         gduri = os.environ.get("GOOGLE_DISCOVERY_URL")
 
-        response = requests.get(gduri).json()
+        # Bounded and status-checked (#272): a network blip must fail the
+        # login fast and loudly rather than hang the worker or parse an
+        # error page. ``requests.get`` stays the call (not autoauth's
+        # ``_HTTP``) because consumers patch ``autonomous.auth.google.requests.get``.
+        resp = requests.get(gduri, timeout=30)
+        resp.raise_for_status()
+        response = resp.json()
         authorize_url = response.get("authorization_endpoint")
         token_endpoint = response.get("token_endpoint")
         super().__init__(

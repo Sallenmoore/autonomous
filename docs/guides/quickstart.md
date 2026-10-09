@@ -9,7 +9,7 @@ Autonomous is published as ``autonomous-app``:
 
 ```bash
 pip install autonomous-app              # ORM + auth core
-pip install 'autonomous-app[all]'       # + tasks, images, ai, github
+pip install 'autonomous-app[all]'       # + tasks, images, ai, server
 ```
 
 Feature extras are pay-as-you-go — see the table at the bottom of this
@@ -96,7 +96,6 @@ p.save()
 pip install 'autonomous-app[tasks]'    # + redis, rq
 pip install 'autonomous-app[images]'   # + pillow
 pip install 'autonomous-app[ai]'       # + google-genai, pydub
-pip install 'autonomous-app[github]'   # + PyGithub, pygit2
 pip install 'autonomous-app[server]'   # + gunicorn
 pip install 'autonomous-app[all]'      # everything above
 ```

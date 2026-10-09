@@ -102,8 +102,6 @@ autodoc_mock_imports = [
     "google",          # google-genai (image / TTS / text)
     "pydub",           # audio decode/encode
     "PIL",             # image storage variants
-    "pygit2",          # apis/version_control
-    "github",          # PyGithub
     "rq",              # taskrunner
 ]
 
