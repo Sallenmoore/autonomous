@@ -3,6 +3,7 @@ import time
 import urllib.parse
 import uuid
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 from typing import Literal, get_args
 
 import bson
@@ -779,6 +780,53 @@ def _extract_world_pk(doc) -> str:
     return str(world)
 
 
+class _TextExtractor(HTMLParser):
+    # convert_charrefs (the default) already unescapes &amp; etc.
+    def __init__(self):
+        super().__init__()
+        self.parts = []
+
+    def handle_data(self, data):
+        self.parts.append(data)
+
+
+def _plain(html) -> str:
+    """Strip HTML to whitespace-collapsed text for embedding (#269)."""
+    parser = _TextExtractor()
+    parser.feed(html or "")
+    parser.close()
+    return " ".join(" ".join(parser.parts).split())
+
+
+def _association_names(db, associations) -> list[str]:
+    """Resolve raw association values to entity names (#269), in order.
+
+    Refs (``{"_cls", "_ref": DBRef}`` or a bare ``DBRef``) are resolved
+    with one ``$in`` find per collection; ``None``, dangling refs and
+    bare ObjectIds (no collection to look in) are skipped. Plain strings
+    are kept as-is.
+    """
+    refs = [a.get("_ref") if isinstance(a, dict) else a for a in associations]
+    ids_by_coll = {}
+    for ref in refs:
+        if isinstance(ref, bson.DBRef):
+            ids_by_coll.setdefault(ref.collection, []).append(ref.id)
+    names = {}
+    for coll, ids in ids_by_coll.items():
+        for row in db[coll].find({"_id": {"$in": ids}}, {"name": 1}):
+            if row.get("name"):
+                names[(coll, row["_id"])] = str(row["name"])
+    out = []
+    for ref in refs:
+        if isinstance(ref, bson.DBRef):
+            name = names.get((ref.collection, ref.id))
+        else:
+            name = ref if isinstance(ref, str) else None
+        if name:
+            out.append(name)
+    return out
+
+
 def process_single_object_sync(object_id, collection_name, token):
     """
     THE WORKER FUNCTION (Runs in Background).
@@ -890,16 +938,23 @@ def process_single_object_sync(object_id, collection_name, token):
     # 2. Construct Searchable Text
     log(doc.get("associations"))
 
-    name = doc.get("name") or ""
-    history = doc.get("history") or ""
-    associations = doc.get("associations") or []
+    name = _plain(doc.get("name"))
+    history = _plain(doc.get("history"))
+    # Public digests only (#269) — never GM-only fields (secrets,
+    # gm_notes, ...). Digest goes FIRST so it survives the embedder's
+    # 256-word-piece truncation; the history tail is what gets cut.
+    digest = " ".join(x for x in (
+        _plain(doc.get("desc_summary") or (doc.get("desc") or doc.get("description") or "")[:400]),
+        _plain(doc.get("backstory_summary")),
+    ) if x)
+    related = ", ".join(_association_names(db, (doc.get("associations") or [])[:20]))
 
     # Threshold is computed on actual user content only. The previous
     # `len(searchable_text) < 10` check ran AFTER the f-string below
     # added a literal "Related: " prefix, so the branch never fired on
     # empty docs in production (fixed #48). Threshold value lives in
     # MIN_CONTENT_CHARS at module top (#56).
-    content_chars = name + history + " ".join(str(a) for a in associations[:20])
+    content_chars = name + digest + history + related
     if len(content_chars) < MIN_CONTENT_CHARS:
         # Per-doc log so operators investigating storyteller
         # /debug/lore/health can attribute a silent_skip increment to a
@@ -913,10 +968,7 @@ def process_single_object_sync(object_id, collection_name, token):
         record_embedding_sync_event("silent_skip")
         return
 
-    searchable_text = (
-        f"{name}: {history}"
-        f"Related: {', '.join([str(a) for a in associations[:20]]) if associations else ''}"
-    )
+    searchable_text = f"{name}: {digest}\nRelated: {related}\n{history}"
 
     # 3. Generate Vector
     vector = get_vector(searchable_text)
