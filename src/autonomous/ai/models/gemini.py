@@ -390,7 +390,10 @@ class GeminiAIModel(AutoModel):
                     list(executor.map(_delete_orphan_in_thread, uploaded_files))
                 raise
 
-        self.file_refs = [f.name for f in self.client.files.list()]
+        # This batch's handles, not a files.list() of the whole account
+        # (#280): that was an extra API call per upload for a field
+        # nothing in the library reads.
+        self.file_refs = [f.name for f in uploaded_files]
         # Only persist the bookkeeping for a client that already has a
         # database identity. A per-call provider override (#239) dispatches
         # on a TRANSIENT client with no pk, and an unconditional save()
