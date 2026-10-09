@@ -3,6 +3,10 @@ class MarkdownParser:
     Parses a record into Markdown
     """
 
+    #: Nesting cap (#276). Past it, ``parse`` raises ``ValueError``
+    #: instead of letting a pathological record hit ``RecursionError``.
+    MAX_DEPTH = 128
+
     def __init__(self, record):
         self.record = record
         self.markdown = ""
@@ -11,6 +15,14 @@ class MarkdownParser:
         self.htag = "#"
         self.listdepth = 0
         self.headerdepth = 0
+        self.depth = 0
+
+    def _descend(self):
+        self.depth += 1
+        if self.depth > self.MAX_DEPTH:
+            raise ValueError(
+                f"MarkdownParser: record nesting depth exceeds {self.MAX_DEPTH}"
+            )
 
     def parseJSON(self, json_block):
         if isinstance(json_block, dict):
@@ -21,6 +33,7 @@ class MarkdownParser:
             self.addValue(json_block)
 
     def parseDict(self, d):
+        self._descend()
         for k, v in d.items():
             if isinstance(v, (dict, list)):
                 self.headerdepth += 1
@@ -30,8 +43,10 @@ class MarkdownParser:
             else:
                 self.addLabeledValue(k, v)
         self.markdown += "\n"
+        self.depth -= 1
 
     def parseList(self, l):
+        self._descend()
         for value in l:
             if isinstance(value, dict):
                 self.listdepth = 0
@@ -43,6 +58,7 @@ class MarkdownParser:
             else:
                 self.addListItem(value)
         self.markdown += "\n"
+        self.depth -= 1
 
     def addHeader(self, value):
         if self.headerdepth > 5:
