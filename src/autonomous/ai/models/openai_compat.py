@@ -14,6 +14,7 @@ the user instead of degrading silently.
 
 import io
 import json
+import time
 
 import requests
 
@@ -177,12 +178,17 @@ _HTTP = HttpClient(
 )
 
 # Module-level negative cache: (model, base_url) tuples known to NOT
-# support strict-mode response_format. Populated on first conservative
-# 400 detection. Cleared by _reset_unsupported_cache() (tests + manual
-# operator override). Process-lifetime granularity is appropriate —
-# servers gain strict-mode support via deploys, deploys typically
-# accompany worker restarts.
+# support strict-mode response_format. Populated on a conservative
+# strict-mode 4xx or a strict-mode 200 whose body doesn't parse (#124).
+# Entries are time-boxed (#268): the deadline lives in
+# _STRICT_MODE_CACHE_EXPIRY and an expired key is dropped on lookup, so
+# a long-lived worker re-probes strict mode instead of pinning loose
+# mode for days. A key with no deadline never expires (tests seed the
+# set directly). Cleared by _reset_unsupported_cache() (tests + manual
+# operator override).
 _UNSUPPORTED_STRICT_MODE: set[tuple[str, str]] = set()
+_STRICT_MODE_CACHE_EXPIRY: dict[tuple[str, str], float] = {}
+_STRICT_MODE_CACHE_TTL_SECONDS = 15 * 60
 
 # Substrings that indicate a 4xx response was specifically about
 # strict-mode unsupported-ness (rather than a real client bug like
@@ -221,6 +227,24 @@ def _reset_unsupported_cache() -> None:
     use it after deploying a server-side fix to re-probe strict-mode
     support without restarting the worker."""
     _UNSUPPORTED_STRICT_MODE.clear()
+    _STRICT_MODE_CACHE_EXPIRY.clear()
+
+
+def _cache_strict_unsupported(key) -> None:
+    _UNSUPPORTED_STRICT_MODE.add(key)
+    _STRICT_MODE_CACHE_EXPIRY[key] = time.monotonic() + _STRICT_MODE_CACHE_TTL_SECONDS
+
+
+def _strict_unsupported(key) -> bool:
+    """Negative-cache lookup that expires stale entries (#268)."""
+    if key not in _UNSUPPORTED_STRICT_MODE:
+        return False
+    expiry = _STRICT_MODE_CACHE_EXPIRY.get(key)
+    if expiry is not None and time.monotonic() >= expiry:
+        _UNSUPPORTED_STRICT_MODE.discard(key)
+        del _STRICT_MODE_CACHE_EXPIRY[key]
+        return False
+    return True
 
 
 def _looks_like_unsupported_strict_mode(status: int, body_text: str) -> bool:
@@ -494,6 +518,10 @@ class OpenAIClient(AutoModel):
         ``model`` is the effective per-call model (#173). When omitted,
         falls back to ``self._json_model`` so existing callers stay
         attribution-correct against the configured default.
+
+        ``cache_ttl_s`` is how long the endpoint stays in the negative
+        cache (#268); ``cached_for_process`` is kept for existing log
+        scrapers.
         """
         event(
             "structured_outputs_unavailable",
@@ -507,6 +535,7 @@ class OpenAIClient(AutoModel):
             body_excerpt=body_excerpt,
             detection=detection,
             cached_for_process=True,
+            cache_ttl_s=_STRICT_MODE_CACHE_TTL_SECONDS,
         )
         try:
             _STRUCTURED_OUTPUTS_UNAVAILABLE_COUNTER.inc(provider="openai_compat")
@@ -564,7 +593,7 @@ class OpenAIClient(AutoModel):
         endpoint_key = (effective_model, self._base_url)
         use_strict = (
             json_schema is not None
-            and endpoint_key not in _UNSUPPORTED_STRICT_MODE
+            and not _strict_unsupported(endpoint_key)
         )
         if use_strict:
             response_format = {
@@ -607,9 +636,10 @@ class OpenAIClient(AutoModel):
             # Cache before retry: even if loose-mode also fails, the
             # strict-mode-unsupported signal is still valid — a future
             # call to the same (model, endpoint) should go straight to
-            # loose without re-probing. Do NOT move this .add() below
-            # the retry branch; that would cause repeated probe failures.
-            _UNSUPPORTED_STRICT_MODE.add(endpoint_key)
+            # loose without re-probing (until the TTL lapses, #268). Do
+            # NOT move this below the retry branch; that would cause
+            # repeated probe failures.
+            _cache_strict_unsupported(endpoint_key)
             # Intra-module helper resolves ``event`` through
             # openai_compat's namespace so ``patch.object(openai_compat,
             # 'event')`` continues to intercept (a cross-module helper
@@ -671,9 +701,10 @@ class OpenAIClient(AutoModel):
                 # ``json_object`` mode, which is already known to work
                 # on this backend. Cache before retry — even if the loose
                 # retry also fails, the strict-mode-unsupported signal
-                # is still valid for subsequent calls.
+                # is still valid for subsequent calls (until the TTL
+                # lapses, #268, so a transient bad body re-probes).
                 if use_strict:
-                    _UNSUPPORTED_STRICT_MODE.add(endpoint_key)
+                    _cache_strict_unsupported(endpoint_key)
                     self._emit_strict_unavailable(
                         status=200,
                         body_excerpt=raw[:200],
