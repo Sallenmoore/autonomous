@@ -49,13 +49,12 @@ from autonomous.ai._credentials import resolve_api_key
 #   kwarg (the ``self._text_timeout`` / ``_summary_timeout`` /
 #   ``_media_timeout`` / hardcoded-30 family). ``None`` lets the per-call
 #   override govern without imposing an additional cap.
-# - ``max_attempts=1``: preserves pre-migration no-retry behaviour. README
-#   #16 (adding retry) is deferred to a follow-up slice because retry
-#   policy varies per call site (text generation shouldn't retry — the
-#   model has already burned through tokens; media uploads might) and
-#   ``HttpClient.max_attempts`` is client-level, not per-call. The right
-#   shape is either two clients (retry-enabled for idempotent uploads,
-#   no-retry for generation) or per-call ``request()`` overrides.
+# - ``max_attempts=1``: retry policy varies per call site, and
+#   ``HttpClient.max_attempts`` is client-level, so retry lives one level
+#   up: ``generate_json`` wraps its attempt in ``retry()``, and
+#   ``generate_text`` / ``summarize_text`` / ``generate_audio`` wrap theirs
+#   in ``_retry_transient`` (#278), which retries only transient transport
+#   failures — never an HTTP error answer.
 #
 # Tests can monkeypatch ``autonomous.ai.models.local_model._HTTP``
 # (or ``_HTTP.post`` / ``_HTTP.get``) to a stub. The pre-migration
@@ -89,6 +88,20 @@ _HTTP = HttpClient(
 # the "no structured outputs support" marker for. Avoids log spam on
 # every JSON call. Cleared by process restart only.
 _STRUCTURED_OUTPUTS_LOGGED: set[tuple[str, str]] = set()
+
+
+def _retry_transient(model, call):
+    """Run ``call`` with the retry policy ``generate_json`` uses (#278):
+    up to 3 attempts on ``ConnectionError`` / ``Timeout`` only. An
+    ``HTTPError`` (a real 4xx/5xx answer) is not retried. Module-level,
+    not a method, and ``getattr`` for the sleep, because tests bind these
+    methods to bare stubs."""
+    return retry(
+        call,
+        max_attempts=3,
+        sleep_seconds=getattr(model, "_retry_sleep", LocalAIModel._retry_sleep),
+        catch=(requests.ConnectionError, requests.Timeout),
+    )
 
 
 class LocalAIModel(AutoModel):
@@ -460,7 +473,10 @@ class LocalAIModel(AutoModel):
         try:
             if current_job := AutoTasks().get_current_task():
                 current_job.meta(payload=payload)
-            response = _HTTP.post(f"{self._ollama_url}/api/chat", json=payload, timeout=self._text_timeout)
+            response = _retry_transient(
+                self,
+                lambda: _HTTP.post(f"{self._ollama_url}/api/chat", json=payload, timeout=self._text_timeout)
+            )
             response.raise_for_status()
             if evaluation:
                 # Pass effective_model so the eval critic uses the same model
@@ -470,7 +486,10 @@ class LocalAIModel(AutoModel):
                 )
                 log(f"Evaluation:\n {eval_res}")
                 payload["messages"][1]["content"] = eval_res
-                response = _HTTP.post(f"{self._ollama_url}/api/chat", json=payload, timeout=self._text_timeout)
+                response = _retry_transient(
+                    self,
+                    lambda: _HTTP.post(f"{self._ollama_url}/api/chat", json=payload, timeout=self._text_timeout)
+                )
                 response.raise_for_status()
             # Issue #142: shared malformed-2xx translation.
             result = extract_or_malformed(
@@ -513,16 +532,23 @@ class LocalAIModel(AutoModel):
                     "repeat_penalty": 1.1,
                 },
             }
+            log(f"Payload sent: {payload}...", _print=True)
+            if current_job := AutoTasks().get_current_task():
+                current_job.meta(payload=payload)
+            # #275: a chunk that still fails after retry raises. Returning
+            # the chunks summarized so far looked like a complete summary
+            # to every caller.
             try:
-                log(f"Payload sent: {payload}...", _print=True)
-                if current_job := AutoTasks().get_current_task():
-                    current_job.meta(payload=payload)
-                res = _HTTP.post(f"{self._ollama_url}/api/chat", json=payload, timeout=self._summary_timeout)
+                res = _retry_transient(
+                    self,
+                    lambda: _HTTP.post(f"{self._ollama_url}/api/chat", json=payload, timeout=self._summary_timeout)
+                )
+                res.raise_for_status()
                 full_summary += res.json().get("message", {}).get("content", "") + "\n"
-                log(f"Chunk summarized: {full_summary}.", _print=True)
             except (requests.RequestException, json.JSONDecodeError, ValueError) as e:
                 log(f"Summary Error: {e}", _print=True)
-                break
+                raise
+            log(f"Chunk summarized: {full_summary}.", _print=True)
         return full_summary
 
     def generate_transcription(self, audio_file, prompt="", beam_size=5):
@@ -594,11 +620,14 @@ class LocalAIModel(AutoModel):
             }
             if current_job := AutoTasks().get_current_task():
                 current_job.meta(payload=payload)
-            response = _HTTP.post(
-                f"{self._audio_url}/tts",
-                json=payload,
-                headers=headers,
-                timeout=self._media_timeout,
+            response = _retry_transient(
+                self,
+                lambda: _HTTP.post(
+                    f"{self._audio_url}/tts",
+                    json=payload,
+                    headers=headers,
+                    timeout=self._media_timeout,
+                )
             )
             response.raise_for_status()
             content_type = response.headers.get("Content-Type", "").lower()
