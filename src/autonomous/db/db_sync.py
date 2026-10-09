@@ -1,4 +1,5 @@
 import os
+import threading
 import time
 import urllib.parse
 import uuid
@@ -271,53 +272,60 @@ def _requested_doc_vector_indexed(object_id, collection_name) -> bool:
 _redis_client = None
 _mongo_client = None
 _mongo_db = None
+# Guards first construction of the clients above (#273): concurrent first
+# callers (RQ worker threads) each built a client and leaked connections.
+# Double-checked, so the steady-state read never takes the lock.
+_client_lock = threading.Lock()
 
 
 def _get_redis():
     global _redis_client
-    if _redis_client is None:
-        import redis
-        from redis.backoff import NoBackoff
-        from redis.retry import Retry
+    if _redis_client is not None:
+        return _redis_client
+    with _client_lock:
+        if _redis_client is None:
+            import redis
+            from redis.backoff import NoBackoff
+            from redis.retry import Retry
 
-        # ``env_float``, not env_int: the natural tuning direction for a
-        # DEL on the request path is sub-second. A non-positive value is
-        # refused rather than honored — redis-py hands it to
-        # ``socket.settimeout``, where 0 switches the socket to
-        # non-blocking (every command fails) and a negative raises
-        # ValueError inside the worker.
-        timeout = env_float("REDIS_SOCKET_TIMEOUT_SECONDS", 2.0)
-        if timeout <= 0:
-            log(
-                f"[WARNING] _get_redis: REDIS_SOCKET_TIMEOUT_SECONDS="
-                f"{timeout!r} must be > 0; using 2.0"
+            # ``env_float``, not env_int: the natural tuning direction for a
+            # DEL on the request path is sub-second. A non-positive value is
+            # refused rather than honored — redis-py hands it to
+            # ``socket.settimeout``, where 0 switches the socket to
+            # non-blocking (every command fails) and a negative raises
+            # ValueError inside the worker.
+            timeout = env_float("REDIS_SOCKET_TIMEOUT_SECONDS", 2.0)
+            if timeout <= 0:
+                log(
+                    f"[WARNING] _get_redis: REDIS_SOCKET_TIMEOUT_SECONDS="
+                    f"{timeout!r} must be > 0; using 2.0"
+                )
+                timeout = 2.0
+            _redis_client = redis.Redis(
+                host=os.getenv("REDIS_HOST", "cachedb"),
+                port=int(os.getenv("REDIS_PORT", 6379)),
+                decode_responses=True,
+                # Bound the blocking window. ``AutoModel.delete()`` issues a
+                # DEL on every delete now, and ``request_indexing`` sets its
+                # token on the request path ("MUST BE FAST"), so a host that
+                # resolves but blackholes (container network partition)
+                # would otherwise hang for minutes per call — redis-py sets
+                # no socket timeout by default. deindex's best-effort
+                # contract catches the exception but cannot catch the
+                # latency; only a timeout can.
+                socket_connect_timeout=timeout,
+                socket_timeout=timeout,
+                # The timeouts alone do NOT bound the call: redis-py's
+                # default policy is 3 retries with exponential-plus-jitter
+                # backoff, so a refused Redis measured 4.9s per DEL and a
+                # blackholed host 4×timeout plus ~3.5s of sleeping. Disabled
+                # here so the timeout above is the bound the comment claims.
+                # Losing the retries is the right trade for these callers:
+                # the worker's failed job is re-queued by RQ, deindex is
+                # best-effort by contract, and both would rather fail in 2s
+                # than succeed in 15.
+                retry=Retry(NoBackoff(), 0),
             )
-            timeout = 2.0
-        _redis_client = redis.Redis(
-            host=os.getenv("REDIS_HOST", "cachedb"),
-            port=int(os.getenv("REDIS_PORT", 6379)),
-            decode_responses=True,
-            # Bound the blocking window. ``AutoModel.delete()`` issues a
-            # DEL on every delete now, and ``request_indexing`` sets its
-            # token on the request path ("MUST BE FAST"), so a host that
-            # resolves but blackholes (container network partition)
-            # would otherwise hang for minutes per call — redis-py sets
-            # no socket timeout by default. deindex's best-effort
-            # contract catches the exception but cannot catch the
-            # latency; only a timeout can.
-            socket_connect_timeout=timeout,
-            socket_timeout=timeout,
-            # The timeouts alone do NOT bound the call: redis-py's
-            # default policy is 3 retries with exponential-plus-jitter
-            # backoff, so a refused Redis measured 4.9s per DEL and a
-            # blackholed host 4×timeout plus ~3.5s of sleeping. Disabled
-            # here so the timeout above is the bound the comment claims.
-            # Losing the retries is the right trade for these callers:
-            # the worker's failed job is re-queued by RQ, deindex is
-            # best-effort by contract, and both would rather fail in 2s
-            # than succeed in 15.
-            retry=Retry(NoBackoff(), 0),
-        )
     return _redis_client
 
 
@@ -336,14 +344,17 @@ def _index_key(object_id) -> str:
 
 def _get_mongo_db():
     global _mongo_client, _mongo_db
-    if _mongo_db is None:
-        password = urllib.parse.quote_plus(str(os.getenv("DB_PASSWORD")))
-        username = urllib.parse.quote_plus(str(os.getenv("DB_USERNAME")))
-        host = os.getenv("DB_HOST", "db")
-        port = os.getenv("DB_PORT", 27017)
-        uri = f"mongodb://{username}:{password}@{host}:{port}/?authSource=admin"
-        _mongo_client = pymongo.MongoClient(uri)
-        _mongo_db = _mongo_client[os.getenv("DB_DB")]
+    if _mongo_db is not None:
+        return _mongo_db
+    with _client_lock:
+        if _mongo_db is None:
+            password = urllib.parse.quote_plus(str(os.getenv("DB_PASSWORD")))
+            username = urllib.parse.quote_plus(str(os.getenv("DB_USERNAME")))
+            host = os.getenv("DB_HOST", "db")
+            port = os.getenv("DB_PORT", 27017)
+            uri = f"mongodb://{username}:{password}@{host}:{port}/?authSource=admin"
+            _mongo_client = pymongo.MongoClient(uri)
+            _mongo_db = _mongo_client[os.getenv("DB_DB")]
     return _mongo_db
 
 
@@ -827,18 +838,25 @@ def _association_names(db, associations) -> list[str]:
     return out
 
 
-def process_single_object_sync(object_id, collection_name, token):
+def process_single_object_sync(object_id, collection_name, token, debounce=True):
     """
     THE WORKER FUNCTION (Runs in Background).
     It is safe to sleep here because we are not in the web request.
+
+    ``debounce=False`` (#281) skips the 5s wait, for bulk reindex jobs
+    where no burst of saves is coming to coalesce. The supersede check
+    below still runs, so a real save landing mid-reindex still wins.
     """
     str_id = str(object_id)
     token_key = f"sync_token:{collection_name}:{str_id}"
     r = _get_redis()
     db = _get_mongo_db()
 
-    # 1. THE DEBOUNCE WAIT (Happens in background)
-    time.sleep(5)
+    # 1. THE DEBOUNCE WAIT (Happens in background): gives a burst of
+    # rapid re-saves time to overwrite the token, so only the newest job
+    # embeds.
+    if debounce:
+        time.sleep(5)
 
     # 2. THE VERIFICATION
     # Check if a newer save happened while we slept.
@@ -1184,10 +1202,14 @@ def deindex_many(object_ids) -> "DeindexOutcome":
     return DeindexOutcome(ok)
 
 
-def request_indexing(object_id, collection_name):
+def request_indexing(object_id, collection_name, debounce=True):
     """
     THE TRIGGER FUNCTION (Runs in Main App).
     MUST BE FAST. NO SLEEPING HERE.
+
+    Pass ``debounce=False`` from a bulk reindex (#281): the worker then
+    skips its 5s coalescing wait, which otherwise dominates a large
+    reindex (~9.5h for ~6.8k docs vs ~3 min of embedding).
     """
     # THE ENQUEUE GATE (#220). This is the load-bearing enforcement of
     # ``vector_index: False``: it runs in the process that imported the
@@ -1244,12 +1266,16 @@ def request_indexing(object_id, collection_name):
 
         task_runner = AutoTasks()
         _get_redis().set(token_key, current_token, ex=_sync_token_ttl_seconds())
+        # Only sent when opted out, so a default job's payload is
+        # unchanged and a not-yet-upgraded worker can still run it.
+        extra = {} if debounce else {"debounce": False}
         task_runner.task(
             process_single_object_sync,  # The function to run later
             object_id=str_id,
             collection_name=collection_name,
             token=current_token,
             priority=TaskPriority.LOW,
+            **extra,
         )
         return True
     except Exception as e:  # noqa: BLE001 — never raise post-Mongo-commit
