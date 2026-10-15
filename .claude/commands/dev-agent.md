@@ -32,7 +32,7 @@ Halt and post a one-sentence summary if any fires:
     --json mergeCommit,title | jq -r '.[] | "\(.mergeCommit.oid) \(.title)"'
   ```
   If `git log -1 origin/main --format=%H` doesn't match any of those SHAs and the commit message isn't a `Bump autonomous version ...`, halt: possible manual hotfix.
-- **Integration stack required but down (only if step 7 will need it):** `docker ps --format '{{.Image}}' | grep -E '^mongo:7$'` returns nothing → run `make inittests` to bring it up (or halt and surface if you cannot). Unit-only iterations can skip.
+- **Integration stack required but down (only if step 7 will need it):** `docker ps --format '{{.Image}}' | grep -E '^mongo:'` returns nothing → run `make inittests` to bring it up (or halt and surface if you cannot). Unit-only iterations can skip.
 - **Working tree not clean:** `git status --porcelain` non-empty → halt (resolve before starting a new cycle; don't carry uncommitted work into a batch branch).
 
 ## 1. Back-merge FIRST (always, no shortcuts)
