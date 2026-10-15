@@ -14,7 +14,7 @@
 
 services:
   db:
-    image: mongo:7
+    image: mongo:9
     restart: unless-stopped
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${DB_USERNAME:-autonomous}
