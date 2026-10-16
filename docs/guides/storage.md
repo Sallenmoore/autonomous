@@ -12,34 +12,38 @@ Both classes:
   ``path=``).
 - Reject path-traversal input (``..``, absolute paths) at every
   entrypoint.
-- Resolve URLs against ``APP_BASE_URL`` when set; fall back to
-  site-relative ``/<root>/...`` otherwise.
+- Resolve URLs against ``APP_BASE_URL`` when set. When it is unset,
+  ``LocalStorage`` falls back to ``http://localhost`` and
+  ``ImageStorage`` to a site-relative ``/<root>/...``.
 
 ## LocalStorage
 
 ```python
-from autonomous.storage import LocalStorage
+from autonomous.storage.localstorage import LocalStorage
 
 store = LocalStorage()                        # $STORAGE_PATH or "static"
 # store = LocalStorage(path="/var/data")
 
-ref = store.save(b"hello world", folder="notes", asset_id="readme.txt")
-# {"asset_id": "notes/readme.txt", "url": "/static/notes/readme.txt"}
+ref = store.save(b"hello world", "txt", folder="notes")
+# {"asset_id": "notes/<uuid>.txt",
+#  "url": "http://localhost/static/notes/<uuid>.txt"}
 
-store.get("notes/readme.txt")                # bytes
-store.get_path("notes/readme.txt")           # absolute filesystem path
-store.search(folder="notes")                 # ["notes/readme.txt", ...]
-store.move("notes/readme.txt", "archive/readme.txt")
-store.remove("archive/readme.txt")
+store.get(ref["asset_id"])                   # AssetRef, or None if missing
+store.geturl(ref["asset_id"])                # public URL
+store.get_path(ref["asset_id"])              # absolute filesystem path
+store.search(folder="notes")                 # [AssetRef, ...]
+moved = store.move(ref["asset_id"], "archive")  # new AssetRef (new uuid), or False
+store.remove(moved["asset_id"])              # True / False
 ```
 
-``save`` returns an ``AssetRef`` (a dict of ``asset_id`` + ``url``)
-you persist in your own model.
+``save`` names the file ``<uuid>.<file_type>`` and returns an
+``AssetRef`` (a dict of ``asset_id`` + ``url``) you persist in your own
+model.
 
 ### Traversal safety
 
 ```python
-store.save(b"", folder="../../etc")            # ValueError on write
+store.save(b"", "txt", folder="../../etc")     # ValueError on write
 store.get("../../etc/passwd")                  # None on read
 store.search(folder="../somewhere")            # [] on read
 ```
@@ -49,35 +53,38 @@ Write-side methods raise so the caller sees bad input.
 
 ## ImageStorage
 
-Built on ``LocalStorage``. Adds transparent thumbnails / resized
-variants:
+A separate class (it shares ``LocalStorage``'s path sanitizer). Every
+upload is converted to WebP and stored as ``<asset dir>/orig.webp``,
+with resized variants cached beside it:
 
 ```python
-from autonomous.storage import ImageStorage
+from autonomous.storage.imagestorage import ImageStorage
 
-images = ImageStorage()                        # $STORAGE_IMAGE_PATH or "images"
+images = ImageStorage()        # $STORAGE_IMAGE_PATH or "<STORAGE_PATH>/images"
 
-ref = images.save(binary, folder="avatars", asset_id="alice.png")
-images.get_url(ref["asset_id"])                # original URL
-images.get_url(ref["asset_id"], size=128)      # 128-px longest-side variant
-images.get_url(ref["asset_id"], size="orig")   # explicit original
-images.get_url(ref["asset_id"], full_url=True) # absolute URL if APP_BASE_URL set
+asset_id = images.save(binary, folder="avatars")  # returns the asset_id (str)
+images.get_url(asset_id)                   # original URL
+images.get_url(asset_id, size=128)         # 128-px longest-side variant
+images.get_url(asset_id, size="small")     # named size: thumbnail/small/medium/large
+images.get_url(asset_id, full_url=True)    # absolute URL if APP_BASE_URL set
 
-images.rotate(ref["asset_id"], 90)
-images.flip(ref["asset_id"], horizontal=True)
-images.clear_cached(ref["asset_id"])           # drop variants manually
+images.rotate(asset_id, 90)                # degrees; default -90
+images.flip(asset_id, flipx=True, flipy=False)
+images.clear_cached(asset_id)              # drop variants manually
 ```
 
-Variants are written to a cache folder adjacent to the original.
-After ``rotate`` / ``flip``, the original's mtime is touched; the
-next ``get_url(size=N)`` detects the mtime skew and regenerates the
-variant automatically.
+Variants are written as ``<size>.webp`` next to ``orig.webp``.
+``rotate`` / ``flip`` rewrite the original and clear the cached
+variants; independently, ``get_url(size=N)`` regenerates any variant
+older than the original, so a replaced original never serves stale
+variants.
 
 ### Atomic writes + failure modes
 
 Each variant goes through a sibling ``.tmp`` + ``os.replace``. A
 half-written file can't be served if two requests race. A resize
-error logs and returns ``None`` — it does **not** delete the source.
+error logs and ``get_url`` returns ``None`` — it does **not** delete
+the source.
 
 ### Caching behaviour
 
@@ -92,7 +99,7 @@ for manual invalidation; routine edits don't need it.
 |-----|-------|----------|
 | ``STORAGE_PATH`` | ``LocalStorage`` | ``static`` |
 | ``STORAGE_IMAGE_PATH`` | ``ImageStorage`` | ``<STORAGE_PATH>/images`` |
-| ``APP_BASE_URL`` | both | site-relative ``/path`` |
+| ``APP_BASE_URL`` | both | ``LocalStorage``: ``http://localhost``; ``ImageStorage``: site-relative ``/path`` |
 
 ## Install
 

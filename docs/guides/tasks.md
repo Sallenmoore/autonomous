@@ -3,9 +3,10 @@
 ``AutoTasks`` is a thin wrapper around [RQ](https://python-rq.org/) and
 Redis that adds:
 
-- Priority queues (``TaskPriority.HIGH`` / ``NORMAL`` / ``LOW``).
+- Priority queues (``TaskPriority.HIGH`` / ``DEFAULT`` / ``LOW``).
 - Convenient current-job introspection.
-- Timeout + result-TTL defaults that match typical web-app usage.
+- A default job timeout (``TASK_JOB_TIMEOUT``, 7200 s); override per
+  call with ``_task_job_timeout=<seconds>``.
 - Lazy connection — instantiating ``AutoTasks()`` never opens a
   socket until you actually enqueue or query something.
 
@@ -29,16 +30,16 @@ tasks = AutoTasks()
 tasks.task(send_email, "a@b.c", "hi", priority=TaskPriority.HIGH)
 ```
 
-Return value is an ``rq.job.Job``. Hold on to ``job.id`` if you want
-to check status later.
+Return value is an ``AutoTask`` wrapping the ``rq.job.Job``. Hold on to
+``task.id`` if you want to check status later.
 
 ## Redis config
 
-Read from the environment at construction time:
+Read from the environment when the connection is first built:
 
 | Var | Default |
 |-----|---------|
-| ``REDIS_HOST`` | ``localhost`` |
+| ``REDIS_HOST`` | ``cachedb`` |
 | ``REDIS_PORT`` | ``6379`` |
 | ``REDIS_USERNAME`` | unset |
 | ``REDIS_PASSWORD`` | unset |
@@ -65,9 +66,9 @@ AutoTasks.reset_connection()
 ## Fetch / inspect / cancel
 
 ```python
-tasks.get_task(job_id)           # single rq.job.Job
-tasks.get_tasks(n=20)            # recent jobs across priorities
-tasks.kill(job_id)               # cancel if queued, stop if running
+tasks.get_task(job_id)           # AutoTask, or None
+tasks.get_tasks()                # {"started"|"finished"|"failed"|"queued": [AutoTask, ...]}
+tasks.kill(job_id)               # stop if running, then delete the job
 ```
 
 ## Running a worker
@@ -83,13 +84,13 @@ Match the queue names to the ``TaskPriority`` enum:
 | Priority | Queue name |
 |----------|-----------|
 | ``HIGH`` | ``high`` |
-| ``NORMAL`` | ``default`` |
+| ``DEFAULT`` | ``default`` |
 | ``LOW`` | ``low`` |
 
 ## Lazy connection
 
 ``AutoTasks()`` doesn't talk to Redis until the first call that needs
-it (``task``, ``get_task``, ``get_tasks``, ``kill``, ``reset_connection``).
+it (``task``, ``get_task``, ``get_tasks``, ``kill``).
 Importing the class in a process that never enqueues — a schema
 migration script, a CLI tool — is free.
 
@@ -97,7 +98,8 @@ migration script, a CLI tool — is free.
 
 ``AutoModel.save(sync=True)`` enqueues the saved document for
 vector-embedding re-indexing. The handler lives in
-``autonomous.db.db_sync``; wire a worker listening on the
-``indexing`` queue if your app uses this.
+``autonomous.db.db_sync`` and is enqueued on the ``low`` priority
+queue, so a worker listening on ``low`` must be running if your app
+uses this.
 
 See the [ORM guide](ormodel.md#vector-sync) for the model side.

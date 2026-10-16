@@ -15,7 +15,7 @@ byte bodies, or an iterable of chunks:
 from autonomous.web import Response
 
 Response(body="hello")                # short; yields one chunk
-Response(body=b"\x89PNG...", content_type="image/png")
+Response(body=b"\x89PNG...", headers={"Content-Type": "image/png"})
 Response(body=iter(lambda: fh.read(8192), b""))  # streams; chunked
 Response(body=[b"a", b"b", b"c"])     # materialized list; three chunks
 ```
@@ -55,9 +55,9 @@ bind_session(ContextSession())        # per-request dict (fallback)
 
 ### ContextSession
 
-A ``dict`` subclass with a no-op ``save()`` for cases where you
-genuinely just want an in-memory session for the duration of a
-request:
+A plain ``dict`` subclass for cases where you genuinely just want an
+in-memory session for the duration of a request. ``get_session()``
+also creates one on demand when nothing is bound:
 
 ```python
 from autonomous.web import ContextSession
@@ -77,7 +77,7 @@ secret = b"your-secret"
 # Producer
 sess = SignedCookieSession(secret, initial={"user_id": 42},
                            max_age=86400, issuer="myapp")
-cookie_value = sess.to_cookie()
+cookie_value = sess.dumps()
 
 # Consumer
 sess = SignedCookieSession.from_cookie(
@@ -117,7 +117,7 @@ secret.
 
 | What | Default | How to override |
 |------|---------|-----------------|
-| Session store | none (must ``bind_session``) | ``bind_session(your_session)`` |
+| Session store | a fresh ``ContextSession`` per context, created by ``get_session()`` | ``bind_session(your_session)`` |
 | Login URL | ``"/auth/login"`` | ``AutoAuth.login_url = "..."`` |
 | OAuth state key | ``"oauth_state"`` | ``YourAuth.state_session_key = "..."`` |
 | Throttle ``last_login`` | 60 s | ``AutoAuth.last_login_throttle_seconds = N`` |

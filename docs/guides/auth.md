@@ -8,12 +8,16 @@ session your host framework provides.
 ## Concepts
 
 - ``AutoAuth`` — base class. Subclass for a concrete provider.
-- ``GoogleAuth`` / ``GithubAuth`` — provider-specific concrete
-  subclasses in ``autonomous.auth.google`` / ``autonomous.auth.github``.
+- ``GoogleAuth`` / ``GithubAuth`` / ``MicrosoftAuth`` / ``DiscordAuth`` /
+  ``FacebookAuth`` — provider-specific concrete subclasses in
+  ``autonomous.auth.<provider>``. Each reads its credentials from
+  ``<PROVIDER>_AUTH_CLIENT_ID`` / ``_CLIENT_SECRET`` / ``_REDIRECT_URL`` /
+  ``_SCOPE``.
 - ``AutoUser`` — default user model (``autonomous.auth.user.AutoUser``);
   stores email, name, role (``guest`` / ``user`` / ``admin``).
 - ``@AutoAuth.auth_required()`` — view decorator.
-- ``AutoAuth.current_user()`` — current user or ``None``.
+- ``AutoAuth.current_user()`` — current user, or the guest user
+  (``User.get_guest()``) when nobody is logged in.
 
 Session state is held in whatever dict-like object you've bound via
 ``autonomous.web.bind_session``. That can be Flask's ``session``,
@@ -34,11 +38,7 @@ AutoAuth.login_url = "/auth/login"   # where @auth_required redirects
 def _bind():
     bind_session(flask_session)
 
-auth = GoogleAuth(
-    client_id="...",
-    client_secret="...",
-    redirect_uri="https://example.com/auth/callback",
-)
+auth = GoogleAuth()   # reads GOOGLE_AUTH_* and GOOGLE_DISCOVERY_URL
 
 @app.route("/auth/login")
 def login():
@@ -47,7 +47,8 @@ def login():
 
 @app.route("/auth/callback")
 def callback():
-    user = auth.handle_response(request.url)
+    user_info, token = auth.handle_response(request.url)
+    user = AutoAuth.user_class.authenticate(user_info, token)
     return redirect("/")
 
 @app.route("/me")
@@ -96,23 +97,31 @@ the rendered JSON changes.
 @AutoAuth.auth_required()                   # any authenticated user
 def account(): ...
 
-@AutoAuth.auth_required(roles=("admin",))   # role-gated
+@AutoAuth.auth_required(guest=True)         # guests allowed too
+def landing(): ...
+
+@AutoAuth.auth_required(admin=True)         # admins only
 def admin_panel(): ...
 ```
 
-Callers with no session return a redirect to ``AutoAuth.login_url``.
-Callers with the wrong role get a 403 ``Response``. Both are
-WSGI-callable, so they drop into any host framework unchanged.
+Callers who fail the check (guest without ``guest=True``, non-admin
+with ``admin=True``) get a redirect ``Response`` to
+``AutoAuth.login_url``. It is WSGI-callable, so it drops into any host
+framework unchanged.
 
 ## Custom providers
 
-Subclass ``AutoAuth`` and implement:
+Subclass ``AutoAuth`` and, in ``__init__``:
 
-- ``authenticate(**kwargs)`` — return ``(redirect_url, state)``.
-- ``handle_response(url)`` — exchange the code, build the user.
+- set ``self.req_uri`` to the provider's userinfo URL;
+- call ``super().__init__(client_id, client_secret, authorize_url,
+  redirect_uri, scope, token_endpoint, state)``.
 
-See ``autonomous.auth.google.GoogleAuth`` for a full worked example
-(~40 LOC). The parent class owns state management and user merging.
+Set ``provider_name`` on the class, and override ``_extract_sub`` if the
+provider's stable subject id isn't ``sub``. See
+``autonomous.auth.google.GoogleAuth`` for a full worked example
+(~50 LOC). The parent class owns ``authenticate()`` /
+``handle_response()`` and state management.
 
 ## FastAPI / pure WSGI
 

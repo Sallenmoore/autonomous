@@ -96,6 +96,7 @@ forms co-exist during the transition, so existing deployments are unaffected. Th
 | `REDIS_USERNAME` | str | _(secret)_ | `redis_username` | — | Redis username |
 | `REDIS_PASSWORD` | str | _(secret)_ | `redis_password` | — | Redis password |
 | `TASK_JOB_TIMEOUT` | int | `7200` | `task_job_timeout` | ✅ | Default RQ job timeout (s) for AutoTasks.task |
+| `SYNC_TOKEN_TTL_SECONDS` | int | `300` | `sync_token_ttl_seconds` | ✅ | TTL (s) of an embedding-sync supersede token (`db_sync`); governs the re-save dedup window only (#183) |
 
 ### AI — HPC / OpenAI-compatible adapter
 
@@ -113,6 +114,7 @@ forms co-exist during the transition, so existing deployments are unaffected. Th
 | `HPC_READ_TIMEOUT` | int | `120` | `hpc_read_timeout` | ✅ | Per-request read timeout (s); bounds the wait between sent body and first response byte. Unset/empty → inherits `HPC_REQUEST_TIMEOUT` for back-compat (#177). |
 | `HPC_RETRY_ATTEMPTS` | int | `3` | `hpc_retry_attempts` | ✅ | Retry attempts |
 | `HPC_RETRY_BACKOFF` | int | `10` | `hpc_retry_backoff` | ✅ | Retry backoff (s) |
+| `HPC_RETRY_BACKOFF_FACTOR` | float | `2.0` | `hpc_retry_backoff_factor` | ✅ | Exponential-backoff growth base for HPC retries (#182); `1.0` restores flat backoff. Must be >= 1.0 |
 | `HPC_UNREACHABLE_THROTTLE_SECONDS` | int | `0` | `hpc_unreachable_throttle_seconds` | ✅ | Throttle window for [HPC-UNREACHABLE] log floods (0 = disabled) |
 
 ### AI — local Ollama + media service
@@ -143,6 +145,18 @@ forms co-exist during the transition, so existing deployments are unaffected. Th
 | `FLUX_RETRY_SLEEP` | float | `1.0` | `flux_retry_sleep` | ✅ | Retry backoff (s) |
 | `FAL_KEY` | str | _(secret)_ | `fal_key` | — | fal.ai API key (read live at call time) |
 
+### AI — LiteLLM gateway
+
+| Env var | Type | Default | `settings` attr | Migrated | Description |
+|---|---|---|---|:--:|---|
+| `LITELLM_API_BASE_URL` | str | _(empty)_ | `litellm_api_base_url` | ✅ | Gateway base URL for text/JSON/summary (a trailing `/v1` is tolerated) |
+| `LITELLM_API_KEY` | str | _(secret)_ | `litellm_api_key` | ✅ | Gateway API key (Bearer); header omitted when unset |
+| `LITELLM_TEXT_MODEL` | str | _(empty)_ | `litellm_text_model` | ✅ | Gateway text model/alias |
+| `LITELLM_JSON_MODEL` | str | _(empty)_ | `litellm_json_model` | ✅ | JSON model (defaults to text model) |
+| `LITELLM_SUMMARY_MODEL` | str | _(empty)_ | `litellm_summary_model` | ✅ | Summary model (defaults to text model) |
+| `LITELLM_IMAGE_API_BASE_URL` | str | _(empty)_ | `litellm_image_api_base_url` | ✅ | Image gateway base URL (a trailing `/v1` is tolerated) |
+| `LITELLM_IMAGE_MODEL` | str | `image-flux` | `litellm_image_model` | ✅ | Gateway image model/alias |
+
 ### AI — Gemini adapter
 
 | Env var | Type | Default | `settings` attr | Migrated | Description |
@@ -153,6 +167,7 @@ forms co-exist during the transition, so existing deployments are unaffected. Th
 | `GEMINI_STT_MODEL` | str | `gemini-2.5-pro` | `gemini_stt_model` | — | Gemini STT model |
 | `GEMINI_IMAGE_MODEL` | str | `gemini-3.1-flash-image-preview` | `gemini_image_model` | — | Gemini image model |
 | `GEMINI_TTS_MODEL` | str | `gemini-2.5-flash-preview-tts` | `gemini_tts_model` | — | Gemini TTS model |
+| `GEMINI_UPLOAD_POLL_TIMEOUT` | float | `300.0` | `gemini_upload_poll_timeout` | — | Cap (s) on the `files.upload` PROCESSING poll before raising `GeminiFileUploadTimeoutError` |
 | `GOOGLEAI_KEY` | str | _(secret)_ | `googleai_key` | — | Google GenAI API key |
 
 ### AI — agent overrides & image routing
