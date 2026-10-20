@@ -122,7 +122,7 @@ more invasive pass than this cleanup made room for. Do not add new
 callers.
 
 - `DynamicDocument` / `DynamicEmbeddedDocument` and the `_dynamic*`
-  machinery in `base/document.py` (52 touchpoints on
+  machinery in `base/document.py` (30 touchpoints on
   `_dynamic` / `_dynamic_fields` / `_dynamic_lock`).
 - `EmbeddedDocument`, `EmbeddedDocumentField`,
   `EmbeddedDocumentListField`, `EmbeddedDocumentList` — threaded
@@ -295,12 +295,12 @@ though strictly speaking it sits *on top of* the fork rather than
 inside it.
 
 This section documents that layer so a future reader (or anyone
-weighing item #48 in [README.md](../../../README.md) — drop the
+weighing closed issue #48 — drop the
 fork, depend on stock mongoengine) can see the full divergence
 surface in one place.
 
 ### `AutoModel.load_model(name)` — string → class resolution
-(`automodel.py:208`)
+(`automodel.py:280`)
 
 Resolves a string name (case-insensitive) to an `AutoModel`
 subclass by walking `AutoModel.__subclasses__()` recursively.
@@ -318,7 +318,7 @@ Used by `get_model`, by `ReferenceAttr` dereferencing (via the
 consumer code that needs polymorphic class lookup.
 
 ### `AutoModel.auto_pre_init` — side-load on `Model(pk=x)`
-(`automodel.py:116`)
+(`automodel.py:146`)
 
 When a caller constructs `Model(pk=x)` with no other kwargs (or
 with sparse kwargs), this hook fetches the stored document and
@@ -347,7 +347,7 @@ side-load" above, but bears repeating here as part of the
   `AttributeError` out of `__init__` / `save()`.
 
 ### `AutoModel.model_name()` — name discriminator override
-(`automodel.py:181`)
+(`automodel.py:253`)
 
 Returns `type(self).__name__` directly rather than mongoengine's
 `_class_name` discriminator (which would yield the
@@ -356,7 +356,7 @@ non-abstract documents). Affects `__hash__` /`__eq__` /
 ordering, all keyed off `(model_name, pk)`.
 
 ### `AutoModel.search()` / `.where()` — `str → __icontains` ergonomics
-(`automodel.py:294, :330`)
+(`automodel.py:371, :413`)
 
 String values in `**kwargs` are translated to `__icontains`
 queries; non-string values become exact matches. Other
@@ -528,5 +528,5 @@ Notes:
    `autonomous.model.autoattr`) get documented in the §Layer-2
    section above. The fork's behavioral surface is the *union*
    of both layers; recording divergence in only one place means a
-   future reader weighing item #48 (drop the fork) will
+   future reader weighing issue #48 (drop the fork) will
    under-estimate the cost.

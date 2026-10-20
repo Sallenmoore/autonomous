@@ -1,6 +1,9 @@
 # AI adapters
 
-Autonomous ships three AI-model backends plus a generic retry helper.
+Autonomous ships several AI-model backends — the ``BaseAgent``
+provider strings ``local``, ``openai`` (HPC / OpenAI-compatible),
+``gemini``, ``litellm``, ``flux`` (images) and ``mock`` — plus a generic
+retry helper. This page covers ``local``, ``gemini`` and ``mock``.
 Every backend implements the same ``generate_text`` / ``generate_json``
 surface so you can swap between them without changing caller code.
 
@@ -15,14 +18,14 @@ The ``LocalAIModel`` and ``MockAIModel`` backends need only the core
 
 ## LocalAIModel
 
-Talks to a local [Ollama](https://ollama.com/) server (default
-``http://localhost:11434``).
+Talks to an [Ollama](https://ollama.com/) server at
+``OLLAMA_API_BASE_URL`` (no default; set it).
 
 ```python
 from autonomous.ai.models.local_model import LocalAIModel
 
-ai = LocalAIModel(model="llama3.1")
-ai.generate_text("What's a queryset?")
+ai = LocalAIModel()                      # model from $OLLAMA_MODEL
+ai.generate_text("What's a queryset?", model="llama3.1")  # per-call override
 ai.generate_json("Return a list of 3 planet names as JSON.",
                  context=[{"role": "user", "content": "..."}])
 ai.summarize_text("... long article ...")
@@ -33,8 +36,10 @@ media-service endpoint set via env vars:
 
 | Var | What it configures |
 |-----|-------------------|
-| ``AI_MODEL_HOST`` | Ollama host |
-| ``AI_MEDIA_HOST`` | Image / audio service host |
+| ``OLLAMA_API_BASE_URL`` | Ollama base URL |
+| ``MEDIA_API_BASE_URL`` | Media / embeddings service base URL |
+| ``MEDIA_AUDIO_API_BASE_URL`` | Audio service base URL |
+| ``MEDIA_IMAGE_API_BASE_URL`` | Image service base URL |
 
 Each generation endpoint retries up to 3 times before giving up —
 see ``autonomous.ai.retry`` below.
@@ -46,11 +51,11 @@ Uses Google's ``google-genai`` SDK:
 ```python
 from autonomous.ai.models.gemini import GeminiAIModel
 
-ai = GeminiAIModel(api_key="...")    # or reads $GEMINI_API_KEY
+ai = GeminiAIModel()                 # reads $GOOGLEAI_KEY
 ai.generate_text("...")
 ai.generate_json("...")
 ai.list_voices()
-ai.generate_audio("...", voice="en-US-Neutral-A")
+ai.generate_audio("...", voice_id="narrator")  # id hashed onto a preset voice
 ai.generate_image("a cat wearing a hat")
 ```
 

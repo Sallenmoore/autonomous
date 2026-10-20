@@ -5,6 +5,12 @@ recent first.
 
 ## Unreleased
 
+### Changed — dependency floor `pymongo>=4.18` (#291)
+
+**What changed.** `requirements.txt` now pins `pymongo>=4.18` (it was unpinned). 4.18 is the first driver release that MongoDB's compatibility matrix lists as fully supporting MongoDB 9.0 servers. Shipped in 0.3.184.
+
+**Migration.** Installing or upgrading `autonomous-app>=0.3.184` pulls pymongo 4.18 or newer. Consumers that pin pymongo below 4.18 must lift that pin. Upgrade the library before moving a server to MongoDB 9.0.
+
 ### Added — `request_indexing(..., debounce=False)` for bulk reindex (#281)
 
 **What changed.** `db_sync.request_indexing` and `process_single_object_sync` take an optional `debounce` keyword (default `True`, behavior unchanged). With `debounce=False` the worker skips its 5 s coalescing wait before embedding; the sync-token supersede check still runs, so a real save landing during a reindex still wins. The default enqueue payload is unchanged (the kwarg is only sent when `False`).

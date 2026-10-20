@@ -165,7 +165,7 @@ gh pr checks "$PR" --repo Sallenmoore/autonomous
 
 `gh pr checks --watch` blocks until all checks finish, then exits non-zero if any failed. Until green or **3 fix-up cycles still red**.
 
-**Expected at this gate:** the Python package matrix (3.11/3.12/3.13) plus any release-related smoke that fires on `dev → test`. Lint is non-blocking (CI runs `flake8 --select=E9,F63,F7,F82` as the syntax-only gate; the complexity pass is informational). GitHub Actions reads `.github/workflows/*.yml`. If no checks apply to this PR (no workflows triggered), `gh pr checks` reports "no checks reported" — treat as a no-op, not failure.
+**Expected at this gate:** the Python package matrix (3.12/3.13) plus any release-related smoke that fires on `dev → test`. Lint is non-blocking (CI runs `flake8 --select=E9,F63,F7,F82` as the syntax-only gate; the complexity pass is informational). GitHub Actions reads `.github/workflows/*.yml`. If no checks apply to this PR (no workflows triggered), `gh pr checks` reports "no checks reported" — treat as a no-op, not failure.
 
 **On red:** diagnose, push a NEW fix-up commit to the PR branch (**never `--amend`, never force-push** — CI is keyed to commit SHAs; rewriting commits GitHub already saw can destroy the test agent's review state). After 3 cycles still red, halt and notify.
 

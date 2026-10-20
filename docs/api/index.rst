@@ -16,6 +16,7 @@ and ``autonomous.db.queryset`` is intentionally excluded — use the
    :toctree: generated
 
    autonomous
+   autonomous.config
    autonomous.logger
 
 ORM (``autonomous.model``, ``autonomous.db``)
@@ -44,6 +45,8 @@ AI agents (``autonomous.ai``)
    autonomous.ai.models.gemini
    autonomous.ai.models.openai_compat
    autonomous.ai.models.mock_model
+   autonomous.ai.models.flux
+   autonomous.ai.models.litellm
 
 Auth (``autonomous.auth``)
 --------------------------
@@ -55,6 +58,9 @@ Auth (``autonomous.auth``)
    autonomous.auth.user
    autonomous.auth.github
    autonomous.auth.google
+   autonomous.auth.microsoft
+   autonomous.auth.discord
+   autonomous.auth.facebook
 
 Web (``autonomous.web``)
 ------------------------

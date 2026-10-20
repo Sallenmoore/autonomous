@@ -17,6 +17,6 @@
 
 ## Checklist
 
-- [ ] `make test-unit` passes locally (unit tier, no containers)
-- [ ] `make test-integration` run if this touches DB / Redis / AI code paths
-- [ ] For a release PR into `main`: `__version__` in `src/autonomous/__init__.py` is bumped
+- [ ] `make test` passes locally (unit tier, no containers)
+- [ ] `make test-int` run if this touches DB / Redis / AI code paths
+- [ ] Consumer-visible change: `MIGRATIONS.md` entry added (`__version__` is bumped by `scripts/release.sh` after the merge to `main`, not in the PR)

@@ -2,7 +2,7 @@
 
 :warning: :warning: :warning: WiP :warning: :warning: :warning:
 
-![Tests](https://github.com/Sallenmoore/autonomous/actions/workflows/tests.yml/badge.svg)
+![Tests](https://github.com/Sallenmoore/autonomous/actions/workflows/python-package.yml/badge.svg)
 
 **Autonomous** is an ORM + utility framework layer you lay over whatever
 micro-framework you choose (Flask, FastAPI, Starlette, pure WSGI, an async
@@ -14,7 +14,7 @@ runner, pluggable file storage, OAuth2 auth, AI-model adapters, and a tiny
 WSGI-compatible response/session layer so the auth pieces drop into any host
 framework without a hard dependency on it.
 
-- **[pypi](https://test.pypi.org/project/autonomous)**
+- **[pypi](https://pypi.org/project/autonomous-app/)**
 - **[github](https://github.com/Sallenmoore/autonomous)**
 
 ## What you get
@@ -22,11 +22,11 @@ framework without a hard dependency on it.
 | Area | Module | What it does |
 |------|--------|--------------|
 | ORM | `autonomous.model.automodel` | `AutoModel` — a MongoDB-backed document with typed attributes (`StringAttr`, `IntAttr`, `DateTimeAttr`, `ListAttr`, `ReferenceAttr`). Handles save/get/random/delete, inheritance, circular & dangling references. |
-| Auth | `autonomous.auth` | `AutoAuth` base + `GoogleAuth` / `GithubAuth` OAuth2 flows built on Authlib; `AutoUser` model with authenticated / guest / admin roles; `@auth_required` decorator for host views. |
+| Auth | `autonomous.auth` | `AutoAuth` base + `GoogleAuth` / `GithubAuth` / `MicrosoftAuth` / `DiscordAuth` / `FacebookAuth` OAuth2 flows built on Authlib; `AutoUser` model with authenticated / guest / admin roles; `@auth_required` decorator for host views. |
 | Web shim | `autonomous.web` | WSGI-compatible `Response` + `redirect()`, a pluggable `SessionStore` protocol, a `ContextSession` default, and a stdlib-only `SignedCookieSession`. The auth decorator talks to these, not to any framework's globals. |
 | Tasks | `autonomous.taskrunner.autotasks` | `AutoTasks` wraps RQ + Redis with priority queues, timeouts, current-job helpers. |
 | Storage | `autonomous.storage` | `LocalStorage` + `ImageStorage` (thumbnails / resized variants) for filesystem-backed asset storage with URL resolution. |
-| AI | `autonomous.ai.models.local_model`, `gemini` | Adapters for Ollama (local LLM), a media service for image/audio generation, and Google Gemini. All endpoints are HTTP so tests mock `requests.post`. |
+| AI | `autonomous.ai.{text,json,image,audio}agent`, `autonomous.ai.models.*` | `TextAgent` / `JSONAgent` / `ImageAgent` / `AudioAgent` over pluggable adapters: Ollama + a media service for image/audio (`local_model`), OpenAI-compatible HPC (`openai_compat`), Google Gemini, FLUX on fal.ai, a LiteLLM gateway, and a `mock` backend for tests. |
 | Logging | `autonomous.logger` | Leveled, toggleable logger reachable as `from autonomous import log`. |
 
 ## How it's meant to be used
@@ -152,5 +152,6 @@ make tests
 
 ### Package
 
-1. Update version in `/src/autonomous/__init__.py`
-2. `make package`
+`./scripts/release.sh` from an up-to-date `main` (bumps the patch version
+in `src/autonomous/__init__.py`, runs `make package`, commits and pushes).
+For a non-patch bump, edit `__version__` first. See `CLAUDE.md` → Releasing.

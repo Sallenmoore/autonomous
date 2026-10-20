@@ -8,14 +8,16 @@ project.
 It is **not** a web framework. It ships:
 
 - A MongoDB-backed document ORM (``AutoModel`` + typed attributes).
-- OAuth2 auth (``AutoAuth`` + Google / GitHub adapters) that plugs
+- OAuth2 auth (``AutoAuth`` + Google / GitHub / Microsoft / Discord /
+  Facebook adapters) that plugs
   into whatever session you already have.
 - Pluggable file storage — local filesystem today, swappable backends
   via the same API.
 - A Redis-backed task runner (``AutoTasks``) with priority queues.
 - A tiny WSGI-compatible ``Response`` + session layer so the auth
   pieces drop into any host framework without a hard dependency on it.
-- AI model adapters for Ollama, Gemini, and a mock backend for tests.
+- AI model adapters for Ollama, OpenAI-compatible HPC, Gemini, a
+  LiteLLM gateway, FLUX (images), and a mock backend for tests.
 
 ## Guides
 
@@ -43,7 +45,9 @@ Auto-generated API reference for every public module and class:
 
 ## Project
 
-- [Pipeline setup](pipeline-setup) — release flow, dev/test/main, CI.
+- [Pipeline setup](pipeline-setup) — a reusable recipe for bootstrapping
+  a PR / CI / release pipeline on a new library repo (this repo's own
+  dev → test → main flow is described in `CLAUDE.md`).
 - [README on GitHub](https://github.com/Sallenmoore/autonomous) — latest
   README + issue tracker.
 

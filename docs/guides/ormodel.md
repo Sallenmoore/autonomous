@@ -25,9 +25,11 @@ class Post(AutoModel):
 
 Every subclass gets:
 
-- A collection named after the class (lowercased).
-- A ``last_updated: datetime`` field automatically touched on each
-  save (from ``auto_post_init``).
+- A collection named after the class, snake_cased (``BlogPost`` →
+  ``blog_post``).
+- A ``last_updated: datetime`` field, reset to now whenever an
+  instance is constructed (``auto_post_init``) and so written on the
+  next save.
 - The standard ORM methods below.
 
 ## CRUD
